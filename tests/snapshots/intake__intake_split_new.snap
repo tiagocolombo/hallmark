@@ -1,0 +1,71 @@
+---
+source: tests/intake.rs
+expression: "scrub(&env, j)"
+---
+{
+  "base": "main",
+  "branch": "hm/H-0001-add-retries-to-the-api-client-and-a",
+  "children": [
+    {
+      "base": "main",
+      "branch": "hm/H-0002-api-client-retries",
+      "created_at": "[time]",
+      "id": "H-0002",
+      "paths": [
+        "api"
+      ],
+      "rejects": 0,
+      "request": "Retry failed API calls with backoff in api/.",
+      "room": "Workshop",
+      "round": 0,
+      "state": "development",
+      "state_since": "[time]",
+      "title": "API client retries",
+      "worktree": "[root]/app-H-0002"
+    },
+    {
+      "base": "main",
+      "branch": "hm/H-0003-web-status-banner",
+      "created_at": "[time]",
+      "id": "H-0003",
+      "paths": [
+        "web/**"
+      ],
+      "rejects": 0,
+      "request": "Show a status banner in web/.",
+      "room": "Workshop",
+      "round": 0,
+      "state": "development",
+      "state_since": "[time]",
+      "title": "Web status banner",
+      "worktree": "[root]/app-H-0003"
+    }
+  ],
+  "created": true,
+  "created_at": "[time]",
+  "id": "H-0001",
+  "next": [
+    "cd [root]/app-H-0001",
+    "Launch one subagent per child, all at once (Agent tool); each works only in its child's worktree, commits there and never pushes:",
+    "H-0002 \"API client retries\": [root]/app-H-0002",
+    "H-0003 \"Web status banner\": [root]/app-H-0003",
+    "hall merge H-0002 (when its subagent is done)",
+    "hall merge H-0003 (when its subagent is done)",
+    "hall propose-ready H-0001 --summary \"<what was done>\" (after every child is merged)",
+    "hall ready H-0001",
+    "hall status H-0001"
+  ],
+  "open": "cd [root]/app-H-0001 && claude",
+  "plan": {
+    "parallel": true,
+    "ran": true,
+    "reason": "The API client and the web app share no files."
+  },
+  "rejects": 0,
+  "room": "Workshop",
+  "round": 0,
+  "state": "development",
+  "state_since": "[time]",
+  "title": "Add retries to the API client and a status banner to the web app",
+  "worktree": "[root]/app-H-0001"
+}

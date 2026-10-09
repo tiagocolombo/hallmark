@@ -120,6 +120,103 @@ pub fn issue(dir: &Path, number: u64) -> Result<GhIssue> {
     })
 }
 
+/// Who wrote a comment or review.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct GhAuthor {
+    #[serde(default)]
+    pub login: String,
+}
+
+/// A PR comment, a review, or a line comment on the diff.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct GhComment {
+    #[serde(default, alias = "user")]
+    pub author: Option<GhAuthor>,
+    #[serde(default)]
+    pub body: String,
+    /// Reviews: APPROVED, CHANGES_REQUESTED, COMMENTED.
+    #[serde(default)]
+    pub state: Option<String>,
+    /// Line comments: the file and line.
+    #[serde(default)]
+    pub path: Option<String>,
+    #[serde(default, alias = "original_line")]
+    pub line: Option<u64>,
+}
+
+/// A pull request and the feedback on it (for follow-up items).
+#[derive(Debug, Clone, Deserialize)]
+pub struct GhPr {
+    pub number: u64,
+    pub title: String,
+    #[serde(default)]
+    pub body: String,
+    pub url: String,
+    #[serde(default)]
+    pub reviews: Vec<GhComment>,
+    #[serde(default)]
+    pub comments: Vec<GhComment>,
+    /// Comments on lines of the diff (`gh api …/pulls/<n>/comments`).
+    #[serde(default, skip_deserializing)]
+    pub line_comments: Vec<GhComment>,
+}
+
+/// `gh pr view <pr>` (a URL or number) with its reviews and comments, plus
+/// the line comments when `gh api` can read them.
+pub fn pr(dir: &Path, pr: &str) -> Result<GhPr> {
+    let out = Command::new(gh()?)
+        .current_dir(dir)
+        .args([
+            "pr",
+            "view",
+            pr,
+            "--json",
+            "number,url,title,body,reviews,comments",
+        ])
+        .output()?;
+    if !out.status.success() {
+        return Err(HallError::new(
+            ErrorCode::GhUnavailable,
+            format!(
+                "gh pr view {pr} failed: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            ),
+        )
+        .next(["gh auth status", "hall doctor"]));
+    }
+    let mut p: GhPr = serde_json::from_slice(&out.stdout).map_err(|e| {
+        HallError::new(
+            ErrorCode::GhUnavailable,
+            format!("unreadable gh output: {e}"),
+        )
+    })?;
+    if let Some((owner, name)) = owner_repo(&p.url) {
+        let api = format!(
+            "repos/{owner}/{name}/pulls/{}/comments?per_page=100",
+            p.number
+        );
+        if let Ok(o) = Command::new(gh()?)
+            .current_dir(dir)
+            .args(["api", &api])
+            .output()
+            && o.status.success()
+        {
+            p.line_comments = serde_json::from_slice(&o.stdout).unwrap_or_default();
+        }
+    }
+    Ok(p)
+}
+
+/// `https://github.com/o/r/pull/12` → (o, r).
+fn owner_repo(url: &str) -> Option<(String, String)> {
+    let rest = url.split("://").nth(1)?;
+    let mut parts = rest.split('/');
+    let _host = parts.next()?;
+    let owner = parts.next()?.to_string();
+    let name = parts.next()?.to_string();
+    (parts.next()? == "pull").then_some((owner, name))
+}
+
 /// "logged in", "not logged in", or None when gh is missing.
 pub fn auth_status() -> Option<(PathBuf, bool)> {
     let gh = find()?;
@@ -133,6 +230,18 @@ pub fn auth_status() -> Option<(PathBuf, bool)> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn pr_urls() {
+        assert_eq!(
+            super::owner_repo("https://github.com/acme/app/pull/12"),
+            Some(("acme".into(), "app".into()))
+        );
+        assert_eq!(
+            super::owner_repo("https://github.com/acme/app/issues/12"),
+            None
+        );
+    }
+
     #[test]
     fn versions_sort_numerically() {
         assert!(super::parse_version("2.101.0") > super::parse_version("2.98.0"));

@@ -64,9 +64,59 @@ fn reply(item: &Item, changed: bool, note: Option<String>) -> Response {
     )
 }
 
+/// A parallel part never goes to review on its own: it merges into its
+/// parent, and the parent is reviewed once, as a whole (ADR 0024).
+fn part_not_reviewed(item: &Item) -> Option<HallError> {
+    let parent = item.parent?;
+    if item.state.is_terminal() {
+        return None;
+    }
+    Some(
+        HallError::new(
+            ErrorCode::WrongState,
+            format!(
+                "{} is a parallel part of {parent}; parts merge into their parent, \
+                 which goes to review once every part is in",
+                item.id
+            ),
+        )
+        .next([
+            format!("hall merge {}", item.id),
+            format!("hall status {parent}"),
+        ]),
+    )
+}
+
+/// CHILDREN_OPEN: the parent waits for its parts.
+fn children_open(item: &Item, open: &[Item], what: &str) -> HallError {
+    let ids: Vec<String> = open
+        .iter()
+        .map(|c| format!("{} ({})", c.id, c.state))
+        .collect();
+    let mut next = Vec::new();
+    for c in open {
+        next.push(format!("hall merge {}", c.id));
+        next.push(format!("hall drop {} --reason \"<why>\"", c.id));
+    }
+    next.push(format!("hall status {}", item.id));
+    HallError::new(
+        ErrorCode::ChildrenOpen,
+        format!(
+            "{} has parts still open: {}; {what}",
+            item.id,
+            ids.join(", ")
+        ),
+    )
+    .next(next)
+}
+
 pub fn ready(cwd: &Path, a: ReadyArgs) -> Result<Response> {
     let repo = Repo::discover(cwd)?;
     let item = repo.resolve(a.id.as_deref())?;
+    if let Some(e) = part_not_reviewed(&item) {
+        return Err(e);
+    }
+    let open = super::merge::open_children(&repo, item.id)?;
     let wt = Path::new(&item.worktree);
     if !wt.is_dir() {
         return Err(HallError::new(
@@ -80,6 +130,13 @@ pub fn ready(cwd: &Path, a: ReadyArgs) -> Result<Response> {
     let actor = actor();
     let (item, (changed, note)) = repo.hall.transact(item.id, |item, _| match item.state {
         State::Development | State::AwaitingYou => {
+            if !open.is_empty() {
+                return Err(children_open(
+                    item,
+                    &open,
+                    "merge or drop each one first; the whole goes to review once",
+                ));
+            }
             if !dirty.is_empty() {
                 return Err(HallError::new(
                     ErrorCode::DirtyWorktree,
@@ -194,6 +251,14 @@ pub fn drop(cwd: &Path, a: DropArgs) -> Result<Response> {
     }
     if item.state.is_terminal() {
         return Err(wrong_state(&item, "it can't be dropped"));
+    }
+    let open = super::merge::open_children(&repo, item.id)?;
+    if !open.is_empty() {
+        return Err(children_open(
+            &item,
+            &open,
+            "drop (or merge) each part first",
+        ));
     }
     let wt = paths::normalize(Path::new(&item.worktree));
     let mut note = None;

@@ -16,6 +16,11 @@ expression: "scrub(&env, &r.json)"
     "hall log H-0001"
   ],
   "open": "cd [root]/app-H-0001 && claude",
+  "plan": {
+    "parallel": false,
+    "ran": false,
+    "reason": "the Front Desk did not run: claude was not found"
+  },
   "rejects": 0,
   "room": "Workshop",
   "round": 0,

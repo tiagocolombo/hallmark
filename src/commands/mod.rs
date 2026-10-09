@@ -118,7 +118,10 @@ impl Render for ItemView {
 /// The commands that make sense for an item in its current state.
 pub fn next_for(item: &Item) -> Vec<String> {
     let id = item.id;
+    // A parallel part merges into its parent instead (ADR 0024).
+    let child = merge::child_next(item);
     let mut n: Vec<String> = match item.state {
+        _ if child.is_some() => child.unwrap_or_default(),
         State::Development => vec![
             format!("hall propose-ready {id} --summary \"<what was done>\""),
             format!("hall ready {id}"),

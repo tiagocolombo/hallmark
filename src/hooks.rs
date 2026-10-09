@@ -232,6 +232,29 @@ impl Ctx {
         Ok(())
     }
 
+    /// The item a session working in `i` binds to: a parallel part's parent
+    /// (the orchestrator's item), unless the session runs inside the part's
+    /// own worktree (ADR 0024). Keeps a session from flapping between parts.
+    fn bind_target(&self, i: &Item) -> ItemId {
+        match i.parent {
+            Some(parent)
+                if !paths::is_within(&self.dir, &paths::normalize(Path::new(&i.worktree))) =>
+            {
+                parent
+            }
+            _ => i.id,
+        }
+    }
+
+    /// The parallel parts of `id`, closed ones included.
+    fn children(&self, id: ItemId) -> Vec<Item> {
+        self.repo
+            .index()
+            .and_then(|ix| ix.items(true))
+            .map(|v| v.into_iter().filter(|i| i.parent == Some(id)).collect())
+            .unwrap_or_default()
+    }
+
     fn inbox_count(&self) -> usize {
         self.repo
             .index()
@@ -263,7 +286,11 @@ impl Ctx {
         )?;
         let inbox = self.inbox_count();
         let text = match &item {
-            Some(i) => item_context(i, inbox),
+            Some(i) => {
+                let mut t = item_context(i, inbox);
+                t.push_str(&family_context(i, &self.children(i.id)));
+                t
+            }
             None => repo_context(&self.repo, &self.items, inbox),
         };
         Ok(Some(context(HookEvent::SessionStart, text)))
@@ -297,6 +324,13 @@ impl Ctx {
                 "Hallmark: {} is approved and hallmarked; it ships as is. New edits need `hall pull-back {}`.",
                 i.id, i.id
             ),
+            State::Development => {
+                let kids = self.children(i.id);
+                if !kids.iter().any(|c| !c.state.is_terminal()) {
+                    return Ok(None);
+                }
+                format!("Hallmark: {}", family_context(&i, &kids).trim_start())
+            }
             _ => return Ok(None),
         };
         Ok(Some(context(HookEvent::UserPromptSubmit, note)))
@@ -364,7 +398,7 @@ impl Ctx {
             return Ok(None);
         }
         if let Some(i) = self.repo.item_at(&self.items, p) {
-            self.bind(i.id)?;
+            self.bind(self.bind_target(&i))?;
             // An item's worktree is usually a sibling directory, outside the
             // session's working directory. When the session already accepts
             // edits without asking, extend that to the item's worktree.
@@ -504,7 +538,13 @@ impl Ctx {
             && let Ok(id) = id.parse::<ItemId>()
         {
             self.items = self.repo.index()?.items(false)?;
-            self.bind(id)?;
+            let target = self
+                .items
+                .iter()
+                .find(|i| i.id == id)
+                .map(|i| self.bind_target(i))
+                .unwrap_or(id);
+            self.bind(target)?;
         }
         // `hall ask` → remember which session to resume with the answer.
         if mentions(&cmd, &["ask"])
@@ -657,6 +697,10 @@ fn item_context(i: &Item, inbox: usize) -> String {
         i.branch
     );
     s.push_str(match i.state {
+        State::Development if i.parent.is_some() => {
+            "Edit files only inside that worktree, with the Edit and Write tools, and run git \
+             there with `git -C <worktree>`. "
+        }
         State::Development => {
             "Edit files only inside that worktree, with the Edit and Write tools, and run git \
              there with `git -C <worktree>`. When the work looks done, run \
@@ -676,6 +720,60 @@ fn item_context(i: &Item, inbox: usize) -> String {
         ));
     }
     s.push_str("`hall help --json` lists every command.");
+    s
+}
+
+/// For a parent: its parts and the orchestration flow. For a part: that it
+/// merges into its parent. Empty for other items.
+fn family_context(i: &Item, children: &[Item]) -> String {
+    if let Some(parent) = i.parent {
+        return format!(
+            " {} is a parallel part of {parent}: build only this part, commit in its worktree, \
+             and don't run `hall ready` on it; when it is done, `hall merge {}` merges it into \
+             {parent}, which is reviewed once as a whole.",
+            i.id, i.id
+        );
+    }
+    if children.is_empty() {
+        return String::new();
+    }
+    let list: Vec<String> = children
+        .iter()
+        .map(|c| {
+            format!(
+                "{} {} ({}, {})",
+                c.id,
+                clip(&c.title, 40),
+                c.state,
+                c.worktree
+            )
+        })
+        .collect();
+    let open: Vec<String> = children
+        .iter()
+        .filter(|c| !c.state.is_terminal())
+        .map(|c| c.id.to_string())
+        .collect();
+    let mut s = format!(
+        " {} is split into parallel parts: {}. ",
+        i.id,
+        list.join("; ")
+    );
+    if open.is_empty() {
+        s.push_str(&format!(
+            "Every part is merged or dropped: run the gates in {}'s worktree, summarise, \
+             `hall propose-ready {}` and ask the human, then `hall ready {}`.",
+            i.id, i.id, i.id
+        ));
+    } else {
+        s.push_str(&format!(
+            "You orchestrate: run one subagent per open part ({}) in parallel with the Agent \
+             tool, each confined to its part's worktree; `hall merge <part>` as each finishes; \
+             `hall ready {}` only after every part is merged or dropped.",
+            open.join(", "),
+            i.id
+        ));
+    }
     s
 }
 
