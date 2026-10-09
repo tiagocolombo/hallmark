@@ -421,7 +421,7 @@ pub struct ExportArgs {
 pub struct BudgetArgs {
     /// Set a cap in .hallmark.toml, such as daily=4M, per_item=800k,
     /// review.max_usd=3, review.daily=2M (repeatable).
-    #[arg(long)]
+    #[arg(long, num_args = 1..)]
     pub set: Vec<String>,
 }
 

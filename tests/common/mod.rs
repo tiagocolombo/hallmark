@@ -57,6 +57,8 @@ impl Env {
             .env("HALL_HOME", &self.home)
             .env("HALL_ACTOR", "you")
             .env("HALL_CLAUDE", self.root.join("no-claude-here"))
+            // Desktop notifications go to a file, never to the screen.
+            .env("HALL_NOTIFY_LOG", self.root.join("notify.log"))
             .env_remove("HALL_RUNNER")
             .env_remove("HALL_NO_HOOKS")
             .env_remove("CLAUDECODE")
