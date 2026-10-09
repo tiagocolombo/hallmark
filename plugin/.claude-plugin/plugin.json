@@ -1,0 +1,8 @@
+{
+  "name": "hallmark",
+  "version": "0.1.0",
+  "description": "Agentic development, automated review and a full record. Tracks every change as a Hallmark item, records the session in a journal, and gates edits and pushes.",
+  "author": { "name": "Tiago Colombo" },
+  "license": "MIT",
+  "keywords": ["review", "workflow", "journal", "worktree", "agents"]
+}

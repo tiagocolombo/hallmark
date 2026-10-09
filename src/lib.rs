@@ -1,0 +1,28 @@
+//! Hallmark: a local, agent-first development loop for any git repository.
+//!
+//! The binary is `hall`. Agents are its main users, so every command
+//! follows one contract (see `output.rs` and `error.rs`): JSON when stdout
+//! isn't a terminal, a `next` list in every reply, errors as data with
+//! documented exit codes.
+
+pub mod cli;
+pub mod commands;
+pub mod config;
+pub mod detect;
+pub mod error;
+pub mod event;
+pub mod gate;
+pub mod gh;
+pub mod git;
+pub mod hooks;
+pub mod index;
+pub mod item;
+pub mod journal;
+pub mod output;
+pub mod paths;
+pub mod plugin;
+pub mod repo;
+pub mod state;
+pub mod usage;
+
+pub use cli::run;

@@ -1,0 +1,18 @@
+{
+  "name": "hallmark",
+  "owner": { "name": "Tiago Colombo" },
+  "metadata": {
+    "description": "The Hallmark plugin for Claude Code",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "hallmark",
+      "source": "./plugin",
+      "description": "Agentic development, automated review and a full record.",
+      "version": "0.1.0",
+      "author": { "name": "Tiago Colombo" },
+      "license": "MIT"
+    }
+  ]
+}
