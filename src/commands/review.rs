@@ -179,18 +179,12 @@ pub fn verdict(cwd: &Path, a: VerdictArgs) -> Result<Response> {
     } else {
         let p = crate::paths::resolve(cwd, Path::new(&a.file));
         std::fs::read_to_string(&p).map_err(|e| {
-            HallError::usage(format!(
-                "could not read {}: {e}",
-                crate::paths::display(&p)
-            ))
+            HallError::usage(format!("could not read {}: {e}", crate::paths::display(&p)))
         })?
     };
     let value: serde_json::Value = serde_json::from_str(&text).map_err(|e| {
-        HallError::new(
-            ErrorCode::InvalidVerdict,
-            format!("verdict: not JSON: {e}"),
-        )
-        .next(["hall schema verdict-input"])
+        HallError::new(ErrorCode::InvalidVerdict, format!("verdict: not JSON: {e}"))
+            .next(["hall schema verdict-input"])
     })?;
     let mv = ModelVerdict::parse(&value)?;
     let sha = match a.sha.as_deref().or(item.frozen_sha.as_deref()) {

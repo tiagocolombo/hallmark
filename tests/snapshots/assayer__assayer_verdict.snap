@@ -1,0 +1,48 @@
+---
+source: tests/assayer.rs
+expression: "scrub(&env, &r.json)"
+---
+{
+  "base": "main",
+  "branch": "hm/H-0001-retry-webhooks",
+  "changed": true,
+  "created_at": "[time]",
+  "escalated": false,
+  "findings": [
+    {
+      "file": "retry.rs",
+      "fix": "claim the delivery with a row lock first",
+      "id": "F1",
+      "lens": "correctness",
+      "line": 1,
+      "round": 1,
+      "scenario": "two workers retry delivery 17 at once; the endpoint receives it twice",
+      "severity": "major",
+      "title": "No test for the retry"
+    }
+  ],
+  "id": "H-0001",
+  "next": [
+    "hall findings H-0001",
+    "hall status H-0001",
+    "hall pull-back H-0001",
+    "hall log H-0001"
+  ],
+  "open": {
+    "blocker": 0,
+    "major": 1,
+    "minor": 0,
+    "nit": 0
+  },
+  "rejects": 1,
+  "report": "[root]/app/.git/hallmark/items/H-0001/reviews/r1.md",
+  "reviewed": "[sha]",
+  "room": "Repair Shop",
+  "round": 1,
+  "sha": "[sha]",
+  "state": "fixing",
+  "state_since": "[time]",
+  "title": "Retry webhooks",
+  "verdict": "changes",
+  "worktree": "[root]/app-H-0001"
+}

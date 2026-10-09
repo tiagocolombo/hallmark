@@ -56,7 +56,11 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
             "{} review failed: {}{}",
             item.id,
             failure.describe(),
-            if held { "; held for you" } else { "; will retry" }
+            if held {
+                "; held for you"
+            } else {
+                "; will retry"
+            }
         ))),
         Metered::Done(outcome) => {
             let reviewer = outcome
@@ -119,7 +123,13 @@ pub fn request(
     let default_effort = repo.config.budget.effort(Role::Reviewer);
     let review = super::prompt::prepare(repo, item, events, sha, default_effort.as_deref())?;
     let wt = super::checkout(repo, sha)?;
-    let mut req = runner::request(repo, Role::Reviewer, Some(AGENT), review.prompt.clone(), &wt)?;
+    let mut req = runner::request(
+        repo,
+        Role::Reviewer,
+        Some(AGENT),
+        review.prompt.clone(),
+        &wt,
+    )?;
     req.json_schema = Some(crate::plugin::file("schemas/verdict.json").into());
     req.allowed_tools = TOOLS.iter().map(|t| t.to_string()).collect();
     req.effort = review.effort.clone();
@@ -129,7 +139,10 @@ pub fn request(
         ("HALL_NO_HOOKS".to_string(), "1".to_string()),
         // No CLAUDE.md from the checkout (the branch's) or the user's home:
         // the rules come from the base, in the prompt.
-        ("CLAUDE_CODE_DISABLE_CLAUDE_MDS".to_string(), "1".to_string()),
+        (
+            "CLAUDE_CODE_DISABLE_CLAUDE_MDS".to_string(),
+            "1".to_string(),
+        ),
     ]);
     if let Some(path) = path_with_hall() {
         req.env.push(("PATH".into(), path));
@@ -202,7 +215,11 @@ fn invalid(repo: &Repo, item: &Item, why: &str) -> Result<Progress> {
     Ok(Progress::worked(format!(
         "{} review failed: {why}{}",
         item.id,
-        if held { "; held for you" } else { "; will retry" }
+        if held {
+            "; held for you"
+        } else {
+            "; will retry"
+        }
     )))
 }
 

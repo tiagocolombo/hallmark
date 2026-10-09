@@ -49,13 +49,12 @@ impl Base {
 
     /// The base at a known commit, with the settings read from it.
     pub fn at(repo: &Repo, name: &str, sha: &str) -> Base {
-        let (config, config_from_base) =
-            match show(&repo.main_root, sha, crate::config::FILE_NAME)
-                .and_then(|t| Config::parse(&t).ok())
-            {
-                Some(c) => (c, true),
-                None => (repo.config.clone(), false),
-            };
+        let (config, config_from_base) = match show(&repo.main_root, sha, crate::config::FILE_NAME)
+            .and_then(|t| Config::parse(&t).ok())
+        {
+            Some(c) => (c, true),
+            None => (repo.config.clone(), false),
+        };
         Base {
             name: name.to_string(),
             sha: sha.to_string(),
@@ -313,7 +312,12 @@ secrets.toml
         let g = sensitive_globs(NOTES);
         assert_eq!(
             g,
-            ["apps/api/src/billing/**", "migrations/", "*.sql", "secrets.toml"]
+            [
+                "apps/api/src/billing/**",
+                "migrations/",
+                "*.sql",
+                "secrets.toml"
+            ]
         );
         let set = globset(&g);
         assert!(set.is_match("apps/api/src/billing/invoice.ts"));

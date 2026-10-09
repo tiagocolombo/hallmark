@@ -7,7 +7,7 @@ use std::fmt::Write as _;
 
 use crate::error::Result;
 use crate::event::{Body, Event, short};
-use crate::findings::{Lens, Ledger};
+use crate::findings::{Ledger, Lens};
 use crate::git;
 use crate::item::Item;
 use crate::repo::Repo;
@@ -112,7 +112,14 @@ pub fn prepare(
     });
     let commits = git::run(
         dir,
-        &["log", "--no-color", "--format=%h %s", "-n", "30", &format!("{from}..{sha}")],
+        &[
+            "log",
+            "--no-color",
+            "--format=%h %s",
+            "-n",
+            "30",
+            &format!("{from}..{sha}"),
+        ],
     )
     .unwrap_or_default();
 
@@ -489,7 +496,12 @@ mod tests {
                 "+x\n".repeat(n)
             )
         };
-        let diff = format!("{}{}{}", one("a.rs", 10), one("b.rs", 1000), one("c.rs", 10));
+        let diff = format!(
+            "{}{}{}",
+            one("a.rs", 10),
+            one("b.rs", 1000),
+            one("c.rs", 10)
+        );
         let (shown, omitted) = cut_diff(&diff, 500);
         assert!(shown.contains("a/a.rs"));
         assert!(!shown.contains("b.rs"));
