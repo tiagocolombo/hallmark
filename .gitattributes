@@ -1,0 +1,3 @@
+# The plugin is embedded with include_str! and parsed by Claude Code: keep
+# its line endings LF on every OS (Windows checkouts would otherwise get CRLF).
+plugin/** text eol=lf
