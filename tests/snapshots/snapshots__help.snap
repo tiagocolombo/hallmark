@@ -481,6 +481,22 @@ expression: v
           "required": false,
           "syntax": "--dry-run",
           "takes_value": false
+        },
+        {
+          "default": "false",
+          "help": "Also set Claude Code's status line to `hall statusline` in ~/.claude/settings.json",
+          "name": "statusline",
+          "required": false,
+          "syntax": "--statusline",
+          "takes_value": false
+        },
+        {
+          "default": "false",
+          "help": "With --statusline: replace a status line that isn't Hallmark's",
+          "name": "force",
+          "required": false,
+          "syntax": "--force",
+          "takes_value": false
         }
       ],
       "name": "setup",
