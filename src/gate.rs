@@ -230,13 +230,24 @@ mod tests {
 
     #[test]
     fn follows_directories() {
+        // Real directories, so the paths resolve the same way on Windows.
+        let tmp = tempfile::tempdir().unwrap();
+        let base = crate::paths::normalize(tmp.path());
+        let repo = base.join("repo");
+        let at = |cmd: &str| -> Vec<(OpKind, PathBuf)> {
+            scan(cmd, &repo, &[])
+                .into_iter()
+                .map(|o| (o.kind, o.dir))
+                .collect()
+        };
         assert_eq!(
-            kinds("cd ../wt && git commit -m x"),
-            vec![(OpKind::Commit, "/wt".into())]
+            at("cd ../wt && git commit -m x"),
+            vec![(OpKind::Commit, base.join("wt"))]
         );
+        let other = base.join("other");
         assert_eq!(
-            kinds("git -C /other push"),
-            vec![(OpKind::Push, "/other".into())]
+            at(&format!("git -C '{}' push", other.display())),
+            vec![(OpKind::Push, other)]
         );
         assert_eq!(
             kinds("git -c core.pager=cat --no-pager commit -am x"),
