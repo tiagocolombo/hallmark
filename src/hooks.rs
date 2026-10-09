@@ -78,6 +78,9 @@ pub struct HookInput {
     pub notification_type: Option<String>,
     #[serde(default)]
     pub source: Option<String>,
+    /// default, acceptEdits, plan, bypassPermissions…
+    #[serde(default)]
+    pub permission_mode: Option<String>,
 }
 
 /// What a hook prints, when it prints anything.
@@ -155,6 +158,8 @@ struct Ctx {
     /// Live items.
     items: Vec<Item>,
     session: Option<SessionState>,
+    /// Set when an edit should be explicitly allowed (see `check_edit`).
+    allow: Option<String>,
 }
 
 impl Ctx {
@@ -167,6 +172,7 @@ impl Ctx {
             dir: paths::normalize(&dir),
             items,
             session,
+            allow: None,
         })
     }
 
@@ -330,7 +336,7 @@ impl Ctx {
             _ => None,
         };
         let Some((kind, err, target)) = denial else {
-            return Ok(None);
+            return Ok(self.allow.take().map(|r| decision("allow", r)));
         };
         let item = self.item().map(|i| i.id);
         self.record(
@@ -354,6 +360,21 @@ impl Ctx {
         }
         if let Some(i) = self.repo.item_at(&self.items, p) {
             self.bind(i.id)?;
+            // An item's worktree is usually a sibling directory, outside the
+            // session's working directory. When the session already accepts
+            // edits without asking, extend that to the item's worktree.
+            // Other modes keep Claude Code's own prompt.
+            let auto = matches!(
+                self.input.permission_mode.as_deref(),
+                Some("acceptEdits" | "bypassPermissions")
+            );
+            if auto && !paths::is_within(p, &self.dir) {
+                self.allow = Some(format!(
+                    "Hallmark: {} is inside {}'s worktree, and this session accepts edits.",
+                    paths::display(p),
+                    i.id
+                ));
+            }
             return Ok(None);
         }
         if git::is_ignored(&self.repo.toplevel, p) {
@@ -632,7 +653,8 @@ fn item_context(i: &Item, inbox: usize) -> String {
     );
     s.push_str(match i.state {
         State::Development => {
-            "Edit files only inside that worktree. When the work looks done, run \
+            "Edit files only inside that worktree, with the Edit and Write tools, and run git \
+             there with `git -C <worktree>`. When the work looks done, run \
              `hall propose-ready --summary \"<what was done>\"` and ask the human; when they say \
              ready, commit and run `hall ready`. "
         }
@@ -661,7 +683,10 @@ fn repo_context(repo: &Repo, items: &[Item], inbox: usize) -> String {
     s.push_str(match repo.config.capture.mode {
         CaptureMode::Gate | CaptureMode::Ask => {
             "Before editing files, start an item with `hall new --title \"<short title>\"` (or \
-             `hall adopt` for an existing branch), then work in the worktree it returns. "
+             `hall adopt` for an existing branch), then work in the worktree it returns: \
+             edit there with the Edit and Write tools and run git with `git -C <worktree>`. \
+             The worktree may be outside this session's directory; if Claude Code asks, the \
+             human can approve it or run `/add-dir <worktree>`. "
         }
         CaptureMode::Off => "Items start with /hallmark or `hall new`. ",
     });

@@ -324,3 +324,29 @@ Conclusions:
   `schemas/verdict.json` enforced through `--json-schema` (see ADR 0007).
   `/code-review` could later become an optional extra signal, but it would not
   decide a hallmark.
+
+## End-to-end check (after Stage 1 was built)
+
+A real headless session in a fresh repo, with the plugin loaded through
+`--plugin-dir` (nothing installed at user level), Haiku, `acceptEdits`:
+
+```sh
+claude -p --plugin-dir "$HALL_HOME/claude-plugin/plugins/hallmark" --model haiku \
+  --permission-mode acceptEdits --allowedTools "Bash(hall:*)" "Bash(git:*)" \
+  -- "Add a file hello.txt containing the word hi to this repository and commit it. Don't push."
+```
+
+First run: the SessionStart context and the edit gate worked, and Claude ran
+`hall new` without being told to. Then **Claude Code's own permissions refused
+every write to the new worktree**, because the default `../{repo}-{id}` is
+outside the session's working directory. Hallmark's gate wasn't involved.
+
+Fix: in `acceptEdits` and `bypassPermissions` sessions, the PreToolUse hook now
+answers `allow` for Edit/Write inside a live item's worktree, extending the
+edit permission the session already has to its item's worktree. In `default`
+mode Claude Code still asks. The skill and the session context now tell Claude
+to edit with the Edit/Write tools and run git with `git -C <worktree>`.
+
+Second run: item H-0001 created, `hello.txt` written in the worktree, commit
+`Add hello.txt` recorded by PostToolUse, and the journal shows
+`created → session_bound → prompt → commit → usage → turn`. 5 turns, $0.008.

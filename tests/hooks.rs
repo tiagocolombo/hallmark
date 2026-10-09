@@ -448,3 +448,33 @@ fn hook_event_names_accept_both_spellings() {
     assert_eq!(r.code, 0);
     assert!(r.json["hookSpecificOutput"]["additionalContext"].is_string());
 }
+
+#[test]
+fn sessions_that_accept_edits_may_edit_their_item_worktree() {
+    let env = Env::initialized();
+    let (id, wt) = env.new_item("x");
+    let file = wt.join("hello.txt");
+    // From the main checkout, in acceptEdits mode: explicitly allowed.
+    let mut v = write(&env.repo, &file);
+    v["permission_mode"] = json!("acceptEdits");
+    let r = env.hook("pre-tool-use", &v);
+    assert_eq!(r.json["hookSpecificOutput"]["permissionDecision"], "allow");
+    assert!(
+        r.json["hookSpecificOutput"]["permissionDecisionReason"]
+            .as_str()
+            .unwrap()
+            .contains(&id)
+    );
+    // In default mode, Claude Code keeps asking: no decision from us.
+    v["permission_mode"] = json!("default");
+    assert_eq!(env.hook("pre-tool-use", &v).stdout, "");
+    // A session already in the worktree needs nothing.
+    let mut v = write(&wt, &file);
+    v["permission_mode"] = json!("acceptEdits");
+    assert_eq!(env.hook("pre-tool-use", &v).stdout, "");
+    // Never for files outside every worktree.
+    let mut v = write(&env.repo, &env.repo.join("src/main.rs"));
+    v["permission_mode"] = json!("acceptEdits");
+    let r = env.hook("pre-tool-use", &v);
+    assert_eq!(r.json["hookSpecificOutput"]["permissionDecision"], "deny");
+}

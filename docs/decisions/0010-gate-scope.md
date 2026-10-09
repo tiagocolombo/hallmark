@@ -37,3 +37,14 @@ gates must also hold up against shell commands written in many shapes.
 - The gate covers commands that agents actually write. It is not a sandbox: a
   determined `bash -c "$(…)"` can evade the parser. It exists to keep honest
   agents on the path, and GitHub branch protection remains the final control.
+
+## Addendum: allowing edits in the item's worktree
+
+Item worktrees are usually siblings of the main checkout, so they sit outside
+the session's working directory, and Claude Code refuses writes there
+(docs/spikes.md, end-to-end check). When the session's `permission_mode` is
+`acceptEdits` or `bypassPermissions`, the PreToolUse hook answers `allow` for
+Edit/Write inside a live item's worktree. That extends an edit permission the
+human already gave to the item's worktree. In `default` and `plan` modes, Hallmark
+stays silent and Claude Code asks as usual.
+

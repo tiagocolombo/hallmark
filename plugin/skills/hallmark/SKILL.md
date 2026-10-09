@@ -39,7 +39,15 @@ denies `git push`, `gh pr create` and the repo's ship command without one.
 hall new "<request>"            # or: hall new --title "<short title>"
 ```
 
-Then `cd` into the returned `worktree` and do all edits and commits there.
+Then do all edits and commits in the returned `worktree`:
+
+- Edit files there with the Edit and Write tools, using absolute paths. Don't
+  write files through shell redirects.
+- Run git there with `git -C <worktree> ...`.
+- The worktree is usually a sibling of the main checkout, outside this
+  session's directory. If Claude Code asks for permission to write there, say
+  why. If writes are refused, ask the human to approve them or run
+  `/add-dir <worktree>`, or to start a session in the worktree.
 
 - From a GitHub issue: `hall new --issue 212`. The PR will close it.
 - On an existing branch or worktree: `hall adopt`.
