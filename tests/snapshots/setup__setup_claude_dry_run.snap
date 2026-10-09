@@ -1,0 +1,49 @@
+---
+source: tests/setup.rs
+expression: v
+---
+{
+  "dry_run": true,
+  "hall": "[hall]",
+  "marketplace_dir": "[root]/home/claude-plugin",
+  "next": [
+    "hall setup claude --statusline",
+    "hall init",
+    "hall daemon start --at-login",
+    "hall notify test",
+    "hall doctor",
+    "restart Claude Code to load the plugin"
+  ],
+  "plugin_files": "[files]",
+  "statusline": {
+    "command": "[hall] statusline",
+    "settings": "[root]/claude-home/settings.json"
+  },
+  "steps": [
+    {
+      "command": "write the plugin to [root]/home/claude-plugin",
+      "status": "planned"
+    },
+    {
+      "command": "[root]/no-claude-here plugin marketplace add [root]/home/claude-plugin --scope user",
+      "status": "planned"
+    },
+    {
+      "command": "[root]/no-claude-here plugin marketplace update hallmark",
+      "status": "planned"
+    },
+    {
+      "command": "[root]/no-claude-here plugin install hallmark@hallmark --scope user",
+      "status": "planned"
+    },
+    {
+      "command": "[root]/no-claude-here plugin update hallmark@hallmark --scope user",
+      "status": "planned"
+    },
+    {
+      "command": "set statusLine in [root]/claude-home/settings.json",
+      "status": "planned"
+    }
+  ],
+  "target": "claude"
+}

@@ -270,6 +270,13 @@ pub struct SetupArgs {
     /// Print what would be done without doing it.
     #[arg(long)]
     pub dry_run: bool,
+    /// Also set Claude Code's status line to `hall statusline` in
+    /// ~/.claude/settings.json.
+    #[arg(long)]
+    pub statusline: bool,
+    /// With --statusline: replace a status line that isn't Hallmark's.
+    #[arg(long, requires = "statusline")]
+    pub force: bool,
 }
 
 #[derive(Debug, Args)]
