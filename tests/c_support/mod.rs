@@ -94,7 +94,9 @@ pub fn verdict(
             })
             .collect(),
         counts,
-        summary: Some(format!("Round {round}: retries are safe with the row lock.")),
+        summary: Some(format!(
+            "Round {round}: retries are safe with the row lock."
+        )),
         report: Some(format!("reviews/r{round}.md")),
         reviewer: Some("claude-opus-5-5".into()),
         learnings: vec![],
@@ -134,7 +136,13 @@ pub fn fixing_item(env: &Env, title: &str) -> (String, PathBuf, String) {
             &sha,
             1,
             vec![
-                finding("F1", 1, Severity::Major, Lens::Correctness, "Double delivery"),
+                finding(
+                    "F1",
+                    1,
+                    Severity::Major,
+                    Lens::Correctness,
+                    "Double delivery",
+                ),
                 finding("F2", 1, Severity::Minor, Lens::Evidence, "No retry test"),
                 finding("F3", 1, Severity::Nit, Lens::RepoRules, "Name the constant"),
             ],
@@ -148,9 +156,15 @@ pub fn fixing_item(env: &Env, title: &str) -> (String, PathBuf, String) {
 /// An item in fixing because its checks failed, with a log.
 pub fn failing_checks_item(env: &Env, title: &str) -> (String, PathBuf, String) {
     let (id, wt, sha) = ready_item(env, title);
-    let dir = env.repo.join(".git/hallmark/items").join(&id).join("checks");
+    let dir = env
+        .repo
+        .join(".git/hallmark/items")
+        .join(&id)
+        .join("checks");
     std::fs::create_dir_all(&dir).unwrap();
-    let log: String = (1..=80).map(|i| format!("test line {i}\n")).collect::<String>()
+    let log: String = (1..=80)
+        .map(|i| format!("test line {i}\n"))
+        .collect::<String>()
         + "test retry::twice ... FAILED\n";
     std::fs::write(dir.join("r1.log"), log).unwrap();
     append(
@@ -173,15 +187,37 @@ pub fn failing_checks_item(env: &Env, title: &str) -> (String, PathBuf, String) 
 }
 
 /// Approves the item's frozen commit in `round` and strikes the hallmark.
-pub fn hallmark(env: &Env, id: &str, wt: &Path, round: u32, prior: Vec<(&str, PriorStatus)>, open: Counts) -> String {
+pub fn approve(
+    env: &Env,
+    id: &str,
+    wt: &Path,
+    round: u32,
+    prior: Vec<(&str, PriorStatus)>,
+    open: Counts,
+) -> String {
     let sha = git(wt, &["rev-parse", "HEAD"]);
-    append(env, id, "assayer", checks(&sha, round, true, vec![CheckRun {
-        command: "cargo test".into(),
-        exit_code: 0,
-        duration_ms: 3100,
-        log: Some(format!("checks/r{round}.log")),
-    }]));
-    append(env, id, "assayer", verdict(&sha, round, vec![], prior, open));
+    append(
+        env,
+        id,
+        "assayer",
+        checks(
+            &sha,
+            round,
+            true,
+            vec![CheckRun {
+                command: "cargo test".into(),
+                exit_code: 0,
+                duration_ms: 3100,
+                log: Some(format!("checks/r{round}.log")),
+            }],
+        ),
+    );
+    append(
+        env,
+        id,
+        "assayer",
+        verdict(&sha, round, vec![], prior, open),
+    );
     let repo = Repo::discover(&env.repo).unwrap();
     hallmark::stamp::strike(
         &repo,
@@ -207,7 +243,13 @@ pub fn hallmarked_item(env: &Env, title: &str) -> (String, PathBuf, String) {
         verdict(
             &sha,
             1,
-            vec![finding("F1", 1, Severity::Minor, Lens::Evidence, "No retry test")],
+            vec![finding(
+                "F1",
+                1,
+                Severity::Minor,
+                Lens::Evidence,
+                "No retry test",
+            )],
             vec![],
             counts(0, 0, 1, 0),
         ),
@@ -228,8 +270,14 @@ pub fn hallmarked_item(env: &Env, title: &str) -> (String, PathBuf, String) {
 /// A local bare remote named `origin` for the main checkout.
 pub fn bare_remote(env: &Env) -> PathBuf {
     let remote = env.root.join("remote.git");
-    git(&env.root, &["init", "-q", "--bare", &remote.to_string_lossy()]);
-    git(&env.repo, &["remote", "add", "origin", &remote.to_string_lossy()]);
+    git(
+        &env.root,
+        &["init", "-q", "--bare", &remote.to_string_lossy()],
+    );
+    git(
+        &env.repo,
+        &["remote", "add", "origin", &remote.to_string_lossy()],
+    );
     remote
 }
 

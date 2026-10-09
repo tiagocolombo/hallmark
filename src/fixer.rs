@@ -86,7 +86,10 @@ fn work(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
             repo,
             id,
             HoldKind::Other,
-            format!("the worktree {} is missing; the fixer can't work", item.worktree),
+            format!(
+                "the worktree {} is missing; the fixer can't work",
+                item.worktree
+            ),
         )?;
         return Ok(Progress::worked(format!("{id} held: worktree missing")));
     }
@@ -105,7 +108,8 @@ fn work(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
     }
     let events = repo.hall.read_item(id)?;
     let ledger = Ledger::from_events(&events);
-    repo.hall.live(&format!("{id} fixer started (round {})", item.round));
+    repo.hall
+        .live(&format!("{id} fixer started (round {})", item.round));
     if is_claude(&repo.config.fixer) {
         run_claude(ctx, item, &events, &ledger, &wt)
     } else {
@@ -225,7 +229,9 @@ fn run_external(
     if let Some(why) = run.failure() {
         // The engine may still have submitted before it failed.
         if repo.hall.load_item(id)?.state != State::Fixing {
-            return Ok(Progress::worked(format!("{id} resubmitted by the fix engine")));
+            return Ok(Progress::worked(format!(
+                "{id} resubmitted by the fix engine"
+            )));
         }
         return failed(repo, id, format!("the fix engine {why}"));
     }
@@ -262,11 +268,7 @@ pub fn settle(repo: &Repo, id: ItemId, wt: &Path, report: Option<FixReport>) -> 
     // failing the whole submission; the review settles the rest.
     let events = repo.hall.read_item(id)?;
     let ledger = Ledger::from_events(&events);
-    let open: Vec<String> = ledger
-        .open()
-        .iter()
-        .map(|t| t.finding.id.clone())
-        .collect();
+    let open: Vec<String> = ledger.open().iter().map(|t| t.finding.id.clone()).collect();
     let fixed: Vec<String> = crate::commands::fix::split_ids(&report.fixed)
         .into_iter()
         .filter(|f| open.contains(f))
@@ -514,12 +516,7 @@ pub fn prompt(repo: &Repo, item: &Item, events: &[Event], ledger: &Ledger) -> St
             }
         }
     }
-    let gates: Vec<String> = repo
-        .config
-        .gates
-        .iter()
-        .map(|g| format!("`{g}`"))
-        .collect();
+    let gates: Vec<String> = repo.config.gates.iter().map(|g| format!("`{g}`")).collect();
     s.push_str("\n## When you are done\n\n");
     s.push_str(
         "1. Commit each fix with git in this worktree; name the finding IDs in the message \
@@ -619,8 +616,18 @@ pub fn run_command(cmd: &str, dir: &Path, timeout: u64, env: &[(&str, &str)]) ->
             String::from_utf8_lossy(&s).into_owned()
         })
     };
-    let out = reader(child.stdout.take().map(|o| Box::new(o) as Box<dyn Read + Send>));
-    let err = reader(child.stderr.take().map(|o| Box::new(o) as Box<dyn Read + Send>));
+    let out = reader(
+        child
+            .stdout
+            .take()
+            .map(|o| Box::new(o) as Box<dyn Read + Send>),
+    );
+    let err = reader(
+        child
+            .stderr
+            .take()
+            .map(|o| Box::new(o) as Box<dyn Read + Send>),
+    );
     let (code, timed_out) = if timeout == 0 {
         (child.wait().ok().and_then(|s| s.code()), false)
     } else {
@@ -646,6 +653,25 @@ pub fn run_command(cmd: &str, dir: &Path, timeout: u64, env: &[(&str, &str)]) ->
 mod tests {
     use super::*;
     use crate::findings::{Finding, Lens, Severity, Status};
+
+    #[test]
+    fn the_plugin_schema_matches_the_report() {
+        let schema: serde_json::Value =
+            serde_json::from_str(crate::plugin::file("schemas/fix.json")).unwrap();
+        let mut req: Vec<&str> = schema["required"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+        req.sort();
+        assert_eq!(req, ["disputed", "fixed", "summary"]);
+        let r: FixReport = serde_json::from_value(serde_json::json!({
+            "summary": "s", "fixed": ["F1"], "disputed": [{"id": "F2", "reason": "r"}]
+        }))
+        .unwrap();
+        assert_eq!(r.disputed[0].id, "F2");
+    }
 
     #[test]
     fn claude_or_an_engine() {

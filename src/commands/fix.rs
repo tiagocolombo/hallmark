@@ -184,11 +184,7 @@ pub fn submit(
             ]));
         }
         let ledger = Ledger::from_events(events);
-        let open: Vec<String> = ledger
-            .open()
-            .iter()
-            .map(|t| t.finding.id.clone())
-            .collect();
+        let open: Vec<String> = ledger.open().iter().map(|t| t.finding.id.clone()).collect();
         let unknown: Vec<&String> = fixes
             .iter()
             .chain(disputes.iter().map(|d| &d.id))
@@ -322,7 +318,10 @@ mod tests {
 
     #[test]
     fn sets_compare_unordered() {
-        assert!(same(&["F2".into(), "F1".into()], &["F1".into(), "F2".into()]));
+        assert!(same(
+            &["F2".into(), "F1".into()],
+            &["F1".into(), "F2".into()]
+        ));
         assert!(!same(&["F1".into()], &["F1".into(), "F2".into()]));
     }
 }

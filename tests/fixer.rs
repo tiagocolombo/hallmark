@@ -40,7 +40,11 @@ fn fixed_records_fixes_and_disputes() {
     let env = Env::initialized();
     let (id, wt, sha) = fixing_item(&env, "Retry webhooks");
     assert_eq!(state(&env, &id), "fixing");
-    commit_file(&wt, "retry.rs", "fn retry() {\n    lock();\n    deliver();\n}\n");
+    commit_file(
+        &wt,
+        "retry.rs",
+        "fn retry() {\n    lock();\n    deliver();\n}\n",
+    );
     let r = env.hall(
         &wt,
         &[
@@ -126,7 +130,10 @@ fn fixed_refuses_what_it_cannot_record() {
     assert_eq!(r.code, 2, "{}", r.stdout);
     assert_eq!(r.json["error"]["code"], "USAGE");
     let msg = r.json["error"]["message"].as_str().unwrap();
-    assert!(msg.contains("F9") && msg.contains("open: F1, F2, F3"), "{msg}");
+    assert!(
+        msg.contains("F9") && msg.contains("open: F1, F2, F3"),
+        "{msg}"
+    );
     // A dispute needs a reason (clap), and a fix can't also be a dispute.
     let r = env.hall(&wt2, &["fixed", "--dispute", "F2"]);
     assert_eq!(r.code, 2);
@@ -198,7 +205,10 @@ fn the_fixer_commits_and_records_the_fix_itself() {
     }]));
     let step = fixer_pass(&env, &script);
     assert_eq!(step["progress"], "worked", "{step}");
-    assert!(step["what"].as_str().unwrap().contains("resubmitted"), "{step}");
+    assert!(
+        step["what"].as_str().unwrap().contains("resubmitted"),
+        "{step}"
+    );
     assert_eq!(state(&env, &id), "checks");
     let fx = events(&env, &id, "fix_submitted");
     assert_eq!(fx.len(), 1);
@@ -224,13 +234,23 @@ fn the_fixer_commits_and_records_the_fix_itself() {
         .iter()
         .map(|t| t.as_str().unwrap())
         .collect();
-    for t in ["Edit", "Bash(git commit:*)", "Bash(hall fixed:*)", "Bash(cargo test:*)"] {
+    for t in [
+        "Edit",
+        "Bash(git commit:*)",
+        "Bash(hall fixed:*)",
+        "Bash(cargo test:*)",
+    ] {
         assert!(tools.contains(&t), "{t} in {tools:?}");
     }
     assert!(!tools.iter().any(|t| t.contains("push")));
     assert_eq!(c["env"], json!([["HALL_ACTOR", "fixer"]]));
     let prompt = c["prompt"].as_str().unwrap();
-    for s in ["F1 · major · correctness · retry.rs:3", "Double delivery", "`cargo test`", "hall fixed"] {
+    for s in [
+        "F1 · major · correctness · retry.rs:3",
+        "Double delivery",
+        "`cargo test`",
+        "hall fixed",
+    ] {
         assert!(prompt.contains(s), "{s} in {prompt}");
     }
     // Blockers and majors come before minors and nits.
@@ -240,7 +260,11 @@ fn the_fixer_commits_and_records_the_fix_itself() {
     assert_eq!(usage[0]["room"], "repair");
     assert_eq!(usage[0]["role"], "fixer");
     // The lease is gone, so the assayer can take the item.
-    assert!(!env.repo.join(format!(".git/hallmark/leases/{id}.json")).exists());
+    assert!(
+        !env.repo
+            .join(format!(".git/hallmark/leases/{id}.json"))
+            .exists()
+    );
     // Nothing is left to fix.
     let step = fixer_pass(&env, &script);
     assert_eq!(step["progress"], "idle");
@@ -282,13 +306,19 @@ fn a_fixer_that_leaves_changes_fails_then_holds() {
         {"role": "fixer", "structured": {"summary": "s", "fixed": [], "disputed": []}}
     ]));
     let step = fixer_pass(&env, &script);
-    assert!(step["what"].as_str().unwrap().contains("uncommitted"), "{step}");
+    assert!(
+        step["what"].as_str().unwrap().contains("uncommitted"),
+        "{step}"
+    );
     let failed = events(&env, &id, "run_failed");
     assert_eq!(failed.len(), 1);
     assert_eq!(failed[0]["attempt"], 1);
     assert_eq!(failed[0]["role"], "fixer");
     // The changes are kept for a person.
-    assert_eq!(std::fs::read_to_string(wt.join("retry.rs")).unwrap(), "half a fix");
+    assert_eq!(
+        std::fs::read_to_string(wt.join("retry.rs")).unwrap(),
+        "half a fix"
+    );
     // The second tick doesn't spend a run on a dirty worktree: it holds.
     let step = fixer_pass(&env, &script);
     assert!(step["what"].as_str().unwrap().contains("held"), "{step}");
@@ -309,7 +339,10 @@ fn a_fixer_that_does_nothing_fails() {
         {"role": "fixer", "fail": "timeout"}
     ]));
     let step = fixer_pass(&env, &script);
-    assert!(step["what"].as_str().unwrap().contains("committed nothing"), "{step}");
+    assert!(
+        step["what"].as_str().unwrap().contains("committed nothing"),
+        "{step}"
+    );
     // The second failure (a timeout, through the runner) holds the item.
     let step = fixer_pass(&env, &script);
     assert!(step["what"].as_str().unwrap().contains("held"), "{step}");
@@ -342,11 +375,17 @@ fn failing_checks_lead_the_prompt() {
     let step = fixer_pass(&env, &script);
     assert_eq!(step["progress"], "worked", "{step}");
     let prompt = env.fake_calls()[0]["prompt"].as_str().unwrap().to_string();
-    assert!(prompt.contains("## Failing checks (fix these first)"), "{prompt}");
+    assert!(
+        prompt.contains("## Failing checks (fix these first)"),
+        "{prompt}"
+    );
     assert!(prompt.contains("`cargo test` exited 101"));
     assert!(prompt.contains("test retry::twice ... FAILED"));
     assert!(prompt.contains("checks/r1.log"));
-    assert!(!prompt.contains("test line 1\n"), "only the tail of the log");
+    assert!(
+        !prompt.contains("test line 1\n"),
+        "only the tail of the log"
+    );
     assert_eq!(state(&env, &id), "checks");
     assert_eq!(events(&env, &id, "fix_submitted")[0]["fixes"], json!([]));
 }
@@ -354,9 +393,8 @@ fn failing_checks_lead_the_prompt() {
 #[test]
 fn an_external_engine_runs_in_the_worktree() {
     let env = Env::initialized();
-    let hall = hallmark::commands::new::shell_quote(&p(std::path::Path::new(env!(
-        "CARGO_BIN_EXE_hall"
-    ))));
+    // The native path: cmd /C wants backslashes on Windows.
+    let hall = hallmark::commands::new::shell_quote(env!("CARGO_BIN_EXE_hall"));
     // The engine commits and records the fix itself.
     set_config(
         &env,
@@ -376,13 +414,21 @@ fn an_external_engine_runs_in_the_worktree() {
     assert_eq!(fx[0]["actor"], "fixer");
     // It got the brief.
     let brief: Value = serde_json::from_str(
-        &std::fs::read_to_string(env.repo.join(format!(".git/hallmark/items/{id}/fix-r1.json")))
-            .unwrap(),
+        &std::fs::read_to_string(
+            env.repo
+                .join(format!(".git/hallmark/items/{id}/fix-r1.json")),
+        )
+        .unwrap(),
     )
     .unwrap();
     assert_eq!(brief["round"], 1);
     assert_eq!(brief["findings"][0]["id"], "F1");
-    assert!(brief["report_file"].as_str().unwrap().ends_with("fix-r1.json.out"));
+    assert!(
+        brief["report_file"]
+            .as_str()
+            .unwrap()
+            .ends_with("fix-r1.json.out")
+    );
 }
 
 #[cfg(unix)]
@@ -410,7 +456,10 @@ fn a_failing_engine_counts_as_a_failed_run() {
     set_config(&env, "fixer", &toml("git no-such-command"));
     let (id, _, _) = fixing_item(&env, "Retry webhooks");
     let step = fixer_pass(&env, &env.script(json!([])));
-    assert!(step["what"].as_str().unwrap().contains("fix engine"), "{step}");
+    assert!(
+        step["what"].as_str().unwrap().contains("fix engine"),
+        "{step}"
+    );
     assert_eq!(events(&env, &id, "run_failed")[0]["attempt"], 1);
     assert_eq!(state(&env, &id), "fixing");
 }

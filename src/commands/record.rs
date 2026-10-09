@@ -18,7 +18,7 @@ use super::ItemView;
 use crate::cli::{ExportArgs, HistoryArgs};
 use crate::error::{HallError, Result};
 use crate::event::{Body, Event, VerdictKind, short};
-use crate::findings::{Lens, Ledger, PriorStatus, Severity, Status};
+use crate::findings::{Ledger, Lens, PriorStatus, Severity, Status};
 use crate::item::{Item, ItemId, State};
 use crate::output::{Render, Response, clip};
 use crate::repo::Repo;
@@ -170,7 +170,12 @@ fn row(i: &Item, findings: &[&crate::index::FindingRow]) -> HistoryRow {
             dispute: f.dispute.clone(),
         })
         .collect();
-    blocking.sort_by_key(|r| (r.round, r.id.trim_start_matches('F').parse::<u32>().unwrap_or(0)));
+    blocking.sort_by_key(|r| {
+        (
+            r.round,
+            r.id.trim_start_matches('F').parse::<u32>().unwrap_or(0),
+        )
+    });
     let outcome = match i.state {
         State::Closed if i.parent.is_some() && i.pr_url.is_none() => "merged".to_string(),
         s => s.as_str().to_string(),
@@ -220,7 +225,10 @@ impl Render for ExportOut {
 pub fn export(cwd: &Path, a: ExportArgs) -> Result<Response> {
     let repo = Repo::discover(cwd)?;
     let item = repo.resolve(a.id.as_deref())?;
-    let out = a.out.as_deref().map(|o| crate::paths::resolve(cwd, Path::new(o)));
+    let out = a
+        .out
+        .as_deref()
+        .map(|o| crate::paths::resolve(cwd, Path::new(o)));
     let (path, markdown) = write_export(&repo, item.id, out.as_deref())?;
     let id = item.id;
     Ok(Response::new(
@@ -244,7 +252,9 @@ pub fn write_export(repo: &Repo, id: ItemId, out: Option<&Path>) -> Result<(Path
     let events = repo.hall.read_item(id)?;
     let item = crate::event::fold(id, &events)?;
     let md = render_export(repo, &item, &events);
-    let path = out.map(Path::to_path_buf).unwrap_or_else(|| export_path(repo, id));
+    let path = out
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| export_path(repo, id));
     if let Some(d) = path.parent() {
         std::fs::create_dir_all(d)?;
     }
@@ -275,7 +285,9 @@ pub fn usage_by_role(events: &[Event]) -> Vec<(String, String, u64, f64)> {
             v.1 += u.cost_usd;
         }
     }
-    m.into_iter().map(|((r, mo), (t, c))| (r, mo, t, c)).collect()
+    m.into_iter()
+        .map(|((r, mo), (t, c))| (r, mo, t, c))
+        .collect()
 }
 
 /// The item's whole record as Markdown.

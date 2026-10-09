@@ -1,6 +1,5 @@
 ---
 source: tests/fixer.rs
-assertion_line: 60
 expression: "scrub(&env, &r.json)"
 ---
 {

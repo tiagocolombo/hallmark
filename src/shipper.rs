@@ -51,7 +51,10 @@ fn ship(repo: &Repo, item: &Item) -> Result<Progress> {
         return held(
             repo,
             id,
-            format!("the worktree {} is missing; nothing to ship from", item.worktree),
+            format!(
+                "the worktree {} is missing; nothing to ship from",
+                item.worktree
+            ),
         );
     }
     let head = git::head(&wt)?;
