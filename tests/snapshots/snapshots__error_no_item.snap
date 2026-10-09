@@ -1,0 +1,15 @@
+---
+source: tests/snapshots.rs
+expression: "scrub(&env, &r.json)"
+---
+{
+  "error": {
+    "code": "NO_ITEM",
+    "message": "no item ID given, and this directory is not an item's worktree",
+    "next": [
+      "hall status",
+      "hall new --title \"<short title>\"",
+      "hall adopt"
+    ]
+  }
+}

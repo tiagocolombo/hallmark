@@ -1,0 +1,14 @@
+---
+source: tests/snapshots.rs
+expression: v
+---
+{
+  "error": {
+    "code": "ITEM_IN_REVIEW",
+    "message": "[message]",
+    "next": [
+      "hall pull-back H-0001",
+      "hall log H-0001 --kind verdict"
+    ]
+  }
+}

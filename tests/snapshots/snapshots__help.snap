@@ -1,0 +1,584 @@
+---
+source: tests/snapshots.rs
+expression: v
+---
+{
+  "about": "Hallmark: agentic development · automated review · a full record",
+  "commands": [
+    {
+      "about": "Set up this repository: .hallmark.toml, journal, CLAUDE.md section",
+      "args": [
+        {
+          "help": "How the edit gate treats edits outside an item's worktree",
+          "name": "capture",
+          "required": false,
+          "syntax": "--capture <capture>",
+          "takes_value": true,
+          "values": [
+            "gate",
+            "ask",
+            "off"
+          ]
+        },
+        {
+          "help": "The base branch (detected when omitted)",
+          "name": "base",
+          "required": false,
+          "syntax": "--base <base>",
+          "takes_value": true
+        },
+        {
+          "default": "false",
+          "help": "Don't add the Hallmark section to CLAUDE.md or AGENTS.md",
+          "name": "no_claude_md",
+          "required": false,
+          "syntax": "--no-claude-md",
+          "takes_value": false
+        }
+      ],
+      "name": "init",
+      "schema": "hall schema init",
+      "usage": "hall init [OPTIONS]"
+    },
+    {
+      "about": "Check the install and name the fix for each problem",
+      "args": [],
+      "name": "doctor",
+      "schema": "hall schema doctor",
+      "usage": "hall doctor [OPTIONS]"
+    },
+    {
+      "about": "Create an item and its worktree",
+      "args": [
+        {
+          "help": "The request, in your words. Becomes the first journal entry",
+          "name": "request",
+          "required": false,
+          "syntax": "<request>",
+          "takes_value": true
+        },
+        {
+          "help": "A short title (defaults to the request or the issue title)",
+          "name": "title",
+          "required": false,
+          "syntax": "--title <title>",
+          "takes_value": true
+        },
+        {
+          "help": "Start from a GitHub issue (uses gh)",
+          "name": "issue",
+          "required": false,
+          "syntax": "--issue <issue>",
+          "takes_value": true
+        },
+        {
+          "default": "false",
+          "help": "Open Claude Code in the new worktree (on a terminal)",
+          "name": "open",
+          "required": false,
+          "syntax": "--open",
+          "takes_value": false
+        },
+        {
+          "help": "Override the branch name",
+          "name": "branch",
+          "required": false,
+          "syntax": "--branch <branch>",
+          "takes_value": true
+        }
+      ],
+      "name": "new",
+      "schema": "hall schema new",
+      "usage": "hall new [OPTIONS] [REQUEST]"
+    },
+    {
+      "about": "Turn the current branch and worktree into an item",
+      "args": [
+        {
+          "name": "title",
+          "required": false,
+          "syntax": "--title <title>",
+          "takes_value": true
+        }
+      ],
+      "name": "adopt",
+      "schema": "hall schema adopt",
+      "usage": "hall adopt [OPTIONS]"
+    },
+    {
+      "about": "Items by state, or one item in detail",
+      "args": [
+        {
+          "help": "An item ID; omit to list items (or inside a worktree, its item)",
+          "name": "id",
+          "required": false,
+          "syntax": "<id>",
+          "takes_value": true
+        },
+        {
+          "default": "false",
+          "help": "Include closed and dropped items",
+          "name": "all",
+          "required": false,
+          "syntax": "--all",
+          "takes_value": false
+        }
+      ],
+      "name": "status",
+      "schema": "hall schema status",
+      "usage": "hall status [OPTIONS] [ID]"
+    },
+    {
+      "about": "An item's journal",
+      "args": [
+        {
+          "name": "id",
+          "required": false,
+          "syntax": "<id>",
+          "takes_value": true
+        },
+        {
+          "help": "Only these events (comma-separated): prompt, commit, ready, verdict… `review` means verdict",
+          "name": "kind",
+          "required": false,
+          "syntax": "--kind <kind>",
+          "takes_value": true
+        },
+        {
+          "help": "Only the last N events",
+          "name": "limit",
+          "required": false,
+          "syntax": "--limit <limit>",
+          "takes_value": true
+        }
+      ],
+      "name": "log",
+      "schema": "hall schema log",
+      "usage": "hall log [OPTIONS] [ID]"
+    },
+    {
+      "about": "Everything waiting for you, oldest first",
+      "args": [],
+      "name": "inbox",
+      "schema": "hall schema inbox",
+      "usage": "hall inbox [OPTIONS]"
+    },
+    {
+      "about": "Freeze the commit and send the item to review",
+      "args": [
+        {
+          "name": "id",
+          "required": false,
+          "syntax": "<id>",
+          "takes_value": true
+        },
+        {
+          "help": "A note for the reviewer and the journal",
+          "name": "note",
+          "required": false,
+          "syntax": "--note <note>",
+          "takes_value": true
+        }
+      ],
+      "name": "ready",
+      "schema": "hall schema ready",
+      "usage": "hall ready [OPTIONS] [ID]"
+    },
+    {
+      "about": "Stop review and return the item to development",
+      "args": [
+        {
+          "name": "id",
+          "required": false,
+          "syntax": "<id>",
+          "takes_value": true
+        },
+        {
+          "name": "reason",
+          "required": false,
+          "syntax": "--reason <reason>",
+          "takes_value": true
+        }
+      ],
+      "name": "pull-back",
+      "schema": "hall schema pull-back",
+      "usage": "hall pull-back [OPTIONS] [ID]"
+    },
+    {
+      "about": "Abandon an item, keeping its journal and branch",
+      "args": [
+        {
+          "name": "id",
+          "required": false,
+          "syntax": "<id>",
+          "takes_value": true
+        },
+        {
+          "help": "Why it's dropped. Required",
+          "name": "reason",
+          "required": true,
+          "syntax": "--reason <reason>",
+          "takes_value": true
+        },
+        {
+          "default": "false",
+          "help": "Keep the worktree on disk",
+          "name": "keep_worktree",
+          "required": false,
+          "syntax": "--keep-worktree",
+          "takes_value": false
+        }
+      ],
+      "name": "drop",
+      "schema": "hall schema drop",
+      "usage": "hall drop [OPTIONS] --reason <REASON> [ID]"
+    },
+    {
+      "about": "Allow another fix round for an escalated item",
+      "args": [
+        {
+          "name": "id",
+          "required": false,
+          "syntax": "<id>",
+          "takes_value": true
+        },
+        {
+          "name": "reason",
+          "required": true,
+          "syntax": "--reason <reason>",
+          "takes_value": true
+        }
+      ],
+      "name": "retry",
+      "schema": "hall schema retry",
+      "usage": "hall retry [OPTIONS] --reason <REASON> [ID]"
+    },
+    {
+      "about": "The dev agent says the work looks done (moves it to Awaiting you)",
+      "args": [
+        {
+          "name": "id",
+          "required": false,
+          "syntax": "<id>",
+          "takes_value": true
+        },
+        {
+          "help": "What was done, for the human deciding",
+          "name": "summary",
+          "required": true,
+          "syntax": "--summary <summary>",
+          "takes_value": true
+        }
+      ],
+      "name": "propose-ready",
+      "schema": "hall schema propose-ready",
+      "usage": "hall propose-ready [OPTIONS] --summary <SUMMARY> [ID]"
+    },
+    {
+      "about": "Ask the human a question; it lands in the inbox",
+      "args": [
+        {
+          "name": "question",
+          "required": true,
+          "syntax": "<question>",
+          "takes_value": true
+        },
+        {
+          "help": "The item it's about (defaults to the current worktree's item)",
+          "name": "item",
+          "required": false,
+          "syntax": "--item <item>",
+          "takes_value": true
+        },
+        {
+          "help": "Allowed answers, comma-separated. Answer with the text or a letter",
+          "name": "options",
+          "required": false,
+          "syntax": "--options <options>",
+          "takes_value": true
+        },
+        {
+          "help": "Used if nobody answers within --wait",
+          "name": "default",
+          "required": false,
+          "syntax": "--default <default>",
+          "takes_value": true
+        },
+        {
+          "help": "How long to wait for an answer, such as 4h",
+          "name": "wait",
+          "required": false,
+          "syntax": "--wait <wait>",
+          "takes_value": true
+        },
+        {
+          "help": "The Claude Code session to resume with the answer",
+          "name": "session",
+          "required": false,
+          "syntax": "--session <session>",
+          "takes_value": true
+        }
+      ],
+      "name": "ask",
+      "schema": "hall schema ask",
+      "usage": "hall ask [OPTIONS] <QUESTION>"
+    },
+    {
+      "about": "Answer a question from the inbox",
+      "args": [
+        {
+          "help": "The question ID, such as Q-12",
+          "name": "qid",
+          "required": true,
+          "syntax": "<qid>",
+          "takes_value": true
+        },
+        {
+          "help": "An option's text or letter (a, b, …), or free text",
+          "name": "answer",
+          "required": true,
+          "syntax": "<answer>",
+          "takes_value": true
+        }
+      ],
+      "name": "answer",
+      "schema": "hall schema answer",
+      "usage": "hall answer [OPTIONS] <QID> <ANSWER>"
+    },
+    {
+      "about": "Tokens and list-price cost, grouped",
+      "args": [
+        {
+          "default": "room",
+          "name": "by",
+          "required": false,
+          "syntax": "--by <by>",
+          "takes_value": true,
+          "values": [
+            "item",
+            "room",
+            "role",
+            "model",
+            "day",
+            "source"
+          ]
+        },
+        {
+          "help": "Only usage newer than this, such as 7d or 24h",
+          "name": "since",
+          "required": false,
+          "syntax": "--since <since>",
+          "takes_value": true
+        },
+        {
+          "name": "item",
+          "required": false,
+          "syntax": "--item <item>",
+          "takes_value": true
+        }
+      ],
+      "name": "usage",
+      "schema": "hall schema usage",
+      "usage": "hall usage [OPTIONS]"
+    },
+    {
+      "about": "Rebuild the SQLite index from the journal",
+      "args": [],
+      "name": "reindex",
+      "schema": "hall schema reindex",
+      "usage": "hall reindex [OPTIONS]"
+    },
+    {
+      "about": "Commands, arguments, exit codes and error codes",
+      "args": [
+        {
+          "help": "Help for one command",
+          "name": "command",
+          "required": false,
+          "syntax": "<command>",
+          "takes_value": true
+        }
+      ],
+      "name": "help",
+      "schema": "hall schema help",
+      "usage": "hall help [OPTIONS] [COMMAND]"
+    },
+    {
+      "about": "The JSON Schema of a command's output (or error, event, config)",
+      "args": [
+        {
+          "help": "A command name, or error, event, config, item",
+          "name": "name",
+          "required": false,
+          "syntax": "<name>",
+          "takes_value": true
+        }
+      ],
+      "name": "schema",
+      "schema": "hall schema schema",
+      "usage": "hall schema [OPTIONS] [NAME]"
+    },
+    {
+      "about": "Entry point for Claude Code hooks; reads the hook JSON on stdin",
+      "args": [
+        {
+          "name": "event",
+          "required": true,
+          "syntax": "<event>",
+          "takes_value": true,
+          "values": [
+            "session-start",
+            "user-prompt-submit",
+            "pre-tool-use",
+            "post-tool-use",
+            "stop",
+            "notification"
+          ]
+        }
+      ],
+      "name": "hook",
+      "schema": "hall schema hook",
+      "usage": "hall hook [OPTIONS] <EVENT>"
+    },
+    {
+      "about": "One-time machine setup",
+      "args": [
+        {
+          "name": "target",
+          "required": true,
+          "syntax": "<target>",
+          "takes_value": true,
+          "values": [
+            "claude"
+          ]
+        },
+        {
+          "default": "false",
+          "help": "Print what would be done without doing it",
+          "name": "dry_run",
+          "required": false,
+          "syntax": "--dry-run",
+          "takes_value": false
+        }
+      ],
+      "name": "setup",
+      "schema": "hall schema setup",
+      "usage": "hall setup [OPTIONS] <TARGET>"
+    }
+  ],
+  "contract": [
+    "Output is JSON when stdout is not a terminal; --json forces it.",
+    "Every reply has `next`: the commands that make sense now.",
+    "Errors are {\"error\":{\"code\",\"message\",\"next\"}} with a documented exit code.",
+    "Commands never prompt; destructive ones need explicit flags such as --reason.",
+    "Commands are idempotent: repeating one returns the current result.",
+    "Inside an item's worktree the item ID is optional.",
+    "`hall schema <command>` prints the JSON Schema of a command's output."
+  ],
+  "error_codes": [
+    {
+      "code": "USAGE",
+      "exit": 2
+    },
+    {
+      "code": "NOT_A_REPO",
+      "exit": 3
+    },
+    {
+      "code": "NOT_INITIALIZED",
+      "exit": 3
+    },
+    {
+      "code": "ITEM_NOT_FOUND",
+      "exit": 3
+    },
+    {
+      "code": "NO_ITEM",
+      "exit": 3
+    },
+    {
+      "code": "QUESTION_NOT_FOUND",
+      "exit": 3
+    },
+    {
+      "code": "WRONG_STATE",
+      "exit": 4
+    },
+    {
+      "code": "ITEM_IN_REVIEW",
+      "exit": 4
+    },
+    {
+      "code": "DIRTY_WORKTREE",
+      "exit": 4
+    },
+    {
+      "code": "ALREADY_ANSWERED",
+      "exit": 4
+    },
+    {
+      "code": "GATE_DENIED",
+      "exit": 5
+    },
+    {
+      "code": "CHECKS_FAILED",
+      "exit": 6
+    },
+    {
+      "code": "CLAIMED",
+      "exit": 7
+    },
+    {
+      "code": "GH_UNAVAILABLE",
+      "exit": 1
+    },
+    {
+      "code": "COMMAND_FAILED",
+      "exit": 1
+    },
+    {
+      "code": "INTERNAL",
+      "exit": 1
+    }
+  ],
+  "exit_codes": [
+    {
+      "code": 0,
+      "meaning": "ok"
+    },
+    {
+      "code": 1,
+      "meaning": "internal error or a failed external command"
+    },
+    {
+      "code": 2,
+      "meaning": "bad arguments"
+    },
+    {
+      "code": 3,
+      "meaning": "not found (repo, item, question)"
+    },
+    {
+      "code": 4,
+      "meaning": "not allowed in the item's current state"
+    },
+    {
+      "code": 5,
+      "meaning": "denied by the gate"
+    },
+    {
+      "code": 6,
+      "meaning": "checks failed"
+    },
+    {
+      "code": 7,
+      "meaning": "claimed by another agent"
+    }
+  ],
+  "name": "hall",
+  "next": [
+    "hall schema <command>",
+    "hall status"
+  ],
+  "version": "[version]"
+}

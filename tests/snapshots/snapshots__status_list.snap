@@ -1,0 +1,41 @@
+---
+source: tests/snapshots.rs
+expression: "scrub(&env, &env.hall(&env.repo, &[\"status\"]).json)"
+---
+{
+  "inbox": 1,
+  "items": [
+    {
+      "base": "main",
+      "branch": "hm/H-0001-usage-page",
+      "created_at": "[time]",
+      "id": "H-0001",
+      "rejects": 0,
+      "room": "Workshop",
+      "round": 0,
+      "state": "development",
+      "state_since": "[time]",
+      "title": "Usage page",
+      "worktree": "[root]/app-H-0001"
+    },
+    {
+      "base": "main",
+      "branch": "hm/H-0002-cli-login-flow",
+      "created_at": "[time]",
+      "id": "H-0002",
+      "rejects": 0,
+      "room": "Workshop",
+      "round": 0,
+      "state": "development",
+      "state_since": "[time]",
+      "title": "CLI login flow",
+      "worktree": "[root]/app-H-0002"
+    }
+  ],
+  "next": [
+    "hall new \"<request>\"",
+    "hall inbox",
+    "hall status H-0001"
+  ],
+  "repo": "app"
+}

@@ -1,0 +1,11 @@
+---
+source: tests/snapshots.rs
+expression: "scrub(&env, &r.json)"
+---
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "permissionDecision": "deny",
+    "permissionDecisionReason": "{\"error\":{\"code\":\"NO_ITEM\",\"message\":\"Changes in app need a Hallmark item. Start one, then work in the worktree it returns.\",\"next\":[\"hall new --title \\\"<short title>\\\"\",\"hall adopt\"]}}"
+  }
+}

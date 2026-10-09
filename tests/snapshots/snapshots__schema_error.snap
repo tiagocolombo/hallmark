@@ -1,0 +1,133 @@
+---
+source: tests/snapshots.rs
+expression: "env.hall(&env.root, &[\"schema\", \"error\"]).json"
+---
+{
+  "name": "error",
+  "next": [
+    "hall help --json"
+  ],
+  "schema": {
+    "$defs": {
+      "ErrorBody": {
+        "properties": {
+          "code": {
+            "$ref": "#/$defs/ErrorCode"
+          },
+          "message": {
+            "type": "string"
+          },
+          "next": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "next"
+        ],
+        "type": "object"
+      },
+      "ErrorCode": {
+        "description": "Stable error codes. The exit code is derived from the code, so agents can\nbranch on either.",
+        "oneOf": [
+          {
+            "const": "USAGE",
+            "description": "Bad arguments.",
+            "type": "string"
+          },
+          {
+            "const": "NOT_A_REPO",
+            "description": "The current directory is not inside a git repository.",
+            "type": "string"
+          },
+          {
+            "const": "NOT_INITIALIZED",
+            "description": "The repository has not run `hall init`.",
+            "type": "string"
+          },
+          {
+            "const": "ITEM_NOT_FOUND",
+            "description": "No item with that ID.",
+            "type": "string"
+          },
+          {
+            "const": "NO_ITEM",
+            "description": "No ID was given and the current directory is not an item's worktree.",
+            "type": "string"
+          },
+          {
+            "const": "QUESTION_NOT_FOUND",
+            "description": "No question with that ID.",
+            "type": "string"
+          },
+          {
+            "const": "WRONG_STATE",
+            "description": "The action is not allowed in the item's current state.",
+            "type": "string"
+          },
+          {
+            "const": "ITEM_IN_REVIEW",
+            "description": "The item is in the review loop at a different commit.",
+            "type": "string"
+          },
+          {
+            "const": "DIRTY_WORKTREE",
+            "description": "The worktree has uncommitted changes.",
+            "type": "string"
+          },
+          {
+            "const": "ALREADY_ANSWERED",
+            "description": "The question was already answered differently.",
+            "type": "string"
+          },
+          {
+            "const": "GATE_DENIED",
+            "description": "Denied by the gate.",
+            "type": "string"
+          },
+          {
+            "const": "CHECKS_FAILED",
+            "description": "The checks failed.",
+            "type": "string"
+          },
+          {
+            "const": "CLAIMED",
+            "description": "Claimed by another agent.",
+            "type": "string"
+          },
+          {
+            "const": "GH_UNAVAILABLE",
+            "description": "`gh` is not installed or not logged in.",
+            "type": "string"
+          },
+          {
+            "const": "COMMAND_FAILED",
+            "description": "A configured command (worktree, git, gh, claude) failed.",
+            "type": "string"
+          },
+          {
+            "const": "INTERNAL",
+            "description": "A bug or an I/O failure.",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "description": "`{\"error\": {\"code\", \"message\", \"next\"}}`",
+    "properties": {
+      "error": {
+        "$ref": "#/$defs/ErrorBody"
+      }
+    },
+    "required": [
+      "error"
+    ],
+    "title": "ErrorEnvelope",
+    "type": "object"
+  }
+}

@@ -1,0 +1,26 @@
+---
+source: tests/snapshots.rs
+expression: "scrub(&env, &env.hall(&env.repo, &[\"inbox\"]).json)"
+---
+{
+  "entries": [
+    {
+      "answer_with": [
+        "hall answer Q-1 billed"
+      ],
+      "default": "billed",
+      "item": "H-0001",
+      "kind": "question",
+      "options": [
+        "billed",
+        "raw"
+      ],
+      "qid": "Q-1",
+      "since": "[time]",
+      "text": "billed usage or raw events?"
+    }
+  ],
+  "next": [
+    "hall answer Q-1 billed"
+  ]
+}

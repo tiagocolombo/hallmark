@@ -45,7 +45,9 @@ impl Repo {
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| "repo".into());
-        let (config, config_path) = Config::load(&[&toplevel, &main_root])?;
+        // The main checkout's settings win, so an item can't loosen its own
+        // gate by editing .hallmark.toml in its worktree.
+        let (config, config_path) = Config::load(&[&main_root, &toplevel])?;
         Ok(Repo {
             hall: Hall::new(&common_dir),
             cwd,

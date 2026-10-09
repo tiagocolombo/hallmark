@@ -1,0 +1,26 @@
+---
+source: tests/snapshots.rs
+expression: "scrub(&env, &r.json)"
+---
+{
+  "base": "main",
+  "branch": "hm/H-0001-retry-failed-webhook-deliveries",
+  "created": true,
+  "created_at": "[time]",
+  "id": "H-0001",
+  "next": [
+    "cd [root]/app-H-0001",
+    "hall propose-ready H-0001 --summary \"<what was done>\"",
+    "hall ready H-0001",
+    "hall drop H-0001 --reason \"<why>\"",
+    "hall log H-0001"
+  ],
+  "open": "cd [root]/app-H-0001 && claude",
+  "rejects": 0,
+  "room": "Workshop",
+  "round": 0,
+  "state": "development",
+  "state_since": "[time]",
+  "title": "Retry failed webhook deliveries",
+  "worktree": "[root]/app-H-0001"
+}
