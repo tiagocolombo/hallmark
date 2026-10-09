@@ -1,0 +1,1789 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Hallmark</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Public+Sans:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a 68ch reading column; diagrams, the terminal replay and tables use the full 1080px measure. */
+:root {
+  --bg: #f3f4f2;
+  --surface: #ffffff;
+  --ink: #1c2124;
+  --muted: #5d676c;
+  --line: #c9cfcf;
+  --brass: #9a6b12;
+  --brass-soft: #f1e4c6;
+  --ok: #2f7a54;
+  --ok-soft: #dcefe3;
+  --stop: #b23a2e;
+  --stop-soft: #f6dcd8;
+  --info: #2d5f8a;
+  --info-soft: #dbe7f2;
+  /* the terminal mock is deliberately dark in both themes */
+  --term-bg: #111517;
+  --term-fg: #d7dcdb;
+  --term-dim: #7e8a8d;
+  --term-line: #2c3438;
+  --term-brass: #e0b252;
+  --term-ok: #74c99b;
+  --term-stop: #f0806f;
+  --term-info: #79acd8;
+  --term-sel: #1f2a2f;
+  --floor-neutral: #ecebe5;
+  --floor-post: #e3e7ea;
+  --skin: #f1c9a2;
+  --hair: #4b3a2b;
+  --role-dev: #3f7cc0;
+  --role-you: #d49b2c;
+  --role-principal: #7b52b8;
+  --role-fixer: #d4702c;
+  --role-clerk: #7d8a8f;
+  --role-ship: #2f8a5c;
+  --role-watch: #3a4449;
+  --display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --body: "Public Sans", "Helvetica Neue", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141819; --surface: #1d2224; --ink: #e6e9e8; --muted: #9aa5a8; --line: #364044;
+    --brass: #d9a845; --brass-soft: #3a3020; --ok: #6cc596; --ok-soft: #1d3428;
+    --stop: #ee7b6d; --stop-soft: #3d2320; --info: #7fb0dc; --info-soft: #1d2c3a;
+    --term-bg: #0b0e0f; --term-line: #283034; --floor-neutral: #252b2d; --floor-post: #1f2629; --role-watch: #9aa7ad; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141819; --surface: #1d2224; --ink: #e6e9e8; --muted: #9aa5a8; --line: #364044;
+  --brass: #d9a845; --brass-soft: #3a3020; --ok: #6cc596; --ok-soft: #1d3428;
+  --stop: #ee7b6d; --stop-soft: #3d2320; --info: #7fb0dc; --info-soft: #1d2c3a;
+  --term-bg: #0b0e0f; --term-line: #283034; --floor-neutral: #252b2d; --floor-post: #1f2629; --role-watch: #9aa7ad; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 16px; line-height: 1.6; }
+.page { max-width: 1080px; margin: 0 auto; padding-inline: 20px; padding-block: 48px 80px; display: grid; gap: 64px; }
+.page > * { min-width: 0; }
+.col { max-width: 68ch; }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0; line-height: 1.15; }
+h1 { font-size: clamp(2.6rem, 7vw, 4rem); font-weight: 700; letter-spacing: -0.02em; }
+h2 { font-size: 1.6rem; font-weight: 700; margin-bottom: 12px; }
+h3 { font-size: 1.1rem; font-weight: 700; margin-bottom: 6px; }
+p { margin: 0 0 12px; }
+.eyebrow { font-family: var(--mono); font-size: 0.75rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--brass); margin-bottom: 10px; }
+.origin { font-size: 0.9rem; color: var(--muted); font-style: italic; margin: 0; }
+.lede { font-size: 1.2rem; color: var(--muted); max-width: 58ch; margin-top: 14px; }
+code, pre, .mono { font-family: var(--mono); font-size: 0.86em; }
+code { background: var(--brass-soft); padding: 1px 5px; border-radius: 3px; }
+pre { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px; overflow-x: auto; line-height: 1.5; margin: 0; }
+pre code { background: none; padding: 0; }
+a { color: var(--brass); }
+ul { margin: 0; padding-left: 1.2em; display: grid; gap: 8px; }
+button { font: inherit; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+
+header { display: grid; gap: 4px; }
+.vocab { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.vocab span { font-family: var(--mono); font-size: 0.78rem; border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; color: var(--muted); background: var(--surface); }
+.vocab b { color: var(--ink); font-weight: 600; }
+
+/* state map */
+.map { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.map-svg { overflow-x: auto; padding: 12px; border-bottom: 1px solid var(--line); }
+.map-svg svg { display: block; width: 100%; min-width: 760px; height: auto; }
+svg text { font-family: var(--body); fill: var(--ink); }
+svg .n-title { font-family: var(--display); font-weight: 700; font-size: 16px; }
+svg .n-sub { font-family: var(--mono); font-size: 10.5px; fill: var(--muted); }
+svg .e-label { font-family: var(--mono); font-size: 10.5px; fill: var(--muted); }
+svg .edge { fill: none; stroke: var(--muted); stroke-width: 1.5; }
+svg .edge.ok { stroke: var(--ok); } svg .edge.stop { stroke: var(--stop); } svg .edge.you { stroke: var(--brass); stroke-dasharray: 5 4; }
+svg .mk { fill: var(--muted); } svg .mk-ok { fill: var(--ok); } svg .mk-stop { fill: var(--stop); } svg .mk-you { fill: var(--brass); }
+svg .node rect { fill: var(--bg); stroke: var(--line); stroke-width: 1.5; transition: fill .15s, stroke .15s; }
+svg .node { cursor: pointer; }
+svg .node:hover rect { stroke: var(--ink); }
+svg .node.you rect { fill: var(--brass-soft); }
+svg .node.machine rect { fill: var(--info-soft); }
+svg .node.end rect { fill: var(--ok-soft); }
+svg .node.sel rect { stroke: var(--ink); stroke-width: 2.5; }
+svg .node .now { fill: var(--brass); opacity: 0; }
+svg .node.live .now { opacity: 1; }
+svg .zone { fill: none; stroke: var(--line); stroke-dasharray: 3 4; }
+svg .zone-label { font-family: var(--mono); font-size: 10px; letter-spacing: .1em; fill: var(--muted); }
+.map-detail { padding: 18px 20px 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 18px 28px; }
+.map-detail > * { min-width: 0; }
+.map-detail h3 { font-size: 1.35rem; }
+.who { display: inline-block; font-family: var(--mono); font-size: 0.75rem; padding: 2px 9px; border-radius: 999px; margin-bottom: 8px; border: 1px solid var(--line); color: var(--muted); }
+.who.you { color: var(--brass); border-color: var(--brass); background: var(--brass-soft); }
+.who.machine { color: var(--info); border-color: var(--info); background: var(--info-soft); }
+.who.end { color: var(--ok); border-color: var(--ok); background: var(--ok-soft); }
+.dl-label { font-family: var(--mono); font-size: 0.72rem; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+.map-detail ul { font-size: 0.93rem; gap: 4px; }
+.map-hint { font-size: 0.85rem; color: var(--muted); margin-top: 10px; }
+.legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 0.85rem; color: var(--muted); margin-top: 10px; }
+.sw { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: -2px; margin-right: 6px; border: 1px solid var(--line); }
+
+/* replay */
+.replay { display: grid; grid-template-columns: minmax(260px, 340px) 1fr; gap: 20px; align-items: start; }
+.replay > * { min-width: 0; }
+@media (max-width: 860px) { .replay { grid-template-columns: 1fr; } }
+.story { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: grid; gap: 12px; }
+.controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.controls button { border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 6px; padding: 6px 12px; font-size: 0.9rem; }
+.controls button:hover { border-color: var(--ink); }
+.controls button.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.controls button:disabled { opacity: .4; cursor: default; }
+.counter { font-family: var(--mono); font-size: 0.8rem; color: var(--muted); margin-left: auto; font-variant-numeric: tabular-nums; }
+.scrub { display: grid; grid-template-columns: repeat(11, 1fr); gap: 4px; }
+.scrub button { height: 8px; border-radius: 2px; border: 0; background: var(--line); padding: 0; }
+.scrub button.done { background: var(--brass); }
+.scrub button.cur { background: var(--ink); }
+.story .time { font-family: var(--mono); font-size: 0.8rem; color: var(--muted); }
+.story h3 { font-size: 1.25rem; margin: 0; }
+.story .body { font-size: 0.95rem; }
+.story .body p:last-child { margin-bottom: 0; }
+.logged { border-top: 1px solid var(--line); padding-top: 10px; font-size: 0.85rem; color: var(--muted); }
+.logged code { font-size: 0.8rem; }
+
+.term { background: var(--term-bg); color: var(--term-fg); border-radius: 10px; font-family: var(--mono); font-size: 12.5px; line-height: 1.55; overflow-x: auto; border: 1px solid var(--term-line); }
+.term-inner { min-width: 660px; }
+.t-bar { display: flex; gap: 16px; padding: 8px 14px; border-bottom: 1px solid var(--term-line); color: var(--term-dim); flex-wrap: wrap; }
+.t-bar b { color: var(--term-brass); font-weight: 600; }
+.t-ok { color: var(--term-ok); } .t-stop { color: var(--term-stop); } .t-brass { color: var(--term-brass); } .t-info { color: var(--term-info); } .t-dim { color: var(--term-dim); }
+.t-pane { border-bottom: 1px solid var(--term-line); padding: 8px 14px 10px; }
+.t-pane-title { color: var(--term-dim); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 6px; display: flex; gap: 10px; }
+.t-pane-title b { color: var(--term-fg); font-weight: 600; text-transform: none; letter-spacing: 0; }
+.t-board { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.t-col-h { color: var(--term-dim); font-size: 11px; border-bottom: 1px solid var(--term-line); margin-bottom: 4px; padding-bottom: 2px; }
+.t-item { padding: 1px 4px; border-radius: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.t-item.sel { background: var(--term-sel); color: #fff; }
+.t-item.sel::before { content: "▸ "; color: var(--term-brass); }
+.t-row { display: grid; grid-template-columns: 46px 74px 1fr; gap: 10px; padding: 1px 0; }
+.t-row.new { background: var(--term-sel); }
+.t-row .who-c { color: var(--term-info); }
+.t-find { display: grid; grid-template-columns: 30px 64px 96px 1fr 120px; gap: 10px; padding: 1px 0; }
+.t-keys { padding: 7px 14px; color: var(--term-dim); display: flex; gap: 14px; flex-wrap: wrap; }
+.t-keys b { color: var(--term-fg); font-weight: 600; }
+.t-empty { color: var(--term-dim); font-style: italic; }
+
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; align-items: start; }
+.two > * { min-width: 0; }
+.three { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; }
+.three > * { min-width: 0; }
+.keys { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font-size: 0.92rem; }
+kbd { font-family: var(--mono); font-size: 0.8rem; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 6px; background: var(--surface); white-space: nowrap; }
+
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 720px; font-size: 0.92rem; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+tr:last-child td { border-bottom: 0; }
+td:first-child { font-weight: 600; white-space: nowrap; }
+td small { color: var(--muted); display: block; font-weight: 400; }
+.sev { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.pill { font-family: var(--mono); font-size: 0.75rem; padding: 3px 10px; border-radius: 999px; border: 1px solid; }
+.pill.block { color: var(--stop); background: var(--stop-soft); }
+.pill.major { color: var(--stop); }
+.pill.minor { color: var(--muted); }
+.pill.ok { color: var(--ok); background: var(--ok-soft); }
+
+.stage { border-top: 3px solid var(--line); padding-top: 12px; }
+.stage.now { border-color: var(--brass); }
+.stage .eyebrow { margin-bottom: 4px; }
+.yes li::marker { color: var(--ok); }
+.risk li::marker { color: var(--stop); }
+
+.setup { list-style: none; padding: 0; margin: 0; counter-reset: st; display: grid; gap: 0; }
+.setup li { counter-increment: st; display: grid; grid-template-columns: 44px minmax(0, 1fr) minmax(0, 1.1fr); gap: 16px; padding: 16px 0; border-top: 1px solid var(--line); align-items: start; }
+.setup li::before { content: counter(st); font-family: var(--display); font-weight: 700; font-size: 1.4rem; color: var(--brass); line-height: 1.2; }
+.setup li p { margin: 0; font-size: 0.95rem; }
+@media (max-width: 760px) { .setup li { grid-template-columns: 32px minmax(0, 1fr); } .setup li pre { grid-column: 2; } }
+pre .c { color: var(--muted); }
+.use { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+@media (max-width: 860px) { .use { grid-template-columns: minmax(0, 1fr); } }
+.use > * { min-width: 0; }
+.scen { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.scen button { border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 999px; padding: 4px 12px; font-size: 0.85rem; }
+.scen button[aria-selected="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.chat { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 10px; min-height: 300px; align-content: start; }
+.msg-you { justify-self: end; max-width: 85%; background: var(--brass-soft); border-radius: 12px 12px 2px 12px; padding: 8px 12px; }
+.msg-tool { font-family: var(--mono); font-size: 0.8rem; border-left: 2px solid var(--info); padding: 2px 0 2px 10px; color: var(--muted); min-width: 0; overflow-x: auto; }
+.msg-tool b { color: var(--info); font-weight: 600; }
+.msg-tool.denied { border-color: var(--stop); }
+.msg-tool.denied b { color: var(--stop); }
+.msg-tool pre { border: 0; background: none; padding: 4px 0 0; font-size: 0.95em; white-space: pre-wrap; word-break: break-word; }
+.msg-claude { max-width: 92%; }
+.msg-claude::before { content: "Claude"; display: block; font-family: var(--mono); font-size: 0.72rem; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
+.chat-note { font-size: 0.85rem; color: var(--muted); border-top: 1px dashed var(--line); padding-top: 8px; }
+.layers { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; }
+.layers > div { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px; min-width: 0; }
+.layers > div.must { border: 2px solid var(--brass); }
+.layers p { font-size: 0.93rem; margin: 0; }
+.layers .eyebrow { margin-bottom: 4px; }
+.rules { gap: 10px; }
+table.small { min-width: 0; font-size: 0.88rem; }
+table.small td, table.small th { padding: 6px 12px; }
+tr.grp td { font-family: var(--mono); font-size: 0.72rem; letter-spacing: .1em; text-transform: uppercase; color: var(--brass); background: var(--bg); padding-block: 6px; }
+#cli td:first-child { font-family: var(--mono); font-size: 0.85rem; }
+/* floor plan */
+.plan-wrap { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.plan-main { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; min-width: 0; }
+.plan-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.plan-bar button { border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 6px; padding: 4px 12px; font-size: 0.85rem; }
+.plan-bar button[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.speed { display: inline-flex; gap: 4px; }
+.plan-clock { margin-left: auto; font-family: var(--mono); font-size: 0.85rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.plan-svg { overflow-x: auto; }
+.plan-svg svg { display: block; width: 100%; min-width: 760px; height: auto; }
+#plan text { font-family: var(--body); fill: var(--ink); }
+#plan .rm { stroke: var(--ink); stroke-width: 3; cursor: pointer; }
+#plan .rm:hover { stroke-width: 4; }
+#plan .r-neutral { fill: var(--floor-neutral); }
+#plan .r-you { fill: var(--brass-soft); }
+#plan .r-machine { fill: var(--info-soft); }
+#plan .r-out { fill: var(--ok-soft); }
+#plan .r-post { fill: var(--floor-post); }
+#plan .outer { fill: none; stroke: var(--ink); stroke-width: 5; pointer-events: none; }
+#plan .gap-post { fill: var(--floor-post); }
+#plan .gap-neutral { fill: var(--floor-neutral); }
+#plan .gap-out { fill: var(--surface); }
+#plan .swing { fill: none; stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 3; pointer-events: none; }
+#plan .rname { font-family: var(--display); font-weight: 700; font-size: 15px; pointer-events: none; }
+#plan .rsub { font-family: var(--mono); font-size: 10px; fill: var(--muted); pointer-events: none; }
+#plan .furn { fill: var(--surface); stroke: var(--muted); stroke-width: 1.2; pointer-events: none; }
+#plan .furn-dark { fill: var(--muted); pointer-events: none; }
+#plan .shelf { fill: var(--line); pointer-events: none; }
+#plan .tile { stroke: var(--line); stroke-width: 0.6; fill: none; }
+#plan .sel-ring { fill: none; stroke: var(--brass); stroke-width: 4; pointer-events: none; }
+#plan .lamp-on { fill: var(--ok); } #plan .lamp-off { fill: var(--line); }
+#plan .van { fill: var(--surface); stroke: var(--ink); stroke-width: 2; }
+#plan .van-text { font-family: var(--mono); font-size: 11px; font-weight: 600; }
+#plan .street { font-family: var(--mono); font-size: 10.5px; fill: var(--muted); }
+#plan .arrow { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+#plan .it rect { stroke: var(--ink); stroke-width: 1; }
+#plan .it text { font-family: var(--mono); font-size: 8.5px; font-weight: 600; fill: var(--surface); text-anchor: middle; pointer-events: none; }
+#plan .i-new rect { fill: var(--muted); } #plan .i-you rect { fill: var(--brass); } #plan .i-machine rect { fill: var(--info); }
+#plan .i-stop rect { fill: var(--stop); } #plan .i-ok rect { fill: var(--ok); }
+#plan .slip { fill: var(--surface); stroke: var(--ink); stroke-width: 0.8; }
+#plan .slip-k { fill: var(--role-you); stroke: var(--ink); stroke-width: 0.8; }
+#plan .p-sh { stroke: var(--ink); stroke-width: 0.8; }
+#plan .p-hair { fill: var(--hair); } #plan .p-face { fill: var(--skin); }
+#plan .p-dev { fill: var(--role-dev); } #plan .p-you { fill: var(--role-you); } #plan .p-principal { fill: var(--role-principal); }
+#plan .p-fixer { fill: var(--role-fixer); } #plan .p-clerk { fill: var(--role-clerk); } #plan .p-ship { fill: var(--role-ship); } #plan .p-watch { fill: var(--role-watch); }
+#plan .p-busy { fill: none; stroke: var(--brass); stroke-width: 1.5; opacity: 0; }
+#plan .p-tag { font-family: var(--mono); font-size: 9px; fill: var(--muted); text-anchor: middle; pointer-events: none; }
+.plan-side { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; min-width: 0; align-items: start; }
+.room-card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+.room-card h3 { font-size: 1.3rem; margin-bottom: 4px; }
+.room-card p { font-size: 0.92rem; }
+.room-card .st { display: inline-block; font-family: var(--mono); font-size: 0.72rem; color: var(--brass); border: 1px solid var(--brass); border-radius: 999px; padding: 1px 8px; margin-bottom: 8px; }
+.room-card .who-l { font-size: 0.88rem; color: var(--muted); margin-bottom: 8px; }
+.room-card .cmds { display: flex; flex-wrap: wrap; gap: 6px; }
+.ledger { background: var(--term-bg); color: var(--term-fg); border-radius: 10px; padding: 12px 14px; font-family: var(--mono); font-size: 11.5px; }
+.ledger .dl-label { color: var(--term-dim); }
+.ledger ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; min-height: 180px; }
+.ledger li { display: grid; grid-template-columns: 38px 34px 1fr; gap: 6px; }
+.ledger li:first-child { color: #fff; }
+.ledger .lt { color: var(--term-dim); } .ledger .li { color: var(--term-brass); }
+.people { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.85rem; color: var(--muted); margin-top: 10px; }
+.people span { display: inline-flex; align-items: center; gap: 6px; }
+.dot { width: 12px; height: 12px; border-radius: 50%; border: 1px solid var(--ink); display: inline-block; }
+.box { width: 12px; height: 12px; border-radius: 2px; border: 1px solid var(--ink); display: inline-block; }
+
+.u-row { display: grid; grid-template-columns: 100px 70px 60px 56px 1fr; gap: 10px; padding: 1px 0; font-variant-numeric: tabular-nums; }
+.u-h { color: var(--term-dim); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+.u-t { border-top: 1px solid var(--term-line); margin-top: 4px; padding-top: 4px; color: #fff; }
+#plan .rmeter { font-family: var(--mono); font-size: 10px; fill: var(--brass); pointer-events: none; }
+.ib-row { display: grid; grid-template-columns: 76px 56px 1fr 56px; gap: 10px; padding: 2px 0; }
+#plan .bell { fill: var(--stop); stroke: var(--ink); stroke-width: 1; }
+#plan .bell-t { font-family: var(--mono); font-size: 10px; font-weight: 700; fill: var(--surface); text-anchor: middle; pointer-events: none; }
+footer { color: var(--muted); font-size: 0.9rem; border-top: 1px solid var(--line); padding-top: 18px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="page">
+
+<header>
+  <div class="eyebrow">Agentic development · automated review · a full record</div>
+  <h1>Hallmark</h1>
+  <p class="lede">A workshop for coding agents that runs on your machine. You hand in a request, agents build it with you, an independent principal engineer reviews it, and fixers repair what it finds. Only work that earns its hallmark leaves for GitHub. Every handoff and message is filed, so you can always see what happened and why.</p>
+  <p class="origin">The word comes from Goldsmiths' Hall in London, where silver was tested and stamped before it could be sold.</p>
+  <div class="vocab">
+    <span><b>hall</b> the command</span>
+    <span><b>item</b> one piece of work, prompt to PR</span>
+    <span><b>journal</b> the item's full history</span>
+    <span><b>assayer</b> the principal-engineer reviewer</span>
+    <span><b>fixer</b> the agent that addresses findings</span>
+    <span><b>hallmark</b> approval bound to a commit</span>
+  </div>
+</header>
+
+<!-- ============ THE HALL ============ -->
+<section id="hall">
+  <h2>Inside the Hall</h2>
+  <div class="col"><p>Picture Hallmark as a building seen from above. Requests come in at the Front Desk, get built in the Workshop and tested in the Assay Office. If the assayer finds problems, they go to the Repair Shop and back. Approved work is stamped and leaves from the Dispatch Dock for GitHub. Every handoff passes through the Post Room, which files a copy in Records. When an item closes, the Library keeps what it taught, and briefs the principal engineer before each review (the gold slips). The boxes are items and the figures are agents. Select a room to see what happens there.</p></div>
+  <div class="plan-wrap">
+    <div class="plan-main">
+      <div class="plan-bar">
+        <button id="pp" aria-pressed="false">Pause</button>
+        <div class="speed" role="group" aria-label="Speed">
+          <button data-s="1" aria-pressed="true">1×</button><button data-s="2" aria-pressed="false">2×</button><button data-s="4" aria-pressed="false">4×</button>
+        </div>
+        <span class="plan-clock" id="pclock"></span>
+      </div>
+      <div class="plan-svg"><svg id="plan" viewBox="0 0 1000 640" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Animated floor plan of the Hallmark building with items moving between rooms"></svg></div>
+    </div>
+    <aside class="plan-side">
+      <div class="room-card" id="roomcard" aria-live="polite"></div>
+      <div class="ledger"><div class="dl-label">Post Room ledger · tokens per step</div><ol id="ledger"></ol></div>
+    </aside>
+  </div>
+  <div class="people">
+    <span><i class="dot" style="background: var(--role-you)"></i>you</span>
+    <span><i class="dot" style="background: var(--role-dev)"></i>dev agent</span>
+    <span><i class="dot" style="background: var(--role-principal)"></i>principal engineer</span>
+    <span><i class="dot" style="background: var(--role-fixer)"></i>fixer</span>
+    <span><i class="dot" style="background: var(--role-clerk)"></i>clerks</span>
+    <span><i class="dot" style="background: var(--role-ship)"></i>shipper</span>
+    <span><i class="dot" style="background: var(--role-watch)"></i>watchman</span>
+    <span><i class="box" style="background: var(--info)"></i>an item, coloured by state</span>
+  </div>
+</section>
+
+
+<!-- ============ SETUP ============ -->
+<section id="setup">
+  <h2>Setup</h2>
+  <div class="col"><p>Hallmark ships as the <code>hallmark</code> package and installs one command, <code>hall</code>. Setup is once per machine plus once per repository.</p></div>
+  <ol class="setup">
+    <li>
+      <div><h3>Install the binary</h3><p>Any of these puts <code>hall</code> on your PATH, on macOS, Linux or Windows.</p></div>
+<pre><code>cargo install hallmark
+brew install hallmark
+nix profile install github:&lt;you&gt;/hallmark</code></pre>
+    </li>
+    <li>
+      <div><h3>Connect Claude Code</h3><p>Installs the Hallmark plugin at user level: the skills, the reviewer and fixer agents, and the hooks. Every repo and every session gets them.</p></div>
+<pre><code>hall setup claude</code></pre>
+    </li>
+    <li>
+      <div><h3>Add a repository</h3><p>Run in the repo. It detects the gates, writes <code>.hallmark.toml</code> and a stub <code>.hallmark/review.md</code> for local review notes, adds a short Hallmark section to CLAUDE.md or AGENTS.md, and registers the repo.</p></div>
+<pre><code>hall init
+git add .hallmark.toml .hallmark/ CLAUDE.md
+git commit -m "Adopt Hallmark"</code></pre>
+    </li>
+    <li>
+      <div><h3>Start the daemon</h3><p>Runs the review loop for every registered repo. <code>--at-login</code> registers it with launchd, systemd or Task Scheduler.</p></div>
+<pre><code>hall daemon start --at-login</code></pre>
+    </li>
+    <li>
+      <div><h3>Check everything</h3><p>Each failed check names the command that fixes it.</p></div>
+<pre><code>$ hall doctor
+✓ git 2.51 · gh (logged in) · claude
+✓ Claude Code plugin hallmark (user)
+✓ hooks: SessionStart UserPromptSubmit PreToolUse
+         PostToolUse Stop
+✓ rindahq/platform: gates dev test, dev run build
+✗ daemon not running  →  hall daemon start</code></pre>
+    </li>
+  </ol>
+</section>
+
+<!-- ============ USE ============ -->
+<section id="use">
+  <h2>Using it</h2>
+  <div class="col"><p>You do three things: start work, send it to review, and check status and history. Agents do everything else. You can do all three by talking to Claude Code, or from the terminal.</p></div>
+  <div class="use">
+    <div class="convo">
+      <div class="dl-label">In Claude Code</div>
+      <div class="scen" id="scen" role="tablist" aria-label="Examples"></div>
+      <div class="chat" id="chat" aria-live="polite"></div>
+    </div>
+    <div>
+      <div class="dl-label">In the terminal</div>
+<pre><code><span class="c"># open the app: board, journals, history</span>
+hall
+
+<span class="c"># start work and open Claude in its worktree</span>
+hall new "Retry failed webhook deliveries" --open
+hall new --issue 212 --open
+
+<span class="c"># see where things are</span>
+hall status
+hall log H-0042
+hall history --rejected --since 7d
+
+<span class="c"># decide</span>
+hall ready H-0042
+hall pull-back H-0042
+hall drop H-0041 --reason "superseded by H-0044"</code></pre>
+      <p style="margin-top: 12px">On a terminal these print readable text. When an agent runs them, they print JSON.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ INBOX ============ -->
+<section id="inbox">
+  <h2>When Hallmark needs you</h2>
+  <div class="col"><p>Anything that needs you lands in Your Office as an inbox entry. It shows the item, what's being asked, the options and how long it has waited. Hallmark then tells you wherever you are, and keeps telling you until you answer. Only the item that's waiting stops; the rest of the building carries on.</p></div>
+
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Waiting for you</th><th>Example</th><th>What waits</th><th>Tells you by</th></tr></thead>
+    <tbody>
+      <tr><td>Question</td><td>"The issue says <i>usage</i>: billed usage or raw events?"</td><td>That item. The agent's session is saved and picks up with your answer</td><td>desktop, phone</td></tr>
+      <tr><td>Escalated</td><td>"Rejected 3 times for the same missing tenant check"</td><td>That item</td><td>desktop, phone</td></tr>
+      <tr><td>Session waiting</td><td>Your Workshop session wants a permission or a reply</td><td>That session</td><td>desktop</td></tr>
+      <tr><td>Ready?</td><td>"H-0042 looks done: retries with jitter, 14 tests"</td><td>Nothing; it stays in development</td><td>desktop</td></tr>
+      <tr><td>Budget</td><td>"H-0039 reached its 800k token cap"</td><td>That item</td><td>desktop</td></tr>
+      <tr><td>Stuck</td><td>The watchman saw no event for 30 minutes, or the daemon stopped</td><td>Whatever was running</td><td>desktop, phone</td></tr>
+      <tr><td>Learnings</td><td>4 proposed learnings to approve</td><td>Nothing</td><td>daily digest</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="two" style="margin-top: 24px">
+    <div>
+      <h3>Where you hear about it</h3>
+      <ul>
+        <li><b>In Claude Code.</b> In any session, in any repo, a hook tells Claude what's waiting, so it mentions it. The status line shows the count. Ask "what needs me?" and Claude runs <code>hall inbox</code>.</li>
+        <li><b>In the terminal app.</b> Your Office sits at the top with a count in the title bar, and the terminal bell rings.</li>
+        <li><b>On the desktop.</b> A notification on macOS, Linux or Windows. Clicking it opens the item in the terminal app.</li>
+        <li><b>On your phone.</b> Through <a href="https://ntfy.sh">ntfy</a> (open source, and you can host it yourself), Telegram or a Slack webhook. A question with options shows them as buttons.</li>
+        <li><b>A morning digest.</b> One summary of what's waiting, what closed yesterday, and what it used.</li>
+      </ul>
+      <p style="margin-top: 12px">Your Workshop sessions are covered too. Claude Code fires a <code>Notification</code> hook when a session needs a permission or has waited for you, and Hallmark files it under the session's item.</p>
+    </div>
+    <div>
+      <div class="term" aria-label="Inbox mockup"><div class="term-inner" style="min-width: 560px">
+        <div class="t-bar"><span><b>hall</b> · your office</span><span class="t-stop">⚑ 3 waiting</span><span style="margin-left:auto">example data</span></div>
+        <div class="t-pane">
+          <div class="ib-row"><span class="t-stop">question</span><span>H-0043</span><span>"usage" in #212: billed usage or raw events? <span class="t-dim">[a] billed  [b] raw</span></span><span class="t-dim">12m</span></div>
+          <div class="ib-row"><span class="t-stop">escalated</span><span>H-0039</span><span>rejected 3×: tenant check missing in export query</span><span class="t-dim">1h 05m</span></div>
+          <div class="ib-row"><span class="t-brass">ready?</span><span>H-0042</span><span>retries with jitter, 14 tests <span class="t-dim">[r] ready  [n] not yet</span></span><span class="t-dim">3m</span></div>
+        </div>
+        <div class="t-keys"><span><b>a b</b> answer</span><span><b>enter</b> open</span><span><b>w</b> open worktree</span><span><b>s</b> snooze 1h</span></div>
+      </div></div>
+<pre style="margin-top: 12px"><code><span class="c"># the Claude Code status line</span>
+rindahq/platform · H-0041 development · ⚑ 2 need you</code></pre>
+    </div>
+  </div>
+
+  <div class="two" style="margin-top: 24px">
+    <div>
+      <h3>How a question travels</h3>
+      <ol class="steps" style="max-width: none">
+        <li><div><strong>The agent asks.</strong> <code>hall ask "billed usage or raw events?" --options billed,raw --default billed --wait 4h</code>. Its run ends with the status <code>waiting</code>, and Hallmark saves the session ID.</div></li>
+        <li><div><strong>You're told.</strong> The item moves to Your Office and the notifications go out. A reminder repeats every 2 hours until you answer.</div></li>
+        <li><div><strong>You answer anywhere.</strong> Tell Claude Code "answer H-0043: billed", run <code>hall answer Q-12 a</code>, press <kbd>a</kbd> in the terminal app, or tap the button on your phone.</div></li>
+        <li><div><strong>The agent resumes.</strong> The daemon runs <code>claude -p --resume &lt;session&gt;</code> with your answer, so the agent keeps its context. Answered within the hour, most of that context is still cached.</div></li>
+        <li><div><strong>It's on record.</strong> The question, the answer and who gave it go in the journal. Decisions worth keeping become learnings in the Library.</div></li>
+      </ol>
+      <p>If a question has a default and a wait, and nobody answers in time, the agent goes ahead with the default and the journal says so. Escalations never use a default.</p>
+    </div>
+    <div>
+<pre><code># .hallmark.toml (or your user config)
+[notify]
+desktop     = true
+phone       = "ntfy://ntfy.sh/hallmark-7f3k2q"
+quiet_hours = "22:00-07:30"   # phone waits, desktop still shows
+remind      = "2h"
+digest      = "08:30"
+
+[notify.route]
+question  = ["desktop", "phone"]
+escalated = ["desktop", "phone"]
+stuck     = ["desktop", "phone"]
+ready     = ["desktop"]
+budget    = ["desktop"]
+learnings = ["digest"]</code></pre>
+      <p style="margin-top: 12px">Anyone who knows the topic name can read a topic on the public ntfy.sh. Hallmark sends only the item, the question and the options, never code, and generates a random topic. You can also host ntfy yourself.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ HOW CLAUDE KNOWS ============ -->
+<section id="knows">
+  <h2>How Claude knows to use Hallmark</h2>
+  <div class="col"><p>You don't need to mention Hallmark. Four things work together, from most explicit to the one that can't be skipped.</p></div>
+  <div class="layers">
+    <div><div class="eyebrow">Explicit</div><h3><code>/hallmark &lt;request&gt;</code></h3><p>A slash command from the plugin's skill. Always starts a new item.</p></div>
+    <div><div class="eyebrow">Context</div><h3>Session start</h3><p>A <code>SessionStart</code> hook tells Claude whether this worktree belongs to an item, what state it's in, and how to start one. <code>hall init</code> adds the same rule to CLAUDE.md.</p></div>
+    <div><div class="eyebrow">Natural language</div><h3>Skill description</h3><p>The <code>hallmark</code> skill's description covers starting work, picking up issues and asking about status, so "pick up #212" or "what's in review?" loads it.</p></div>
+    <div class="must"><div class="eyebrow">Guaranteed</div><h3>Edit gate</h3><p>A <code>PreToolUse</code> hook denies the first file edit or commit outside an item's worktree. The denial says exactly what to run, so Claude creates the item and carries on.</p></div>
+  </div>
+  <div class="two" style="margin-top: 20px">
+<pre><code># .hallmark.toml
+[capture]
+mode = "gate"   # gate: edits need an item
+                # ask:  Claude asks you first
+                # off:  only /hallmark starts items</code></pre>
+<pre><code><span class="c"># added to CLAUDE.md by hall init</span>
+## Hallmark
+Changes in this repo are tracked with Hallmark.
+Start each change with `hall new`, or `hall adopt`
+for an existing branch. Never push: work reaches
+GitHub only through review. `hall help --json`
+lists every command.</code></pre>
+  </div>
+  <p class="col" style="margin-top: 12px">Existing worktrees, such as the ones you already have, join with <code>hall adopt</code>, which turns the current branch into an item without moving it.</p>
+</section>
+
+
+<!-- ============ STATES ============ -->
+<section id="states">
+  <h2>An item's states</h2>
+  <div class="col"><p>The same journey as states, with the room each one happens in. An item starts in your Claude Code session and ends when its PR opens. You own the states on the left; the review loop on the right runs on its own. Select a state to see who acts, how it moves on and what the journal records.</p></div>
+  <div class="map">
+    <div class="map-svg">
+    <svg viewBox="0 0 1000 400" xmlns="http://www.w3.org/2000/svg" aria-label="Item state map">
+      <defs>
+        <marker id="m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="mk"/></marker>
+        <marker id="m-ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="mk-ok"/></marker>
+        <marker id="m-stop" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="mk-stop"/></marker>
+        <marker id="m-you" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="mk-you"/></marker>
+      </defs>
+
+      <rect x="8" y="12" width="364" height="376" rx="10" class="zone"/>
+      <text x="22" y="32" class="zone-label">YOUR SESSION</text>
+      <rect x="388" y="12" width="348" height="376" rx="10" class="zone"/>
+      <text x="402" y="32" class="zone-label">REVIEW LOOP · RUNS ON ITS OWN</text>
+      <rect x="752" y="12" width="240" height="376" rx="10" class="zone"/>
+      <text x="766" y="32" class="zone-label">OUT</text>
+
+      <!-- edges -->
+      <path d="M150 150 C 160 120, 190 106, 214 100" class="edge" marker-end="url(#m)"/>
+      <text x="168" y="134" class="e-label">agent: done?</text>
+      <path d="M204 70 C 120 66, 84 96, 84 146" class="edge you" marker-end="url(#m-you)"/>
+      <text x="36" y="82" class="e-label">not yet</text>
+      <path d="M180 186 H 412" class="edge you" marker-end="url(#m-you)"/>
+      <text x="220" y="178" class="e-label">/hallmark ready</text>
+      <path d="M334 100 C 360 150, 380 166, 412 170" class="edge you" marker-end="url(#m-you)"/>
+      <text x="350" y="128" class="e-label">ready</text>
+      <path d="M100 206 V 288" class="edge you" marker-end="url(#m-you)"/>
+      <text x="108" y="252" class="e-label">/hallmark drop</text>
+
+      <path d="M542 178 H 578" class="edge ok" marker-end="url(#m-ok)"/>
+      <text x="546" y="170" class="e-label">pass</text>
+      <path d="M450 206 C 450 280, 456 312, 474 318" class="edge stop" marker-end="url(#m-stop)"/>
+      <text x="404" y="268" class="e-label">fail</text>
+      <path d="M650 206 L 612 288" class="edge stop" marker-end="url(#m-stop)"/>
+      <text x="640" y="256" class="e-label">changes</text>
+      <path d="M520 290 L 490 210" class="edge" marker-end="url(#m)"/>
+      <text x="508" y="244" class="e-label">commit</text>
+      <path d="M645 150 V 102" class="edge stop" marker-end="url(#m-stop)"/>
+      <text x="652" y="130" class="e-label">3rd rejection</text>
+      <path d="M580 68 H 368" class="edge you" marker-end="url(#m-you)"/>
+      <text x="420" y="60" class="e-label">you decide</text>
+      <path d="M476 330 C 380 380, 140 380, 100 210" class="edge you" marker-end="url(#m-you)"/>
+      <text x="230" y="372" class="e-label">/hallmark pull-back</text>
+
+      <path d="M710 178 H 776" class="edge ok" marker-end="url(#m-ok)"/>
+      <text x="716" y="170" class="e-label">approve</text>
+      <path d="M850 206 V 286" class="edge ok" marker-end="url(#m-ok)"/>
+      <text x="858" y="252" class="e-label">ship command</text>
+
+      <!-- nodes -->
+      <g class="node you" data-state="dev" tabindex="0" role="button" aria-label="Development">
+        <rect x="20" y="150" width="160" height="56" rx="8"/><circle class="now" cx="166" cy="164" r="5"/>
+        <text x="34" y="174" class="n-title">Development</text><text x="34" y="194" class="n-sub">Workshop</text></g>
+      <g class="node you" data-state="await" tabindex="0" role="button" aria-label="Awaiting you">
+        <rect x="204" y="44" width="160" height="56" rx="8"/><circle class="now" cx="350" cy="58" r="5"/>
+        <text x="218" y="68" class="n-title">Awaiting you</text><text x="218" y="88" class="n-sub">Your Office</text></g>
+      <g class="node you" data-state="dropped" tabindex="0" role="button" aria-label="Dropped">
+        <rect x="20" y="290" width="160" height="56" rx="8"/><circle class="now" cx="166" cy="304" r="5"/>
+        <text x="34" y="314" class="n-title">Dropped</text><text x="34" y="334" class="n-sub">Records Room</text></g>
+      <g class="node machine" data-state="checks" tabindex="0" role="button" aria-label="Checks">
+        <rect x="412" y="150" width="130" height="56" rx="8"/><circle class="now" cx="528" cy="164" r="5"/>
+        <text x="426" y="174" class="n-title">Checks</text><text x="426" y="194" class="n-sub">Assay · test bench</text></g>
+      <g class="node machine" data-state="review" tabindex="0" role="button" aria-label="Review">
+        <rect x="580" y="150" width="130" height="56" rx="8"/><circle class="now" cx="696" cy="164" r="5"/>
+        <text x="594" y="174" class="n-title">Review</text><text x="594" y="194" class="n-sub">Assay · principal</text></g>
+      <g class="node machine" data-state="fixing" tabindex="0" role="button" aria-label="Fixing">
+        <rect x="476" y="290" width="150" height="56" rx="8"/><circle class="now" cx="612" cy="304" r="5"/>
+        <text x="490" y="314" class="n-title">Fixing</text><text x="490" y="334" class="n-sub">Repair Shop</text></g>
+      <g class="node you" data-state="escalated" tabindex="0" role="button" aria-label="Escalated">
+        <rect x="580" y="44" width="130" height="56" rx="8"/><circle class="now" cx="696" cy="58" r="5"/>
+        <text x="594" y="68" class="n-title">Escalated</text><text x="594" y="88" class="n-sub">Your Office</text></g>
+      <g class="node end" data-state="hallmarked" tabindex="0" role="button" aria-label="Hallmarked">
+        <rect x="778" y="150" width="150" height="56" rx="8"/><circle class="now" cx="914" cy="164" r="5"/>
+        <text x="792" y="174" class="n-title">Hallmarked</text><text x="792" y="194" class="n-sub">Stamping Room</text></g>
+      <g class="node end" data-state="closed" tabindex="0" role="button" aria-label="Closed">
+        <rect x="778" y="290" width="150" height="56" rx="8"/><circle class="now" cx="914" cy="304" r="5"/>
+        <text x="792" y="314" class="n-title">Closed</text><text x="792" y="334" class="n-sub">Dispatch Dock</text></g>
+    </svg>
+    </div>
+    <div class="map-detail" id="detail" aria-live="polite"></div>
+  </div>
+  <div class="legend">
+    <span><span class="sw" style="background: var(--brass-soft)"></span>you decide</span>
+    <span><span class="sw" style="background: var(--info-soft)"></span>agents and scripts</span>
+    <span><span class="sw" style="background: var(--ok-soft)"></span>on its way out</span>
+    <span><span class="sw" style="background: var(--brass); border-radius: 50%"></span>where the replayed item is now</span>
+  </div>
+</section>
+
+<!-- ============ REPLAY ============ -->
+<section id="replay">
+  <h2>Replay one item</h2>
+  <div class="col"><p>This is one item, H-0042, from first prompt to PR, as the terminal app would show it. Step through it, or select a point on the bar. Use the arrow keys when the controls are focused. The data is an example.</p></div>
+  <div class="replay">
+    <div class="story">
+      <div class="controls">
+        <button id="prev" aria-label="Previous step">← Back</button>
+        <button id="next" class="primary" aria-label="Next step">Next →</button>
+        <button id="play" aria-label="Play all steps">Play</button>
+        <span class="counter" id="counter"></span>
+      </div>
+      <div class="scrub" id="scrub" aria-label="Steps"></div>
+      <div class="time" id="s-time"></div>
+      <h3 id="s-title"></h3>
+      <div class="body" id="s-body"></div>
+      <div class="logged" id="s-logged"></div>
+    </div>
+    <div class="term" aria-label="Terminal app mockup">
+      <div class="term-inner">
+        <div class="t-bar"><span><b>hall</b> · rindahq/platform <span class="t-dim">(1 of 3 repos)</span></span><span>daemon <span class="t-ok">●</span> running</span><span id="t-stats"></span><span style="margin-left:auto" id="t-clock"></span></div>
+        <div class="t-pane">
+          <div class="t-pane-title">Board</div>
+          <div class="t-board" id="t-board"></div>
+        </div>
+        <div class="t-pane">
+          <div class="t-pane-title"><b id="t-item-title"></b><span id="t-item-meta"></span></div>
+          <div id="t-journal"></div>
+        </div>
+        <div class="t-pane">
+          <div class="t-pane-title">Findings</div>
+          <div id="t-findings"></div>
+        </div>
+        <div class="t-keys"><span><b>↑↓</b> item</span><span><b>enter</b> journal</span><span><b>f</b> findings</span><span><b>d</b> diff</span><span><b>r</b> ready</span><span><b>p</b> pull back</span><span><b>o</b> open PR</span><span><b>/</b> filter</span><span><b>q</b> quit</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ USAGE ============ -->
+<section id="usage">
+  <h2>Usage and budgets</h2>
+  <div class="col"><p>Every model run is measured and recorded in the journal. Each step has its own limits, and you can see totals by item, room, role, model or day. Only four places use a model: the Workshop, the Assay Office's review, the Repair Shop, and a little at the Front Desk. Everything else is a script.</p></div>
+  <div class="three">
+    <div>
+      <div class="eyebrow">Measured</div>
+      <h3>Every run, every turn</h3>
+      <ul>
+        <li><b>Review and fix runs:</b> <code>claude -p --output-format json</code> reports input, output and cache tokens, turns, duration and a cost per model. Hallmark writes all of it to the journal.</li>
+        <li><b>Your Workshop session:</b> after each turn, the <code>Stop</code> hook reads the new usage from the session transcript, so development counts too.</li>
+        <li><b>Checks, Post Room, stamping, shipping:</b> scripts, no tokens. Only their time is recorded.</li>
+      </ul>
+    </div>
+    <div>
+      <div class="eyebrow">Limited</div>
+      <h3>Caps at four levels</h3>
+<pre><code>[budget]
+daily    = "4M"     # whole review loop
+per_item = "800k"   # then it goes to you
+
+[budget.review]
+model = "opus";   effort = "high"
+max_usd = 3.00      # per run
+daily   = "2M"
+
+[budget.fix]
+model = "sonnet"; effort = "medium"
+max_usd = 1.50
+
+[budget.intake]
+model = "haiku"</code></pre>
+    </div>
+    <div>
+      <div class="eyebrow">Reduced</div>
+      <h3>Spend less per item</h3>
+      <ul>
+        <li><b>Checks first.</b> A red build never reaches a model.</li>
+        <li><b>Incremental re-review.</b> From round 2, the reviewer reads only the diff since the last round and the open findings.</li>
+        <li><b>The right model per role.</b> Opus reviews, Sonnet fixes, Haiku summarises, and scripts handle routing.</li>
+        <li><b>Effort follows risk.</b> A small diff gets a lighter review; paths marked sensitive in <code>.hallmark/review.md</code> get the deepest.</li>
+        <li><b>Fewer, larger runs.</b> Each run starts with a fixed context cost, measured below.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="table-wrap" style="margin-top: 24px">
+  <table>
+    <thead><tr><th>Limit</th><th>Set by</th><th>When it's reached</th></tr></thead>
+    <tbody>
+      <tr><td>Per run</td><td><code>max_usd</code>, passed as <code>--max-budget-usd</code>, plus a time limit</td><td>The run stops, and the stop is recorded. The item is retried once, then goes to you.</td></tr>
+      <tr><td>Per item</td><td><code>per_item</code></td><td>The item goes to Your Office marked "budget", with its spend so far.</td></tr>
+      <tr><td>Per room, per day</td><td><code>[budget.review] daily</code></td><td>That room closes for the day. Items wait in the Post Room, in order.</td></tr>
+      <tr><td>Daily total</td><td><code>daily</code></td><td>The daemon pauses. Your Workshop session isn't blocked; a hook adds a note that the budget is spent.</td></tr>
+      <tr><td>Claude plan limit</td><td>Your plan</td><td>When Claude reports a rate limit, the daemon pauses until it resets and records the pause.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="two" style="margin-top: 24px">
+    <div>
+      <h3>Measured today</h3>
+      <p>A one-word reply from Haiku through <code>claude -p</code> still loaded <b>29.7k tokens</b> of context: 21.2k written to cache and 8.5k read from it. That's the fixed cost of any run before it does any work.</p>
+      <p>This design conversation, on Opus, has made <b>114 model calls</b>: 18.1M tokens read from cache, 525k written to cache, and 399k output tokens. Long interactive sessions are where most tokens go, which is why the Workshop is metered too.</p>
+      <p class="mono" style="color: var(--muted); font-size: 0.8rem">Costs are API list-price equivalents. They're a stable unit for comparison, not a bill. Claude plans count usage against limits rather than charging per token, and Hallmark can't read how much of your limit is left, so it enforces its own caps.</p>
+    </div>
+    <div>
+      <div class="term" aria-label="Usage view mockup"><div class="term-inner" style="min-width: 520px">
+        <div class="t-bar"><span><b>hall</b> · usage · today</span><span style="margin-left:auto">example data</span></div>
+        <div class="t-pane">
+          <div class="u-row u-h"><span>room</span><span>runs</span><span>tokens</span><span>≈ $</span><span>budget</span></div>
+          <div class="u-row"><span>Workshop</span><span>5 items</span><span>3.42M</span><span>41.20</span><span class="t-dim">not capped</span></div>
+          <div class="u-row"><span>Assay Office</span><span>9</span><span>1.21M</span><span>14.80</span><span><span class="t-brass">██████</span><span class="t-dim">░░░░</span> 61%</span></div>
+          <div class="u-row"><span>Repair Shop</span><span>6</span><span>0.48M</span><span>3.10</span><span><span class="t-ok">██</span><span class="t-dim">░░░░░░░░</span> 24%</span></div>
+          <div class="u-row"><span>Front Desk</span><span>4</span><span>0.02M</span><span>0.03</span><span class="t-dim">—</span></div>
+          <div class="u-row u-t"><span>total</span><span></span><span>5.13M</span><span>59.13</span><span>loop 1.71M / 4M</span></div>
+        </div>
+        <div class="t-pane">
+          <div class="t-pane-title">Most expensive items</div>
+          <div class="u-row"><span>H-0039</span><span>4 rounds</span><span>1.40M</span><span>17.60</span><span class="t-stop">over item cap · with you</span></div>
+          <div class="u-row"><span>H-0042</span><span>3 rounds</span><span>0.61M</span><span>7.30</span><span class="t-ok">closed · PR #191</span></div>
+        </div>
+        <div class="t-keys"><span><b>b</b> by room</span><span><b>i</b> by item</span><span><b>m</b> by model</span><span><b>d</b> by day</span><span><b>e</b> edit budgets</span></div>
+      </div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PRINCIPAL ENGINEER ============ -->
+<section id="principal">
+  <h2>The principal engineer</h2>
+  <div class="col"><p>Yes, it's something you define, once, in the plugin. The role is split into a Claude Code agent (who it is and which tools it may use), a skill (how it reviews), and a schema (the exact shape of its verdict). Each repo can add local knowledge without changing the role.</p></div>
+  <div class="two">
+<pre><code>hallmark plugin
+├─ agents/
+│  ├─ principal-engineer.md   <span class="c">role, read-only tools, model</span>
+│  └─ fixer.md                <span class="c">edits code, can't approve</span>
+├─ skills/
+│  ├─ hallmark/               <span class="c">your session: new, ready, status</span>
+│  ├─ principal-review/       <span class="c">lenses, severity, evidence rules</span>
+│  └─ hallmark-fix/           <span class="c">address findings, dispute with reason</span>
+├─ schemas/verdict.json       <span class="c">enforced output shape</span>
+└─ hooks/hooks.json           <span class="c">every hook calls: hall hook &lt;event&gt;</span>
+
+your repo
+└─ .hallmark/review.md        <span class="c">local knowledge, read from base</span></code></pre>
+<pre><code>---
+name: principal-engineer
+description: Independent reviewer for Hallmark
+  items. Reviews one frozen commit against its
+  base branch and never edits code.
+tools: Read, Grep, Glob, Bash(git diff:*),
+  Bash(git log:*), Bash(git show:*), Bash(hall log:*),
+  Bash(hall library search:*)
+model: opus
+---
+You are a principal engineer reviewing a change
+you did not write. Use the principal-review skill.
+Report only what you can show breaks, with the
+scenario. Approve when nothing blocks.</code></pre>
+  </div>
+  <div class="col" style="margin-top: 16px">
+    <p>The daemon runs it headless with a fresh context. <code>--json-schema</code> makes Claude Code return a verdict that always matches the schema, so the daemon never has to parse prose.</p>
+  </div>
+<pre><code>claude -p --plugin-dir "$HALLMARK_PLUGIN" --agent principal-engineer \
+  --json-schema "$HALLMARK_PLUGIN/schemas/verdict.json" --output-format json \
+  "Review H-0042 round 2: commit b81f3e4 against main"</code></pre>
+  <p class="col" style="margin-top: 12px">This is a sketch; the exact flags will be checked when it's built. Everything the reviewer reads comes from the base branch, so a change can't edit its own review rules.</p>
+</section>
+
+<!-- ============ LIBRARY ============ -->
+<section id="library">
+  <h2>The Library: what the principal engineer remembers</h2>
+  <div class="col">
+    <p>Each review starts with a fresh context on purpose. A long-lived reviewer would carry the biases of earlier reviews, and its growing context would be re-read on every call; this conversation alone has read 18M tokens from cache. Instead, the reviewer starts clean and gets a short briefing from the Library, a growing body of what reviews of this repository have taught. Fresh eyes, long memory.</p>
+  </div>
+  <div class="two">
+    <div>
+      <h3>How it learns</h3>
+      <ol class="steps" style="max-width: none">
+        <li><div><strong>An item closes or escalates.</strong> Its journal holds what the reviewer found, what was disputed and how it was settled, and your decisions with reasons.</div></li>
+        <li><div><strong>The librarian distils it.</strong> A small Haiku run turns the journal into proposed learnings. It updates existing entries rather than adding duplicates. Each costs a few thousand tokens.</div></li>
+        <li><div><strong>You approve the learnings.</strong> Proposed learnings collect into a knowledge item that goes through Hallmark like any other change. A bad learning would quietly weaken every later review, so it passes the same gate as code.</div></li>
+        <li><div><strong>The reviewer is briefed.</strong> Before each review, Hallmark picks the learnings scoped to the changed paths and searches the rest using the diff. It sends the best of them within a set token limit.</div></li>
+        <li><div><strong>Learnings earn their place.</strong> Each verdict says which learnings it used and whether they held. Contradicted or unused ones are proposed for retirement.</div></li>
+      </ol>
+    </div>
+    <div>
+      <h3>What a learning looks like</h3>
+<pre><code>---
+id: L-0017
+kind: rule      # rule · false-positive · map · decision
+scope: ["apps/api/src/webhooks/**"]
+lens: correctness
+source: [H-0042/F1]
+status: accepted
+used: 4         # reviews it informed
+last_used: 2026-10-09
+---
+A retry must check that the endpoint still exists
+before each attempt. A deleted endpoint keeps its
+queued deliveries until the job notices.</code></pre>
+      <ul style="margin-top: 14px">
+        <li><b>Rules</b> come from findings that turned out right.</li>
+        <li><b>False positives</b> record what not to flag, and why. They cut repeat noise and wasted fix rounds.</li>
+        <li><b>Maps</b> describe what a module does, so the reviewer stops re-exploring the same code. That saves tokens on every review.</li>
+        <li><b>Decisions</b> are your rulings on escalations, with your reasons.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="table-wrap" style="margin-top: 24px">
+  <table>
+    <thead><tr><th></th><th>Records (the journal)</th><th>Library (learnings)</th></tr></thead>
+    <tbody>
+      <tr><td>Holds</td><td>What happened</td><td>What it taught</td></tr>
+      <tr><td>Source of truth</td><td>Append-only JSONL in <code>.git/hallmark/</code>. Local and private, since it includes your prompts; never committed</td><td>Markdown in <code>.hallmark/knowledge/</code>. Committed, reviewed, and read from the base branch</td></tr>
+      <tr><td>Index</td><td>SQLite, rebuilt from the files at any time with <code>hall reindex</code></td><td>Built-in SQLite full-text search, or qmd for hybrid semantic search when it's installed</td></tr>
+      <tr><td>Questions</td><td>Exact: by item, state, lens, room or date</td><td>Fuzzy: "what do we know about retries in webhooks?"</td></tr>
+      <tr><td>Per repository</td><td>One journal per repo</td><td>One knowledge folder per repo, and one qmd collection per repo, <code>hallmark-&lt;repo&gt;</code></td></tr>
+      <tr><td>Vectors?</td><td>No. Every question has an exact answer</td><td>Helpful once wording drifts from the code. Path scopes and keyword search cover a young library</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="two" style="margin-top: 24px">
+    <div>
+      <h3>Where qmd fits</h3>
+      <p><a href="https://github.com/tobi/qmd">qmd</a> is a local search engine for Markdown, built for agents. It combines keyword search, vector search and reranking, with local models stored in SQLite. It has a JSON command line and an MCP server, and it's MIT-licensed. The Library is a folder of Markdown files, so qmd fits it without changes. It also runs locally, so searching the Library costs no Claude tokens.</p>
+      <p>It brings a Node 22 or Bun runtime, about 2 GB of local models, and on macOS a Homebrew SQLite. That's a lot to require of every install, so Hallmark makes it an option. Built-in search works everywhere; <code>hall init</code> offers qmd when it finds it. Hallmark always queries a single collection, because qmd ranks results from several collections in one shared pool.</p>
+    </div>
+    <div>
+<pre><code># .hallmark.toml
+[library]
+search         = "qmd"     # or "builtin"
+collection     = "hallmark-platform"
+briefing_limit = "6k"      # tokens sent to each review
+auto_accept    = ["map"]   # kinds that skip your approval
+retire_after   = "90d"     # unused learnings</code></pre>
+<pre style="margin-top: 12px"><code>$ hall library search "webhook retries" --json
+{"results": [{"id": "L-0017", "kind": "rule",
+  "scope": ["apps/api/src/webhooks/**"],
+  "score": 0.91, "used": 4}]}</code></pre>
+    </div>
+  </div>
+  <p class="col" style="margin-top: 16px">CLAUDE.md stays for rules that are always true, because Claude reads it in full on every run. Situational knowledge belongs in the Library, where only the relevant entries are sent.</p>
+</section>
+
+<!-- ============ AGENT CONTRACT ============ -->
+<section id="agents">
+  <h2>Built for agents</h2>
+  <div class="col"><p>Agents are the main users of <code>hall</code>, so the command line is an API. These rules hold for every command.</p></div>
+  <div class="two">
+    <ul class="rules">
+      <li><b>JSON when it isn't a terminal.</b> <code>--json</code> forces it; readable text appears only on a terminal.</li>
+      <li><b>Never prompts.</b> Anything destructive needs an explicit flag, such as <code>--reason</code>.</li>
+      <li><b>Safe to repeat.</b> Running <code>hall ready</code> twice returns the same review, not an error.</li>
+      <li><b>Says what to do next.</b> Every reply has a <code>next</code> list of commands that make sense now.</li>
+      <li><b>Errors are data.</b> A stable code, a message and <code>next</code>, plus a documented exit code.</li>
+      <li><b>Describes itself.</b> <code>hall help --json</code> lists commands; <code>hall schema &lt;command&gt;</code> gives the output shape.</li>
+      <li><b>Knows where it is.</b> Inside an item's worktree the ID is optional.</li>
+      <li><b>One worker per item.</b> <code>hall next --role fixer</code> claims work with a lease, so two agents never take the same item.</li>
+    </ul>
+    <div>
+<pre><code>$ hall ready
+{"error": {
+   "code": "ITEM_IN_REVIEW",
+   "message": "H-0042 is in review, round 2.",
+   "next": ["hall pull-back H-0042",
+            "hall log H-0042 --kind review"]}}
+$ echo $?
+4</code></pre>
+      <div class="table-wrap" style="margin-top: 12px">
+      <table class="small">
+        <thead><tr><th>Exit</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td>0</td><td>Done</td></tr>
+          <tr><td>2</td><td>Bad arguments</td></tr>
+          <tr><td>3</td><td>No such item</td></tr>
+          <tr><td>4</td><td>Not allowed in the item's current state</td></tr>
+          <tr><td>5</td><td>Denied by the gate</td></tr>
+          <tr><td>6</td><td>Checks failed</td></tr>
+          <tr><td>7</td><td>Claimed by another agent</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CLI ============ -->
+<section id="cli">
+  <h2>Commands</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Command</th><th>Used by</th><th>Does</th></tr></thead>
+    <tbody>
+      <tr class="grp"><td colspan="3">Start and decide</td></tr>
+      <tr><td>hall</td><td>you</td><td>Opens the terminal app</td></tr>
+      <tr><td>hall new "&lt;request&gt;"</td><td>you, your session</td><td>Creates an item and its worktree. <code>--issue 212</code> starts from a GitHub issue; <code>--open</code> opens Claude in the worktree</td></tr>
+      <tr><td>hall adopt</td><td>you, your session</td><td>Turns the current branch and worktree into an item</td></tr>
+      <tr><td>hall ready</td><td>you, your session</td><td>Freezes the commit and sends the item to review</td></tr>
+      <tr><td>hall pull-back</td><td>you</td><td>Stops review and returns the item to development</td></tr>
+      <tr><td>hall drop --reason</td><td>you</td><td>Abandons the item and keeps its journal</td></tr>
+      <tr><td>hall inbox</td><td>you, your session</td><td>Everything waiting for you, oldest first</td></tr>
+      <tr><td>hall answer &lt;q&gt;</td><td>you, your session</td><td>Answers a question; the asking agent resumes its session</td></tr>
+      <tr class="grp"><td colspan="3">See</td></tr>
+      <tr><td>hall status</td><td>you, any agent</td><td>Items by state, or one item in detail</td></tr>
+      <tr><td>hall log &lt;id&gt;</td><td>you, any agent</td><td>The item's journal. <code>--kind review</code> filters it</td></tr>
+      <tr><td>hall history</td><td>you</td><td>Closed and dropped items. <code>--rejected</code>, <code>--lens</code>, <code>--since</code></td></tr>
+      <tr><td>hall usage</td><td>you, any agent</td><td>Tokens and cost. <code>--by room|item|role|model|day</code>, <code>--since</code></td></tr>
+      <tr><td>hall budget</td><td>you</td><td>Shows or sets the caps in <code>[budget]</code></td></tr>
+      <tr><td>hall library search</td><td>you, any agent</td><td>Searches the repo's learnings. Built-in search, or qmd when configured</td></tr>
+      <tr><td>hall library review</td><td>you</td><td>Approves or rejects proposed learnings</td></tr>
+      <tr><td>hall library retire &lt;id&gt;</td><td>you, librarian</td><td>Retires a learning, keeping its history</td></tr>
+      <tr><td>hall export &lt;id&gt;</td><td>you, shipper</td><td>The whole record as Markdown</td></tr>
+      <tr class="grp"><td colspan="3">Agents</td></tr>
+      <tr><td>hall propose-ready</td><td>dev agent</td><td>Says the work looks done, with a summary. Moves the item to Awaiting you</td></tr>
+      <tr><td>hall ask</td><td>any agent</td><td>Asks you a question with options, an optional default and a wait. Parks the item</td></tr>
+      <tr><td>hall next --role</td><td>assayer, fixer</td><td>Claims the next piece of work for that role</td></tr>
+      <tr><td>hall findings</td><td>fixer</td><td>Open findings and failing checks for the claimed item</td></tr>
+      <tr><td>hall fixed &lt;ids&gt;</td><td>fixer</td><td>Records which findings a commit addresses, or disputes one with <code>--dispute</code></td></tr>
+      <tr><td>hall verdict</td><td>assayer</td><td>Records a schema-checked verdict</td></tr>
+      <tr class="grp"><td colspan="3">Machinery and setup</td></tr>
+      <tr><td>hall hook &lt;event&gt;</td><td>Claude Code hooks</td><td>Journal entries, session context and the gate</td></tr>
+      <tr><td>hall daemon</td><td>you, once</td><td><code>start</code>, <code>stop</code>, <code>status</code>. Runs the checks, review, fixer, shipper and watchman</td></tr>
+      <tr><td>hall setup claude</td><td>you, once</td><td>Installs the Claude Code plugin</td></tr>
+      <tr><td>hall init</td><td>you, per repo</td><td>Writes <code>.hallmark.toml</code> from what it detects</td></tr>
+      <tr><td>hall notify test</td><td>you, once</td><td>Sends a test notification to every channel you configured</td></tr>
+      <tr><td>hall doctor</td><td>you, agents</td><td>Checks the install and names the fix for each problem</td></tr>
+      <tr><td>hall help --json · hall schema</td><td>agents</td><td>Command list and output shapes</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ============ TUI ============ -->
+<section id="tui">
+  <h2>The terminal app</h2>
+  <div class="two">
+    <div>
+      <p>One Rust binary, <code>hall</code>, does everything. Run it with no arguments and it opens the terminal app, the human view of everything above. The subcommands are what agents, hooks and the daemon call. Because the hooks call the binary rather than shell scripts, it runs the same on macOS, Linux and Windows.</p>
+      <p>The app only reads the journal. Closing it never stops work; the loops run in <code>hall daemon</code>. Opening it on another terminal, or after a restart, shows the same state.</p>
+      <div class="dl-label" style="margin-top: 16px">Views</div>
+      <ul>
+        <li><b>Board.</b> Items by state, with ones that need you flagged at the top.</li>
+        <li><b>Journal.</b> The selected item's full history, newest at the bottom, with a scrubber to replay it as above.</li>
+        <li><b>Findings.</b> Every finding with its lens, severity, file and line, the commit that claims to fix it and the review that verified it.</li>
+        <li><b>History.</b> Closed and dropped items, filterable by outcome, lens or rejection reason. It answers "what got rejected this week, and why".</li>
+        <li><b>Live.</b> The output of whatever the daemon is running now: a test run, or the reviewer's progress.</li>
+        <li><b>Usage.</b> Tokens and API-equivalent cost by room, item, model or day, against your budgets.</li>
+        <li><b>Repos.</b> Every repository on this machine that uses Hallmark, with counts of items needing you. <kbd>tab</kbd> switches between them.</li>
+      </ul>
+    </div>
+    <div>
+      <div class="dl-label">Keys</div>
+      <div class="keys">
+        <kbd>↑ ↓</kbd><span>select an item</span>
+        <kbd>enter</kbd><span>open its journal</span>
+        <kbd>← →</kbd><span>step through the journal</span>
+        <kbd>f</kbd><span>findings for this item</span>
+        <kbd>d</kbd><span>diff at the selected round</span>
+        <kbd>r</kbd><span>send to review (same as <code>/hallmark ready</code>)</span>
+        <kbd>p</kbd><span>pull back to development</span>
+        <kbd>x</kbd><span>drop, with a reason</span>
+        <kbd>w</kbd><span>open the item's worktree</span>
+        <kbd>o</kbd><span>open the PR</span>
+        <kbd>h</kbd><span>history view</span>
+        <kbd>/</kbd><span>filter</span>
+        <kbd>u</kbd><span>usage view</span>
+        <kbd>tab</kbd><span>next repository</span>
+      </div>
+      <div class="dl-label" style="margin-top: 18px">Built with</div>
+      <ul>
+        <li><b>ratatui</b> and <b>crossterm</b> for the interface. crossterm drives Windows consoles as well as Unix terminals.</li>
+        <li><b>notify</b> to redraw when a journal file changes.</li>
+        <li><b>clap</b> for subcommands, <b>serde_json</b> for the journal, <b>fs4</b> for file locks.</li>
+        <li><b>cargo-dist</b> to release binaries for all three systems, with Homebrew, an install script and a Nix flake.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ JOURNAL ============ -->
+<section id="journal">
+  <h2>The journal</h2>
+  <div class="two">
+    <div>
+      <p>Each item has an append-only file of events. Nothing is edited or deleted, so the history you read is the history that happened. Hooks write your session's events and the daemon writes the loop's. Every write goes through <code>hall</code>, which holds a file lock.</p>
+<pre><code>.git/hallmark/                  shared by every worktree
+├─ items/H-0042/
+│  ├─ item.json              title, branch, state
+│  ├─ events.jsonl           the journal
+│  ├─ reviews/r1.md          full review reports
+│  └─ checks/r1.log          failing check output
+└─ queue/                    tickets waiting for the assayer</code></pre>
+      <p style="margin-top: 12px">A SQLite index, rebuilt from these files at any time, answers usage and history questions quickly. The journal lives in each repo's git directory, so it outlives worktrees and is never committed. A small registry in your user state directory lists which repos use Hallmark, so the terminal app can show them all. <code>hall export H-0042</code> writes the whole record as Markdown, and the PR body links to it.</p>
+    </div>
+    <div>
+      <div class="dl-label">Three lines from H-0042</div>
+<pre><code>{"t":"10:04:12","actor":"you","event":"ready",
+ "sha":"7c2d018","note":"cap at 6 attempts done"}
+{"t":"10:24:31","actor":"assayer","event":"review",
+ "round":2,"sha":"b81f3e4","verdict":"changes",
+ "findings":["F1","F2"],"report":"reviews/r2.md"}
+{"t":"10:38:05","actor":"fixer","event":"commit",
+ "sha":"2a9e771","fixes":["F1","F2"]}</code></pre>
+      <div class="dl-label" style="margin-top: 16px">What gets recorded</div>
+      <ul>
+        <li>Your prompts and the agent's turn summaries, through Claude Code hooks</li>
+        <li>Every commit, and which findings it claims to fix</li>
+        <li>Every check run, with exit code, duration and failing output</li>
+        <li>Every verdict, with each finding's lens, severity, file, line and scenario</li>
+        <li>Every decision you make, with your reason</li>
+        <li>The hallmark, the PR link and the time spent in each state</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PIECES ============ -->
+<section id="pieces">
+  <h2>The pieces</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Piece</th><th>What it does</th><th>Defined in</th></tr></thead>
+    <tbody>
+      <tr><td>hallmark skill</td><td>Your session's side: <code>/hallmark</code>, starting from an issue, ready, pull-back, status and "why was it rejected".</td><td><code>skills/hallmark/</code></td></tr>
+      <tr><td>Session hooks</td><td>Tie the session to its item, add item context at start, record prompts, turns and commits, and gate edits and pushes.</td><td><code>hooks/hooks.json</code> → <code>hall hook</code></td></tr>
+      <tr><td>Assayer</td><td>Runs the gates at the frozen commit, then the principal-engineer agent with the <code>principal-review</code> skill.</td><td><code>agents/principal-engineer.md</code></td></tr>
+      <tr><td>Fixer</td><td>Addresses open findings or failing checks in the item's worktree, commits and resubmits. It can dispute a finding, with a reason, but can't approve.</td><td><code>agents/fixer.md</code></td></tr>
+      <tr><td>Librarian</td><td>Distils closed items into learnings, proposes them for your approval, and briefs each review from the Library.</td><td><code>hall daemon</code> → <code>claude -p --model haiku</code></td></tr>
+      <tr><td>Watchman</td><td>Flags items with no new event for 30 minutes, and a daemon that stopped. The idea comes from Gas Town's Witness.</td><td><code>hall daemon</code></td></tr>
+      <tr><td>Shipper</td><td>Checks the hallmark, runs the ship command, writes the review summary and minor findings into the PR, links the issue, and closes the item.</td><td><code>hall daemon</code></td></tr>
+      <tr><td>Terminal app</td><td>Board, journal, findings, history, live and repos views.</td><td><code>hall</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ============ REVIEW RULES ============ -->
+<section id="rules">
+  <h2>How the assayer reviews</h2>
+  <div class="col"><p>Every review covers the same seven lenses. Each finding names its lens, a file and line, a severity, and the concrete case that breaks.</p></div>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Lens</th><th>Asks</th><th>Typical blocker</th></tr></thead>
+    <tbody>
+      <tr><td>First principles</td><td>Is this the simplest change that solves the task? Does it belong in this layer?</td><td>Patches a symptom; duplicates an existing mechanism</td></tr>
+      <tr><td>Correctness</td><td>Edge cases, error paths, concurrency, idempotency, retries</td><td>A retry double-charges; two writers race</td></tr>
+      <tr><td>Security &amp; tenancy</td><td>Authorization on every path, tenant isolation, secrets, injection</td><td>A query bypasses RLS; a secret in a log line</td></tr>
+      <tr><td>Data &amp; migrations</td><td>Is the migration reversible and safe on live data?</td><td>A locking ALTER on a hot table</td></tr>
+      <tr><td>Evidence</td><td>Do the tests prove the behaviour? Did the test count drop?</td><td>A test asserts its own mock; a suite stopped compiling</td></tr>
+      <tr><td>Operability</td><td>Can someone on call see it fail and recover?</td><td>A swallowed error on a billing path</td></tr>
+      <tr><td>Repo rules</td><td>The repo's CLAUDE.md or AGENTS.md and any rule files it lists</td><td>Breaks a convention the repo wrote down</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="sev">
+    <span class="pill block">blocker</span><span class="pill major">major</span><span class="pill minor">minor</span><span class="pill minor">nit</span>
+    <span class="pill ok">approve = 0 blockers and 0 majors</span>
+  </div>
+  <div class="three" style="margin-top: 24px">
+    <div><h3>Rules come from main</h3><p>The assayer loads its skill and lenses from the base branch, never from the branch under review, so a branch can't soften its own review.</p></div>
+    <div><h3>Approval is bound to a commit</h3><p>The hallmark is a git note on one SHA. Any later commit has none, so the gate blocks it until it is reviewed again.</p></div>
+    <div><h3>A script decides when to stop</h3><p>Loops end when the hallmark exists or the round limit is reached, never because an agent printed "done".</p></div>
+  </div>
+</section>
+
+<!-- ============ PRIOR ART ============ -->
+<section id="prior-art">
+  <h2>What exists already</h2>
+  <div class="col"><p>Several tools cover parts of this. None follows one item from its first prompt to its PR with an independent reviewer and a complete record. Here is what Hallmark borrows from each and where it goes further.</p></div>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Tool</th><th>What it is</th><th>Borrow</th><th>Hallmark goes further</th></tr></thead>
+    <tbody>
+      <tr><td><a href="https://github.com/smtg-ai/claude-squad">Claude Squad</a><small>Go · AGPL</small></td><td>Terminal app that runs many agents, each in its own worktree and tmux session, with a review before you push</td><td>A session list with a live preview pane; sessions that survive closing the terminal</td><td>An independent reviewer, fixed checks and a journal. Runs on Windows; Claude Squad runs on macOS and Linux.</td></tr>
+      <tr><td><a href="https://www.vibekanban.com/">Vibe Kanban</a><small>web · community-maintained since April 2026</small></td><td>Kanban board for agent tasks with a worktree per task and inline diff comments sent back to the agent</td><td>Columns by state; feedback goes straight to the agent that will act on it</td><td>Terminal-native. The reviewer is an agent, and your decision sits at "ready", not on every diff.</td></tr>
+      <tr><td><a href="https://docs.gastownhall.ai/glossary">Gas Town</a><small>Steve Yegge</small></td><td>Orchestrator for 20–30 agents. A Refinery runs a merge queue with verification gates, Beads keeps state in git, and a Witness spots stuck agents</td><td>State in git; items that outlive the sessions working on them; a watch for stuck work</td><td>Far smaller: a review line for work you start yourself, sized for one Claude plan rather than heavy API spend.</td></tr>
+      <tr><td><a href="https://github.com/mikeyobrien/ralph-orchestrator">Ralph Orchestrator</a><small>Rust · MIT</small></td><td>Loop runner with "hats" (personas, including review) on an event bus, gates such as tests and lint, and an event history</td><td>Assayer and fixer as hats; checks before the model; the event history</td><td>It stops when the agent prints a completion signal; Hallmark stops on a hallmark check. Adds your ready step.</td></tr>
+      <tr><td><a href="https://aicodereview.cc/blog/coderabbit-cli">CodeRabbit CLI</a><small>paid credits</small></td><td>Local pre-PR review with JSON output meant for agents</td><td>Findings as structured data an agent can act on</td><td>Uses your Claude plan and your repo's rules, and binds approval to a commit.</td></tr>
+      <tr><td><a href="https://www.sourcepulse.org/projects/29023014">githuman</a></td><td>A review checkpoint at the staging area, with a handoff from you back to the agent</td><td>The explicit human handoff</td><td>The handoff is one step in a recorded lifecycle rather than the whole tool.</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ============ TAKE + BUILD ============ -->
+<section id="take">
+  <h2>Before building</h2>
+  <div class="two">
+    <div class="yes">
+      <h3>Why it's worth it</h3>
+      <ul>
+        <li>Parallel agents in many worktrees, across many repos, get one place to be seen.</li>
+        <li>It uses your Claude plan and your choice of model, with no API tokens and no Copilot seat.</li>
+        <li>The journal answers questions that are hard now: why something was rejected, what changed between rounds, how long review takes.</li>
+      </ul>
+    </div>
+    <div class="risk">
+      <h3>What to watch</h3>
+      <ul>
+        <li><b>Same model, same blind spots.</b> Fixed lenses and checks help, but keep the final merge on GitHub with you.</li>
+        <li><b>Shared state.</b> Test runs often share caches, coverage files and ports, so each repo's assayer takes one ticket at a time. Separate repos can run in parallel.</li>
+        <li><b>Usage.</b> Every round is a test run plus a long review against your plan's limits. Three rejected reviews send the item to you.</li>
+        <li><b>The journal records your prompts.</b> It stays in <code>.git/hallmark/</code> on your machine and is exported only when you ask.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="any-repo">
+  <h2>Works in any repository</h2>
+  <div class="col"><p>Hallmark assumes only git and Claude Code. Everything specific to a project lives in one optional file at the repo root, and <code>hall init</code> writes a first version of it by looking at the repo.</p></div>
+  <div class="three">
+    <div><h3>Install once</h3><p>The binary, the <code>/hallmark</code> and <code>principal-review</code> skills and the hooks ship as one Claude Code plugin. Hooks are installed at user level, so every repo and every session gets them.</p></div>
+    <div><h3><code>hall init</code></h3><p>Detects the stack and proposes the gates: <code>package.json</code> scripts, <code>cargo test</code> and <code>clippy</code>, <code>go test</code> and <code>go vet</code>, <code>pytest</code>, a Makefile, or a <code>justfile</code>. It also finds CLAUDE.md or AGENTS.md for the repo-rules lens.</p></div>
+    <div><h3>Sensible defaults</h3><p>With no config, worktrees use <code>git worktree add</code>, shipping uses <code>git push</code> and <code>gh pr create</code>, and the review uses all seven lenses. A repo on GitLab sets the ship command to <code>glab mr create</code>.</p></div>
+  </div>
+  <div class="two" style="margin-top: 24px">
+    <div>
+      <div class="dl-label">Defaults, used when a key is missing</div>
+<pre><code># .hallmark.toml
+base         = "main"
+worktree     = "git worktree add ../{repo}-{id} -b {branch}"
+ship         = "git push -u origin {branch} &amp;&amp; gh pr create --fill"
+gates        = []                  # hall init fills these
+reviewer     = "claude -p"
+max_rejects  = 3
+stuck_after  = "30m"
+lenses       = "all"
+rules        = ["CLAUDE.md", "AGENTS.md"]
+
+[budget]                           # no caps unless you set them
+review_model = "opus"
+fix_model    = "sonnet"</code></pre>
+    </div>
+    <div>
+      <div class="dl-label">Example override: rindahq/platform</div>
+<pre><code># .hallmark.toml
+worktree = "dev wt new {branch}"
+ship     = "dev submit --pr"
+gates    = ["dev test", "dev run build"]
+rules    = ["CLAUDE.md",
+            "docs/plan/README.md#leave-alone"]</code></pre>
+      <p style="margin-top: 12px">Every command is a setting, so a repo can use its own tooling without Hallmark knowing about it. The reviewer and fixer commands are settings too. Claude Code comes first because its hooks and skills make the session part of the record.</p>
+    </div>
+  </div>
+</section>
+
+<section id="build">
+  <h2>Build order</h2>
+  <div class="three">
+    <div class="stage now">
+      <div class="eyebrow">Stage 1</div>
+      <h3>Journal and hooks</h3>
+      <p>The <code>hall</code> binary with the agent contract, <code>setup claude</code>, <code>init</code>, <code>doctor</code>, items, the journal, the <code>hallmark</code> skill, the session hooks and the gate. Everything you do is recorded from day one.</p>
+    </div>
+    <div class="stage">
+      <div class="eyebrow">Stage 2</div>
+      <h3>The review loop</h3>
+      <p>The daemon, the principal-engineer and fixer agents with their skills and verdict schema, hallmarks, pull-back and issue linking, then the Library with built-in search and the librarian.</p>
+    </div>
+    <div class="stage">
+      <div class="eyebrow">Stage 3</div>
+      <h3>Terminal app and plugin</h3>
+      <p>The board, journal, findings, history, usage and live views, qmd as an optional Library search, then packaging as a plugin with cargo-dist releases for macOS, Linux and Windows.</p>
+    </div>
+  </div>
+</section>
+
+<footer>Hallmark (package <span class="mono">hallmark</span>, command <span class="mono">hall</span>) is a proposed design for any git repository, revised 9 October 2026. None of it is built yet. The replay uses <span class="mono">rindahq/platform</span> as example data.</footer>
+</div>
+
+<script>
+(function () {
+  var STATES = {
+    dev: { name: "Development", cls: "you", who: "You and the dev agent",
+      what: "Your normal Claude Code session in the item's worktree. Iterate as long as you like.",
+      enter: ["<code>/hallmark &lt;request&gt;</code> creates the item and its worktree", "\"not yet\" from Awaiting you", "pull-back from the review loop"],
+      leave: ["The agent thinks it's done → Awaiting you", "<code>/hallmark ready</code> → Checks", "<code>/hallmark drop</code> → Dropped"],
+      logs: ["Each prompt and turn summary", "Each commit"] },
+    await: { name: "Awaiting you", cls: "you", who: "You",
+      what: "Your inbox. The dev agent thinks the work is done, or an agent has a question. You're notified in Claude Code, on the desktop or on your phone.",
+      enter: ["The agent proposes done"],
+      leave: ["Say \"not yet\" and keep talking → Development", "Say ready → Checks"],
+      logs: ["The agent's summary", "Your answer and reason"] },
+    checks: { name: "Checks", cls: "machine", who: "The assayer (a script)",
+      what: "Freezes the commit and runs the repo's gates in the assayer's own worktree. No model review runs until these pass.",
+      enter: ["You send it to review", "The fixer commits"],
+      leave: ["Pass → Review", "Fail → Fixing, with the failing output"],
+      logs: ["Each command, exit code and duration", "The failing output"] },
+    review: { name: "Review", cls: "machine", who: "The assayer (principal engineer)",
+      what: "A headless Claude run with fresh context, read-only tools and the principal-review skill from main. It reads the diff, the task and the repo rules.",
+      enter: ["Checks pass"],
+      leave: ["0 blockers and 0 majors → Hallmarked", "Otherwise → Fixing", "Third rejected review → Escalated"],
+      logs: ["The verdict", "Each finding: lens, severity, file, line, scenario", "The full report"] },
+    fixing: { name: "Fixing", cls: "machine", who: "The fixer agent",
+      what: "A headless Claude run in the item's worktree. It reads the open findings or failing checks, fixes them, commits and resubmits.",
+      enter: ["Checks fail", "Review requests changes"],
+      leave: ["New commit → Checks", "<code>/hallmark pull-back</code> → Development"],
+      logs: ["Each commit and the findings it claims to fix", "Any finding it disputes, with its reason"] },
+    escalated: { name: "Escalated", cls: "you", who: "You",
+      what: "Three reviews were rejected. The board flags the item and the loop stops spending your usage.",
+      enter: ["Third rejected review"],
+      leave: ["Allow one more round → Fixing", "Take it back → Development", "Drop it → Dropped"],
+      logs: ["Your decision and reason"] },
+    hallmarked: { name: "Hallmarked", cls: "end", who: "The assayer, then the shipper",
+      what: "The assayer writes a git note on the approved commit. The gate lets that exact commit through and nothing else.",
+      enter: ["Review approves"],
+      leave: ["The shipper runs the repo's ship command → Closed"],
+      logs: ["Hallmark: commit, round, reviewer, finding counts"] },
+    closed: { name: "Closed", cls: "end", who: "Nobody",
+      what: "The PR is open on GitHub, or wherever the ship command sends it. Hallmark's job ends here, and the item moves to History.",
+      enter: ["The shipper opens the PR"],
+      leave: ["None. Later PR feedback starts a new item: <code>/hallmark follow-up #191</code>"],
+      logs: ["PR link, final commit, rounds", "Time spent in each state"] },
+    dropped: { name: "Dropped", cls: "you", who: "You",
+      what: "Abandoned. The worktree is removed, while the branch and the journal stay.",
+      enter: ["<code>/hallmark drop</code>, from Development or Escalated"],
+      leave: ["None"],
+      logs: ["Your reason"] }
+  };
+
+  var F = {
+    F1: { sev: "blocker", lens: "correctness", where: "webhook-delivery.service.ts:88", text: "retries continue after the endpoint is deleted" },
+    F2: { sev: "major", lens: "operability", where: "webhook-delivery.service.ts:131", text: "the final give-up is not logged" },
+    F3: { sev: "minor", lens: "first-princ.", where: "backoff.ts:12", text: "rename calc to nextDelayMs" }
+  };
+
+  var STEPS = [
+    { t: "09:12", s: "dev", round: "", sha: "", title: "You drop the request",
+      body: "<p>In a normal Claude Code session you type <code>/hallmark Retry failed webhook deliveries with exponential backoff</code>. Claude runs <code>hall new</code>, which creates H-0042 and its worktree with this repo's <code>dev wt new hm/H-0042-webhook-retries</code>. Claude moves into the worktree and the session carries on as usual.</p>",
+      logged: "item created, branch, first prompt",
+      ev: [["09:12", "you", "created · \"Retry failed webhook deliveries with exponential backoff\""]], f: {} },
+    { t: "09:14–09:50", s: "dev", round: "", sha: "4e1a9c0", title: "You and the agent iterate",
+      body: "<p>You go back and forth with the agent as you normally would. Hooks record each prompt, each turn's summary and each commit. Nothing is reviewed yet.</p>",
+      logged: "3 prompts, 3 turn summaries, commit <code>4e1a9c0</code>",
+      ev: [["09:14", "you", "prompt · \"use jitter, max 5 minutes between tries\""], ["09:31", "agent", "turn · added backoff.ts and the retry job"], ["09:49", "agent", "commit 4e1a9c0 · retry job + tests"]], f: {} },
+    { t: "09:51", s: "await", round: "", sha: "4e1a9c0", title: "The agent says it's done",
+      body: "<p>The agent believes the work is complete. It summarises what it did and asks whether to send H-0042 to review. The item shows in <b>Awaiting you</b>.</p>",
+      logged: "the agent's summary and question",
+      ev: [["09:51", "agent", "proposes ready · \"retries with jitter, 14 new tests\""]], f: {} },
+    { t: "09:53", s: "dev", round: "", sha: "4e1a9c0", title: "You say not yet",
+      body: "<p>You notice there's no attempt limit and say \"also cap it at 6 attempts\". The item goes back to Development and you keep working.</p>",
+      logged: "your answer and reason",
+      ev: [["09:53", "you", "not yet · \"cap at 6 attempts\""], ["10:02", "agent", "commit 7c2d018 · cap attempts at 6"]], f: {} },
+    { t: "10:04", s: "checks", round: "r1", sha: "7c2d018", title: "You send it to review",
+      body: "<p>You run <code>/hallmark ready</code>. Commit <code>7c2d018</code> is frozen and H-0042 joins the queue. From here the loop runs without you. If you type in the session again, the hook tells the agent the item is in review and offers <code>/hallmark pull-back</code>.</p>",
+      logged: "ready, frozen commit",
+      ev: [["10:04", "you", "ready · round 1 · 7c2d018"]], f: {} },
+    { t: "10:09", s: "fixing", round: "r1", sha: "7c2d018", title: "Checks fail",
+      body: "<p><code>dev test</code> fails on the coverage ratchet: new branches in the retry job have no tests. The model review is skipped, so no usage is spent on it, and the failing output goes to the fixer.</p>",
+      logged: "command, exit code, duration, failing output",
+      ev: [["10:09", "assayer", "checks failed · coverage floor, apps/api"]], f: {} },
+    { t: "10:17", s: "checks", round: "r2", sha: "b81f3e4", title: "The fixer adds tests",
+      body: "<p>The fixer reads the check output, adds tests for the give-up and jitter branches, commits <code>b81f3e4</code> and resubmits as round 2.</p>",
+      logged: "commit and what it addresses",
+      ev: [["10:17", "fixer", "commit b81f3e4 · tests for give-up and jitter · 61k tok"]], f: {} },
+    { t: "10:24", s: "fixing", round: "r2", sha: "b81f3e4", title: "Review requests changes",
+      body: "<p>Checks pass. The assayer reviews with a fresh context and finds a blocker: a retry keeps sending after the customer deletes the endpoint. It also finds a major issue: nothing is logged when delivery finally gives up. This counts as the first rejected review.</p>",
+      logged: "verdict, 3 findings, full report <code>reviews/r2.md</code>",
+      ev: [["10:24", "assayer", "review · changes · 1 blocker, 1 major, 1 minor · 148k tok"]],
+      f: { F1: "open", F2: "open", F3: "open" } },
+    { t: "10:38", s: "checks", round: "r3", sha: "2a9e771", title: "The fixer addresses the findings",
+      body: "<p>The fixer checks that the endpoint still exists before each retry, logs the final give-up, and commits <code>2a9e771</code> listing the findings it fixes. The minor rename is left for the PR body.</p>",
+      logged: "commit, fixes F1 and F2",
+      ev: [["10:38", "fixer", "commit 2a9e771 · fixes F1, F2 · 74k tok"]],
+      f: { F1: "fixed 2a9e771", F2: "fixed 2a9e771", F3: "open" } },
+    { t: "10:46", s: "hallmarked", round: "r3", sha: "2a9e771", title: "Approved and hallmarked",
+      body: "<p>Checks pass again. The assayer confirms both fixes and approves with no blockers or majors left. It writes the hallmark as a git note on <code>2a9e771</code>.</p>",
+      logged: "verdict, findings verified, hallmark",
+      ev: [["10:46", "assayer", "review · approve · F1, F2 verified · 96k tok"], ["10:46", "assayer", "hallmark · 2a9e771"]],
+      f: { F1: "verified r3", F2: "verified r3", F3: "to PR body" } },
+    { t: "10:47", s: "closed", round: "r3", sha: "2a9e771", title: "On GitHub, item closed",
+      body: "<p>The shipper runs <code>dev submit --pr</code>. PR #191 opens with the review summary and the minor finding in its body, and H-0042 moves to History. The whole record stays in the journal.</p>",
+      logged: "PR link, 3 rounds, 35 min and 379k tokens in review",
+      ev: [["10:47", "shipper", "shipped · PR #191"], ["10:47", "assay", "closed"]],
+      f: { F1: "verified r3", F2: "verified r3", F3: "in PR #191" } }
+  ];
+
+  var COLS = [["Development", ["dev"]], ["Awaiting you", ["await", "escalated"]], ["Review loop", ["checks", "review", "fixing", "hallmarked"]], ["Closed today", ["closed"]]];
+  var OTHERS = [
+    { id: "H-0041", title: "CLI login flow", s: "dev", tag: "" },
+    { id: "H-0039", title: "SDK retry docs", s: "review", tag: "review r1" },
+    { id: "H-0038", title: "Pricing copy", s: "closed", tag: "#188" }
+  ];
+  var LABEL = { checks: "checks", review: "review", fixing: "fixing", hallmarked: "shipping", closed: "#191", dev: "", await: "needs you", escalated: "escalated" };
+
+  var cur = 0, selState = null, timer = null;
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;"); };
+
+  function li(arr) { return "<ul>" + arr.map(function (x) { return "<li>" + x + "</li>"; }).join("") + "</ul>"; }
+  function showState(key) {
+    selState = key;
+    var s = STATES[key];
+    document.querySelectorAll(".node").forEach(function (n) { n.classList.toggle("sel", n.dataset.state === key); });
+    $("detail").innerHTML =
+      "<div><span class=\"who " + s.cls + "\">" + s.who + "</span><h3>" + s.name + "</h3><p>" + s.what + "</p></div>" +
+      "<div><div class=\"dl-label\">Gets here when</div>" + li(s.enter) + "<div class=\"dl-label\" style=\"margin-top:12px\">Moves on when</div>" + li(s.leave) + "</div>" +
+      "<div><div class=\"dl-label\">Journal records</div>" + li(s.logs) + "</div>";
+  }
+  document.querySelectorAll(".node").forEach(function (n) {
+    n.addEventListener("click", function () { showState(n.dataset.state); });
+    n.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); showState(n.dataset.state); } });
+  });
+
+  function board(step) {
+    var items = OTHERS.slice();
+    items.splice(0, 0, { id: "H-0042", title: "Webhook retries", s: step.s, tag: LABEL[step.s] + (step.round && step.s !== "closed" && step.s !== "hallmarked" ? " " + step.round : ""), sel: true });
+    return COLS.map(function (c) {
+      var rows = items.filter(function (i) { return c[1].indexOf(i.s) >= 0; });
+      return "<div><div class=\"t-col-h\">" + c[0].toUpperCase() + " (" + rows.length + ")</div>" +
+        (rows.length ? rows.map(function (i) {
+          var tagCls = i.s === "fixing" ? "t-stop" : i.s === "closed" || i.s === "hallmarked" ? "t-ok" : i.s === "await" ? "t-brass" : "t-info";
+          return "<div class=\"t-item" + (i.sel ? " sel" : "") + "\">" + i.id + " " + esc(i.title) + (i.tag ? " <span class=\"" + tagCls + "\">" + esc(i.tag) + "</span>" : "") + "</div>";
+        }).join("") : "<div class=\"t-empty\">none</div>") + "</div>";
+    }).join("");
+  }
+  function journal(upto) {
+    var rows = [];
+    for (var i = 0; i <= upto; i++) STEPS[i].ev.forEach(function (e) { rows.push({ e: e, fresh: i === upto }); });
+    var shown = rows.slice(-8);
+    var hidden = rows.length - shown.length;
+    return (hidden > 0 ? "<div class=\"t-dim\">… " + hidden + " earlier events</div>" : "") + shown.map(function (r) {
+      var txt = esc(r.e[2]);
+      txt = txt.replace(/^(checks failed|review · changes)/, "<span class=\"t-stop\">$1</span>")
+               .replace(/^(review · approve|hallmark|shipped|closed)/, "<span class=\"t-ok\">$1</span>")
+               .replace(/^(proposes ready|not yet|ready)/, "<span class=\"t-brass\">$1</span>");
+      return "<div class=\"t-row" + (r.fresh ? " new" : "") + "\"><span class=\"t-dim\">" + r.e[0] + "</span><span class=\"who-c\">" + r.e[1] + "</span><span>" + txt + "</span></div>";
+    }).join("");
+  }
+  function findings(f) {
+    var keys = Object.keys(f);
+    if (!keys.length) return "<div class=\"t-empty\">no findings yet</div>";
+    return keys.map(function (k) {
+      var d = F[k], st = f[k];
+      var sc = /verified|in PR/.test(st) ? "t-ok" : /fixed/.test(st) ? "t-info" : /PR body/.test(st) ? "t-dim" : "t-stop";
+      var sev = d.sev === "minor" ? "t-dim" : "t-stop";
+      return "<div class=\"t-find\"><span>" + k + "</span><span class=\"" + sev + "\">" + d.sev + "</span><span class=\"t-dim\">" + d.lens + "</span><span>" + esc(d.text) + " <span class=\"t-dim\">" + d.where + "</span></span><span class=\"" + sc + "\">" + st + "</span></div>";
+    }).join("");
+  }
+
+  function render() {
+    var s = STEPS[cur];
+    $("counter").textContent = (cur + 1) + " / " + STEPS.length;
+    $("s-time").textContent = s.t;
+    $("s-title").textContent = s.title;
+    $("s-body").innerHTML = s.body;
+    $("s-logged").innerHTML = "<b>Journal:</b> " + s.logged;
+    $("prev").disabled = cur === 0;
+    $("next").disabled = cur === STEPS.length - 1;
+    document.querySelectorAll("#scrub button").forEach(function (b, i) { b.className = i < cur ? "done" : i === cur ? "cur" : ""; });
+    $("t-board").innerHTML = board(s);
+    $("t-item-title").textContent = "H-0042 · Retry failed webhook deliveries";
+    $("t-item-meta").innerHTML = STATES[s.s].name.toLowerCase() + (s.round ? " · " + s.round : "") + (s.sha ? " · " + s.sha : "");
+    $("t-journal").innerHTML = journal(cur);
+    $("t-findings").innerHTML = findings(s.f);
+    $("t-clock").textContent = s.t.split("–").pop();
+    var rejects = cur >= 7 ? 1 : 0;
+    var tok = [0, 0, 0, 0, 0, 0, 61, 209, 283, 379, 379][cur];
+    $("t-stats").textContent = "rejected today " + rejects + " · review tokens " + tok + "k";
+    document.querySelectorAll(".node").forEach(function (n) { n.classList.toggle("live", n.dataset.state === s.s); });
+  }
+  function go(i) { cur = Math.max(0, Math.min(STEPS.length - 1, i)); render(); }
+  function stop() { if (timer) { clearInterval(timer); timer = null; $("play").textContent = "Play"; } }
+
+  var scrub = $("scrub");
+  STEPS.forEach(function (st, i) {
+    var b = document.createElement("button");
+    b.setAttribute("aria-label", "Step " + (i + 1) + ": " + st.title);
+    b.addEventListener("click", function () { stop(); go(i); });
+    scrub.appendChild(b);
+  });
+  $("prev").addEventListener("click", function () { stop(); go(cur - 1); });
+  $("next").addEventListener("click", function () { stop(); go(cur + 1); });
+  $("play").addEventListener("click", function () {
+    if (timer) return stop();
+    if (cur === STEPS.length - 1) go(0);
+    $("play").textContent = "Pause";
+    timer = setInterval(function () { if (cur >= STEPS.length - 1) return stop(); go(cur + 1); }, 2600);
+  });
+  document.querySelector(".story").addEventListener("keydown", function (e) {
+    if (e.key === "ArrowRight") { stop(); go(cur + 1); e.preventDefault(); }
+    if (e.key === "ArrowLeft") { stop(); go(cur - 1); e.preventDefault(); }
+  });
+
+
+  var SC = [
+    { k: "Start", m: [
+      ["you", "/hallmark Retry failed webhook deliveries with exponential backoff"],
+      ["tool", "hall new \"Retry failed webhook deliveries with exponential backoff\"", '{"id":"H-0042","state":"development",\n "worktree":"../qstack-H-0042","branch":"hm/H-0042-webhook-retries",\n "next":["cd ../qstack-H-0042"]}'],
+      ["claude", "Started H-0042 in ../qstack-H-0042 and moved there. I'll tell you when I think it's done, or say \"ready\" whenever you want it reviewed."]] },
+    { k: "From an issue", m: [
+      ["you", "pick up issue #212"],
+      ["tool", "hall new --issue 212", '{"id":"H-0043","issue":212,\n "title":"Dashboard shows stale usage after plan change",\n "state":"development","worktree":"../qstack-H-0043"}'],
+      ["claude", "Started H-0043 from #212. I've read the issue and I'm in its worktree. The PR will say \"Closes #212\", so the issue closes when you merge."]] },
+    { k: "Without saying it", m: [
+      ["you", "the login e2e test is flaky, can you fix it?"],
+      ["denied", "Edit apps/web-e2e/tests/login.spec.ts", '{"error":{"code":"NO_ITEM",\n "message":"Edits in rindahq/platform need a Hallmark item.",\n "next":["hall new --title \\"<short title>\\""]}}'],
+      ["tool", "hall new --title \"Fix flaky login e2e test\"", '{"id":"H-0044","worktree":"../qstack-H-0044"}'],
+      ["claude", "I've started H-0044 for this and moved into its worktree. The test waits on a fixed timeout; I'll change it to wait for the session cookie."],
+      ["note", "You never mentioned Hallmark. The edit gate caught the first edit and its reply told Claude what to run."]] },
+    { k: "Status", m: [
+      ["you", "what's going on in hallmark?"],
+      ["tool", "hall status", '{"items":[\n {"id":"H-0039","state":"escalated","rejects":3},\n {"id":"H-0042","state":"fixing","round":2},\n {"id":"H-0041","state":"development"}]}'],
+      ["claude", "Three open items. H-0039 needs you: its review was rejected three times, each time for a missing tenant check in the export query. H-0042 is being fixed after round 2. H-0041 is with you in development."]] },
+    { k: "Why rejected", m: [
+      ["you", "why was H-0042 rejected?"],
+      ["tool", "hall log H-0042 --kind review", '{"events":[{"round":2,"verdict":"changes","findings":[\n {"id":"F1","severity":"blocker","lens":"correctness",\n  "where":"webhook-delivery.service.ts:88"},\n {"id":"F2","severity":"major","lens":"operability"}]},\n {"round":3,"verdict":"approve","verified":["F1","F2"]}]}'],
+      ["claude", "Round 2 found a blocker: retries kept sending after the endpoint was deleted. It also found that the final give-up wasn't logged. Both were fixed in 2a9e771, and round 3 verified them and approved."]] },
+    { k: "Send to review", m: [
+      ["you", "looks good, send it"],
+      ["tool", "hall ready", '{"id":"H-0042","state":"checks","sha":"7c2d018",\n "next":["hall status H-0042"]}'],
+      ["claude", "H-0042 is in review at 7c2d018. I'll stop editing it. Say \"pull it back\" if you want to change something first."]] }
+  ];
+  var curSc = 0;
+  function renderSc() {
+    var box = $("chat"), sc = SC[curSc];
+    document.querySelectorAll("#scen button").forEach(function (b, i) { b.setAttribute("aria-selected", i === curSc ? "true" : "false"); });
+    box.innerHTML = sc.m.map(function (m) {
+      if (m[0] === "you") return "<div class=\"msg-you\">" + esc(m[1]) + "</div>";
+      if (m[0] === "claude") return "<div class=\"msg-claude\">" + esc(m[1]) + "</div>";
+      if (m[0] === "note") return "<div class=\"chat-note\">" + esc(m[1]) + "</div>";
+      var denied = m[0] === "denied";
+      return "<div class=\"msg-tool" + (denied ? " denied" : "") + "\"><b>" + (denied ? "Denied by hook" : "Bash") + "</b> " + esc(m[1]) + "<pre>" + esc(m[2]) + "</pre></div>";
+    }).join("");
+  }
+  SC.forEach(function (sc, i) {
+    var b = document.createElement("button");
+    b.setAttribute("role", "tab"); b.textContent = sc.k;
+    b.addEventListener("click", function () { curSc = i; renderSc(); });
+    $("scen").appendChild(b);
+  });
+  renderSc();
+  showState("review");
+  render();
+})();
+</script>
+<script>
+(function () {
+  var NS = "http://www.w3.org/2000/svg", svg = document.getElementById("plan");
+  function el(tag, a, parent) { var e = document.createElementNS(NS, tag); for (var k in a) e.setAttribute(k, a[k]); (parent || svg).appendChild(e); return e; }
+  var CY = 305, POST = { x: 470, y: CY };
+  var ROOMS = {
+    front:    { x: 20,  y: 40,  w: 180, h: 210, name: "Front Desk",    sub: "intake",                 cls: "r-neutral", door: 110, wall: "b" },
+    workshop: { x: 200, y: 40,  w: 320, h: 210, name: "Workshop",      sub: "development",            cls: "r-you",     door: 360, wall: "b" },
+    office:   { x: 520, y: 40,  w: 180, h: 210, name: "Your Office",   sub: "awaiting you · escalated", cls: "r-you",   door: 610, wall: "b" },
+    records:  { x: 700, y: 40,  w: 100, h: 210, name: "Records",       sub: "the journal",            cls: "r-neutral", door: 750, wall: "b" },
+    library:  { x: 800, y: 40,  w: 100, h: 210, name: "Library",       sub: "learnings",              cls: "r-neutral", door: 850, wall: "b" },
+    assay:    { x: 20,  y: 360, w: 340, h: 260, name: "Assay Office",  sub: "checks · review",        cls: "r-machine", door: 190, wall: "t" },
+    repair:   { x: 360, y: 360, w: 200, h: 260, name: "Repair Shop",   sub: "fixing",                 cls: "r-machine", door: 460, wall: "t" },
+    stamp:    { x: 560, y: 360, w: 160, h: 260, name: "Stamping Room", sub: "hallmarked",             cls: "r-out",     door: 640, wall: "t" },
+    dispatch: { x: 720, y: 360, w: 180, h: 260, name: "Dispatch Dock", sub: "closed → GitHub",        cls: "r-out",     door: 810, wall: "t" }
+  };
+  var INFO = {
+    front: { s: "New item", who: "The intake clerk: the hallmark skill and hall new", what: "Requests come in as a typed prompt, a /hallmark command, a GitHub issue, or a Beads or Linear ticket. Each gets an item number, a branch and a bench in the Workshop.", c: ["hall new", "hall new --issue 212", "hall adopt"] },
+    workshop: { s: "Development", who: "Dev agents, one per bench. You talk to them from your Claude Code session.", what: "Each bench is a git worktree. You and the agent iterate for as long as you like. When the agent thinks the work is done, it sends a note to your office.", c: ["hall propose-ready"] },
+    office: { s: "Awaiting you · Escalated", who: "You", what: "Your inbox. Questions from agents, work that looks done, escalations, budget stops and stuck items land on your desk, and Hallmark notifies you in Claude Code, on the desktop or on your phone. You send work to review, take it back or drop it. The terminal app is your window onto the whole building.", c: ["hall inbox", "hall answer Q-12 a", "hall ready", "hall pull-back"] },
+    post: { s: "Every handoff", who: "The postmaster (the hall CLI and its mailbox), and the watchman who patrols the corridor", what: "Nothing moves between rooms except through here. Tickets, verdicts, findings and notes for you all pass the counter, and a copy of each goes to Records. The watchman flags anything that hasn't moved in 30 minutes.", c: ["hall next --role", "hall status", "hall help --json"] },
+    records: { s: "The journal", who: "The archivist", what: "An append-only ledger for every item: prompts, commits, check runs, verdicts, findings, and your decisions with reasons. Closed and dropped items stay here for good.", c: ["hall log H-0042", "hall history --rejected", "hall export H-0042"] },
+    library: { s: "Learnings", who: "The librarian, a small Haiku run", what: "When an item closes, the librarian distils its journal into learnings: rules, false positives, module maps and your decisions. Before each review, it sends the principal engineer a short briefing scoped to the changed paths.", c: ["hall library search", "hall library review", "hall library retire"] },
+    assay: { s: "Checks · Review", who: "The test bench (a script running the repo's gates) and the principal engineer", what: "The commit is frozen and tested first. Only if the gates pass does the principal engineer review it, with fresh eyes and rules taken from the base branch, and write a verdict.", c: ["hall verdict", "claude -p --agent principal-engineer"] },
+    repair: { s: "Fixing", who: "Fixer agents", what: "Failing checks and open findings arrive with the item. A fixer addresses them and records which findings each commit fixes, or disputes one with a reason. Then the item goes back to the Assay Office.", c: ["hall findings", "hall fixed F1 F2"] },
+    stamp: { s: "Hallmarked", who: "The press", what: "An approved commit gets its hallmark: a git note on that exact SHA. Any later commit has none, so the gate won't let it out.", c: ["git notes --ref=hallmark show"] },
+    dispatch: { s: "Closed", who: "The shipper", what: "Checks the hallmark, runs the repo's ship command, writes the review summary and its token cost into the PR and links the issue. The item leaves for GitHub and its file closes.", c: ["git push + gh pr create", "dev submit --pr (in rindahq)"] }
+  };
+  var ST = {
+    front: { room: "front", x: 110, y: 168 },
+    bench: { room: "workshop", slots: [[270, 160], [360, 160], [450, 160]] },
+    office: { room: "office", x: 610, y: 162 },
+    test: { room: "assay", x: 110, y: 488 },
+    review: { room: "assay", x: 270, y: 482 },
+    repair: { room: "repair", slots: [[420, 482], [500, 482]] },
+    stamp: { room: "stamp", x: 640, y: 492 },
+    dispatch: { room: "dispatch", x: 800, y: 492 }
+  };
+  var NAMES = { front: "Front Desk", bench: "Workshop", office: "Your Office", test: "Assay Office", review: "Assay Office", repair: "Repair Shop", stamp: "Stamping Room", dispatch: "Dispatch Dock" };
+  var COLOR = { front: "i-new", bench: "i-you", office: "i-you", test: "i-machine", review: "i-machine", repair: "i-stop", stamp: "i-ok", dispatch: "i-ok", out: "i-ok" };
+
+  // ---- static building ----
+  var defs = el("defs", {});
+  var pat = el("pattern", { id: "tiles", width: 24, height: 24, patternUnits: "userSpaceOnUse" }, defs);
+  el("path", { d: "M24 0H0V24", "class": "tile" }, pat);
+  el("rect", { x: 20, y: 40, width: 880, height: 580, "class": "r-post", "data-room": "post" });
+  var corridor = el("rect", { x: 20, y: 250, width: 880, height: 110, fill: "url(#tiles)", "data-room": "post", "class": "rm", style: "stroke:none" });
+  Object.keys(ROOMS).forEach(function (k) {
+    var r = ROOMS[k];
+    el("rect", { x: r.x, y: r.y, width: r.w, height: r.h, "class": "rm " + r.cls, "data-room": k });
+  });
+  // doors onto the corridor
+  Object.keys(ROOMS).forEach(function (k) {
+    var r = ROOMS[k], wy = r.wall === "b" ? r.y + r.h : r.y;
+    el("rect", { x: r.door - 18, y: wy - 4, width: 36, height: 8, "class": "gap-post" });
+    var dy = r.wall === "b" ? -1 : 1;
+    el("path", { d: "M" + (r.door - 18) + " " + wy + " A36 36 0 0 " + (r.wall === "b" ? 1 : 0) + " " + (r.door + 18) + " " + (wy + dy * 36), "class": "swing" });
+  });
+  el("rect", { x: 20, y: 40, width: 880, height: 580, "class": "outer" });
+  el("rect", { x: 92, y: 36, width: 36, height: 8, "class": "gap-neutral" });
+  el("rect", { x: 896, y: 466, width: 8, height: 52, "class": "gap-out" });
+  // labels
+  Object.keys(ROOMS).forEach(function (k) {
+    var r = ROOMS[k];
+    var ty = r.wall === "b" ? r.y + 22 : r.y + r.h - 28;
+    el("text", { x: r.x + 12, y: ty, "class": "rname" }).textContent = r.name;
+    el("text", { x: r.x + 12, y: ty + 15, "class": "rsub" }).textContent = r.sub;
+    r.mt = el("text", { x: r.x + 12, y: r.wall === "b" ? ty + 29 : ty - 16, "class": "rmeter" });
+  });
+  el("text", { x: 560, y: 272, "class": "rname" }).textContent = "Post Room";
+  el("text", { x: 560, y: 287, "class": "rsub" }).textContent = "every handoff passes the counter";
+  el("text", { x: 140, y: 16, "class": "street" }).textContent = "prompts · /hallmark · GitHub issues";
+  el("path", { d: "M110 6 V30", "class": "arrow" });
+  el("text", { x: 912, y: 450, "class": "street" }).textContent = "to GitHub";
+  // furniture
+  el("rect", { x: 70, y: 140, width: 80, height: 16, rx: 3, "class": "furn" });
+  [270, 360, 450].forEach(function (x) { el("rect", { x: x - 30, y: 128, width: 60, height: 18, rx: 3, "class": "furn" }); el("rect", { x: x - 10, y: 130, width: 20, height: 5, "class": "furn-dark" }); });
+  el("rect", { x: 570, y: 128, width: 80, height: 20, rx: 3, "class": "furn" });
+  el("rect", { x: 632, y: 131, width: 14, height: 10, "class": "furn-dark" });
+  for (var i = 0; i < 2; i++) { el("rect", { x: 712 + i * 44, y: 100, width: 36, height: 8, "class": "shelf" }); el("rect", { x: 712 + i * 44, y: 200, width: 36, height: 8, "class": "shelf" }); }
+  var BOOKS = ["p-dev", "p-fixer", "p-principal", "p-ship", "p-you", "p-clerk"];
+  [[812, 98], [856, 98], [812, 198], [856, 198]].forEach(function (b, n) {
+    for (var q = 0; q < 6; q++) el("rect", { x: b[0] + q * 6, y: b[1], width: 5, height: 11, "class": "p-sh " + BOOKS[(q + n) % 6] });
+  });
+  el("rect", { x: 430, y: 255, width: 80, height: 6, "class": "shelf" });
+  el("rect", { x: 440, y: 292, width: 60, height: 22, rx: 3, "class": "furn" });
+  el("rect", { x: 80, y: 456, width: 60, height: 22, rx: 3, "class": "furn" });
+  var lamp = el("circle", { cx: 130, cy: 467, r: 4, "class": "lamp-off" });
+  el("rect", { x: 240, y: 470, width: 60, height: 24, rx: 3, "class": "furn" });
+  [420, 500].forEach(function (x) { el("rect", { x: x - 28, y: 470, width: 56, height: 24, rx: 3, "class": "furn" }); });
+  el("circle", { cx: 640, cy: 492, r: 22, "class": "furn" });
+  var punch = el("rect", { x: 628, y: 452, width: 24, height: 14, rx: 2, "class": "furn-dark" });
+  el("rect", { x: 760, y: 482, width: 140, height: 22, "class": "furn" });
+  for (i = 0; i < 7; i++) el("path", { d: "M" + (770 + i * 18) + " 482 v22", "class": "swing" });
+  var van = el("g", {});
+  el("rect", { x: 912, y: 462, width: 76, height: 60, rx: 6, "class": "van" }, van);
+  el("text", { x: 950, y: 497, "class": "van-text", "text-anchor": "middle" }, van).textContent = "GitHub";
+  var bell = el("g", {});
+  el("circle", { cx: 682, cy: 60, r: 9, "class": "bell" }, bell);
+  var bellT = el("text", { x: 682, y: 64, "class": "bell-t" }, bell);
+  var selRing = el("rect", { x: 0, y: 0, width: 0, height: 0, "class": "sel-ring" });
+  var layerItems = el("g", {}), layerPeople = el("g", {}), layerSlips = el("g", {});
+
+  // ---- people ----
+  var PEOPLE = [
+    { x: 110, y: 112, r: "clerk", st: "front", tag: "intake" },
+    { x: 270, y: 108, r: "dev", st: "bench", slot: 0 }, { x: 360, y: 108, r: "dev", st: "bench", slot: 1 }, { x: 450, y: 108, r: "dev", st: "bench", slot: 2 },
+    { x: 610, y: 108, r: "you", st: "office", tag: "you" },
+    { x: 750, y: 140, r: "clerk", walk: [[720, 140], [782, 140]], sp: 10, tag: "archivist" },
+    { x: 850, y: 150, r: "clerk", st: "library", tag: "librarian" },
+    { x: 470, y: 283, r: "clerk", st: "post", tag: "postmaster" },
+    { x: 110, y: 530, r: "clerk", st: "test", tag: "test bench" },
+    { x: 270, y: 530, r: "principal", st: "review", tag: "principal" },
+    { x: 420, y: 530, r: "fixer", st: "repair", slot: 0 }, { x: 500, y: 530, r: "fixer", st: "repair", slot: 1 },
+    { x: 800, y: 538, r: "ship", st: "dispatch", tag: "shipper" },
+    { x: 60, y: 342, r: "watch", walk: [[60, 342], [880, 342]], sp: 36, tag: "watchman" }
+  ];
+  PEOPLE.forEach(function (p) {
+    p.g = el("g", {}, layerPeople);
+    p.busy = el("circle", { r: 16, "class": "p-busy" }, p.g);
+    el("ellipse", { rx: 12, ry: 7, "class": "p-sh p-" + p.r }, p.g);
+    el("circle", { r: 6.5, "class": "p-hair" }, p.g);
+    el("circle", { cy: 2.2, r: 4, "class": "p-face" }, p.g);
+    if (p.tag) { p.t = el("text", { y: -13, "class": "p-tag" }, p.g); p.t.textContent = p.tag; }
+    p.dir = 1; p.ang = 0;
+  });
+
+  // ---- simulation ----
+  var J = {
+    clean: [["front", 2], ["bench", 7], ["office", 3], ["test", 3], ["review", 4], ["stamp", 2], ["dispatch", 2], ["out", 0]],
+    fix: [["front", 2], ["bench", 6], ["office", 3], ["test", 3], ["review", 4], ["repair", 5], ["test", 3], ["review", 4], ["stamp", 2], ["dispatch", 2], ["out", 0]],
+    checks: [["front", 2], ["bench", 8], ["office", 2], ["test", 3], ["repair", 4], ["test", 3], ["review", 4], ["stamp", 2], ["dispatch", 2], ["out", 0]],
+    ask: [["front", 2], ["bench", 6], ["office", 2], ["test", 3], ["review", 4], ["repair", 2], ["office", 5], ["repair", 3], ["test", 3], ["review", 4], ["stamp", 2], ["dispatch", 2], ["out", 0]],
+    escalate: [["front", 2], ["bench", 6], ["office", 2], ["test", 3], ["review", 4], ["repair", 4], ["test", 3], ["review", 4], ["repair", 4], ["test", 3], ["review", 4], ["office", 6], ["bench", 6], ["office", 2], ["test", 3], ["review", 4], ["stamp", 2], ["dispatch", 2], ["out", 0]]
+  };
+  var ORDER = ["fix", "ask", "clean", "checks", "escalate", "fix", "clean", "ask"];
+  var dayN = 0, items = [], slips = [], clock = 9 * 60, nextSpawn = 0, spawnN = 0, nextId = 38, speed = 1, playing = true, pressT = 0, vanT = 0, lampT = 0;
+  var ledger = [];
+  var TOK = { front: [2, 6], bench: [160, 420], review: [90, 170], repair: [50, 130] }, roomTok = {}, totalTok = 0, MODEL_ROOMS = { front: 1, workshop: 1, assay: 1, repair: 1, library: 1 }, libT = 0, LIB = { x: 850, y: 150 };
+  function fmtTok(k) { return k >= 1000 ? (k / 1000).toFixed(2) + "M" : Math.round(k) + "k"; }
+
+  function spot(st, it) {
+    var s = ST[st];
+    if (s.slots) { var sl = s.slots[it.id % s.slots.length]; return { x: sl[0], y: sl[1] }; }
+    var j = ((it.id * 37) % 5 - 2) * 7;
+    return { x: s.x + j, y: s.y + (it.id % 2 ? 4 : -4) };
+  }
+  function door(room) { var r = ROOMS[room]; return { x: r.door, y: r.wall === "b" ? r.y + r.h : r.y }; }
+  function route(a, b, it) {
+    if (b === "out") return [{ x: 904, y: 492 }, { x: 950, y: 492, out: true }];
+    if (!a) return [{ x: 110, y: 40 }, spot(b, it)];
+    var ra = ST[a].room, rb = ST[b].room;
+    if (ra === rb) return [spot(b, it)];
+    var da = door(ra), db = door(rb);
+    return [da, { x: da.x, y: CY }, { x: POST.x, y: CY, post: true, to: b }, { x: db.x, y: CY }, db, spot(b, it)];
+  }
+  function hhmm(m) {
+    if (m >= 1440 && Math.floor(m / 1440) !== dayN) { dayN = Math.floor(m / 1440); roomTok = {}; totalTok = 0; } m = Math.floor(m) % 1440; var h = Math.floor(m / 60), mm = m % 60; return (h < 10 ? "0" : "") + h + ":" + (mm < 10 ? "0" : "") + mm; }
+  function log(it, text) {
+    ledger.unshift([hhmm(clock), "H-" + ("000" + it.id).slice(-4), text]);
+    if (ledger.length > 9) ledger.pop();
+    renderLedger();
+  }
+  function say(it, from, to) {
+    if (to === "office" && from === "repair") return "fixer has a question for you";
+    if (to === "repair" && from === "office") return "you answered, fixer resumes its session";
+    if (to === "bench" && from === "front") return "opened at a Workshop bench";
+    if (to === "bench") return "you took it back to the Workshop";
+    if (to === "office" && from === "review") return "rejected 3 times, escalated to you";
+    if (to === "office") return "agent says done, note on your desk";
+    if (to === "test" && from === "office") { it.round = (it.round || 0) + 1; return "you sent it to review, round " + it.round; }
+    if (to === "test") { it.round++; return "fix committed, round " + it.round; }
+    if (to === "review") return "checks passed";
+    if (to === "repair" && from === "test") return "checks failed, to Repair";
+    if (to === "repair") { it.rejects = (it.rejects || 0) + 1; return "review: changes requested"; }
+    if (to === "stamp") return "approved, hallmark struck";
+    if (to === "dispatch") return "at the Dispatch Dock";
+    if (to === "out") return "PR opened, item closed";
+    return "moved";
+  }
+  function spawn() {
+    var it = { id: nextId++, j: J[ORDER[spawnN++ % ORDER.length]], step: 0, x: 110, y: 2, at: null, dwell: 0, wait: 0, round: 0 };
+    it.g = el("g", { "class": "it i-new" }, layerItems);
+    it.title = el("title", {}, it.g);
+    el("rect", { x: -9, y: -9, width: 18, height: 18, rx: 2 }, it.g);
+    el("text", { y: 3 }, it.g).textContent = it.id;
+    it.wps = route(null, "front", it);
+    it.dest = "front";
+    items.push(it);
+    log(it, "request arrives at the Front Desk");
+  }
+  function depart(it) {
+    var from = it.j[it.step][0];
+    it.step++;
+    var to = it.j[it.step][0];
+    var msg = say(it, from, to), tr = TOK[from];
+    if (from === "review" && it.reviewed) tr = [40, 90];
+    if (from === "review") it.reviewed = true;
+    if (tr) {
+      var amt = tr[0] + ((it.id * 53 + it.step * 31) % 100) / 100 * (tr[1] - tr[0]);
+      roomTok[ST[from].room] = (roomTok[ST[from].room] || 0) + amt; totalTok += amt;
+      msg += " · " + fmtTok(amt) + " tok";
+    }
+    log(it, msg);
+    it.wps = route(from, to, it);
+    it.dest = to; it.at = null;
+    it.g.setAttribute("class", "it " + COLOR[to]);
+    it.title.textContent = "H-" + ("000" + it.id).slice(-4) + " → " + (NAMES[to] || "GitHub");
+  }
+  function slip(from, to, cls) { slips.push({ x: from.x, y: from.y, fx: from.x, fy: from.y, tx: to.x, ty: to.y, t: 0, g: el("rect", { width: 7, height: 5, x: -3.5, y: -2.5, "class": cls || "slip" }, layerSlips) }); }
+  function step(dt) {
+    clock += dt;
+    nextSpawn -= dt;
+    if (nextSpawn <= 0) { spawn(); nextSpawn = 7; }
+    pressT = Math.max(0, pressT - dt); vanT = Math.max(0, vanT - dt); libT = Math.max(0, libT - dt); lampT += dt;
+    for (var i = items.length - 1; i >= 0; i--) {
+      var it = items[i];
+      if (it.gone) { it.fade -= dt; if (it.fade <= 0) { it.g.remove(); items.splice(i, 1); } continue; }
+      if (it.wait > 0) { it.wait -= dt; continue; }
+      if (it.wps.length) {
+        var w = it.wps[0], dx = w.x - it.x, dy = w.y - it.y, d = Math.sqrt(dx * dx + dy * dy), mv = 150 * dt;
+        if (d <= mv) {
+          it.x = w.x; it.y = w.y; it.wps.shift();
+          if (w.post) { it.wait = 0.5; slip(POST, { x: 750, y: 150 }); if (w.to === "office") slip(POST, { x: 640, y: 136 }); }
+          if (w.out) {
+            it.gone = true; it.fade = 0.4; vanT = 0.35; libT = 2.5;
+            slip({ x: 750, y: 150 }, LIB, "slip-k");
+            var lt = 3 + (it.id * 7) % 6; roomTok.library = (roomTok.library || 0) + lt; totalTok += lt;
+            log(it, "librarian filed " + (1 + it.id % 3) + " learnings · " + lt + "k tok");
+          }
+          if (!it.wps.length && !it.gone) { it.at = it.dest; it.dwell = it.j[it.step][1]; if (it.at === "stamp") pressT = 0.5;
+            if (it.at === "review") { slip(LIB, { x: 270, y: 476 }, "slip-k"); if (!it.briefed) { it.briefed = true; log(it, "briefed from the Library: " + (2 + it.id % 4) + " learnings"); } } }
+        } else { it.x += dx / d * mv; it.y += dy / d * mv; }
+      } else if (it.at) {
+        it.dwell -= dt;
+        if (it.dwell <= 0) depart(it);
+      }
+    }
+    for (i = slips.length - 1; i >= 0; i--) {
+      var s = slips[i]; s.t += dt / 1.1;
+      if (s.t >= 1) { s.g.remove(); slips.splice(i, 1); continue; }
+      s.x = s.fx + (s.tx - s.fx) * s.t; s.y = s.fy + (s.ty - s.fy) * s.t - Math.sin(s.t * Math.PI) * 30;
+    }
+    PEOPLE.forEach(function (p) {
+      if (p.walk) {
+        var a = p.walk[0], b = p.walk[1], tx = p.dir > 0 ? b[0] : a[0];
+        var mv2 = p.sp * dt;
+        if (Math.abs(tx - p.x) <= mv2) { p.x = tx; p.dir *= -1; } else p.x += (tx > p.x ? 1 : -1) * mv2;
+        p.ang = p.dir > 0 ? 90 : -90;
+      }
+      p.working = p.st === "library" ? libT > 0 : !!p.st && items.some(function (it) {
+        if (it.gone || it.wps.length) return p.st === "post" && it.wait > 0 && it.x === POST.x;
+        if (it.at !== p.st) return false;
+        return p.slot === undefined || it.id % ST[p.st].slots.length === p.slot;
+      });
+      p.phase = (p.phase || Math.random() * 6) + dt * 9;
+    });
+  }
+  function draw() {
+    items.forEach(function (it) {
+      it.g.setAttribute("transform", "translate(" + it.x.toFixed(1) + "," + it.y.toFixed(1) + ")");
+      it.g.style.opacity = it.gone ? Math.max(0, it.fade / 0.4) : 1;
+    });
+    slips.forEach(function (s) { s.g.setAttribute("transform", "translate(" + s.x.toFixed(1) + "," + s.y.toFixed(1) + ")"); });
+    PEOPLE.forEach(function (p) {
+      var a = p.walk ? p.ang : (p.working ? Math.sin(p.phase) * 10 : 0);
+      p.g.setAttribute("transform", "translate(" + p.x.toFixed(1) + "," + p.y + ") rotate(" + a.toFixed(1) + ")");
+      if (p.t) p.t.setAttribute("transform", "rotate(" + (-a).toFixed(1) + ")");
+      p.busy.style.opacity = p.working ? 0.35 + 0.35 * Math.sin(p.phase) : 0;
+    });
+    punch.setAttribute("y", pressT > 0 ? 470 : 452);
+    van.setAttribute("transform", vanT > 0 ? "translate(3,0)" : "");
+    var testing = items.some(function (it) { return it.at === "test" && !it.wps.length; });
+    lamp.setAttribute("class", testing && Math.floor(lampT * 4) % 2 ? "lamp-on" : "lamp-off");
+    document.getElementById("pclock").textContent = "simulated time " + hhmm(clock) + " · tokens today " + fmtTok(totalTok);
+    Object.keys(ROOMS).forEach(function (k) { ROOMS[k].mt.textContent = MODEL_ROOMS[k] ? "tokens " + fmtTok(roomTok[k] || 0) : "no model"; });
+    var waiting = items.filter(function (it) { return it.at === "office" && !it.wps.length && !it.gone; }).length;
+    ROOMS.office.mt.textContent = waiting ? "inbox: " + waiting + " waiting for you" : "inbox empty";
+    bell.style.opacity = waiting ? (0.55 + 0.45 * Math.abs(Math.sin(lampT * 3))) : 0;
+    bellT.textContent = waiting;
+  }
+  function renderLedger() {
+    document.getElementById("ledger").innerHTML = ledger.map(function (l) {
+      return "<li><span class=\"lt\">" + l[0] + "</span><span class=\"li\">" + l[1].slice(2) + "</span><span>" + l[2] + "</span></li>";
+    }).join("");
+  }
+
+  // ---- rooms panel ----
+  function selectRoom(k) {
+    var r = ROOMS[k] || { x: 20, y: 250, w: 880, h: 110, name: "Post Room" }, inf = INFO[k];
+    selRing.setAttribute("x", r.x + 3); selRing.setAttribute("y", r.y + 3); selRing.setAttribute("width", r.w - 6); selRing.setAttribute("height", r.h - 6);
+    document.getElementById("roomcard").innerHTML =
+      "<span class=\"st\">" + inf.s + "</span><h3>" + r.name + "</h3><div class=\"who-l\">" + inf.who + "</div><p>" + inf.what + "</p>" +
+      "<div class=\"cmds\">" + inf.c.map(function (c) { return "<code>" + c + "</code>"; }).join("") + "</div>";
+  }
+  svg.addEventListener("click", function (e) { var k = e.target.getAttribute && e.target.getAttribute("data-room"); if (k) selectRoom(k); });
+
+  // ---- controls ----
+  var pp = document.getElementById("pp");
+  function setPlaying(v) { playing = v; pp.textContent = v ? "Pause" : "Play"; pp.setAttribute("aria-pressed", v ? "false" : "true"); }
+  pp.addEventListener("click", function () { setPlaying(!playing); });
+  document.querySelectorAll(".speed button").forEach(function (b) {
+    b.addEventListener("click", function () {
+      speed = +b.dataset.s;
+      document.querySelectorAll(".speed button").forEach(function (x) { x.setAttribute("aria-pressed", x === b ? "true" : "false"); });
+    });
+  });
+
+  // start with a populated building, so the first frame already shows work in progress
+  for (var k = 0; k < 520; k++) step(0.08);
+  draw();
+  selectRoom("post");
+  var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  setPlaying(!reduce);
+  var last = null;
+  function frame(ts) {
+    if (last === null) last = ts;
+    var dt = Math.min(0.1, (ts - last) / 1000); last = ts;
+    if (playing) { step(dt * speed); draw(); }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+
+
+</body></html>

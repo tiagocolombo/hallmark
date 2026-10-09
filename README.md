@@ -44,6 +44,80 @@ macOS, Linux and Windows.
 
 See [`docs/DESIGN.md`](docs/DESIGN.md) for the whole design.
 
+## How it works
+
+The full design is an interactive page:
+[`docs/design.html`](docs/design.html). It includes an animated floor plan, the
+state map, a step-by-step replay of one item, and mockups of the inbox and
+usage views. GitHub shows it as source, so open it from a clone
+(`open docs/design.html` on macOS, `xdg-open` on Linux, `start` on Windows).
+
+Hallmark is laid out like a building, named after Goldsmiths' Hall in London,
+where silver was tested and stamped before it could be sold. Each piece of work
+is an **item**, and it moves from room to room:
+
+| Room | What happens there | Who works there |
+| --- | --- | --- |
+| Front Desk | A request becomes an item, with a branch and a worktree | `hall new`, `hall adopt` |
+| Workshop | You and the dev agent build it; each bench is a worktree | your Claude Code session |
+| Your Office | Questions, "looks done?", escalations: your inbox | you (`hall inbox`) |
+| Post Room | Every handoff passes through and is recorded | the `hall` CLI, the watchman |
+| Records | The journal: every prompt, commit, check, verdict and decision | `hall log` |
+| Library | What closed items taught, briefed to each review | the librarian *(Stage 2)* |
+| Assay Office | The checks, then the principal engineer's review | the assayer *(Stage 2)* |
+| Repair Shop | A fixer addresses failing checks and findings | the fixer *(Stage 2)* |
+| Stamping Room | The approved commit gets its hallmark, a git note | the assayer *(Stage 2)* |
+| Dispatch Dock | The ship command opens the PR, and the item closes | the shipper *(Stage 2)* |
+
+An item's states:
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> development: hall new / adopt
+    development --> awaiting_you: agent - hall propose-ready
+    awaiting_you --> development: not yet (hall pull-back)
+    development --> checks: hall ready
+    awaiting_you --> checks: hall ready
+    state "review loop (runs on its own)" as loop {
+        checks --> review: checks pass
+        checks --> fixing: checks fail
+        review --> fixing: changes requested
+        fixing --> checks: fix committed
+    }
+    review --> escalated: 3rd rejection
+    escalated --> fixing: hall retry
+    review --> hallmarked: approved
+    hallmarked --> closed: ship command opens the PR
+    loop --> development: hall pull-back
+    escalated --> development: hall pull-back
+    development --> dropped: hall drop --reason
+    closed --> [*]
+    dropped --> [*]
+```
+
+Any live item can be dropped with a reason. Closing ends an item's life: later
+PR feedback starts a new item.
+
+One item's life, from the replay in the design page:
+
+1. **09:12** You type `/hallmark Retry failed webhook deliveries`. Claude runs
+   `hall new`, which creates H-0042 with its own branch and worktree.
+2. **09:14–09:50** You and the agent iterate. Hooks record each prompt, turn
+   and commit.
+3. **09:51** The agent thinks it's done and runs `hall propose-ready`. You say
+   "not yet: cap it at 6 attempts".
+4. **10:04** You say ready. `hall ready` freezes the commit and queues it.
+5. **10:09** The checks fail, so no review tokens are spent. The fixer adds tests.
+6. **10:24** The principal engineer finds a blocker and a major. The fixer
+   addresses both.
+7. **10:46** The review approves, and the commit gets its hallmark.
+8. **10:47** The shipper opens PR #191 and the item closes. The whole record
+   stays in the journal.
+
+Steps 1–4 work today. Steps 5–8 are Stage 2: until then `hall ready` queues the
+item, and the push gate denies every push, because nothing writes hallmarks yet.
+
 ## Install
 
 From source, with Rust 1.88 or newer:
@@ -204,7 +278,8 @@ gates    = ["dev test", "dev run build"]
 
 ## Documentation
 
-- [`docs/DESIGN.md`](docs/DESIGN.md): the design.
+- [`docs/design.html`](docs/design.html): the interactive design page.
+- [`docs/DESIGN.md`](docs/DESIGN.md): the design, condensed, with the decisions.
 - [`docs/decisions/`](docs/decisions/): architecture decision records.
 - [`docs/spikes.md`](docs/spikes.md): Step 0, which checked how Claude Code
   actually behaves.

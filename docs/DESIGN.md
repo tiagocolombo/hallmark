@@ -1,5 +1,9 @@
 # Hallmark design
 
+The interactive version, with the animated floor plan and the replay, is
+[`design.html`](design.html). Where the two differ, this document wins: it
+includes the decisions made after the page.
+
 *Agentic development · automated review · a full record*
 
 This document is a condensed version of the design page, plus the decisions made
