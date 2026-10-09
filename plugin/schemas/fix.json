@@ -1,15 +1,27 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Hallmark fix report",
+  "description": "What the fixer did. Hallmark checks it against the worktree: the IDs must be open findings, and fixes need a new commit.",
   "type": "object",
   "properties": {
-    "summary": { "type": "string" },
-    "fixed": { "type": "array", "items": { "type": "string" } },
+    "summary": {
+      "type": "string",
+      "description": "Two or three sentences: what you changed and why."
+    },
+    "fixed": {
+      "type": "array",
+      "description": "IDs of the findings your commits fix, such as F1. Empty when only failing checks were fixed.",
+      "items": { "type": "string", "pattern": "^F[0-9]+$" }
+    },
     "disputed": {
       "type": "array",
+      "description": "Findings you dispute instead of fixing, each with a concrete reason.",
       "items": {
         "type": "object",
-        "properties": { "id": { "type": "string" }, "reason": { "type": "string" } },
+        "properties": {
+          "id": { "type": "string", "pattern": "^F[0-9]+$" },
+          "reason": { "type": "string", "minLength": 1 }
+        },
         "required": ["id", "reason"],
         "additionalProperties": false
       }
