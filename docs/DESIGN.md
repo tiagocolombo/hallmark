@@ -1,0 +1,558 @@
+# Hallmark design
+
+*Agentic development · automated review · a full record*
+
+This document is a condensed version of the design page, plus the decisions made
+since. Where they differ, this document wins. The reasons for the larger choices
+are in [`decisions/`](decisions/), and the facts they rest on are in
+[`spikes.md`](spikes.md).
+
+The name comes from Goldsmiths' Hall in London, where silver was tested and
+stamped before it could be sold.
+
+## What it is
+
+Hallmark is a local, agent-first development loop for any git repository, driven
+from Claude Code. It works like this:
+
+1. **You start work** with a prompt or a GitHub issue. Each piece of work becomes
+   an **item** (`H-0042`) with its own branch and worktree.
+2. **Dev agents build it with you** in a normal Claude Code session. Hooks record
+   every prompt, turn and commit.
+3. **You say it's ready.** Hallmark freezes the commit and queues the item.
+4. **Checks run first.** They are the repo's own gates: tests, lint and build.
+   A red build never reaches a model.
+5. **An independent principal engineer** (the *assayer*) reviews the frozen
+   commit. It runs headless, with a fresh context and rules read from the base
+   branch.
+6. **A fixer agent** addresses the findings. The loop repeats until the reviewer
+   approves, or until three rejected reviews escalate the item to you.
+7. **The approval is a hallmark**: a git note bound to that exact SHA. Only a
+   hallmarked commit can be pushed and opened as a PR. When the PR opens, the
+   item closes.
+
+Every step is appended to the item's **journal**, so you can always see what was
+rejected, fixed and passed, and why.
+
+The product is one Rust binary, `hall` (crate `hallmark`), for macOS, Linux and
+Windows:
+
+- With no arguments, it opens the terminal app (Stage 3; until then it prints
+  the status).
+- Its subcommands serve agents, Claude Code hooks and the daemon.
+
+## Vocabulary
+
+| Term | Meaning |
+| --- | --- |
+| `hall` | the command |
+| item | one piece of work, from first prompt to PR |
+| journal | the item's append-only history |
+| assayer | the principal-engineer reviewer, plus the check runner |
+| fixer | the agent that addresses findings; it can dispute but never approve |
+| hallmark | an approval bound to one commit (`refs/notes/hallmark`) |
+
+## The building
+
+The docs and the terminal app describe Hallmark as a building.
+
+| Room | What happens there | State(s) |
+| --- | --- | --- |
+| Front Desk | Intake: `hall new`, `hall new --issue`, `hall adopt` | (creation) |
+| Workshop | Development; each bench is a worktree | Development |
+| Your Office | The inbox: questions, "ready?", escalations, budget stops, stuck items | Awaiting you, Escalated |
+| Post Room | Every handoff passes here; a copy goes to Records | (all transitions) |
+| Records | The journal | Dropped, Closed (history) |
+| Library | Learnings distilled from closed items | — |
+| Assay Office | The test bench (checks) and the principal engineer (review) | Checks, Review |
+| Repair Shop | The fixer | Fixing |
+| Stamping Room | The hallmark is struck | Hallmarked |
+| Dispatch Dock | The ship command opens the PR | Closed |
+
+A **watchman** patrols the corridor. It flags any item with no new event for
+`stuck_after` (30 minutes by default), and a daemon that has stopped.
+
+Only four rooms use a model: the Workshop, the Assay Office review, the Repair
+Shop, and a little at the Front Desk and in the Library. Everything else is a
+script.
+
+## Item states
+
+States are written in snake_case in JSON.
+
+| State | Who acts | Room |
+| --- | --- | --- |
+| `development` | you and the dev agent | Workshop |
+| `awaiting_you` | you | Your Office |
+| `checks` | the assayer's gates (a script) | Assay Office |
+| `review` | the principal engineer | Assay Office |
+| `fixing` | the fixer | Repair Shop |
+| `escalated` | you | Your Office |
+| `hallmarked` | the shipper | Stamping Room |
+| `closed` | nobody; terminal | Dispatch Dock |
+| `dropped` | nobody; terminal | Records |
+
+Transitions:
+
+| From | Action | To |
+| --- | --- | --- |
+| development | `propose-ready` (agent thinks it's done) | awaiting_you |
+| development, awaiting_you | `ready` (freeze SHA, queue) | checks |
+| awaiting_you | `pull-back` ("not yet") | development |
+| checks | checks pass | review |
+| checks | checks fail | fixing |
+| review | approve (0 blockers, 0 majors) | hallmarked |
+| review | changes requested | fixing |
+| review | changes requested, `max_rejects` reached (3) | escalated |
+| fixing | fix submitted | checks |
+| escalated | `retry` (allow one more round) | fixing |
+| awaiting_you, checks, review, fixing, escalated, hallmarked | `pull-back` | development |
+| hallmarked | shipped (PR opened) | closed |
+| any non-terminal | `drop --reason` | dropped |
+
+Rules:
+
+- **Closed is the end.** Later PR feedback starts a new follow-up item.
+- **`ready` is idempotent.** On an item already in the loop at the same SHA,
+  `ready` returns the current result. At a different SHA, it fails with
+  `ITEM_IN_REVIEW` (exit 4) and suggests `hall pull-back`.
+- **A script decides when to stop.** Loops end when the hallmark exists or the
+  round limit is reached, never because an agent printed "done".
+- **The state is derived, not stored.** The state machine folds the item's
+  events to get its state. `item.json` is only a cache (ADR 0008).
+
+## The journal
+
+```text
+$(git rev-parse --git-common-dir)/hallmark/   shared by every worktree, never committed
+├─ items/H-0042/
+│  ├─ events.jsonl        the journal: append-only, source of truth
+│  └─ item.json           cached snapshot (title, branch, worktree, state)
+├─ events.jsonl           repo-level events: prompts and notifications from
+│                         sessions with no item, gate denials
+├─ sessions/<id>.json     session → item binding, transcript byte offset
+├─ queue/H-0042.json      tickets waiting for the assayer
+├─ counters.json          next item and question numbers
+└─ index.sqlite           derived; `hall reindex` rebuilds it
+```
+
+- The journal lives in the git common directory, so it outlives worktrees and
+  every worktree sees the same journal.
+- It is private, because it includes your prompts, and it is never committed.
+- Writes take an exclusive file lock (fs4) and append one line each.
+- State changes lock the item's file, fold its events, check the transition and
+  append, all as one step.
+- The SQLite index (rusqlite, bundled) catches up from the files on read.
+  Usage, inbox and history queries use it. Deleting it loses nothing.
+
+Every line is one event:
+
+```json
+{"v":1,"t":"2026-10-09T10:04:12Z","actor":"you","event":"ready","item":"H-0042","sha":"7c2d018","round":1,"note":"cap at 6 attempts done"}
+```
+
+The journal records:
+
+- prompts and turn summaries
+- every commit, and which findings it claims to fix
+- every check run, with its exit code, duration and failing output
+- every verdict, with each finding's lens, severity, file, line and scenario
+- your decisions, with reasons
+- questions and answers
+- notifications
+- usage for every model run
+- the hallmark, the PR link, and the time spent in each state
+
+## The hallmark and the gates
+
+The hallmark is a git note under `refs/notes/hallmark` on the approved SHA. Any
+later commit has no note.
+
+One `PreToolUse` hook, `hall hook pre-tool-use`, enforces two gates. Both apply
+only in repos where `hall init` has created `<git-common-dir>/hallmark`
+(ADR 0010).
+
+**The push gate.** It denies `git push`, `gh pr create`, and the configured ship
+command unless `HEAD` has a hallmark.
+
+- Compound shell commands (`&&`, `||`, `;`, `|`) are split, and each part is
+  checked.
+- Leading `cd …` steps and `VAR=value` assignments are skipped, and so are git
+  global options such as `git -C dir push`.
+
+**The edit gate.** It denies an `Edit`, `Write`, `MultiEdit` or `NotebookEdit`
+inside the repo but outside an active item's worktree, and also a Bash
+`git commit` outside one. The denial's reason is Hallmark's error JSON, which
+names what to run: `hall new --title "…"` or `hall adopt`. Claude reads it,
+creates the item and carries on. Files outside the repo are never gated.
+
+`[capture] mode` sets how the edit gate behaves:
+
+- `gate` (default): deny.
+- `ask`: return `permissionDecision: "ask"`, so you decide.
+- `off`: only `/hallmark` starts items.
+
+## How Claude knows to use Hallmark
+
+From most explicit to the one that can't be skipped:
+
+1. **The `/hallmark` skill.** It covers starting work, ready, pull-back and
+   status.
+2. **The skill description.** It matches natural requests such as "pick up #212"
+   or "what's in review?".
+3. **The `SessionStart` hook.** It injects the item's context, or how to start
+   one.
+4. **A short Hallmark section in CLAUDE.md or AGENTS.md.** `hall init` writes it
+   between `<!-- hallmark:start -->` and `<!-- hallmark:end -->`.
+5. **The edit gate.** This is the guarantee.
+
+## Hooks
+
+Each hook runs `hall hook <event>`, never a shell script, so Windows works.
+
+- `hall setup claude` writes the absolute path of the `hall` binary into the
+  installed `hooks.json`.
+- Hooks never break a session: on an internal error, they exit 0, print nothing,
+  and log the error.
+- Outside an initialized repo, they do nothing.
+
+| Event | What Hallmark does |
+| --- | --- |
+| `SessionStart` | Injects context: the item, its state and `next`, the inbox count, or how to start an item. |
+| `UserPromptSubmit` | Records the prompt. If the item is in the review loop, it adds a note that offers `pull-back`. |
+| `PreToolUse` | Runs the edit gate and the push gate. |
+| `PostToolUse` | Records commits. It binds the session to the item when `hall new`, `hall adopt` or `hall ask` run, by reading their JSON output. |
+| `Stop` | Records the turn summary (`last_assistant_message`). It reads new transcript usage from the stored offset, deduplicated by `requestId`. |
+| `Notification` | Files "session waiting" in the inbox, under the session's item. |
+
+## The agent contract
+
+Agents are the primary users of `hall`, so the command line is an API.
+
+- **Output.**
+  - JSON when stdout isn't a TTY; `--json` forces it.
+  - Readable text only on a TTY.
+- **Never prompts.**
+  - Destructive actions need explicit flags, such as `drop --reason`.
+- **Idempotent.**
+  - Repeating a command returns the current result.
+- **`next`.**
+  - Every reply has a `next` list of the commands that make sense now.
+- **Errors are data.**
+  - The shape is `{"error":{"code":"…","message":"…","next":["…"]}}`.
+  - Each error has a documented exit code.
+- **Self-describing.**
+  - `hall help --json` lists the commands.
+  - `hall schema <command|error|event|config>` prints JSON Schema generated
+    from the Rust types with schemars.
+- **Knows where it is.**
+  - Inside an item's worktree, the item ID is optional.
+  - IDs accept `42`, `H-42` or `H-0042`.
+
+| Exit | Meaning | Error codes |
+| --- | --- | --- |
+| 0 | done | — |
+| 1 | internal error | `INTERNAL`, `COMMAND_FAILED`, `GH_UNAVAILABLE` |
+| 2 | bad arguments | `USAGE` |
+| 3 | not found | `NOT_A_REPO`, `NOT_INITIALIZED`, `ITEM_NOT_FOUND`, `NO_ITEM`, `QUESTION_NOT_FOUND` |
+| 4 | wrong state | `WRONG_STATE`, `ITEM_IN_REVIEW`, `DIRTY_WORKTREE`, `ALREADY_ANSWERED` |
+| 5 | gate denied | `GATE_DENIED` |
+| 6 | checks failed | `CHECKS_FAILED` |
+| 7 | claimed by another agent | `CLAIMED` |
+
+```console
+$ hall ready
+{"error":{"code":"ITEM_IN_REVIEW","message":"H-0042 is in review, round 2.",
+  "next":["hall pull-back H-0042","hall log H-0042 --kind verdict"]}}
+$ echo $?
+4
+```
+
+## Commands
+
+### Stage 1
+
+| Command | Does |
+| --- | --- |
+| `hall` | Status for now; the terminal app in Stage 3. |
+| `hall init [--capture] [--base] [--no-claude-md]` | Creates the journal directory. Writes `.hallmark.toml` from detected gates, a stub `.hallmark/review.md`, and the CLAUDE.md section. Registers the repo. |
+| `hall doctor` | Checks git, gh, claude, the plugin, the hooks and the repo. Each failed check names its fix. |
+| `hall setup claude [--dry-run]` | Installs the Claude Code plugin at user level. |
+| `hall new [<request>] [--title] [--issue <n>] [--open] [--branch]` | Creates an item, its branch and its worktree. `--open` starts Claude there. |
+| `hall adopt [--title]` | Turns the current branch and worktree into an item. |
+| `hall status [<id>] [--all]` | Lists items by state, or shows one item in detail. |
+| `hall log [<id>] [--kind] [--limit]` | Prints the item's journal. |
+| `hall inbox` | Lists everything waiting for you, oldest first. |
+| `hall ready [<id>] [--note]` | Freezes HEAD and queues the item. A dirty worktree is refused. |
+| `hall pull-back [<id>] [--reason]` | Returns the item to development. |
+| `hall drop [<id>] --reason [--keep-worktree]` | Abandons the item. The branch and journal stay. |
+| `hall retry [<id>] --reason` | Allows an escalated item one more round. |
+| `hall propose-ready [<id>] --summary` | The agent says the work looks done. |
+| `hall ask <q> [--item] [--options] [--default] [--wait] [--session]` | Records a question. |
+| `hall answer <qid> <answer>` | Records the answer. `next` includes the `--resume` command. |
+| `hall usage [--by item\|room\|role\|model\|day] [--since] [--item]` | Shows tokens and list-price cost. |
+| `hall reindex` | Rebuilds the SQLite index from the journals. |
+| `hall help --json`, `hall schema <cmd>` | Self-description for agents. |
+| `hall hook <event>` | The entry point for Claude Code hooks. |
+
+### Later stages
+
+- `hall daemon`
+- `hall next --role`, `hall findings`, `hall fixed`, `hall verdict`
+- `hall history`, `hall export`, `hall budget`
+- `hall library …`
+- `hall notify test`
+
+## Configuration
+
+`.hallmark.toml` at the repo root is optional. Every key has a default, and
+nothing repo-specific is hardcoded. `hall` reads it from the main checkout, so
+an item can't loosen its own gate from its worktree (ADR 0012).
+
+```toml
+base        = "main"            # hall init detects origin/HEAD
+worktree    = "git worktree add ../{repo}-{id} -b {branch}"
+branch      = "hm/{id}-{slug}"
+ship        = "git push -u origin {branch} && gh pr create --fill"
+gates       = []                # hall init fills these
+reviewer    = "claude -p"
+max_rejects = 3
+stuck_after = "30m"
+lenses      = "all"
+rules       = ["CLAUDE.md", "AGENTS.md"]
+
+[capture]
+mode = "gate"                   # gate | ask | off
+
+[budget]                        # no caps unless you set them
+review_model = "opus"
+fix_model    = "sonnet"
+intake_model = "haiku"
+# daily = "4M"; per_item = "800k"; [budget.review] max_usd = 3.00, daily = "2M"
+```
+
+**Templates.**
+
+- The placeholders are `{repo}`, `{id}`, `{branch}`, `{slug}` and `{title}`.
+- Commands run through the platform shell: `sh -c`, or `cmd /C` on Windows.
+- When a custom worktree command doesn't say where it put the worktree, Hallmark
+  finds it with `git worktree list --porcelain` by branch.
+
+**An example override** for a repo with its own tooling:
+
+```toml
+worktree = "dev wt new {branch}"
+ship     = "dev submit --pr"
+gates    = ["dev test", "dev run build"]
+```
+
+**Gate detection.** `hall init` detects the gates from the files it finds:
+
+| Found | Gates |
+| --- | --- |
+| `package.json` scripts | run through npm, pnpm, yarn or bun, chosen by lockfile |
+| Cargo | `cargo test`, `cargo clippy` |
+| Go | `go test ./...`, `go vet ./...` |
+| pytest | `pytest` |
+| Makefile | its targets |
+| justfile | its recipes |
+
+## The principal engineer (Stage 2)
+
+The role is defined once, in the plugin:
+
+- `agents/principal-engineer.md`: the role, with read-only tools.
+- `skills/principal-review/`: how it reviews.
+- `schemas/verdict.json`: the exact shape of the verdict.
+
+It runs headless with a fresh context:
+
+```sh
+claude -p --plugin-dir "$PLUGIN" --agent principal-engineer \
+  --json-schema "$PLUGIN/schemas/verdict.json" --output-format json \
+  --max-budget-usd 3 "Review H-0042 round 2: commit b81f3e4 against main" < /dev/null
+```
+
+**Lenses.** Every review applies seven lenses:
+
+| Lens | Asks |
+| --- | --- |
+| First principles | Is this the simplest change, in the right layer? |
+| Correctness | Edge cases, errors, concurrency, idempotency, retries |
+| Security & tenancy | Authorization, isolation, secrets, injection |
+| Data & migrations | Reversible and safe on live data? |
+| Evidence | Do the tests prove it? Did the test count drop? |
+| Operability | Can someone on call see it fail and recover? |
+| Repo rules | CLAUDE.md, AGENTS.md and the rule files they list |
+
+**Severities.**
+
+- There are four: blocker, major, minor and nit.
+- Approval means 0 blockers and 0 majors.
+
+**Findings.** Each finding names its lens, file, line, severity, and the
+concrete scenario that breaks.
+
+**What the reviewer reads.**
+
+- Its rules and knowledge come from the base branch, never the PR branch, so a
+  branch can't soften its own review.
+- From round 2, it reads only the diff since the last round, plus the open
+  findings.
+
+**Failures.** A run without `structured_output` counts as failed.
+
+**The fixer.** `agents/fixer.md`:
+
+- runs in the item's worktree;
+- commits, and records which findings each commit fixes;
+- can dispute a finding with a reason;
+- can never approve.
+
+We built our own reviewer rather than use the built-in `/code-review`. The
+reasons are in spike 6 and ADR 0007.
+
+## Usage and budgets
+
+Every model run is recorded with its tokens (input, output, cache read and cache
+write), turns, duration and list-price cost.
+
+**Sources.**
+
+- **Headless runs.** Usage comes from `claude -p --output-format json`.
+  - `modelUsage` is the source of truth; the top-level `usage` can be zero or
+    partial.
+  - `num_turns`, `duration_ms` and `session_id` come from the top level.
+- **Interactive sessions.**
+  - The `Stop` hook reads the new `message.usage` entries from the session
+    transcript.
+  - Entries are deduplicated by `requestId`.
+  - Cost comes from a list-price table.
+
+**Models by role.**
+
+| Role | Model |
+| --- | --- |
+| Review | Opus |
+| Fix | Sonnet |
+| Intake and librarian | Haiku |
+
+**Fewer, larger runs.** Even a trivial headless run loads about 30k tokens of
+context. An agent run loads about 4k, because its prompt replaces the default
+system prompt.
+
+**Budgets.** There are four levels, plus the plan limit:
+
+| Limit | Set by | When it's reached |
+| --- | --- | --- |
+| Per run | `max_usd` → `--max-budget-usd`, plus a timeout | The run stops. The item is retried once, then goes to you. |
+| Per item | `per_item` | The item goes to Your Office, marked "budget". |
+| Per room per day | `[budget.review] daily`, … | The room closes for the day. Items wait in order. |
+| Daily total | `daily` | The daemon pauses. Your session isn't blocked. |
+| Plan limit | Claude | The daemon pauses until the limit resets. |
+
+**Views.** `hall usage` totals by item, room, role, model or day.
+
+## The inbox
+
+Your Office holds the following, oldest first. It is derived from the journal.
+
+| Kind | Comes from | What waits |
+| --- | --- | --- |
+| question | `hall ask` without an answer | that item |
+| escalated | the item is `escalated` | that item |
+| session waiting | a `Notification` hook, cleared by the next prompt in that session | that session |
+| ready? | the item is `awaiting_you` | nothing |
+| budget | a budget stop | that item |
+| stuck | the watchman | whatever was running |
+| learnings | proposed learnings, sent as a digest | nothing |
+
+**Asking a question.** An agent runs:
+
+```sh
+hall ask "billed or raw?" --options billed,raw --default billed --wait 4h
+```
+
+The answer comes with `hall answer Q-12 a` (or the option's text). The daemon
+then resumes the asking agent's session with
+`claude -p --resume <session-id> "<answer>"`.
+
+- Stage 1 only records the question and the answer.
+- If a question with a default isn't answered within its wait, the agent goes
+  ahead with the default, and the journal says so.
+- Escalations never use a default.
+
+**Notifications** (Stage 2 and later):
+
+- hooks and the status line
+- the terminal app
+- the desktop (notify-rust)
+- the phone (ntfy, Telegram or Slack)
+- a morning digest
+
+## The Library (Stage 2)
+
+**What a learning is.** Learnings are Markdown files in `.hallmark/knowledge/`.
+They are committed, and approved like code. There are four kinds:
+
+- **rule**: comes from a finding that turned out right.
+- **false-positive**: what not to flag, and why.
+- **map**: what a module does.
+- **decision**: your ruling on an escalation.
+
+**How learnings are made and used.**
+
+1. A Haiku librarian distils closed items into learnings.
+2. Each review receives a briefing within a token cap. The briefing combines
+   learnings scoped to the changed paths with a search of the rest.
+3. Each verdict says which learnings it used. Unused or contradicted learnings
+   are proposed for retirement.
+
+**Search.** Built-in search uses SQLite FTS5. tobi/qmd is an optional backend,
+with one collection per repo.
+
+**Where rules belong.** CLAUDE.md is for rules that are always true; situational
+knowledge goes in the Library.
+
+## What we reuse
+
+| Need | Reused |
+| --- | --- |
+| Skills, agents and hooks | Claude Code's plugin system |
+| Every model run | `claude -p` |
+| Git and GitHub | `git` and `gh`, as subprocesses |
+| Terminal app | ratatui, crossterm |
+| Command line | clap |
+| Serialization and schemas | serde, schemars |
+| File watching and locks | notify, fs4 |
+| Index | rusqlite |
+| Daemon and notifications | service-manager, notify-rust |
+| Releases | cargo-dist, later |
+
+Two outside tools fit at the edges:
+
+- **Ralph Orchestrator** (MIT): only as an optional external fixer engine.
+- **Claude Squad** (AGPL): only side by side, through `hall adopt`.
+
+## Build stages
+
+1. **Journal and hooks** (now)
+   - the binary and the agent contract
+   - items and the state machine
+   - the journal and its index
+   - the config
+   - the Stage 1 commands
+   - the hooks and both gates
+   - the plugin skeleton with the `hallmark` skill
+   - integration tests
+   - CI on macOS, Linux and Windows
+2. **The review loop**
+   - the daemon: checks, review, fixer, shipper and watchman
+   - the principal-engineer and fixer agents, the verdict schema, and hallmarks
+   - issue linking
+   - the Library and the librarian
+   - desktop and phone notifications
+3. **The terminal app and releases**
+   - views: board, journal, findings, history, live, usage and repos
+   - qmd as an option
+   - cargo-dist releases

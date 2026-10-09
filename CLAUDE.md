@@ -1,0 +1,101 @@
+# Hallmark: working in this repo
+
+Hallmark (crate `hallmark`, binary `hall`) is a local, agent-first development
+loop. See [README.md](README.md) and [docs/DESIGN.md](docs/DESIGN.md). Decisions
+are in [docs/decisions/](docs/decisions/), and the Claude Code behaviour they
+rely on is in [docs/spikes.md](docs/spikes.md).
+
+## Toolchain
+
+The Rust toolchain (cargo, rustc, clippy, rustfmt, rust-analyzer) and `gh` come
+from the Nix shell declared in `dev.toml`:
+
+- with direnv: `direnv allow`, once;
+- otherwise: `nix develop`, or `nix develop --command <cmd>`.
+
+`gh` may not be on PATH outside the shell. It lives under
+`/nix/store/*-gh-*/bin/gh`, and `hall` also honors `HALL_GH`.
+
+## Commands
+
+Run all three checks before calling anything done, and report their real output.
+
+| What | Command |
+| --- | --- |
+| Build | `cargo build` |
+| Test | `cargo test --all-targets` |
+| Format check | `cargo fmt --check` |
+| Lint | `cargo clippy --all-targets -- -D warnings` |
+| Review snapshots | `cargo insta review` (or `INSTA_UPDATE=always cargo test`, then inspect the diff) |
+| Run | `cargo run -- <args>`, e.g. `cargo run -- help --json` |
+
+## Conventions
+
+- **Conventional commits:** `feat:`, `fix:`, `docs:`, `test:`, `chore:`,
+  `ci:`, `refactor:`. Commit at each green step. Don't push, publish crates or
+  create GitHub repos without asking.
+- **The CLI is an API** (ADR 0002).
+  - JSON output when stdout isn't a TTY.
+  - Every reply has `next`.
+  - Errors are `{"error":{"code","message","next"}}` with documented exit codes.
+  - Commands never prompt and are idempotent.
+  - Output types derive `Serialize` and `JsonSchema`, so `hall schema` stays
+    true.
+- **Snapshots pin the contract.** Update them deliberately and review every
+  changed `.snap`. Never accept them blindly.
+- **Nothing repo-specific is hardcoded.** Worktree, ship and gate commands come
+  from `.hallmark.toml`, with generic defaults.
+- **Windows matters.**
+  - Hooks call `hall hook <event>`, never shell scripts.
+  - Use `std::path`, and canonicalize with `dunce`.
+  - Run configured commands through `sh -c` or `cmd /C`.
+  - Flag anything Unix-only, and gate Unix-only tests with `#[cfg(unix)]`.
+  - CI on Windows is the check.
+- **The journal is append-only.**
+  - Never rewrite events.
+  - State is folded from events through `state::next` (ADR 0008).
+  - The SQLite index is a rebuildable cache.
+- **Hooks never break a session.**
+  - On an internal error, exit 0 and log it.
+  - In repos without `<git-common-dir>/hallmark`, do nothing.
+- **Don't spend model usage in tests.** Use the fixtures in `tests/fixtures/`.
+
+## Layout
+
+```text
+src/
+  main.rs        entry point
+  lib.rs
+  cli.rs         clap definitions, dispatch, exit codes
+  output.rs      the agent contract: JSON/text, `next`, error envelope
+  error.rs       error codes and exit codes
+  item.rs        item IDs (H-0001) and states
+  state.rs       the state machine and its transition table
+  event.rs       journal event types
+  journal.rs     append-only JSONL with fs4 locks
+  index.rs       SQLite index (rusqlite, bundled)
+  repo.rs        git dirs, worktrees, item resolution from the cwd
+  config.rs      .hallmark.toml and its defaults
+  git.rs, gh.rs  subprocess wrappers
+  paths.rs       path normalization that behaves the same on every OS
+  detect.rs      gate detection for `hall init`
+  usage.rs       claude -p results and transcript usage, pricing
+  gate.rs        shell parsing for the push and commit gates
+  hooks.rs       `hall hook <event>` handlers
+  plugin.rs      the embedded Claude Code plugin, for `hall setup claude`
+  commands/      one module per group of commands; meta.rs has
+                 `hall help --json` and `hall schema`
+plugin/          the Claude Code plugin: skill, hooks
+tests/           integration tests (assert_cmd + tempfile), insta snapshots
+tests/fixtures/  real hook stdin, claude -p results and transcripts from Step 0
+docs/            design, ADRs, spikes
+```
+
+<!-- hallmark:start -->
+## Hallmark
+Changes in this repo are tracked with Hallmark.
+Start each change with `hall new`, or `hall adopt`
+for an existing branch. Never push: work reaches
+GitHub only through review. `hall help --json`
+lists every command.
+<!-- hallmark:end -->
