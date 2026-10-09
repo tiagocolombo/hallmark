@@ -102,7 +102,10 @@ pub fn settle(state: &mut DaemonState, now: DateTime<Utc>) -> Result<Option<Paus
         if !hall.exists() {
             continue;
         }
-        hall.append(&hall.repo_events(), &Event::new(ACTOR, None, Body::Unpaused {}))?;
+        hall.append(
+            &hall.repo_events(),
+            &Event::new(ACTOR, None, Body::Unpaused {}),
+        )?;
         hall.live("daemon resumed after the pause");
     }
     state.paused = None;
@@ -172,9 +175,16 @@ mod tests {
         assert_eq!(names(&api), ["paused"]);
         // A second request while paused changes nothing.
         assert!(
-            begin(&mut st, "api", "again", None, std::slice::from_ref(&app), now)
-                .unwrap()
-                .is_none()
+            begin(
+                &mut st,
+                "api",
+                "again",
+                None,
+                std::slice::from_ref(&app),
+                now
+            )
+            .unwrap()
+            .is_none()
         );
         assert_eq!(names(&app), ["paused"]);
         // Not yet time: still paused.

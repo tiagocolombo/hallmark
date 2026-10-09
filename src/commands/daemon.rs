@@ -119,7 +119,16 @@ impl Render for DaemonOut {
         } else {
             "not running"
         };
-        s.push_str(&format!("daemon {head}"));
+        if self.action == "run" && self.state.is_none() {
+            // `run --once`: the pass is the news; the daemon is an aside.
+            let repos = self.repos.len();
+            s.push_str(&format!(
+                "one pass over {repos} repo{} (the daemon is {head})",
+                if repos == 1 { "" } else { "s" }
+            ));
+        } else {
+            s.push_str(&format!("daemon {head}"));
+        }
         if let Some(st) = &self.state {
             if self.running && st.pid != 0 {
                 s.push_str(&format!(" · pid {}", st.pid));
@@ -164,7 +173,10 @@ impl Render for DaemonOut {
                 (_, false) => "removed",
                 (_, true) => "would remove",
             };
-            s.push_str(&format!("  login    {what} {} ({})\n", sv.label, sv.manager));
+            s.push_str(&format!(
+                "  login    {what} {} ({})\n",
+                sv.label, sv.manager
+            ));
             s.push_str(&format!("           {}\n", sv.definition));
         }
         if let Some(a) = self.at_login {
@@ -338,6 +350,21 @@ fn without_repos(mut st: DaemonState) -> DaemonState {
 
 fn start(at_login: bool) -> Result<Response> {
     let mut changed = false;
+    // A daemon that was told to stop may still be finishing its pass: let
+    // it go, then start a fresh one.
+    if state::instance_running() && !state::load().is_some_and(|s| s.wanted) {
+        let deadline = Instant::now() + STOP_WAIT;
+        while state::instance_running() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        if state::instance_running() {
+            return Err(HallError::new(
+                ErrorCode::CommandFailed,
+                "the daemon is stopping after its current pass; start it again once it has",
+            )
+            .next(["hall daemon status", "hall daemon start"]));
+        }
+    }
     if !state::instance_running() {
         state::update(|s| s.wanted = true)?;
         if let Err(e) = launch_and_wait() {
