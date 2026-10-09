@@ -1,0 +1,30 @@
+[workspace]
+members = ["cargo:."]
+
+# Config for 'dist' (cargo-dist). See docs/decisions/0023-packaging-and-releases.md.
+# After changing anything here, run `dist generate` to refresh
+# .github/workflows/release.yml, and `dist plan` to check the result.
+[dist]
+# The preferred dist version to use in CI (Cargo.toml SemVer syntax)
+cargo-dist-version = "0.31.0"
+# CI backends to support
+ci = "github"
+# The installers to generate for each app
+installers = ["shell", "powershell", "homebrew"]
+# Target platforms to build apps for (Rust target-triple syntax)
+targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-unknown-linux-musl", "x86_64-pc-windows-msvc"]
+# Path that installers should place binaries in
+install-path = "CARGO_HOME"
+# Where to host releases
+hosting = "github"
+# Whether to install an updater program
+install-updater = false
+# Checksums published next to every archive
+checksum = "sha256"
+# The Homebrew tap the formula is written for. Publishing to it is off:
+# add `publish-jobs = ["homebrew"]` (and the HOMEBREW_TAP_TOKEN secret) once
+# release assets are downloadable without auth. See ADR 0023.
+tap = "tiagocolombo/homebrew-tap"
+formula = "hall"
+# Release only on version tags: never run the release workflow on pull requests.
+pr-run-mode = "skip"
