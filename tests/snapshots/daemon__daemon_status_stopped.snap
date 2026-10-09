@@ -1,0 +1,37 @@
+---
+source: tests/daemon.rs
+expression: "scrub(&env, &st.json)"
+---
+{
+  "action": "status",
+  "at_login": false,
+  "log": "[root]/home/daemon/daemon.log",
+  "next": [
+    "hall daemon start",
+    "hall daemon run --once"
+  ],
+  "repos": [
+    {
+      "in_loop": 0,
+      "last_pass": {
+        "at": "[time]",
+        "name": "app",
+        "path": "[root]/app",
+        "result": "idle"
+      },
+      "name": "app",
+      "path": "[root]/app",
+      "queue": 0,
+      "status": "ok"
+    }
+  ],
+  "running": false,
+  "state": {
+    "heartbeat": null,
+    "passes": "[passes]",
+    "pid": "[pid]",
+    "started_at": "[time]",
+    "stopped_at": "[time]",
+    "wanted": false
+  }
+}
