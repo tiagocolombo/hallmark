@@ -1,0 +1,10 @@
+{
+  "session_id": "ea9f3baf-f212-495e-b211-dc4a6fb63fdf",
+  "transcript_path": "/home/user/.claude/projects/-tmp-hallmark-spike-repo/ea9f3baf-f212-495e-b211-dc4a6fb63fdf.jsonl",
+  "cwd": "/tmp/hallmark-spike/repo",
+  "scratchpad_dir": "/tmp/claude-scratch",
+  "prompt_id": "6ab42ed0-8725-407e-874a-964d9c8b57bd",
+  "hook_event_name": "Notification",
+  "message": "Claude is waiting for your input",
+  "notification_type": "idle_prompt"
+}

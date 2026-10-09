@@ -1,0 +1,82 @@
+{
+  "is_error": false,
+  "duration_api_ms": 0,
+  "num_turns": 0,
+  "stop_reason": null,
+  "session_id": "9148a4ab-7bc2-4df4-a4e8-269838ba16e5",
+  "total_cost_usd": 0.004908535,
+  "usage": {
+    "output_tokens_details": {
+      "thinking_tokens": 0
+    },
+    "input_tokens": 0,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 0,
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "",
+    "iterations": [],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "claude-haiku-5-5": {
+      "inputTokens": 4,
+      "outputTokens": 1649,
+      "cacheReadInputTokens": 26651,
+      "cacheCreationInputTokens": 30537,
+      "webSearchRequests": 0,
+      "costUSD": 0.004908535,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 715,
+      "canonicalModel": "claude-haiku-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "safety_stops": 0,
+  "subtype": "success",
+  "result": "```json\n[\n  {\n    \"file\": \"/tmp/hallmark-spike/repo/calc.py\",\n    \"line\": 2,\n    \"summary\": \"add() was changed from a + b to a - b, so the function named add now subtracts.\",\n    \"failure_scenario\": \"add(2, 3) \u2192 -1 instead of 5; any caller relying on addition gets silently wrong results. Nothing in the repo tests or guards this, so the regression is not caught.\"\n  },\n  {\n    \"file\": \"/tmp/hallmark-spike/repo/calc.py\",\n    \"line\": 5,\n    \"summary\": \"div() has no zero-divisor handling, so division by zero raises an unhandled ZeroDivisionError.\",\n    \"failure_scenario\": \"div(1, 0) \u2192 ZeroDivisionError propagates to the caller. If callers expect a number or a controlled error, this crashes the call path.\"\n  },\n  {\n    \"file\": \"/tmp/hallmark-spike/repo/calc.py\",\n    \"line\": 5,\n    \"summary\": \"div() uses true division, so integer inputs return a float and the return type differs from add()'s integer result.\",\n    \"failure_scenario\": \"div(4, 2) \u2192 2.0 (float) while add(1, 1) \u2192 2 (int); downstream code doing integer-only operations, indexing, or exact equality checks can behave unexpectedly.\"\n  }\n]\n```\n\nScope was the uncommitted working-tree change to `calc.py` only, since the repo has a single commit with no upstream. No repo-level CLAUDE.md applies, and the user-level CLAUDE.md has only git-attribution rules, so the conventions angle produced nothing. Only three genuine findings exist, so I did not pad the list to five.",
+  "local_command": "code_review",
+  "type": "result",
+  "duration_ms": 9306,
+  "uuid": "25fc0407-5c46-4676-ba9d-2487ad1c694b",
+  "queued_turn_count": 0,
+  "result_index": 0
+}

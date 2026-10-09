@@ -1,0 +1,9 @@
+{
+  "session_id": "45cab862-ad4d-4f4d-b204-3796be211525",
+  "transcript_path": "/home/user/.claude/projects/-tmp-hallmark-spike-repo/45cab862-ad4d-4f4d-b204-3796be211525.jsonl",
+  "cwd": "/tmp/hallmark-spike/repo",
+  "prompt_id": "bf1d5b2f-e3b7-48ba-9797-bb1ab6a72d99",
+  "permission_mode": "acceptEdits",
+  "hook_event_name": "UserPromptSubmit",
+  "prompt": "Do these steps in order: 1) Run the shell command: git status --short. 2) Use the Write tool to create notes.txt containing hi. 3) Use the Write tool to create denied.txt containing no. If a tool call is denied, quote the denial reason verbatim. 4) Tell me the secret context word if you were given one."
+}

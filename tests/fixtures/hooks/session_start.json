@@ -1,0 +1,7 @@
+{
+  "session_id": "45cab862-ad4d-4f4d-b204-3796be211525",
+  "transcript_path": "/home/user/.claude/projects/-tmp-hallmark-spike-repo/45cab862-ad4d-4f4d-b204-3796be211525.jsonl",
+  "cwd": "/tmp/hallmark-spike/repo",
+  "hook_event_name": "SessionStart",
+  "source": "startup"
+}

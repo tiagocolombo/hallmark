@@ -1,0 +1,17 @@
+{
+  "session_id": "45cab862-ad4d-4f4d-b204-3796be211525",
+  "transcript_path": "/home/user/.claude/projects/-tmp-hallmark-spike-repo/45cab862-ad4d-4f4d-b204-3796be211525.jsonl",
+  "cwd": "/tmp/hallmark-spike/repo",
+  "prompt_id": "bf1d5b2f-e3b7-48ba-9797-bb1ab6a72d99",
+  "permission_mode": "acceptEdits",
+  "effort": {
+    "level": "medium"
+  },
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Write",
+  "tool_input": {
+    "file_path": "/tmp/hallmark-spike/repo/notes.txt",
+    "content": "hi"
+  },
+  "tool_use_id": "toolu_01WVtCWatYhxkZTjfGuHWcKk"
+}

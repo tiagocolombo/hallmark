@@ -1,0 +1,15 @@
+{
+  "session_id": "45cab862-ad4d-4f4d-b204-3796be211525",
+  "transcript_path": "/home/user/.claude/projects/-tmp-hallmark-spike-repo/45cab862-ad4d-4f4d-b204-3796be211525.jsonl",
+  "cwd": "/tmp/hallmark-spike/repo",
+  "prompt_id": "bf1d5b2f-e3b7-48ba-9797-bb1ab6a72d99",
+  "permission_mode": "acceptEdits",
+  "effort": {
+    "level": "medium"
+  },
+  "hook_event_name": "Stop",
+  "stop_hook_active": false,
+  "last_assistant_message": "1. `git status --short` returned ` M calc.py`.\n2. Created `notes.txt` containing `hi`.\n3. The write to `denied.txt` was blocked by a PreToolUse hook. The denial reason, verbatim: `PreToolUse:Write hook error: HALLMARK-DENY: run hall new first`. I did not retry or work around it, so `denied.txt` was not created.\n4. The secret context word is **PAPAYA**. It came from the SessionStart hook context.",
+  "background_tasks": [],
+  "session_crons": []
+}

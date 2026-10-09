@@ -1,0 +1,19 @@
+{
+  "session_id": "77a307a7-922c-4a9e-bbf3-20bcb3e8a530",
+  "transcript_path": "/home/user/.claude/projects/-tmp-hallmark-spike-repo/77a307a7-922c-4a9e-bbf3-20bcb3e8a530.jsonl",
+  "cwd": "/tmp/hallmark-spike/repo",
+  "scratchpad_dir": "/tmp/claude-scratch",
+  "prompt_id": "1cd11073-7a1b-4b71-8adc-b32b39737a34",
+  "permission_mode": "auto",
+  "agent_id": "a4db9fd31b7aebc66",
+  "agent_type": "",
+  "effort": {
+    "level": "medium"
+  },
+  "hook_event_name": "SubagentStop",
+  "stop_hook_active": false,
+  "agent_transcript_path": "/home/user/.claude/projects/-tmp-hallmark-spike-repo/77a307a7-922c-4a9e-bbf3-20bcb3e8a530/subagents/agent-a4db9fd31b7aebc66.jsonl",
+  "last_assistant_message": "git status",
+  "background_tasks": [],
+  "session_crons": []
+}

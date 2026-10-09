@@ -1,0 +1,91 @@
+{
+  "is_error": false,
+  "duration_api_ms": 0,
+  "num_turns": 0,
+  "stop_reason": null,
+  "session_id": "1e173272-9c21-4dcc-89ea-acad7de3a8db",
+  "total_cost_usd": 0.00551459,
+  "usage": {
+    "output_tokens_details": {
+      "thinking_tokens": 0
+    },
+    "input_tokens": 0,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 0,
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "",
+    "iterations": [],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "claude-haiku-5-5": {
+      "inputTokens": 8,
+      "outputTokens": 1905,
+      "cacheReadInputTokens": 83579,
+      "cacheCreationInputTokens": 29804,
+      "webSearchRequests": 0,
+      "costUSD": 0.00551459,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 467,
+      "canonicalModel": "claude-haiku-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [
+    {
+      "tool_name": "Bash",
+      "tool_use_id": "toolu_01Mw2jBBmCBNW4moPQK5J4a2",
+      "tool_input": {
+        "command": "git status --short && echo \"---UPSTREAM---\" && (git rev-parse --abbrev-ref --symbolic-full-name @{upstream} 2>&1; echo) && echo \"---RANGE---\" && git diff main...HEAD --stat && echo \"---WORKTREE---\" && git diff HEAD",
+        "description": "Inspect repo status and diffs"
+      }
+    }
+  ],
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "safety_stops": 0,
+  "subtype": "success",
+  "result": "```json\n[\n  {\n    \"file\": \"/tmp/hallmark-spike/repo/calc.py\",\n    \"line\": 2,\n    \"summary\": \"add() now computes a - b instead of a + b, so the function's name and contract are violated.\",\n    \"failure_scenario\": \"add(2, 3) \u2192 -1 instead of 5; any caller relying on addition gets silently wrong results. The working-tree change replaced the original `return a + b` (HEAD) with `return a - b`, and nothing in the diff restores the sum behavior.\"\n  },\n  {\n    \"file\": \"/tmp/hallmark-spike/repo/calc.py\",\n    \"line\": 5,\n    \"summary\": \"div() has no guard for a zero divisor, so it raises a bare ZeroDivisionError on invalid input.\",\n    \"failure_scenario\": \"div(1, 0) \u2192 ZeroDivisionError propagates uncaught to the caller. If callers expect a sentinel value or a descriptive error, they crash instead. If raising is intended, this is fine but undocumented.\"\n  },\n  {\n    \"file\": \"/tmp/hallmark-spike/repo/calc.py\",\n    \"line\": 5,\n    \"summary\": \"div() uses true division (/), so integer inputs return a float, which may not match the caller's expected type.\",\n    \"failure_scenario\": \"div(7, 2) \u2192 3.5 (float). If callers expect integer or floor-division results, for example for indexing or counting, they receive a float and fail downstream. Use // if floor division is intended.\"\n  }\n]\n```\n\nScope note: the branch has a single commit (`b45d53a init`), so `main...HEAD` is empty. The review covered the uncommitted working-tree change to `calc.py` (`git diff HEAD`). No other Python files in the repo call `add` or `div`, so there are no cross-file call sites to check. There is no CLAUDE.md in the repo, so the conventions angle returned nothing. Only the first finding is a clear correctness bug. The other two are judgment calls about intent, so they are listed at lower severity.",
+  "local_command": "code_review",
+  "type": "result",
+  "duration_ms": 10817,
+  "uuid": "99ba8e60-d356-4e50-992e-f41154ddc72c",
+  "queued_turn_count": 0,
+  "result_index": 0
+}
