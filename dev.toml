@@ -1,0 +1,15 @@
+# Everything this project needs, in one file.
+#   flake.nix reads it (builtins.fromTOML) to build the shell and services
+#   the `dev` CLI reads it to know the verbs
+name = "hallmark"
+repo = "tiagocolombo/hallmark"
+description = "Agentic development, automated review, a full record"
+
+[toolchain]
+# Anything else, named as it is in nixpkgs.
+packages = ["cargo", "rustc", "clippy", "rustfmt", "rust-analyzer", "gh"]
+
+[commands]
+test = "cargo test --all-targets"
+lint = "cargo fmt --check && cargo clippy --all-targets -- -D warnings"
+build = "cargo build --release"
