@@ -457,6 +457,9 @@ pub enum LibraryAction {
         /// Only this kind: rule, false-positive, map, decision.
         #[arg(long)]
         kind: Option<String>,
+        /// Include proposed learnings (open knowledge items, and the base).
+        #[arg(long)]
+        proposed: bool,
     },
     /// List proposed learnings, or accept and reject them.
     Review {
