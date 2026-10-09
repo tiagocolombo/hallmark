@@ -123,6 +123,45 @@ impl RunRequest {
     }
 }
 
+/// A request for `role` with everything the config decides filled in: the
+/// model, effort, `--max-budget-usd`, timeout, the runtime plugin,
+/// `claude_args`, and `HALL_ACTOR`. Callers add the agent, schema, tools
+/// and prompt.
+pub fn request(
+    repo: &Repo,
+    role: crate::config::Role,
+    agent: Option<&str>,
+    prompt: String,
+    cwd: &Path,
+) -> Result<RunRequest> {
+    let b = &repo.config.budget;
+    let actor = match role {
+        crate::config::Role::Reviewer => "assayer",
+        crate::config::Role::Fixer => "fixer",
+        crate::config::Role::Intake => "intake",
+        crate::config::Role::Librarian => "librarian",
+    };
+    Ok(RunRequest {
+        role: role.as_str().into(),
+        room: role.room().into(),
+        agent: agent.map(String::from),
+        model: Some(b.model(role)),
+        effort: b.effort(role),
+        prompt,
+        json_schema: None,
+        max_budget_usd: b.max_usd(role),
+        timeout_secs: b.timeout_secs(role).max(0) as u64,
+        cwd: cwd.to_path_buf(),
+        add_dirs: Vec::new(),
+        allowed_tools: Vec::new(),
+        permission_mode: None,
+        resume: None,
+        plugin_dir: Some(crate::plugin::runtime_dir()?),
+        extra_args: repo.config.claude_args.clone(),
+        env: vec![("HALL_ACTOR".into(), actor.into())],
+    })
+}
+
 /// Why a run produced nothing usable.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]

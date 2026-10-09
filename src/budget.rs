@@ -27,6 +27,27 @@ pub struct Stop {
     pub reason: String,
 }
 
+impl Stop {
+    /// What a worker reports when this stop blocks it: the daily total
+    /// pauses the daemon until tomorrow (UTC); the others just mean "not
+    /// now" for this item or room.
+    pub fn progress(&self) -> crate::worker::Progress {
+        match self.level {
+            Level::Daily => {
+                let tomorrow = (chrono::Utc::now() + chrono::Duration::days(1))
+                    .date_naive()
+                    .and_hms_opt(0, 0, 0)
+                    .map(|t| t.and_utc());
+                crate::worker::Progress::Pause {
+                    reason: self.reason.clone(),
+                    until: tomorrow,
+                }
+            }
+            _ => crate::worker::Progress::worked(format!("budget: {}", self.reason)),
+        }
+    }
+}
+
 /// May a `role` run for `item` start now?
 pub fn check(_repo: &Repo, _item: Option<ItemId>, _role: &str) -> Result<(), Stop> {
     Ok(())
