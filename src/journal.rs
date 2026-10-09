@@ -60,6 +60,62 @@ impl Hall {
     pub fn hook_log(&self) -> PathBuf {
         self.root.join("hook-errors.log")
     }
+    /// Full review reports: `reviews/r<round>.md`.
+    pub fn item_reviews(&self, id: ItemId) -> PathBuf {
+        self.item_dir(id).join("reviews")
+    }
+    /// Check output: `checks/r<round>.log`.
+    pub fn item_checks(&self, id: ItemId) -> PathBuf {
+        self.item_dir(id).join("checks")
+    }
+    /// Raw `claude -p` results and prompts, for debugging.
+    pub fn item_runs(&self, id: ItemId) -> PathBuf {
+        self.item_dir(id).join("runs")
+    }
+    /// Work leases (`hall next`).
+    pub fn leases_dir(&self) -> PathBuf {
+        self.root.join("leases")
+    }
+    /// What the daemon is doing now, for the terminal app's Live view.
+    pub fn live_log(&self) -> PathBuf {
+        self.root.join("live.log")
+    }
+
+    /// Appends a line to the Live log, trimming it when it grows large.
+    pub fn live(&self, line: &str) {
+        let path = self.live_log();
+        if let Ok(meta) = fs::metadata(&path)
+            && meta.len() > 512 * 1024
+        {
+            let _ = fs::rename(&path, path.with_extension("log.1"));
+        }
+        if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&path) {
+            let _ = writeln!(f, "{} {line}", Utc::now().format("%Y-%m-%dT%H:%M:%SZ"));
+        }
+    }
+
+    /// Queued tickets, oldest first.
+    pub fn tickets(&self) -> Result<Vec<Ticket>> {
+        let mut out = Vec::new();
+        let Ok(rd) = fs::read_dir(self.queue_dir()) else {
+            return Ok(out);
+        };
+        for e in rd.flatten() {
+            if e.path().extension().is_some_and(|x| x == "json")
+                && let Ok(t) = fs::read_to_string(e.path())
+                && let Ok(t) = serde_json::from_str::<Ticket>(&t)
+            {
+                out.push(t);
+            }
+        }
+        out.sort_by_key(|t| (t.queued_at, t.id));
+        Ok(out)
+    }
+
+    pub fn ticket(&self, id: ItemId) -> Option<Ticket> {
+        let p = self.queue_dir().join(format!("{id}.json"));
+        serde_json::from_str(&fs::read_to_string(p).ok()?).ok()
+    }
 
     pub fn create(&self) -> Result<()> {
         for d in [self.items_dir(), self.sessions_dir(), self.queue_dir()] {

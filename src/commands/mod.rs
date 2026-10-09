@@ -2,11 +2,20 @@
 //! type is also registered in `meta::schema`.
 
 pub mod ask;
+pub mod budget;
+pub mod daemon;
 pub mod doctor;
+pub mod fix;
 pub mod flow;
 pub mod init;
+pub mod library;
+pub mod merge;
 pub mod meta;
 pub mod new;
+pub mod next;
+pub mod notify;
+pub mod record;
+pub mod review;
 pub mod setup;
 pub mod status;
 

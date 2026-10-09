@@ -210,6 +210,56 @@ pub struct Item {
     pub drop_reason: Option<String>,
     pub adopted: bool,
     pub events: u32,
+    /// The parent item when this is a parallel part of a split request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<ItemId>,
+    /// The PR whose feedback started this item.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub follow_up: Option<String>,
+    /// Set while the loop waits for you (budget, repeated run failures).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hold: Option<Hold>,
+    /// Set by the watchman; cleared by the next event.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stuck_since: Option<DateTime<Utc>>,
+    /// The commit the last verdict reviewed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reviewed_sha: Option<String>,
+    /// Open findings by severity.
+    #[serde(default)]
+    pub findings: crate::findings::Counts,
+}
+
+/// Why the loop stopped working on an item.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum HoldKind {
+    /// A per-item budget cap was reached.
+    Budget,
+    /// A model run failed twice in a row.
+    RunFailed,
+    /// The ship command failed.
+    ShipFailed,
+    /// Anything else that needs a person.
+    Other,
+}
+
+impl HoldKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            HoldKind::Budget => "budget",
+            HoldKind::RunFailed => "run_failed",
+            HoldKind::ShipFailed => "ship_failed",
+            HoldKind::Other => "other",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Hold {
+    pub kind: HoldKind,
+    pub reason: String,
+    pub since: DateTime<Utc>,
 }
 
 #[cfg(test)]

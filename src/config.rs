@@ -18,12 +18,19 @@ pub struct Config {
     pub worktree: String,
     /// The item's branch name. Placeholders: {id} {slug}.
     pub branch: String,
-    /// Ships a hallmarked commit. Placeholders: {branch} {id} {base}.
+    /// Ships a hallmarked commit. Placeholders: {branch} {id} {base}
+    /// {title} {body_file} (the PR body the shipper writes) {issue}.
     pub ship: String,
     /// The repo's checks, run in order at the frozen commit.
     pub gates: Vec<String>,
     /// The command that runs the reviewer.
     pub reviewer: String,
+    /// The fix engine: `claude -p` (the fixer agent), or another command run
+    /// in the item's worktree, such as Ralph Orchestrator. Placeholders:
+    /// {id} {worktree} {findings_file} (JSON from `hall findings`).
+    pub fixer: String,
+    /// Extra arguments for every headless `claude -p` run.
+    pub claude_args: Vec<String>,
     /// Rejected reviews before the item is escalated to you.
     pub max_rejects: u32,
     /// The watchman flags items with no event for this long.
@@ -34,12 +41,13 @@ pub struct Config {
     pub rules: Vec<String>,
     pub capture: Capture,
     pub budget: Budget,
-    /// Notification channels (Stage 3). Kept as written.
+    /// How the Front Desk plans a request.
+    pub intake: Intake,
+    /// Notification channels. Usually set in the user config
+    /// (`<user data dir>/hallmark/config.toml`), which this overrides.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub notify: Option<serde_json::Value>,
-    /// Library settings (Stage 2). Kept as written.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub library: Option<serde_json::Value>,
+    pub notify: Option<Notify>,
+    pub library: Library,
 }
 
 impl Default for Config {
@@ -48,17 +56,20 @@ impl Default for Config {
             base: "main".into(),
             worktree: "git worktree add ../{repo}-{id} -b {branch}".into(),
             branch: "hm/{id}-{slug}".into(),
-            ship: "git push -u origin {branch} && gh pr create --fill".into(),
+            ship: "git push -u origin {branch} && gh pr create --base {base} --head {branch} --title {title} --body-file {body_file}".into(),
             gates: Vec::new(),
             reviewer: "claude -p".into(),
+            fixer: "claude -p".into(),
+            claude_args: Vec::new(),
             max_rejects: 3,
             stuck_after: "30m".into(),
             lenses: Lenses::All("all".into()),
             rules: vec!["CLAUDE.md".into(), "AGENTS.md".into()],
             capture: Capture::default(),
             budget: Budget::default(),
+            intake: Intake::default(),
             notify: None,
-            library: None,
+            library: Library::default(),
         }
     }
 }
@@ -119,6 +130,83 @@ pub struct Budget {
     pub fix: Option<RoleBudget>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub intake: Option<RoleBudget>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub librarian: Option<RoleBudget>,
+}
+
+/// The four budgeted model roles, and the room each one works in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Role {
+    Reviewer,
+    Fixer,
+    Intake,
+    Librarian,
+}
+
+impl Role {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Role::Reviewer => "reviewer",
+            Role::Fixer => "fixer",
+            Role::Intake => "intake",
+            Role::Librarian => "librarian",
+        }
+    }
+
+    /// The room usage is booked to.
+    pub fn room(self) -> &'static str {
+        match self {
+            Role::Reviewer => "assay",
+            Role::Fixer => "repair",
+            Role::Intake => "front",
+            Role::Librarian => "library",
+        }
+    }
+}
+
+impl Budget {
+    pub fn role(&self, r: Role) -> Option<&RoleBudget> {
+        match r {
+            Role::Reviewer => self.review.as_ref(),
+            Role::Fixer => self.fix.as_ref(),
+            Role::Intake => self.intake.as_ref(),
+            Role::Librarian => self.librarian.as_ref(),
+        }
+    }
+
+    /// `[budget.review] model`, else `review_model`, and so on.
+    pub fn model(&self, r: Role) -> String {
+        if let Some(m) = self.role(r).and_then(|b| b.model.clone()) {
+            return m;
+        }
+        match r {
+            Role::Reviewer => self.review_model.clone(),
+            Role::Fixer => self.fix_model.clone(),
+            Role::Intake => self.intake_model.clone(),
+            Role::Librarian => self.librarian_model.clone(),
+        }
+    }
+
+    /// The per-run cap passed as `--max-budget-usd`.
+    pub fn max_usd(&self, r: Role) -> Option<f64> {
+        self.role(r).and_then(|b| b.max_usd)
+    }
+
+    pub fn effort(&self, r: Role) -> Option<String> {
+        self.role(r).and_then(|b| b.effort.clone())
+    }
+
+    /// The per-run time limit in seconds (default 20 minutes; intake 2).
+    pub fn timeout_secs(&self, r: Role) -> i64 {
+        self.role(r)
+            .and_then(|b| b.timeout.as_deref())
+            .and_then(parse_duration)
+            .unwrap_or(match r {
+                Role::Intake => 120,
+                _ => 1200,
+            })
+    }
 }
 
 impl Default for Budget {
@@ -133,7 +221,190 @@ impl Default for Budget {
             review: None,
             fix: None,
             intake: None,
+            librarian: None,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SplitMode {
+    /// The Front Desk splits a request into parallel parts when it can.
+    #[default]
+    Auto,
+    /// Every request is one item.
+    Off,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct Intake {
+    pub split: SplitMode,
+    /// At most this many parallel parts.
+    pub max_parts: u32,
+}
+
+impl Default for Intake {
+    fn default() -> Self {
+        Intake {
+            split: SplitMode::Auto,
+            max_parts: 4,
+        }
+    }
+}
+
+/// `[notify]`: where Hallmark tells you something waits.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct Notify {
+    /// Desktop notifications (macOS, Linux, Windows).
+    pub desktop: bool,
+    /// `ntfy://ntfy.sh/<topic>` (the default phone channel; the topic is
+    /// random) or `telegram://<bot-token>@<chat-id>`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phone: Option<String>,
+    /// A Slack incoming-webhook URL.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub slack: Option<String>,
+    /// "22:00-07:30": the phone waits; the desktop still shows.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quiet_hours: Option<String>,
+    /// Repeat an unanswered entry this often.
+    pub remind: String,
+    /// The local time of the morning digest; empty for none.
+    pub digest: String,
+    /// Channels per inbox kind: desktop, phone, slack, digest.
+    pub route: Route,
+}
+
+impl Default for Notify {
+    fn default() -> Self {
+        Notify {
+            desktop: true,
+            phone: None,
+            slack: None,
+            quiet_hours: None,
+            remind: "2h".into(),
+            digest: "08:30".into(),
+            route: Route::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct Route {
+    pub question: Vec<String>,
+    pub escalated: Vec<String>,
+    pub stuck: Vec<String>,
+    pub ready: Vec<String>,
+    pub budget: Vec<String>,
+    pub session_waiting: Vec<String>,
+    pub learnings: Vec<String>,
+}
+
+impl Default for Route {
+    fn default() -> Self {
+        let v = |c: &[&str]| c.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        Route {
+            question: v(&["desktop", "phone"]),
+            escalated: v(&["desktop", "phone"]),
+            stuck: v(&["desktop", "phone"]),
+            ready: v(&["desktop"]),
+            budget: v(&["desktop"]),
+            session_waiting: v(&["desktop"]),
+            learnings: v(&["digest"]),
+        }
+    }
+}
+
+impl Route {
+    /// The channels for an inbox kind.
+    pub fn channels(&self, kind: &str) -> &[String] {
+        match kind {
+            "question" => &self.question,
+            "escalated" => &self.escalated,
+            "stuck" | "daemon_stopped" => &self.stuck,
+            "ready" => &self.ready,
+            "budget" | "run_failed" | "ship_failed" | "held" => &self.budget,
+            "session_waiting" => &self.session_waiting,
+            "learnings" => &self.learnings,
+            _ => &self.ready,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SearchBackend {
+    /// SQLite FTS5, built in.
+    #[default]
+    Builtin,
+    /// tobi/qmd, when installed: one collection per repo.
+    Qmd,
+}
+
+/// `[library]`: the Library of learnings.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct Library {
+    pub search: SearchBackend,
+    /// The qmd collection; defaults to `hallmark-<repo>`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub collection: Option<String>,
+    /// Tokens of learnings sent to each review.
+    pub briefing_limit: String,
+    /// Kinds that skip your approval: rule, false-positive, map, decision.
+    pub auto_accept: Vec<String>,
+    /// Unused learnings are proposed for retirement after this long.
+    pub retire_after: String,
+    /// Where learnings live, relative to the repo root.
+    pub dir: String,
+}
+
+impl Default for Library {
+    fn default() -> Self {
+        Library {
+            search: SearchBackend::Builtin,
+            collection: None,
+            briefing_limit: "6k".into(),
+            auto_accept: Vec::new(),
+            retire_after: "90d".into(),
+            dir: ".hallmark/knowledge".into(),
+        }
+    }
+}
+
+/// `<user data dir>/hallmark/config.toml`: settings that belong to you
+/// rather than to a repository (your phone's topic, for one).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct UserConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notify: Option<Notify>,
+}
+
+impl UserConfig {
+    pub fn path() -> PathBuf {
+        crate::repo::user_dir().join("config.toml")
+    }
+
+    /// The user config, or the defaults when the file is missing.
+    pub fn load() -> Result<UserConfig> {
+        match std::fs::read_to_string(Self::path()) {
+            Ok(t) => Ok(toml::from_str(&t)?),
+            Err(_) => Ok(UserConfig::default()),
+        }
+    }
+}
+
+impl Config {
+    /// The repo's `[notify]`, else the user's, else the defaults.
+    pub fn notify(&self) -> Notify {
+        self.notify
+            .clone()
+            .or_else(|| UserConfig::load().ok().and_then(|u| u.notify))
+            .unwrap_or_default()
     }
 }
 
@@ -269,6 +540,47 @@ mod tests {
     #[test]
     fn empty_file_gives_defaults() {
         assert_eq!(Config::parse("").unwrap(), Config::default());
+    }
+
+    #[test]
+    fn typed_sections() {
+        let c = Config::parse(
+            r#"
+[budget]
+daily = "4M"
+per_item = "800k"
+[budget.review]
+model = "opus"
+effort = "high"
+max_usd = 3.0
+daily = "2M"
+[budget.fix]
+timeout = "5m"
+[notify]
+phone = "ntfy://ntfy.sh/hallmark-7f3k2q"
+quiet_hours = "22:00-07:30"
+[notify.route]
+ready = ["desktop", "phone"]
+[library]
+search = "qmd"
+auto_accept = ["map"]
+[intake]
+split = "off"
+"#,
+        )
+        .unwrap();
+        assert_eq!(c.budget.model(Role::Reviewer), "opus");
+        assert_eq!(c.budget.model(Role::Fixer), "sonnet");
+        assert_eq!(c.budget.max_usd(Role::Reviewer), Some(3.0));
+        assert_eq!(c.budget.timeout_secs(Role::Fixer), 300);
+        assert_eq!(c.budget.timeout_secs(Role::Reviewer), 1200);
+        let n = c.notify();
+        assert!(n.desktop);
+        assert_eq!(n.route.channels("ready"), ["desktop", "phone"]);
+        assert_eq!(n.route.channels("question"), ["desktop", "phone"]);
+        assert_eq!(c.library.search, SearchBackend::Qmd);
+        assert_eq!(c.library.briefing_limit, "6k");
+        assert_eq!(c.intake.split, SplitMode::Off);
     }
 
     #[test]

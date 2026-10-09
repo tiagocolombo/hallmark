@@ -71,6 +71,30 @@ pub enum Cmd {
     Hook(HookArgs),
     /// One-time machine setup.
     Setup(SetupArgs),
+    /// Run the review loop in the background for every registered repo.
+    Daemon(DaemonArgs),
+    /// Claim the next piece of work for a role, with a lease (agents).
+    Next(NextArgs),
+    /// Open findings and failing checks for an item (fixer).
+    Findings(FindingsArgs),
+    /// Record which findings a commit fixes, or dispute one (fixer).
+    Fixed(FixedArgs),
+    /// Record a schema-checked verdict for an item in review (assayer).
+    Verdict(VerdictArgs),
+    /// Merge a parallel part (child item) into its parent's branch.
+    Merge(MergeArgs),
+    /// Closed and dropped items, and why things were rejected.
+    History(HistoryArgs),
+    /// An item's whole record as Markdown.
+    Export(ExportArgs),
+    /// Show or set the budget caps, with today's spend.
+    Budget(BudgetArgs),
+    /// Notifications: `hall notify test` sends one to every channel.
+    Notify(NotifyArgs),
+    /// One line for Claude Code's status line (reads its JSON on stdin).
+    Statusline,
+    /// The Library: learnings from past reviews.
+    Library(LibraryArgs),
 }
 
 #[derive(Debug, Args)]
@@ -88,8 +112,18 @@ pub struct InitArgs {
 
 #[derive(Debug, Args)]
 pub struct NewArgs {
-    /// The request, in your words. Becomes the first journal entry.
+    /// The request, in your words. Becomes the first journal entry. The
+    /// Front Desk splits it into parallel parts when it can.
     pub request: Option<String>,
+    /// Never split the request into parallel parts.
+    #[arg(long)]
+    pub no_split: bool,
+    /// Make this item a parallel part of another item (merges into it).
+    #[arg(long)]
+    pub parent: Option<String>,
+    /// Start from feedback on a shipped PR (a URL or number).
+    #[arg(long)]
+    pub follow_up: Option<String>,
     /// A short title (defaults to the request or the issue title).
     #[arg(long)]
     pub title: Option<String>,
@@ -238,6 +272,213 @@ pub struct SetupArgs {
     pub dry_run: bool,
 }
 
+#[derive(Debug, Args)]
+pub struct DaemonArgs {
+    #[command(subcommand)]
+    pub action: DaemonAction,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum DaemonAction {
+    /// Start the daemon in the background.
+    Start {
+        /// Also start it at login (launchd, systemd, Task Scheduler).
+        #[arg(long)]
+        at_login: bool,
+    },
+    /// Stop the daemon.
+    Stop {
+        /// Also remove the login service.
+        #[arg(long)]
+        at_login: bool,
+    },
+    /// Is it running, paused, and what is it doing?
+    Status,
+    /// Run the loop in the foreground (what `start` launches).
+    Run {
+        /// One pass over the repos, then exit.
+        #[arg(long)]
+        once: bool,
+        /// Only these workers (comma-separated): watchman, resume, assayer,
+        /// fixer, shipper, librarian, notify.
+        #[arg(long, value_delimiter = ',')]
+        only: Vec<String>,
+        /// Only this repository (default: every registered repo; with
+        /// --once, the current one).
+        #[arg(long)]
+        repo: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum WorkRole {
+    /// Checks and review: items in checks or review.
+    Assayer,
+    /// Items in fixing.
+    Fixer,
+    /// Hallmarked items.
+    Shipper,
+}
+
+impl WorkRole {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            WorkRole::Assayer => "assayer",
+            WorkRole::Fixer => "fixer",
+            WorkRole::Shipper => "shipper",
+        }
+    }
+}
+
+#[derive(Debug, Args)]
+pub struct NextArgs {
+    #[arg(long, value_enum)]
+    pub role: WorkRole,
+    /// Claim this item rather than the next one.
+    #[arg(long)]
+    pub item: Option<String>,
+    /// Who is claiming (default: HALL_ACTOR and the process ID).
+    #[arg(long)]
+    pub holder: Option<String>,
+    /// How long the lease lasts, such as 30m.
+    #[arg(long, default_value = "30m")]
+    pub ttl: String,
+    /// Release the lease on --item instead of claiming.
+    #[arg(long, requires = "item")]
+    pub release: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct FindingsArgs {
+    pub id: Option<String>,
+    /// Include fixed and withdrawn findings.
+    #[arg(long)]
+    pub all: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct FixedArgs {
+    /// Findings the committed HEAD fixes (F1 F2 …). None when only failing
+    /// checks were fixed.
+    pub ids: Vec<String>,
+    #[arg(long)]
+    pub item: Option<String>,
+    /// A finding you dispute instead of fixing (repeatable; needs --reason).
+    #[arg(long, requires = "reason")]
+    pub dispute: Vec<String>,
+    /// Why the disputed findings are wrong.
+    #[arg(long)]
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct VerdictArgs {
+    pub id: Option<String>,
+    /// The verdict JSON (plugin/schemas/verdict.json); `-` reads stdin.
+    #[arg(long)]
+    pub file: String,
+    /// The reviewed commit (default: the item's frozen commit).
+    #[arg(long)]
+    pub sha: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct MergeArgs {
+    /// The child item (default: the current worktree's item).
+    pub id: Option<String>,
+    /// Keep the child's worktree on disk.
+    #[arg(long)]
+    pub keep_worktree: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct HistoryArgs {
+    /// Only items with at least one rejected review.
+    #[arg(long)]
+    pub rejected: bool,
+    /// Only findings under this lens, such as security or correctness.
+    #[arg(long)]
+    pub lens: Option<String>,
+    /// Only items that ended within this long, such as 7d.
+    #[arg(long)]
+    pub since: Option<String>,
+    /// Include items that are still open.
+    #[arg(long)]
+    pub all: bool,
+    #[arg(long)]
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Args)]
+pub struct ExportArgs {
+    pub id: Option<String>,
+    /// Write to this file instead of the item's journal directory.
+    #[arg(long)]
+    pub out: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct BudgetArgs {
+    /// Set a cap in .hallmark.toml, such as daily=4M, per_item=800k,
+    /// review.max_usd=3, review.daily=2M (repeatable).
+    #[arg(long)]
+    pub set: Vec<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct NotifyArgs {
+    #[command(subcommand)]
+    pub action: NotifyAction,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum NotifyAction {
+    /// Send a test notification to every configured channel.
+    Test {
+        /// Only this channel: desktop, phone, slack.
+        #[arg(long)]
+        channel: Option<String>,
+    },
+}
+
+#[derive(Debug, Args)]
+pub struct LibraryArgs {
+    #[command(subcommand)]
+    pub action: LibraryAction,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum LibraryAction {
+    /// Search the repo's learnings.
+    Search {
+        query: String,
+        #[arg(long, default_value_t = 10)]
+        limit: usize,
+        /// Only this kind: rule, false-positive, map, decision.
+        #[arg(long)]
+        kind: Option<String>,
+    },
+    /// List proposed learnings, or accept and reject them.
+    Review {
+        /// Learnings to accept (L-0001 …).
+        #[arg(long, value_delimiter = ',')]
+        accept: Vec<String>,
+        /// Learnings to reject.
+        #[arg(long, value_delimiter = ',')]
+        reject: Vec<String>,
+        #[arg(long)]
+        reason: Option<String>,
+    },
+    /// Retire a learning, keeping its history.
+    Retire {
+        id: String,
+        #[arg(long)]
+        reason: String,
+    },
+    /// Run the librarian on one closed or escalated item now.
+    Distill { id: String },
+}
+
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum SetupTarget {
     /// Install the Hallmark plugin for Claude Code (user level).
@@ -280,7 +521,7 @@ pub fn run() -> i32 {
             return 1;
         }
     };
-    let is_hook = matches!(cli.cmd, Some(Cmd::Hook(_)));
+    let is_hook = matches!(cli.cmd, Some(Cmd::Hook(_) | Cmd::Statusline));
     match dispatch(cli.cmd, &cwd, mode) {
         Ok(resp) => {
             resp.print(mode);
@@ -298,6 +539,7 @@ pub fn run() -> i32 {
 fn dispatch(cmd: Option<Cmd>, cwd: &std::path::Path, mode: Mode) -> Result<Response> {
     use commands::*;
     match cmd {
+        None if mode == Mode::Text => crate::tui::run(cwd),
         None => status::status(cwd, None, false, true),
         Some(Cmd::Init(a)) => init::init(cwd, a),
         Some(Cmd::Doctor) => doctor::doctor(cwd),
@@ -319,5 +561,17 @@ fn dispatch(cmd: Option<Cmd>, cwd: &std::path::Path, mode: Mode) -> Result<Respo
         Some(Cmd::Schema(a)) => meta::schema(a),
         Some(Cmd::Hook(a)) => crate::hooks::run(a.event, cwd),
         Some(Cmd::Setup(a)) => setup::setup(a),
+        Some(Cmd::Daemon(a)) => daemon::daemon(cwd, a),
+        Some(Cmd::Next(a)) => next::next(cwd, a),
+        Some(Cmd::Findings(a)) => review::findings(cwd, a),
+        Some(Cmd::Fixed(a)) => fix::fixed(cwd, a),
+        Some(Cmd::Verdict(a)) => review::verdict(cwd, a),
+        Some(Cmd::Merge(a)) => merge::merge(cwd, a),
+        Some(Cmd::History(a)) => record::history(cwd, a),
+        Some(Cmd::Export(a)) => record::export(cwd, a),
+        Some(Cmd::Budget(a)) => budget::budget(cwd, a),
+        Some(Cmd::Notify(a)) => notify::notify(cwd, a),
+        Some(Cmd::Statusline) => notify::statusline(cwd),
+        Some(Cmd::Library(a)) => library::library(cwd, a),
     }
 }

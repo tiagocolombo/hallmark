@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Hallmark proposed learnings",
+  "type": "object",
+  "properties": {
+    "learnings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "updates": { "type": "string" },
+          "kind": { "enum": ["rule", "false-positive", "map", "decision"] },
+          "scope": { "type": "array", "items": { "type": "string" } },
+          "lens": { "type": "string" },
+          "title": { "type": "string" },
+          "body": { "type": "string" }
+        },
+        "required": ["updates", "kind", "scope", "lens", "title", "body"],
+        "additionalProperties": false
+      }
+    },
+    "retire": { "type": "array", "items": { "type": "string" } }
+  },
+  "required": ["learnings", "retire"],
+  "additionalProperties": false
+}

@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Hallmark verdict",
+  "description": "The principal engineer's review of one frozen commit. List what breaks, with the scenario; rule on every open finding from earlier rounds; say which briefing learnings you used and whether they held. There is no approve field: Hallmark approves when no blocker or major finding stays open.",
+  "type": "object",
+  "properties": {
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Two or three sentences: what the change does and whether it is safe to ship."
+    },
+    "findings": {
+      "type": "array",
+      "description": "New problems found in this round. Empty when nothing is wrong.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "lens": {
+            "enum": ["first_principles", "correctness", "security_tenancy", "data_migrations", "evidence", "operability", "repo_rules"]
+          },
+          "severity": {
+            "enum": ["blocker", "major", "minor", "nit"],
+            "description": "blocker: must not ship. major: a real defect that should be fixed first. minor: worth fixing, not blocking. nit: style."
+          },
+          "file": { "type": "string", "minLength": 1, "description": "Repo-relative path." },
+          "line": { "type": "integer", "minimum": 0, "description": "1-based line; 0 for the whole file." },
+          "title": { "type": "string", "minLength": 1, "description": "One line." },
+          "scenario": { "type": "string", "minLength": 1, "description": "The concrete inputs or state, and the wrong result they produce." },
+          "fix": { "type": "string", "minLength": 1, "description": "How to fix it." }
+        },
+        "required": ["lens", "severity", "file", "line", "title", "scenario", "fix"],
+        "additionalProperties": false
+      }
+    },
+    "prior": {
+      "type": "array",
+      "description": "One ruling for each open finding listed in the prompt. Leave none out.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "The finding's ID, such as F3." },
+          "status": { "enum": ["fixed", "open", "withdrawn"], "description": "withdrawn: the dispute is right, or the finding was wrong." },
+          "note": { "type": "string" }
+        },
+        "required": ["id", "status"],
+        "additionalProperties": false
+      }
+    },
+    "learnings": {
+      "type": "array",
+      "description": "The briefing's learnings (L-0001…) that informed this review.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "held": { "type": "boolean", "description": "False when this change shows the learning is wrong or stale." },
+          "note": { "type": "string" }
+        },
+        "required": ["id", "held"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["summary", "findings", "prior", "learnings"],
+  "additionalProperties": false,
+  "examples": [
+    {
+      "summary": "Adds retries with jitter to webhook delivery. One race lets two workers deliver the same event.",
+      "findings": [
+        {
+          "lens": "correctness",
+          "severity": "blocker",
+          "file": "apps/api/src/webhooks/retry.ts",
+          "line": 42,
+          "title": "Two workers can retry the same delivery",
+          "scenario": "Workers A and B both read attempt 2 of delivery 17 before either writes; the endpoint receives event 17 twice.",
+          "fix": "Claim the delivery with SELECT … FOR UPDATE SKIP LOCKED before sending."
+        }
+      ],
+      "prior": [{ "id": "F1", "status": "fixed" }],
+      "learnings": [{ "id": "L-0017", "held": true }]
+    }
+  ]
+}

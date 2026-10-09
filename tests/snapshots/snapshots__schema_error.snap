@@ -100,6 +100,36 @@ expression: "env.hall(&env.root, &[\"schema\", \"error\"]).json"
             "type": "string"
           },
           {
+            "const": "CHILDREN_OPEN",
+            "description": "A parent item still has open child items.",
+            "type": "string"
+          },
+          {
+            "const": "MERGE_CONFLICT",
+            "description": "Merging a child item into its parent conflicted.",
+            "type": "string"
+          },
+          {
+            "const": "BUDGET_EXCEEDED",
+            "description": "A budget cap stops the work.",
+            "type": "string"
+          },
+          {
+            "const": "INVALID_VERDICT",
+            "description": "A verdict doesn't match `plugin/schemas/verdict.json`.",
+            "type": "string"
+          },
+          {
+            "const": "RUN_FAILED",
+            "description": "A model run failed (timeout, budget, no structured output, error).",
+            "type": "string"
+          },
+          {
+            "const": "NOT_IMPLEMENTED",
+            "description": "Not built yet (temporary, while Stage 2 lands).",
+            "type": "string"
+          },
+          {
             "const": "GH_UNAVAILABLE",
             "description": "`gh` is not installed or not logged in.",
             "type": "string"

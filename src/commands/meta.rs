@@ -5,10 +5,19 @@ use schemars::{JsonSchema, schema_for};
 use serde::Serialize;
 
 use super::ask::{AnswerOut, AskOut};
+use super::budget::BudgetOut;
+use super::daemon::DaemonOut;
 use super::doctor::DoctorOut;
+use super::fix::FixedOut;
 use super::flow::FlowOut;
 use super::init::InitOut;
+use super::library::LibraryOut;
+use super::merge::MergeOut;
 use super::new::NewOut;
+use super::next::NextOut;
+use super::notify::{NotifyOut, StatuslineOut};
+use super::record::{ExportOut, HistoryOut};
+use super::review::{FindingsOut, VerdictOut};
 use super::setup::SetupOut;
 use super::status::{InboxOut, LogOut, ReindexOut, StatusItem, StatusList, UsageOut};
 use crate::cli::{Cli, HelpArgs, SchemaArgs};
@@ -93,10 +102,19 @@ pub fn help(a: HelpArgs, _mode: Mode) -> Result<Response> {
     let mut root = Cli::command();
     root.build();
     let mut commands = Vec::new();
+    // Top-level commands, and one level of nested ones (`daemon start`).
+    let mut all: Vec<(String, String, &clap::Command)> = Vec::new();
     for sc in root.get_subcommands() {
         let name = sc.get_name().to_string();
+        all.push((name.clone(), name.clone(), sc));
+        for sub in sc.get_subcommands() {
+            all.push((format!("{name} {}", sub.get_name()), name.clone(), sub));
+        }
+    }
+    for (name, group, sc) in all {
         if let Some(only) = &a.command
             && *only != name
+            && *only != group
         {
             continue;
         }
@@ -133,15 +151,26 @@ pub fn help(a: HelpArgs, _mode: Mode) -> Result<Response> {
                 }
             })
             .collect();
+        let usage = sc
+            .clone()
+            .render_usage()
+            .to_string()
+            .trim_start_matches("Usage: ")
+            .to_string();
+        // Nested usage renders as `hall-daemon start`; show `hall daemon start`.
+        let usage = if name != group {
+            usage.replacen(&format!("{group} "), "", 1).replacen(
+                "hall ",
+                &format!("hall {group} "),
+                1,
+            )
+        } else {
+            usage
+        };
         commands.push(CommandHelp {
-            usage: sc
-                .clone()
-                .render_usage()
-                .to_string()
-                .trim_start_matches("Usage: ")
-                .to_string(),
+            usage,
             about: sc.get_about().map(|s| s.to_string()).unwrap_or_default(),
-            schema: format!("hall schema {name}"),
+            schema: format!("hall schema {group}"),
             name,
             args,
         });
@@ -229,10 +258,23 @@ pub const SCHEMA_NAMES: &[&str] = &[
     "schema",
     "hook",
     "setup",
+    "daemon",
+    "next",
+    "findings",
+    "fixed",
+    "verdict",
+    "merge",
+    "history",
+    "export",
+    "budget",
+    "notify",
+    "statusline",
+    "library",
     "error",
     "event",
     "config",
     "item",
+    "verdict-input",
 ];
 
 pub fn schema_value(name: &str) -> Option<serde_json::Value> {
@@ -252,6 +294,20 @@ pub fn schema_value(name: &str) -> Option<serde_json::Value> {
         "schema" => schema_for!(Out<SchemaOut>),
         "setup" => schema_for!(Out<SetupOut>),
         "hook" => schema_for!(HookOutput),
+        "daemon" => schema_for!(Out<DaemonOut>),
+        "next" => schema_for!(Out<NextOut>),
+        "findings" => schema_for!(Out<FindingsOut>),
+        "fixed" => schema_for!(Out<FixedOut>),
+        "verdict" => schema_for!(Out<VerdictOut>),
+        "merge" => schema_for!(Out<MergeOut>),
+        "history" => schema_for!(Out<HistoryOut>),
+        "export" => schema_for!(Out<ExportOut>),
+        "budget" => schema_for!(Out<BudgetOut>),
+        "notify" => schema_for!(Out<NotifyOut>),
+        "statusline" => schema_for!(StatuslineOut),
+        "library" => schema_for!(Out<LibraryOut>),
+        // What the principal engineer returns (plugin/schemas/verdict.json).
+        "verdict-input" => schema_for!(crate::findings::ModelVerdict),
         "error" => schema_for!(ErrorEnvelope),
         "event" => schema_for!(Event),
         "config" => schema_for!(Config),

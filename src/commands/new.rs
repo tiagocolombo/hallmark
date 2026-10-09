@@ -121,6 +121,8 @@ pub fn new(cwd: &Path, a: NewArgs, mode: Mode) -> Result<Response> {
                 }),
                 request: request.clone(),
                 adopted: false,
+                parent: None,
+                follow_up: None,
             },
         );
         repo.hall.append_item(id, &created)?;
@@ -201,6 +203,8 @@ pub fn adopt(cwd: &Path, a: AdoptArgs) -> Result<Response> {
                 issue: None,
                 request: None,
                 adopted: true,
+                parent: None,
+                follow_up: None,
             },
         );
         repo.hall.append_item(id, &created)?;
@@ -272,9 +276,10 @@ pub fn shell_quote(s: &str) -> String {
     }
 }
 
-/// Runs a configured command through the platform shell.
-pub fn run_shell(cmd: &str, dir: &Path) -> Result<String> {
-    let mut c = if cfg!(windows) {
+/// A command line run through the platform shell: `sh -c`, or `cmd /C` on
+/// Windows.
+pub fn shell(cmd: &str) -> Command {
+    if cfg!(windows) {
         let mut c = Command::new("cmd");
         c.arg("/C").arg(cmd);
         c
@@ -282,8 +287,12 @@ pub fn run_shell(cmd: &str, dir: &Path) -> Result<String> {
         let mut c = Command::new("sh");
         c.arg("-c").arg(cmd);
         c
-    };
-    let out = c.current_dir(dir).output().map_err(|e| {
+    }
+}
+
+/// Runs a configured command through the platform shell.
+pub fn run_shell(cmd: &str, dir: &Path) -> Result<String> {
+    let out = shell(cmd).current_dir(dir).output().map_err(|e| {
         HallError::new(
             ErrorCode::CommandFailed,
             format!("could not run `{cmd}`: {e}"),

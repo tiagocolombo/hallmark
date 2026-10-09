@@ -18,15 +18,25 @@ path = "src/main.rs"
 [dependencies]
 chrono = { version = "0.4.45", features = ["serde"] }
 clap = { version = "4.6.7", features = ["derive", "env", "string"] }
+crossterm = "0.29.0"
 dirs = "7.0.0"
 dunce = "1.0.5"
 fs4 = "1.1.0"
+getrandom = "0.4.3"
+globset = "0.4.20"
+notify = "8.2.0"
+notify-rust = "4.17.0"
+ratatui = "0.30.2"
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 schemars = { version = "1.2.2", features = ["chrono04"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
+service-manager = "0.11.0"
 shlex = "2.0.1"
 toml = "1.1.8"
+toml_edit = "0.25.17"
+ureq = { version = "3.4.2", default-features = false, features = ["rustls", "json"] }
+wait-timeout = "0.2.1"
 
 [dev-dependencies]
 assert_cmd = "2.2.2"

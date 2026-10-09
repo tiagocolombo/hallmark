@@ -34,10 +34,12 @@ pub enum Action {
     Retry,
     /// The shipper opened the PR.
     Ship,
+    /// A child item (a parallel part) was merged into its parent's branch.
+    Merge,
 }
 
 impl Action {
-    pub const ALL: [Action; 12] = [
+    pub const ALL: [Action; 13] = [
         Action::ProposeReady,
         Action::Ready,
         Action::PullBack,
@@ -50,6 +52,7 @@ impl Action {
         Action::Resubmit,
         Action::Retry,
         Action::Ship,
+        Action::Merge,
     ];
 }
 
@@ -86,6 +89,9 @@ pub fn next(from: State, action: Action) -> Option<State> {
 
         (S::Hallmarked, A::Ship) => Some(S::Closed),
 
+        // A parallel part merges into its parent; the parent is reviewed.
+        (S::Development | S::AwaitingYou, A::Merge) => Some(S::Closed),
+
         _ => None,
     }
 }
@@ -112,6 +118,8 @@ mod tests {
             (S::Development, A::ProposeReady, S::AwaitingYou),
             (S::Development, A::Ready, S::Checks),
             (S::Development, A::Drop, S::Dropped),
+            (S::Development, A::Merge, S::Closed),
+            (S::AwaitingYou, A::Merge, S::Closed),
             (S::AwaitingYou, A::Ready, S::Checks),
             (S::AwaitingYou, A::PullBack, S::Development),
             (S::AwaitingYou, A::Drop, S::Dropped),

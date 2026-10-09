@@ -116,6 +116,11 @@ fn decision(decision: &str, reason: String) -> Value {
 }
 
 pub fn run(event: HookEvent, cwd: &Path) -> Result<Response> {
+    // Headless runs that must leave no trace through hooks (the reviewer,
+    // intake, the librarian) set this; the runner records them instead.
+    if std::env::var_os("HALL_NO_HOOKS").is_some() {
+        return Ok(Response::raw(None));
+    }
     let mut buf = String::new();
     let _ = std::io::stdin().read_to_string(&mut buf);
     let input: HookInput = serde_json::from_str(&buf).unwrap_or_default();

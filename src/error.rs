@@ -35,6 +35,18 @@ pub enum ErrorCode {
     ChecksFailed,
     /// Claimed by another agent.
     Claimed,
+    /// A parent item still has open child items.
+    ChildrenOpen,
+    /// Merging a child item into its parent conflicted.
+    MergeConflict,
+    /// A budget cap stops the work.
+    BudgetExceeded,
+    /// A verdict doesn't match `plugin/schemas/verdict.json`.
+    InvalidVerdict,
+    /// A model run failed (timeout, budget, no structured output, error).
+    RunFailed,
+    /// Not built yet (temporary, while Stage 2 lands).
+    NotImplemented,
     /// `gh` is not installed or not logged in.
     GhUnavailable,
     /// A configured command (worktree, git, gh, claude) failed.
@@ -44,7 +56,7 @@ pub enum ErrorCode {
 }
 
 impl ErrorCode {
-    pub const ALL: [ErrorCode; 16] = [
+    pub const ALL: [ErrorCode; 22] = [
         ErrorCode::Usage,
         ErrorCode::NotARepo,
         ErrorCode::NotInitialized,
@@ -58,6 +70,12 @@ impl ErrorCode {
         ErrorCode::GateDenied,
         ErrorCode::ChecksFailed,
         ErrorCode::Claimed,
+        ErrorCode::ChildrenOpen,
+        ErrorCode::MergeConflict,
+        ErrorCode::BudgetExceeded,
+        ErrorCode::InvalidVerdict,
+        ErrorCode::RunFailed,
+        ErrorCode::NotImplemented,
         ErrorCode::GhUnavailable,
         ErrorCode::CommandFailed,
         ErrorCode::Internal,
@@ -66,8 +84,12 @@ impl ErrorCode {
     /// The documented process exit code for this error.
     pub fn exit_code(self) -> i32 {
         match self {
-            ErrorCode::Internal | ErrorCode::CommandFailed | ErrorCode::GhUnavailable => 1,
-            ErrorCode::Usage => 2,
+            ErrorCode::Internal
+            | ErrorCode::CommandFailed
+            | ErrorCode::GhUnavailable
+            | ErrorCode::RunFailed
+            | ErrorCode::NotImplemented => 1,
+            ErrorCode::Usage | ErrorCode::InvalidVerdict => 2,
             ErrorCode::NotARepo
             | ErrorCode::NotInitialized
             | ErrorCode::ItemNotFound
@@ -76,7 +98,10 @@ impl ErrorCode {
             ErrorCode::WrongState
             | ErrorCode::ItemInReview
             | ErrorCode::DirtyWorktree
-            | ErrorCode::AlreadyAnswered => 4,
+            | ErrorCode::AlreadyAnswered
+            | ErrorCode::ChildrenOpen
+            | ErrorCode::MergeConflict
+            | ErrorCode::BudgetExceeded => 4,
             ErrorCode::GateDenied => 5,
             ErrorCode::ChecksFailed => 6,
             ErrorCode::Claimed => 7,
@@ -136,6 +161,15 @@ impl HallError {
 
     pub fn usage(message: impl Into<String>) -> Self {
         HallError::new(ErrorCode::Usage, message).next(["hall help --json"])
+    }
+
+    /// A command whose Stage 2/3 workstream hasn't landed yet.
+    pub fn not_implemented(what: &str) -> Self {
+        HallError::new(
+            ErrorCode::NotImplemented,
+            format!("{what} is not built yet"),
+        )
+        .next(["hall help --json"])
     }
 
     pub fn envelope(&self) -> ErrorEnvelope {

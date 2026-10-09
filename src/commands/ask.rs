@@ -189,6 +189,7 @@ pub fn answer(cwd: &Path, a: AnswerArgs) -> Result<Response> {
         Body::Answer {
             qid: q.qid.clone(),
             answer: answer.clone(),
+            defaulted: false,
         },
     );
     match q.item {

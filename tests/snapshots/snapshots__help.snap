@@ -51,10 +51,32 @@ expression: v
       "about": "Create an item and its worktree",
       "args": [
         {
-          "help": "The request, in your words. Becomes the first journal entry",
+          "help": "The request, in your words. Becomes the first journal entry. The Front Desk splits it into parallel parts when it can",
           "name": "request",
           "required": false,
           "syntax": "<request>",
+          "takes_value": true
+        },
+        {
+          "default": "false",
+          "help": "Never split the request into parallel parts",
+          "name": "no_split",
+          "required": false,
+          "syntax": "--no-split",
+          "takes_value": false
+        },
+        {
+          "help": "Make this item a parallel part of another item (merges into it)",
+          "name": "parent",
+          "required": false,
+          "syntax": "--parent <parent>",
+          "takes_value": true
+        },
+        {
+          "help": "Start from feedback on a shipped PR (a URL or number)",
+          "name": "follow_up",
+          "required": false,
+          "syntax": "--follow-up <follow_up>",
           "takes_value": true
         },
         {
@@ -464,6 +486,445 @@ expression: v
       "name": "setup",
       "schema": "hall schema setup",
       "usage": "hall setup [OPTIONS] <TARGET>"
+    },
+    {
+      "about": "Run the review loop in the background for every registered repo",
+      "args": [],
+      "name": "daemon",
+      "schema": "hall schema daemon",
+      "usage": "hall daemon [OPTIONS] <COMMAND>"
+    },
+    {
+      "about": "Start the daemon in the background",
+      "args": [
+        {
+          "default": "false",
+          "help": "Also start it at login (launchd, systemd, Task Scheduler)",
+          "name": "at_login",
+          "required": false,
+          "syntax": "--at-login",
+          "takes_value": false
+        }
+      ],
+      "name": "daemon start",
+      "schema": "hall schema daemon",
+      "usage": "hall daemon start [OPTIONS]"
+    },
+    {
+      "about": "Stop the daemon",
+      "args": [
+        {
+          "default": "false",
+          "help": "Also remove the login service",
+          "name": "at_login",
+          "required": false,
+          "syntax": "--at-login",
+          "takes_value": false
+        }
+      ],
+      "name": "daemon stop",
+      "schema": "hall schema daemon",
+      "usage": "hall daemon stop [OPTIONS]"
+    },
+    {
+      "about": "Is it running, paused, and what is it doing?",
+      "args": [],
+      "name": "daemon status",
+      "schema": "hall schema daemon",
+      "usage": "hall daemon status [OPTIONS]"
+    },
+    {
+      "about": "Run the loop in the foreground (what `start` launches)",
+      "args": [
+        {
+          "default": "false",
+          "help": "One pass over the repos, then exit",
+          "name": "once",
+          "required": false,
+          "syntax": "--once",
+          "takes_value": false
+        },
+        {
+          "help": "Only these workers (comma-separated): watchman, resume, assayer, fixer, shipper, librarian, notify",
+          "name": "only",
+          "required": false,
+          "syntax": "--only <only>",
+          "takes_value": true
+        },
+        {
+          "help": "Only this repository (default: every registered repo; with --once, the current one)",
+          "name": "repo",
+          "required": false,
+          "syntax": "--repo <repo>",
+          "takes_value": true
+        }
+      ],
+      "name": "daemon run",
+      "schema": "hall schema daemon",
+      "usage": "hall daemon run [OPTIONS]"
+    },
+    {
+      "about": "Claim the next piece of work for a role, with a lease (agents)",
+      "args": [
+        {
+          "name": "role",
+          "required": true,
+          "syntax": "--role <role>",
+          "takes_value": true,
+          "values": [
+            "assayer",
+            "fixer",
+            "shipper"
+          ]
+        },
+        {
+          "help": "Claim this item rather than the next one",
+          "name": "item",
+          "required": false,
+          "syntax": "--item <item>",
+          "takes_value": true
+        },
+        {
+          "help": "Who is claiming (default: HALL_ACTOR and the process ID)",
+          "name": "holder",
+          "required": false,
+          "syntax": "--holder <holder>",
+          "takes_value": true
+        },
+        {
+          "default": "30m",
+          "help": "How long the lease lasts, such as 30m",
+          "name": "ttl",
+          "required": false,
+          "syntax": "--ttl <ttl>",
+          "takes_value": true
+        },
+        {
+          "default": "false",
+          "help": "Release the lease on --item instead of claiming",
+          "name": "release",
+          "required": false,
+          "syntax": "--release",
+          "takes_value": false
+        }
+      ],
+      "name": "next",
+      "schema": "hall schema next",
+      "usage": "hall next [OPTIONS] --role <ROLE>"
+    },
+    {
+      "about": "Open findings and failing checks for an item (fixer)",
+      "args": [
+        {
+          "name": "id",
+          "required": false,
+          "syntax": "<id>",
+          "takes_value": true
+        },
+        {
+          "default": "false",
+          "help": "Include fixed and withdrawn findings",
+          "name": "all",
+          "required": false,
+          "syntax": "--all",
+          "takes_value": false
+        }
+      ],
+      "name": "findings",
+      "schema": "hall schema findings",
+      "usage": "hall findings [OPTIONS] [ID]"
+    },
+    {
+      "about": "Record which findings a commit fixes, or dispute one (fixer)",
+      "args": [
+        {
+          "help": "Findings the committed HEAD fixes (F1 F2 …). None when only failing checks were fixed",
+          "name": "ids",
+          "required": false,
+          "syntax": "<ids>",
+          "takes_value": true
+        },
+        {
+          "name": "item",
+          "required": false,
+          "syntax": "--item <item>",
+          "takes_value": true
+        },
+        {
+          "help": "A finding you dispute instead of fixing (repeatable; needs --reason)",
+          "name": "dispute",
+          "required": false,
+          "syntax": "--dispute <dispute>",
+          "takes_value": true
+        },
+        {
+          "help": "Why the disputed findings are wrong",
+          "name": "reason",
+          "required": false,
+          "syntax": "--reason <reason>",
+          "takes_value": true
+        }
+      ],
+      "name": "fixed",
+      "schema": "hall schema fixed",
+      "usage": "hall fixed [OPTIONS] [IDS]..."
+    },
+    {
+      "about": "Record a schema-checked verdict for an item in review (assayer)",
+      "args": [
+        {
+          "name": "id",
+          "required": false,
+          "syntax": "<id>",
+          "takes_value": true
+        },
+        {
+          "help": "The verdict JSON (plugin/schemas/verdict.json); `-` reads stdin",
+          "name": "file",
+          "required": true,
+          "syntax": "--file <file>",
+          "takes_value": true
+        },
+        {
+          "help": "The reviewed commit (default: the item's frozen commit)",
+          "name": "sha",
+          "required": false,
+          "syntax": "--sha <sha>",
+          "takes_value": true
+        }
+      ],
+      "name": "verdict",
+      "schema": "hall schema verdict",
+      "usage": "hall verdict [OPTIONS] --file <FILE> [ID]"
+    },
+    {
+      "about": "Merge a parallel part (child item) into its parent's branch",
+      "args": [
+        {
+          "help": "The child item (default: the current worktree's item)",
+          "name": "id",
+          "required": false,
+          "syntax": "<id>",
+          "takes_value": true
+        },
+        {
+          "default": "false",
+          "help": "Keep the child's worktree on disk",
+          "name": "keep_worktree",
+          "required": false,
+          "syntax": "--keep-worktree",
+          "takes_value": false
+        }
+      ],
+      "name": "merge",
+      "schema": "hall schema merge",
+      "usage": "hall merge [OPTIONS] [ID]"
+    },
+    {
+      "about": "Closed and dropped items, and why things were rejected",
+      "args": [
+        {
+          "default": "false",
+          "help": "Only items with at least one rejected review",
+          "name": "rejected",
+          "required": false,
+          "syntax": "--rejected",
+          "takes_value": false
+        },
+        {
+          "help": "Only findings under this lens, such as security or correctness",
+          "name": "lens",
+          "required": false,
+          "syntax": "--lens <lens>",
+          "takes_value": true
+        },
+        {
+          "help": "Only items that ended within this long, such as 7d",
+          "name": "since",
+          "required": false,
+          "syntax": "--since <since>",
+          "takes_value": true
+        },
+        {
+          "default": "false",
+          "help": "Include items that are still open",
+          "name": "all",
+          "required": false,
+          "syntax": "--all",
+          "takes_value": false
+        },
+        {
+          "name": "limit",
+          "required": false,
+          "syntax": "--limit <limit>",
+          "takes_value": true
+        }
+      ],
+      "name": "history",
+      "schema": "hall schema history",
+      "usage": "hall history [OPTIONS]"
+    },
+    {
+      "about": "An item's whole record as Markdown",
+      "args": [
+        {
+          "name": "id",
+          "required": false,
+          "syntax": "<id>",
+          "takes_value": true
+        },
+        {
+          "help": "Write to this file instead of the item's journal directory",
+          "name": "out",
+          "required": false,
+          "syntax": "--out <out>",
+          "takes_value": true
+        }
+      ],
+      "name": "export",
+      "schema": "hall schema export",
+      "usage": "hall export [OPTIONS] [ID]"
+    },
+    {
+      "about": "Show or set the budget caps, with today's spend",
+      "args": [
+        {
+          "help": "Set a cap in .hallmark.toml, such as daily=4M, per_item=800k, review.max_usd=3, review.daily=2M (repeatable)",
+          "name": "set",
+          "required": false,
+          "syntax": "--set <set>",
+          "takes_value": true
+        }
+      ],
+      "name": "budget",
+      "schema": "hall schema budget",
+      "usage": "hall budget [OPTIONS]"
+    },
+    {
+      "about": "Notifications: `hall notify test` sends one to every channel",
+      "args": [],
+      "name": "notify",
+      "schema": "hall schema notify",
+      "usage": "hall notify [OPTIONS] <COMMAND>"
+    },
+    {
+      "about": "Send a test notification to every configured channel",
+      "args": [
+        {
+          "help": "Only this channel: desktop, phone, slack",
+          "name": "channel",
+          "required": false,
+          "syntax": "--channel <channel>",
+          "takes_value": true
+        }
+      ],
+      "name": "notify test",
+      "schema": "hall schema notify",
+      "usage": "hall notify test [OPTIONS]"
+    },
+    {
+      "about": "One line for Claude Code's status line (reads its JSON on stdin)",
+      "args": [],
+      "name": "statusline",
+      "schema": "hall schema statusline",
+      "usage": "hall statusline [OPTIONS]"
+    },
+    {
+      "about": "The Library: learnings from past reviews",
+      "args": [],
+      "name": "library",
+      "schema": "hall schema library",
+      "usage": "hall library [OPTIONS] <COMMAND>"
+    },
+    {
+      "about": "Search the repo's learnings",
+      "args": [
+        {
+          "name": "query",
+          "required": true,
+          "syntax": "<query>",
+          "takes_value": true
+        },
+        {
+          "default": "10",
+          "name": "limit",
+          "required": false,
+          "syntax": "--limit <limit>",
+          "takes_value": true
+        },
+        {
+          "help": "Only this kind: rule, false-positive, map, decision",
+          "name": "kind",
+          "required": false,
+          "syntax": "--kind <kind>",
+          "takes_value": true
+        }
+      ],
+      "name": "library search",
+      "schema": "hall schema library",
+      "usage": "hall library search [OPTIONS] <QUERY>"
+    },
+    {
+      "about": "List proposed learnings, or accept and reject them",
+      "args": [
+        {
+          "help": "Learnings to accept (L-0001 …)",
+          "name": "accept",
+          "required": false,
+          "syntax": "--accept <accept>",
+          "takes_value": true
+        },
+        {
+          "help": "Learnings to reject",
+          "name": "reject",
+          "required": false,
+          "syntax": "--reject <reject>",
+          "takes_value": true
+        },
+        {
+          "name": "reason",
+          "required": false,
+          "syntax": "--reason <reason>",
+          "takes_value": true
+        }
+      ],
+      "name": "library review",
+      "schema": "hall schema library",
+      "usage": "hall library review [OPTIONS]"
+    },
+    {
+      "about": "Retire a learning, keeping its history",
+      "args": [
+        {
+          "name": "id",
+          "required": true,
+          "syntax": "<id>",
+          "takes_value": true
+        },
+        {
+          "name": "reason",
+          "required": true,
+          "syntax": "--reason <reason>",
+          "takes_value": true
+        }
+      ],
+      "name": "library retire",
+      "schema": "hall schema library",
+      "usage": "hall library retire [OPTIONS] --reason <REASON> <ID>"
+    },
+    {
+      "about": "Run the librarian on one closed or escalated item now",
+      "args": [
+        {
+          "name": "id",
+          "required": true,
+          "syntax": "<id>",
+          "takes_value": true
+        }
+      ],
+      "name": "library distill",
+      "schema": "hall schema library",
+      "usage": "hall library distill [OPTIONS] <ID>"
     }
   ],
   "contract": [
@@ -527,6 +988,30 @@ expression: v
     {
       "code": "CLAIMED",
       "exit": 7
+    },
+    {
+      "code": "CHILDREN_OPEN",
+      "exit": 4
+    },
+    {
+      "code": "MERGE_CONFLICT",
+      "exit": 4
+    },
+    {
+      "code": "BUDGET_EXCEEDED",
+      "exit": 4
+    },
+    {
+      "code": "INVALID_VERDICT",
+      "exit": 2
+    },
+    {
+      "code": "RUN_FAILED",
+      "exit": 1
+    },
+    {
+      "code": "NOT_IMPLEMENTED",
+      "exit": 1
     },
     {
       "code": "GH_UNAVAILABLE",

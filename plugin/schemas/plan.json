@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Hallmark intake plan",
+  "type": "object",
+  "properties": {
+    "parallel": { "type": "boolean" },
+    "reason": { "type": "string" },
+    "parts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string" },
+          "request": { "type": "string" },
+          "paths": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["title", "request", "paths"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["parallel", "reason", "parts"],
+  "additionalProperties": false
+}

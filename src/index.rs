@@ -12,10 +12,11 @@ use serde::Serialize;
 
 use crate::error::Result;
 use crate::event::{Body, Event};
+use crate::findings::PriorStatus;
 use crate::item::{Item, ItemId, State};
 use crate::journal::{self, Hall};
 
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS files (path TEXT PRIMARY KEY, offset INTEGER NOT NULL);
@@ -41,6 +42,12 @@ CREATE TABLE IF NOT EXISTS questions (
 CREATE TABLE IF NOT EXISTS notifications (
   item TEXT, session TEXT, t TEXT NOT NULL, message TEXT, kind TEXT, resolved_at TEXT
 );
+CREATE TABLE IF NOT EXISTS findings (
+  item TEXT NOT NULL, id TEXT NOT NULL, round INTEGER NOT NULL, t TEXT NOT NULL, sha TEXT,
+  lens TEXT NOT NULL, severity TEXT NOT NULL, file TEXT, line INTEGER, title TEXT, scenario TEXT,
+  fix TEXT, status TEXT NOT NULL, claimed_by TEXT, dispute TEXT, settled_round INTEGER,
+  PRIMARY KEY (item, id)
+);
 "#;
 
 pub struct Index {
@@ -50,7 +57,8 @@ pub struct Index {
 /// Something waiting for you.
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct InboxEntry {
-    /// question, escalated, ready, session_waiting
+    /// question, escalated, ready, session_waiting, budget, run_failed,
+    /// ship_failed, stuck, daemon_stopped
     pub kind: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub item: Option<ItemId>,
@@ -114,7 +122,78 @@ pub enum UsageBy {
     Source,
 }
 
+/// A finding as indexed, for history and the terminal app.
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct FindingRow {
+    pub item: ItemId,
+    pub id: String,
+    pub round: u32,
+    pub t: DateTime<Utc>,
+    pub lens: String,
+    pub severity: String,
+    pub file: String,
+    pub line: u32,
+    pub title: String,
+    pub scenario: String,
+    pub fix: String,
+    /// open, fixed, withdrawn
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub claimed_by: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dispute: Option<String>,
+}
+
 impl Index {
+    /// The connection, for modules that keep their own derived tables (the
+    /// Library's search index). Such tables must be rebuildable.
+    pub fn conn(&self) -> &Connection {
+        &self.conn
+    }
+
+    /// Findings, newest first: optionally one item's, one lens's, or only
+    /// those raised since `since`.
+    pub fn findings(
+        &self,
+        item: Option<ItemId>,
+        lens: Option<&str>,
+        since: Option<DateTime<Utc>>,
+    ) -> Result<Vec<FindingRow>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT item, id, round, t, lens, severity, file, line, title, scenario, fix, status,
+                    claimed_by, dispute
+             FROM findings WHERE (?1 IS NULL OR item = ?1) AND (?2 IS NULL OR lens = ?2)
+               AND (?3 IS NULL OR t >= ?3)
+             ORDER BY t DESC, item, CAST(SUBSTR(id, 2) AS INTEGER)",
+        )?;
+        let rows = stmt.query_map(
+            params![
+                item.map(|i| i.to_string()),
+                lens,
+                since.map(|t| t.to_rfc3339())
+            ],
+            |r| {
+                Ok(FindingRow {
+                    item: r.get::<_, String>(0)?.parse().unwrap_or(ItemId(0)),
+                    id: r.get(1)?,
+                    round: r.get(2)?,
+                    t: parse_time(&r.get::<_, String>(3)?),
+                    lens: r.get(4)?,
+                    severity: r.get(5)?,
+                    file: r.get::<_, Option<String>>(6)?.unwrap_or_default(),
+                    line: r.get::<_, Option<u32>>(7)?.unwrap_or(0),
+                    title: r.get::<_, Option<String>>(8)?.unwrap_or_default(),
+                    scenario: r.get::<_, Option<String>>(9)?.unwrap_or_default(),
+                    fix: r.get::<_, Option<String>>(10)?.unwrap_or_default(),
+                    status: r.get(11)?,
+                    claimed_by: r.get(12)?,
+                    dispute: r.get(13)?,
+                })
+            },
+        )?;
+        Ok(rows.collect::<std::result::Result<_, _>>()?)
+    }
+
     pub fn open(hall: &Hall) -> Result<Index> {
         let path = hall.index_path();
         let conn = open_conn(&path)?;
@@ -149,7 +228,7 @@ impl Index {
     fn clear(&mut self) -> Result<()> {
         self.conn.execute_batch(
             "DELETE FROM files; DELETE FROM items; DELETE FROM events; DELETE FROM usage;
-             DELETE FROM questions; DELETE FROM notifications;",
+             DELETE FROM questions; DELETE FROM notifications; DELETE FROM findings;",
         )?;
         Ok(())
     }
@@ -318,7 +397,47 @@ impl Index {
                         format!("hall drop {} --reason \"<why>\"", item.id),
                     ],
                 ),
-                _ => continue,
+                _ => {
+                    // Held by the loop (budget, failed runs) or flagged stuck.
+                    if let Some(h) = &item.hold {
+                        out.push(InboxEntry {
+                            kind: h.kind.as_str().into(),
+                            item: Some(item.id),
+                            qid: None,
+                            text: format!("{}: {}", item.title, h.reason),
+                            options: vec![],
+                            default: None,
+                            session: None,
+                            since: h.since,
+                            answer_with: vec![
+                                format!("hall retry {} --reason \"<why>\"", item.id),
+                                format!("hall log {}", item.id),
+                                format!("hall pull-back {}", item.id),
+                            ],
+                        });
+                    } else if let Some(since) = item.stuck_since {
+                        out.push(InboxEntry {
+                            kind: "stuck".into(),
+                            item: Some(item.id),
+                            qid: None,
+                            text: format!(
+                                "{}: no progress in {} since {}",
+                                item.title,
+                                item.state,
+                                item.updated_at.format("%H:%M")
+                            ),
+                            options: vec![],
+                            default: None,
+                            session: None,
+                            since,
+                            answer_with: vec![
+                                format!("hall status {}", item.id),
+                                "hall daemon status".into(),
+                            ],
+                        });
+                    }
+                    continue;
+                }
             };
             out.push(InboxEntry {
                 kind: kind.into(),
@@ -361,6 +480,22 @@ impl Index {
                 }],
                 session,
                 since: parse_time(&t),
+            });
+        }
+        let now = Utc::now();
+        if let Some(st) = crate::daemon::state::load()
+            && let Some(since) = st.stopped_unexpectedly(now)
+        {
+            out.push(InboxEntry {
+                kind: "daemon_stopped".into(),
+                item: None,
+                qid: None,
+                text: "The Hallmark daemon stopped; the review loop isn't running".into(),
+                options: vec![],
+                default: None,
+                session: None,
+                since,
+                answer_with: vec!["hall daemon start".into(), "hall daemon status".into()],
             });
         }
         out.sort_by_key(|e| e.since);
@@ -555,7 +690,7 @@ fn index_event(tx: &rusqlite::Transaction<'_>, file_item: Option<ItemId>, e: &Ev
                 ],
             )?;
         }
-        Body::Answer { qid, answer } => {
+        Body::Answer { qid, answer, .. } => {
             tx.execute(
                 "UPDATE questions SET answer = ?2, answered_at = ?3, answered_by = ?4
                  WHERE qid = ?1 AND answer IS NULL",
@@ -577,6 +712,66 @@ fn index_event(tx: &rusqlite::Transaction<'_>, file_item: Option<ItemId>, e: &Ev
                 params![item, e.session, t, message, notification_type],
             )?;
         }
+        Body::Verdict {
+            sha,
+            round,
+            findings,
+            prior,
+            ..
+        } => {
+            for p in prior {
+                let status = match p.status {
+                    PriorStatus::Fixed => "fixed",
+                    PriorStatus::Open => "open",
+                    PriorStatus::Withdrawn => "withdrawn",
+                };
+                tx.execute(
+                    "UPDATE findings SET status = ?3,
+                       settled_round = CASE WHEN ?3 = 'open' THEN NULL ELSE ?4 END
+                     WHERE item = ?1 AND id = ?2",
+                    params![item, p.id, status, round],
+                )?;
+            }
+            for f in findings {
+                tx.execute(
+                    "INSERT OR IGNORE INTO findings(item, id, round, t, sha, lens, severity, file, line,
+                       title, scenario, fix, status)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, 'open')",
+                    params![
+                        item,
+                        f.id,
+                        f.round,
+                        t,
+                        sha,
+                        f.lens.as_str(),
+                        f.severity.as_str(),
+                        f.file,
+                        f.line,
+                        f.title,
+                        f.scenario,
+                        f.fix
+                    ],
+                )?;
+            }
+        }
+        Body::FixSubmitted {
+            sha,
+            fixes,
+            disputes,
+        } => {
+            for id in fixes {
+                tx.execute(
+                    "UPDATE findings SET claimed_by = ?3 WHERE item = ?1 AND id = ?2",
+                    params![item, id, sha],
+                )?;
+            }
+            for d in disputes {
+                tx.execute(
+                    "UPDATE findings SET dispute = ?3 WHERE item = ?1 AND id = ?2",
+                    params![item, d.id, d.reason],
+                )?;
+            }
+        }
         // You answered the session: whatever it was waiting for is settled.
         Body::Prompt { .. } | Body::SessionStarted { .. } if e.session.is_some() => {
             tx.execute(
@@ -587,4 +782,24 @@ fn index_event(tx: &rusqlite::Transaction<'_>, file_item: Option<ItemId>, e: &Ev
         _ => {}
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn bundled_sqlite_has_fts5() {
+        // The Library's built-in search depends on it.
+        let c = rusqlite::Connection::open_in_memory().unwrap();
+        c.execute_batch(
+            "CREATE VIRTUAL TABLE t USING fts5(body);
+             INSERT INTO t(body) VALUES ('retry webhooks with jitter');",
+        )
+        .unwrap();
+        let n: i64 = c
+            .query_row("SELECT COUNT(*) FROM t WHERE t MATCH 'webhook*'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(n, 1);
+    }
 }

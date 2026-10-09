@@ -57,6 +57,8 @@ impl Env {
             .env("HALL_HOME", &self.home)
             .env("HALL_ACTOR", "you")
             .env("HALL_CLAUDE", self.root.join("no-claude-here"))
+            .env_remove("HALL_RUNNER")
+            .env_remove("HALL_NO_HOOKS")
             .env_remove("CLAUDECODE")
             .env_remove("CLAUDE_SESSION_ID")
             .env_remove("CLAUDE_CODE_SESSION_ID");
@@ -69,6 +71,36 @@ impl Env {
     pub fn hall(&self, dir: &Path, args: &[&str]) -> Reply {
         let out = self.cmd(dir).args(args).output().unwrap();
         reply(out)
+    }
+
+    /// Writes a fake-runner script (ADR 0013) and returns its path. Pass it
+    /// to [`Env::hall_fake`].
+    pub fn script(&self, steps: Value) -> PathBuf {
+        let p = self.root.join("script.json");
+        std::fs::write(&p, serde_json::json!({ "steps": steps }).to_string()).unwrap();
+        let _ = std::fs::remove_file(self.root.join("script.state.json"));
+        p
+    }
+
+    /// Runs `hall` with the fake runner replaying `script`.
+    pub fn hall_fake(&self, dir: &Path, script: &Path, args: &[&str]) -> Reply {
+        let out = self
+            .cmd(dir)
+            .env("HALL_RUNNER", format!("fake:{}", script.display()))
+            .env("HALL_PLUGIN_DIR", self.root.join("plugin"))
+            .args(args)
+            .output()
+            .unwrap();
+        reply(out)
+    }
+
+    /// The requests the fake runner received, oldest first.
+    pub fn fake_calls(&self) -> Vec<Value> {
+        std::fs::read_to_string(self.root.join("script.calls.jsonl"))
+            .unwrap_or_default()
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect()
     }
 
     /// Runs `hall hook <event>` with `input` on stdin.
