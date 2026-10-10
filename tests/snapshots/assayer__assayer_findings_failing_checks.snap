@@ -1,0 +1,40 @@
+---
+source: tests/assayer.rs
+expression: v
+---
+{
+  "failing_checks": [
+    {
+      "command": "git ls-files missing-file --error-unmatch",
+      "duration_ms": "[ms]",
+      "exit_code": "[exit]",
+      "log": "checks/r1.log"
+    }
+  ],
+  "findings": [],
+  "item": {
+    "base": "main",
+    "branch": "hm/H-0001-retry-webhooks",
+    "created_at": "[time]",
+    "id": "H-0001",
+    "rejects": 0,
+    "room": "Repair Shop",
+    "round": 1,
+    "sha": "[sha]",
+    "state": "fixing",
+    "state_since": "[time]",
+    "title": "Retry webhooks",
+    "worktree": "[root]/app-H-0001"
+  },
+  "next": [
+    "hall status H-0001",
+    "hall pull-back H-0001",
+    "hall log H-0001"
+  ],
+  "open": {
+    "blocker": 0,
+    "major": 0,
+    "minor": 0,
+    "nit": 0
+  }
+}
