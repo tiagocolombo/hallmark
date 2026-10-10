@@ -272,7 +272,7 @@ impl Ctx {
                 e.qid
                     .clone()
                     .unwrap_or_else(|| e.session.clone().unwrap_or_default())
-            )
+            ) + &format!(":{}", e.since.timestamp_millis())
         };
         let told = self
             .session
@@ -286,10 +286,21 @@ impl Ctx {
             .filter(|(_, e)| !only_new || !told.contains(&key(e)))
             .collect();
         if shown.is_empty() {
+            // Still forget entries that left, so one that comes back is new.
+            if let Some(sess) = self.session.as_mut() {
+                let live: Vec<String> = entries.iter().map(key).collect();
+                let before = sess.told.len();
+                sess.told.retain(|k| live.contains(k));
+                if sess.told.len() != before {
+                    let sess = sess.clone();
+                    let _ = self.repo.hall.save_session(&sess);
+                }
+            }
             return None;
         }
         let mut s = format!(
-            "Hallmark: {} waiting for the human{}. Tell them first, in a line or two each,              and offer to run the action they pick (run it for them when they choose):",
+            "Hallmark: {} waiting for the human{}. Tell them first, in a line or two each, \
+             and offer to run the action they pick (run it for them when they choose):",
             if only_new {
                 "new entries are"
             } else {

@@ -77,6 +77,56 @@ fn status_and_inbox() {
     snap!("inbox", scrub(&env, &env.hall(&env.repo, &["inbox"]).json));
 }
 
+/// The introspection replies: the actions' `does` text is read by the hooks
+/// and the skill, so a rename must show up here.
+#[test]
+fn introspection_replies() {
+    let env = Env::initialized();
+    let (id, wt) = env.new_item("Usage page");
+    env.hall(&wt, &["propose-ready", "--summary", "done"]);
+    macro_rules! introspect {
+        ($name:expr, $value:expr) => {
+            assert_json_snapshot!($name, $value, {
+                ".created_at" => "[time]",
+                ".state_since" => "[time]",
+                ".since" => "[time]",
+                ".now.since" => "[time]",
+                ".now.elapsed" => "[elapsed]",
+                ".elapsed" => "[elapsed]",
+                ".recent" => "[events]",
+            });
+        };
+    }
+    let r = env.hall(&env.repo, &["inbox", "1"]);
+    introspect!("inbox_entry", scrub(&env, &r.json));
+    let r = env.hall(&env.repo, &["status", &id]);
+    introspect!("status_item_now", scrub(&env, &r.json));
+}
+
+#[test]
+fn watch_lines() {
+    let env = Env::initialized();
+    let (id, _) = env.new_item("Usage page");
+    let out = env
+        .cmd(&env.repo)
+        .env("HALL_WATCH_INTERVAL", "100ms")
+        .args(["--json", "watch", &id, "--timeout", "2s"])
+        .output()
+        .unwrap();
+    let lines: Vec<Value> = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert_json_snapshot!("watch_lines", scrub(&env, &json!(lines)), {
+        "[].t" => "[time]",
+        "[].since" => "[time]",
+        "[].now.since" => "[time]",
+        "[].now.elapsed" => "[elapsed]",
+        // Carries the commit's sha.
+        "[].now.detail" => "[detail]",
+    });
+}
+
 #[test]
 fn gate_denial() {
     let env = Env::initialized();

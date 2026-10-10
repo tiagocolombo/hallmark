@@ -281,6 +281,7 @@ pub const SCHEMA_NAMES: &[&str] = &[
     "library",
     "hud",
     "watch",
+    "watch-line",
     "error",
     "event",
     "config",
@@ -297,6 +298,8 @@ pub fn schema_value(name: &str) -> Option<serde_json::Value> {
         "log" => schema_for!(Out<LogOut>),
         "inbox" => schema_for!(InboxReply),
         "watch" => schema_for!(Out<super::watch::WatchOut>),
+        // The progress lines `hall watch` prints before its reply.
+        "watch-line" => schema_for!(super::watch::Change),
         "ready" | "pull-back" | "drop" | "retry" | "propose-ready" => schema_for!(Out<FlowOut>),
         "ask" => schema_for!(Out<AskOut>),
         "answer" => schema_for!(Out<AnswerOut>),

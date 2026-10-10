@@ -62,6 +62,40 @@ pub struct RepoData {
     pub live: Vec<String>,
     /// Reviews that asked for changes today (UTC).
     pub rejected_today: u64,
+    /// The `now` line of each open item: what it is doing, and for how long
+    /// (the same line `hall status` and the HUD show).
+    pub now: BTreeMap<ItemId, (String, DateTime<Utc>)>,
+}
+
+/// The `now` lines of the open items, read from the journal.
+fn now_lines(
+    hall: &Hall,
+    path: &Path,
+    config: &Config,
+    items: &[Item],
+) -> BTreeMap<ItemId, (String, DateTime<Utc>)> {
+    let repo = Repo {
+        cwd: path.to_path_buf(),
+        toplevel: path.to_path_buf(),
+        common_dir: hall.root.parent().unwrap_or(path).to_path_buf(),
+        main_root: path.to_path_buf(),
+        name: String::new(),
+        hall: hall.clone(),
+        config: config.clone(),
+        config_path: None,
+    };
+    let live: Vec<Item> = items
+        .iter()
+        .filter(|i| !i.state.is_terminal())
+        .cloned()
+        .collect();
+    live.iter()
+        .filter_map(|i| {
+            let events = hall.read_item(i.id).ok()?;
+            let n = crate::now::now_cheap(&repo, i, &live, &events);
+            Some((i.id, (n.doing, n.since)))
+        })
+        .collect()
 }
 
 impl RepoData {
@@ -75,6 +109,7 @@ impl RepoData {
             usage: UsageData::default(),
             live: Vec::new(),
             rejected_today: 0,
+            now: BTreeMap::new(),
         }
     }
 
@@ -197,8 +232,10 @@ impl RepoSlot {
             params![start_of_day(now).to_rfc3339()],
             |r| r.get::<_, i64>(0),
         )? as u64;
+        let now_map = now_lines(hall, &self.path, &config, &items);
         Ok(RepoData {
             status: RepoStatus::Ready,
+            now: now_map,
             config,
             items,
             inbox,

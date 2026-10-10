@@ -224,7 +224,7 @@ pub fn hud(cwd: &Path, a: HudArgs) -> Result<Response> {
 fn with_now(repo: &Repo, i: &Item, items: &[Item]) -> HudItem {
     let mut h = HudItem::from(i);
     if let Ok(events) = repo.hall.read_item(i.id) {
-        let n = crate::now::now(repo, i, items, &events);
+        let n = crate::now::now_cheap(repo, i, items, &events);
         h.now = Some(format!("{} ({})", n.doing, n.elapsed));
     }
     h

@@ -61,6 +61,8 @@ impl Env {
             .env("HALL_NOTIFY_LOG", self.root.join("notify.log"))
             .env_remove("HALL_RUNNER")
             .env_remove("HALL_NO_HOOKS")
+            .env_remove("HALL_HEADLESS")
+            .env_remove("HALL_ACTOR")
             .env_remove("CLAUDECODE")
             .env_remove("CLAUDE_SESSION_ID")
             .env_remove("CLAUDE_CODE_SESSION_ID");

@@ -257,3 +257,33 @@ fn claude_is_told_what_waits_once() {
     assert!(text.contains("billed or raw?"), "{text}");
     assert!(!text.contains("looks done"), "only the new one: {text}");
 }
+
+#[test]
+fn an_entry_that_leaves_and_returns_is_announced_again() {
+    let env = Env::initialized();
+    let (id, wt) = env.new_item("Usage page");
+    env.hall(&wt, &["propose-ready", "--summary", "done"]);
+    let start = env.hook(
+        "session-start",
+        &hook_input("session_start", &env.repo, "w2"),
+    );
+    assert!(context(&start).contains("waiting for the human"));
+
+    // It leaves the inbox, and the session sees an empty inbox...
+    env.hall(&env.repo, &["pull-back", &id]);
+    let prompt = env.hook(
+        "user-prompt-submit",
+        &hook_input("user_prompt_submit", &env.repo, "w2"),
+    );
+    assert!(!context(&prompt).contains("waiting for the human"));
+
+    // ...then comes back: it is a new occurrence.
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    env.hall(&wt, &["propose-ready", "--summary", "done again"]);
+    let prompt = env.hook(
+        "user-prompt-submit",
+        &hook_input("user_prompt_submit", &env.repo, "w2"),
+    );
+    let text = context(&prompt);
+    assert!(text.contains("new entries are waiting"), "{text}");
+}

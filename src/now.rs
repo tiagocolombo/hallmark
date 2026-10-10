@@ -129,6 +129,22 @@ fn ordinal(n: usize) -> String {
 /// What `item` is doing now. `items` are the repo's live items (for the
 /// queue), `events` the item's journal.
 pub fn now(repo: &Repo, item: &Item, items: &[Item], events: &[crate::event::Event]) -> Now {
+    now_with(repo, item, items, events, true)
+}
+
+/// Like `now`, without the git-derived detail (last commit, dirty files):
+/// for callers that only show the line and must stay cheap, like the HUD.
+pub fn now_cheap(repo: &Repo, item: &Item, items: &[Item], events: &[crate::event::Event]) -> Now {
+    now_with(repo, item, items, events, false)
+}
+
+fn now_with(
+    repo: &Repo,
+    item: &Item,
+    items: &[Item],
+    events: &[crate::event::Event],
+    git: bool,
+) -> Now {
     let id = item.id.to_string();
     let mut n = Now {
         status: String::new(),
@@ -171,7 +187,6 @@ pub fn now(repo: &Repo, item: &Item, items: &[Item], events: &[crate::event::Eve
                 "hall daemon status",
                 "see whether the daemon runs, and what it is doing",
             ),
-            act(format!("hall watch {id}"), "follow it live"),
             log_cmd,
         ];
         return finish(n);
@@ -183,10 +198,11 @@ pub fn now(repo: &Repo, item: &Item, items: &[Item], events: &[crate::event::Eve
             n.status = "working".into();
             n.doing = format!("In development in {}", item.worktree);
             let wt = std::path::Path::new(&item.worktree);
-            if let Ok(last) = crate::git::run(wt, &["log", "-1", "--format=%h %s"]) {
+            if git && let Ok(last) = crate::git::run(wt, &["log", "-1", "--format=%h %s"]) {
                 n.detail.push(format!("last commit {last}"));
             }
-            if let Ok(dirty) = crate::git::dirty_files(wt)
+            if git
+                && let Ok(dirty) = crate::git::dirty_files(wt)
                 && !dirty.is_empty()
             {
                 n.detail
@@ -221,7 +237,15 @@ pub fn now(repo: &Repo, item: &Item, items: &[Item], events: &[crate::event::Eve
                 n.detail.push(format!("summary: {s}"));
             }
             n.actions = vec![
-                act(format!("hall ready {id}"), "send it to checks and review"),
+                if item.parent.is_some() {
+                    // Parts merge into their parent; they never go to review.
+                    act(
+                        format!("hall merge {id}"),
+                        "merge this part into its parent and close it",
+                    )
+                } else {
+                    act(format!("hall ready {id}"), "send it to checks and review")
+                },
                 act(
                     format!("hall pull-back {id}"),
                     "not yet: back to development",
@@ -236,7 +260,7 @@ pub fn now(repo: &Repo, item: &Item, items: &[Item], events: &[crate::event::Eve
                 _ => "assayer",
             };
             match &lease {
-                Some(l) if l.role == role => running(repo, item, &mut n, l.acquired, &id),
+                Some(l) if l.role == role => running(repo, item, &mut n, l.acquired, &id, git),
                 _ => queued(repo, item, items, role, &mut n),
             }
             if item.state == State::Fixing {
@@ -330,7 +354,7 @@ fn finish(mut n: Now) -> Now {
 }
 
 /// The loop is working on it: which gate, which run, since when.
-fn running(repo: &Repo, item: &Item, n: &mut Now, acquired: DateTime<Utc>, id: &str) {
+fn running(repo: &Repo, item: &Item, n: &mut Now, acquired: DateTime<Utc>, id: &str, git: bool) {
     n.status = "running".into();
     n.since = acquired;
     let lines = live(repo, id, acquired);
@@ -396,10 +420,12 @@ fn running(repo: &Repo, item: &Item, n: &mut Now, acquired: DateTime<Utc>, id: &
                 "Fixing, round {}: {model} is working in {}",
                 item.round, item.worktree
             );
-            if let Ok(last) = crate::git::run(
-                std::path::Path::new(&item.worktree),
-                &["log", "-1", "--format=%h %s"],
-            ) {
+            if git
+                && let Ok(last) = crate::git::run(
+                    std::path::Path::new(&item.worktree),
+                    &["log", "-1", "--format=%h %s"],
+                )
+            {
                 n.detail.push(format!("last commit {last}"));
             }
         }
@@ -423,7 +449,12 @@ fn queued(repo: &Repo, item: &Item, items: &[Item], role: &str, n: &mut Now) {
         let mut l: Vec<&Item> = tickets
             .iter()
             .filter_map(|t| items.iter().find(|i| i.id == t.id))
-            .filter(|i| matches!(i.state, State::Checks | State::Review) && i.parent.is_none())
+            .filter(|i| {
+                matches!(i.state, State::Checks | State::Review)
+                    && i.parent.is_none()
+                    // Held items are skipped, as `lease::candidates` does.
+                    && (i.hold.is_none() || i.id == item.id)
+            })
             .collect();
         if !l.iter().any(|i| i.id == item.id) {
             l.push(item);

@@ -400,7 +400,12 @@ pub fn explain(repo: &Repo, ix: &Index, entry: InboxEntry, number: usize) -> Res
             entry
                 .answer_with
                 .iter()
-                .map(|c| act(c, "open that session"))
+                .map(|c| {
+                    act(
+                        c,
+                        "you run this yourself in a terminal to open that session; Claude can't",
+                    )
+                })
                 .collect(),
         ),
         "daemon_stopped" => (

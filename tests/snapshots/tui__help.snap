@@ -1,5 +1,6 @@
 ---
 source: tests/tui.rs
+assertion_line: 477
 expression: "screen(&env, &app, W, H)"
 ---
 hall · app (1 of 3 repos)   daemon ● running   ⚑ 3 waiting   rejected today 3 · review tokens 400k                 hh:mm
@@ -14,15 +15,15 @@ hall · app (1 of 3 repos)   daemon ● running   ⚑ 3 waiting   rejected today
 │└ H-0004 Rate limit: docume│  enter     open the item's journal                           │0006 Old experiment dropped│
 └───────────────────────────│  ← →       step through the journal; the board follows       │───────────────────────────┘
 ┌ H-0001 · Retry failed webh│  home end  first event · back to now                         │──── review · r2 · ####### ┐
-│hh:mm  you       created · │  f         findings for this item                            │                           │
-│hh:mm  you       ready · ro│  d         diff at the selected round                        │                           │
-│hh:mm  assayer   checks pas│  r         send to review (hall ready)                       │                           │
-│hh:mm  assayer   usage · op│  p         pull back to development                          │                           │
-│hh:mm  assayer   review · c│  x         drop, with a reason                               │                           │
-│hh:mm  fixer     fix submit│  w         open the item's worktree                          │                           │
-│hh:mm  fixer     usage · so│  o         open the PR                                       │                           │
-│hh:mm  assayer   checks pas│  b         board                                             │                           │
-│                           │  h         history: closed and dropped                       │                           │
+│now Next for the review; th│  f         findings for this item                            │                           │
+│hh:mm  you       created · │  d         diff at the selected round                        │                           │
+│hh:mm  you       ready · ro│  r         send to review (hall ready)                       │                           │
+│hh:mm  assayer   checks pas│  p         pull back to development                          │                           │
+│hh:mm  assayer   usage · op│  x         drop, with a reason                               │                           │
+│hh:mm  assayer   review · c│  w         open the item's worktree                          │                           │
+│hh:mm  fixer     fix submit│  o         open the PR                                       │                           │
+│hh:mm  fixer     usage · so│  b         board                                             │                           │
+│hh:mm  assayer   checks pas│  h         history: closed and dropped                       │                           │
 │                           │  u         usage (then b i m d to group)                     │                           │
 │                           │  l         live: what the daemon is doing                    │                           │
 │                           │  R         repositories                                      │                           │

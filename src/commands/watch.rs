@@ -41,15 +41,18 @@ impl Render for WatchOut {
 }
 
 /// One progress line.
-#[derive(Serialize)]
-struct Change<'a> {
-    t: chrono::DateTime<Utc>,
-    id: ItemId,
-    state: State,
-    status: &'a str,
-    doing: &'a str,
+#[derive(Serialize, JsonSchema)]
+pub struct Change<'a> {
+    pub t: chrono::DateTime<Utc>,
+    pub id: ItemId,
+    pub state: State,
+    /// working, queued, running, waiting_for_you, held, stuck, done.
+    pub status: &'a str,
+    /// One line: what is happening.
+    pub doing: &'a str,
+    /// The tail of what is running (a gate's output).
     #[serde(skip_serializing_if = "<[String]>::is_empty")]
-    log: &'a [String],
+    pub log: &'a [String],
 }
 
 pub fn watch(cwd: &Path, a: WatchArgs, mode: Mode) -> Result<Response> {
