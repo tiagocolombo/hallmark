@@ -480,14 +480,12 @@ fn review(
                 if let Some(sha) = knowledge::commit(repo, k, &who, &message)? {
                     commits.push(sha);
                 }
-                if k.created {
-                    knowledge::propose_ready(
-                        repo,
-                        k,
-                        &who,
-                        "Library: decisions on proposed learnings.",
-                    )?;
-                }
+                knowledge::send_to_review(
+                    repo,
+                    k,
+                    &who,
+                    "Library: decisions on proposed learnings.",
+                )?;
             }
             Ok(())
         })?;
@@ -498,9 +496,11 @@ fn review(
     let mut next = Vec::new();
     if proposed.is_empty() {
         for k in store::open_knowledge(repo)? {
-            if store::editable(&k) {
-                next.push(format!("hall ready {}", k.id));
-            }
+            next.push(if store::editable(&k) {
+                format!("hall ready {}", k.id)
+            } else {
+                format!("hall status {}", k.id)
+            });
         }
     } else {
         let ids: Vec<&str> = proposed.iter().map(|p| p.id.as_str()).collect();
@@ -574,7 +574,7 @@ fn retire(repo: &Repo, id: &str, reason: &str) -> Result<Response> {
             &who,
             &format!("docs(library): retire {id}\n\n{}", reason.trim()),
         )?;
-        knowledge::propose_ready(
+        knowledge::send_to_review(
             repo,
             &k,
             &who,
@@ -591,7 +591,7 @@ fn retire(repo: &Repo, id: &str, reason: &str) -> Result<Response> {
     })?;
     let mut next = vec!["hall library review".to_string()];
     if let Some(k) = out.item {
-        next.insert(0, format!("hall ready {k}"));
+        next.insert(0, format!("hall status {k}"));
     }
     Ok(Response::new(LibraryOut::Retire(out), next))
 }

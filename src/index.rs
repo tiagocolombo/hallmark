@@ -496,15 +496,18 @@ impl Index {
             if ci.passed || followed || ci.ended.as_deref() == Some("closed") {
                 continue;
             }
+            // A check that ran for several events (push, pull_request) once.
+            let mut failing: Vec<&str> = Vec::new();
+            for f in &ci.failing {
+                if !failing.contains(&f.as_str()) {
+                    failing.push(f);
+                }
+            }
             out.push(InboxEntry {
                 kind: "ci_failed".into(),
                 item: Some(item.id),
                 qid: None,
-                text: format!(
-                    "{}: CI failed on {url}: {}",
-                    item.title,
-                    ci.failing.join(", ")
-                ),
+                text: format!("{}: CI failed on {url}: {}", item.title, failing.join(", ")),
                 options: vec![],
                 default: None,
                 session: None,
@@ -528,6 +531,14 @@ impl Index {
                 answer_with: vec!["hall daemon start".into(), "hall daemon status".into()],
             });
         }
+        // Knowledge items never wait for you: the Library sends them to
+        // review, and only what blocks development lands here.
+        let knowledge: Vec<ItemId> = all
+            .iter()
+            .filter(|i| crate::library::store::is_knowledge(i))
+            .map(|i| i.id)
+            .collect();
+        out.retain(|e| e.item.is_none_or(|id| !knowledge.contains(&id)));
         out.sort_by_key(|e| e.since);
         Ok(out)
     }

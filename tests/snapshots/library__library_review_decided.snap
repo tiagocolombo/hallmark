@@ -14,7 +14,7 @@ expression: "scrub(&env, &r.json)"
     "H-0002"
   ],
   "next": [
-    "hall ready H-0002"
+    "hall status H-0002"
   ],
   "proposed": [],
   "rejected": [

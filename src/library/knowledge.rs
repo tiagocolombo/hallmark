@@ -2,8 +2,8 @@
 //! change. A knowledge item is an ordinary item titled `Library: …`; the
 //! Library creates it by running `hall new` as a subprocess (the CLI is the
 //! API), writes and commits learning files in its worktree, and runs
-//! `hall propose-ready` so it shows in the inbox as "ready?". From there you
-//! send it to review with `hall ready`, and it ships like code.
+//! `hall ready`: the principal engineer reviews it and it ships like code.
+//! It never waits for you, and never shows in the inbox.
 
 use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
@@ -15,7 +15,7 @@ use super::learning::Learning;
 use super::store::{self, KNOWLEDGE_PREFIX};
 use crate::error::{ErrorCode, HallError, Result};
 use crate::event::{Body, Event};
-use crate::item::{Item, ItemId, State};
+use crate::item::{Item, ItemId};
 use crate::repo::Repo;
 
 /// An open knowledge item Hallmark may commit to.
@@ -223,14 +223,14 @@ pub fn commit(repo: &Repo, k: &Knowledge, actor: &str, message: &str) -> Result<
     Ok(Some(sha))
 }
 
-/// `hall propose-ready <id> --summary …` for an item still in development,
-/// so it shows in the inbox as "ready?".
-pub fn propose_ready(repo: &Repo, k: &Knowledge, actor: &str, summary: &str) -> Result<()> {
+/// `hall ready <id> --note …` for an item still in development or
+/// awaiting you: knowledge items go to review without waiting for you.
+pub fn send_to_review(repo: &Repo, k: &Knowledge, actor: &str, note: &str) -> Result<()> {
     let item = repo.hall.load_item(k.item.id)?;
-    if item.state != State::Development {
+    if !store::editable(&item) {
         return Ok(());
     }
     let id = item.id.to_string();
-    hall(repo, actor, &["propose-ready", &id, "--summary", summary])?;
+    hall(repo, actor, &["ready", &id, "--note", note])?;
     Ok(())
 }

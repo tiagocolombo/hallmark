@@ -466,7 +466,8 @@ fn the_librarian_distils_a_closed_item_into_a_knowledge_item() {
     // The knowledge item: proposed and auto-accepted files, committed.
     let k = env.hall(&env.repo, &["status", "H-0002"]);
     assert_eq!(k.json["title"], format!("Library: learnings from {id}"));
-    assert_eq!(k.json["state"], "awaiting_you", "{}", k.stdout);
+    // Straight to review: knowledge items never wait for you.
+    assert_eq!(k.json["state"], "checks", "{}", k.stdout);
     let wt = worktree(&env, "H-0002");
     assert_eq!(
         files(&wt),
@@ -485,7 +486,8 @@ fn the_librarian_distils_a_closed_item_into_a_knowledge_item() {
     assert!(git(&wt, &["log", "-1", "--format=%s"]).contains("learnings from H-0001"));
     let kj = env.journal("H-0002");
     assert!(kj.iter().any(|e| e["event"] == "commit"));
-    assert!(kj.iter().any(|e| e["event"] == "proposed_ready"));
+    assert!(kj.iter().any(|e| e["event"] == "ready"));
+    assert!(!kj.iter().any(|e| e["event"] == "proposed_ready"));
 
     // The source item records it, with usage booked to the library room.
     let j = env.journal(&id);
@@ -497,9 +499,9 @@ fn the_librarian_distils_a_closed_item_into_a_knowledge_item() {
             .any(|e| e["event"] == "usage" && e["room"] == "library")
     );
 
-    // The inbox shows the knowledge item as ready?.
+    // The inbox never shows it.
     let inbox = env.hall(&env.repo, &["inbox"]);
-    assert!(inbox.stdout.contains("H-0002"), "{}", inbox.stdout);
+    assert_eq!(inbox.json["entries"], json!([]), "{}", inbox.stdout);
 
     // Idempotent: a second pass has nothing to distil, and distill says so.
     let r = env.hall_fake(
@@ -631,6 +633,14 @@ fn review_accepts_and_rejects_in_the_knowledge_item() {
     assert_eq!(r.code, 0, "{}", r.stdout);
     snap!("library_review", scrub(&env, &r.json));
 
+    // The knowledge item is in the review loop; deciding means pulling it
+    // back first.
+    let r = env.hall(&env.repo, &["library", "review", "--accept", "L-0001"]);
+    assert_eq!(r.code, 4, "{}", r.stdout);
+    assert_eq!(r.json["error"]["code"], "WRONG_STATE");
+    let r = env.hall(&env.repo, &["pull-back", "H-0002"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+
     let r = env.hall(
         &env.repo,
         &[
@@ -646,7 +656,9 @@ fn review_accepts_and_rejects_in_the_knowledge_item() {
     );
     assert_eq!(r.code, 0, "{}", r.stdout);
     snap!("library_review_decided", scrub(&env, &r.json));
-    assert_eq!(r.json["next"][0], "hall ready H-0002");
+    // The decisions go back to review by themselves.
+    let k = env.hall(&env.repo, &["status", "H-0002"]);
+    assert_eq!(k.json["state"], "checks", "{}", k.stdout);
 
     let wt = worktree(&env, "H-0002");
     assert_eq!(files(&wt), ["L-0001-retries-must-check-the-endpoint.md"]);
@@ -744,7 +756,9 @@ fn a_contradicted_learning_is_proposed_for_retirement() {
     );
     assert_eq!(r.json["steps"][0]["progress"], "idle", "{}", r.stdout);
 
-    // Rejecting the retirement restores the base version.
+    // Rejecting the retirement restores the base version (after pulling
+    // the knowledge item back from review).
+    assert_eq!(env.hall(&env.repo, &["pull-back", k]).code, 0);
     let r = env.hall(&env.repo, &["library", "review", "--reject", "L-0002"]);
     assert_eq!(r.code, 0, "{}", r.stdout);
     assert_eq!(r.json["retiring"], json!([]));
@@ -816,7 +830,7 @@ fn retire_on_demand() {
     assert!(git(&wt, &["log", "-1", "--format=%B"]).contains("billing was rewritten"));
     let k = env.hall(&env.repo, &["status", "H-0001"]);
     assert_eq!(k.json["title"], "Library: retire L-0003");
-    assert_eq!(k.json["state"], "awaiting_you");
+    assert_eq!(k.json["state"], "checks");
 
     // Again: nothing changes.
     let r = env.hall(
@@ -825,12 +839,13 @@ fn retire_on_demand() {
     );
     assert_eq!(r.code, 0);
     assert_eq!(r.json["changed"], false);
-    // Another retirement joins the same knowledge item.
+    // H-0001 is in review, so another retirement starts a new knowledge
+    // item.
     let r = env.hall(
         &env.repo,
         &["library", "retire", "L-0001", "--reason", "obsolete"],
     );
-    assert_eq!(r.json["item"], "H-0001", "{}", r.stdout);
+    assert_eq!(r.json["item"], "H-0002", "{}", r.stdout);
 
     let r = env.hall(&env.repo, &["library", "retire", "L-0099", "--reason", "x"]);
     assert_eq!(r.code, 3);

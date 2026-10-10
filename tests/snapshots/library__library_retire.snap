@@ -9,7 +9,7 @@ expression: "scrub(&env, &r.json)"
   "id": "L-0003",
   "item": "H-0001",
   "next": [
-    "hall ready H-0001",
+    "hall status H-0001",
     "hall library review"
   ],
   "path": ".hallmark/knowledge/L-0003-billing-map.md"

@@ -1,6 +1,7 @@
 # 0021. The Library: learnings as reviewed files, read from the base
 
-Status: Accepted, 2026-10-09
+Status: Accepted, 2026-10-09. Amended 2026-10-10: knowledge items go to
+review by themselves and never wait for you.
 
 ## Context
 
@@ -29,8 +30,13 @@ runtime, and stay cheap: the librarian runs after every item.
     subprocess, because the CLI is the API. It reuses the oldest open one
     that is still in development or awaiting you.
   - It commits the files in that item's worktree, journals the commit, and
-    runs `hall propose-ready`, so the item shows in the inbox as "ready?".
-  - From there it is reviewed and shipped like code.
+    runs `hall ready`. The principal engineer reviews it and it ships like
+    code. `hall library review` and `hall library retire` do the same after
+    their commits.
+  - Knowledge items never wait for you. The inbox leaves out every entry
+    about one (a failed CI run, an escalation, a hold), so it holds only
+    what blocks development. They still show on the board and in
+    `hall library review`.
   - A Library lock (`hallmark/library/.lock`, not the repo lock that
     `hall new` takes) serializes writers.
 - **Reviews read accepted learnings from the base branch only**, with
@@ -112,13 +118,16 @@ runtime, and stay cheap: the librarian runs after every item.
   - `--accept` sets a proposal to `accepted`.
   - `--reject` restores the base version, or deletes a new file.
   - Each call makes one commit per knowledge item. A knowledge item already
-    in the review loop is `WRONG_STATE`.
+    in the review loop is `WRONG_STATE`: pull it back first, or decide
+    after it merges.
   - When nothing proposed remains, `next` is `hall ready <knowledge item>`.
 
 ## Consequences
 
 - A learning reaches reviews only after it is approved and merged, the same
-  way as code. A branch that adds a permissive learning gets no benefit from
+  way as code. Kinds outside `auto_accept` merge as `proposed`, and reviews
+  skip them until `hall library review --accept` accepts them. To keep the
+  Library hands-off, list every kind in `auto_accept`. A branch that adds a permissive learning gets no benefit from
   it.
 - Two `claude -p` behaviours were found in live runs, on Claude Code
   2.1.296:

@@ -203,13 +203,18 @@ fn sort(v: &mut [Located]) {
     });
 }
 
+/// Whether `item` is a knowledge item (recognized by its title prefix).
+pub fn is_knowledge(item: &Item) -> bool {
+    item.title.starts_with(KNOWLEDGE_PREFIX)
+}
+
 /// Every knowledge item, open or not, in ID order.
 pub fn knowledge_items(repo: &Repo) -> Result<Vec<Item>> {
     Ok(repo
         .index()?
         .items(true)?
         .into_iter()
-        .filter(|i| i.title.starts_with(KNOWLEDGE_PREFIX))
+        .filter(is_knowledge)
         .collect())
 }
 

@@ -620,7 +620,7 @@ pub fn note_retired(repo: &Repo, ids: &[String], item: ItemId, now: DateTime<Utc
 }
 
 /// Writes proposals and retirements into a knowledge item, commits, and
-/// proposes it ready. Call under [`knowledge::with_lock`]. `source` is the
+/// sends it to review. Call under [`knowledge::with_lock`]. `source` is the
 /// item being distilled (none for a retirement-only pass).
 pub fn apply(
     repo: &Repo,
@@ -805,12 +805,12 @@ pub fn apply(
         .filter(|(l, _)| !retired_ids.contains(&l.id))
         .map(|(l, _)| l.id.clone())
         .collect();
-    let summary = format!(
-        "Library: {} learning(s) added or updated, {} proposed for retirement. Review them with `hall library review`.",
+    let note = format!(
+        "Library: {} learning(s) added or updated, {} proposed for retirement.",
         learnings.len(),
         retired_ids.len()
     );
-    knowledge::propose_ready(repo, &k, actor, &summary)?;
+    knowledge::send_to_review(repo, &k, actor, &note)?;
     note_retired(repo, &retired_ids, k.item.id, now)?;
     Ok(Applied {
         knowledge: Some(k.item.id),
