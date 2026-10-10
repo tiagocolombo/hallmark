@@ -85,6 +85,42 @@ fn ship(repo: &Repo, item: &Item) -> Result<Progress> {
             ),
         );
     }
+    // A follow-up stacked on a PR ships into that PR's branch, which only
+    // works while the PR is open.
+    let mut base = item.base.clone();
+    if item.base != repo.config.base
+        && let Some(url) = repo
+            .index()?
+            .items(true)?
+            .into_iter()
+            .find(|i| i.branch == item.base)
+            .and_then(|i| i.pr_url)
+        && let Ok(state) = crate::gh::pr_state(&repo.main_root, &url)
+        && !state.is_empty()
+        && state != "OPEN"
+    {
+        if state == "MERGED" {
+            // The parent's work reached the base: ship there.
+            repo.hall.live(&format!(
+                "{id}: the PR {url} it is stacked on merged; shipping into {}",
+                repo.config.base
+            ));
+            base = repo.config.base.clone();
+        } else {
+            return held(
+                repo,
+                id,
+                format!(
+                    "the PR {url} this item is stacked on was {} without merging, so {} is no \
+                     place to ship into. Nothing can re-target an item's base: drop it \
+                     (`hall drop {id}`) and redo the work with `hall new` from {}",
+                    state.to_lowercase(),
+                    item.base,
+                    repo.config.base
+                ),
+            );
+        }
+    }
     let events = repo.hall.read_item(id)?;
     let body = pr_body(repo, item, &events);
     let body_file = body_path(repo, id);
@@ -99,7 +135,7 @@ fn ship(repo: &Repo, item: &Item) -> Result<Progress> {
         &[
             ("branch", item.branch.as_str()),
             ("id", &id.to_string()),
-            ("base", item.base.as_str()),
+            ("base", base.as_str()),
             ("title", item.title.as_str()),
             ("body_file", &crate::paths::display(&body_file)),
             ("issue", &issue),

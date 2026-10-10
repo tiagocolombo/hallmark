@@ -118,6 +118,9 @@ struct Spec<'a> {
     follow_up: Option<String>,
     /// The branch the new branch starts from (a child starts at its parent).
     start: Option<&'a str>,
+    /// The branch it is reviewed against and ships into, when not the
+    /// configured base (a follow-up to an open PR targets that PR's branch).
+    base: Option<String>,
 }
 
 pub fn new(cwd: &Path, a: NewArgs, mode: Mode) -> Result<Response> {
@@ -161,11 +164,54 @@ pub fn new(cwd: &Path, a: NewArgs, mode: Mode) -> Result<Response> {
         .or_else(|| issue.as_ref().map(|i| i.title.clone()))
         .or_else(|| a.request.as_ref().map(|r| title_from(r)))
         .unwrap_or_default();
-    let request = match &pr {
-        Some(p) => {
-            let shipped = shipped_by(&repo, &p.url);
-            Some(follow_up_request(p, shipped, a.request.as_deref()))
+    // A follow-up carries the PR's failing CI checks, with log excerpts.
+    let failing_ci: Vec<(String, Option<String>)> = match &pr {
+        Some(p) => crate::gh::pr_checks(&repo.main_root, &p.url)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|c| matches!(c.bucket.as_str(), "fail" | "cancel"))
+            .take(4)
+            .map(|c| {
+                let log = c
+                    .link
+                    .as_deref()
+                    .and_then(|l| crate::gh::failed_log(&repo.main_root, l, 60));
+                (c.name, log)
+            })
+            .collect(),
+        None => Vec::new(),
+    };
+    // A follow-up to a PR that is still open stacks on it: it starts from
+    // the PR's branch and is reviewed against and shipped into it.
+    // Only a PR Hallmark shipped, still at the commit it reviewed, is stacked
+    // on: its branch is local, and the rules the follow-up is hallmarked under
+    // were themselves reviewed. Anything else starts from the configured base.
+    let shipped = pr.as_ref().and_then(|p| shipped_by(&repo, &p.url));
+    let stack: Option<String> = match (&pr, &shipped) {
+        (Some(p), Some(it))
+            if p.state == "OPEN"
+                && !p.cross_repo
+                && !p.head_oid.is_empty()
+                && it.hallmark_sha.as_deref() == Some(p.head_oid.as_str())
+                && git::branch_exists(&repo.main_root, &it.branch)
+                && git::run(
+                    &repo.main_root,
+                    &["rev-parse", &format!("{}^{{commit}}", it.branch)],
+                )
+                .is_ok_and(|tip| tip.trim() == p.head_oid) =>
+        {
+            Some(it.branch.clone())
         }
+        _ => None,
+    };
+    let request = match &pr {
+        Some(p) => Some(follow_up_request(
+            p,
+            shipped.as_ref().map(|i| i.id),
+            stack.as_deref(),
+            a.request.as_deref(),
+            &failing_ci,
+        )),
         None => a.request.clone().or_else(|| {
             issue.as_ref().map(|i| {
                 format!("#{} {}\n\n{}", i.number, i.title, i.body)
@@ -217,7 +263,11 @@ pub fn new(cwd: &Path, a: NewArgs, mode: Mode) -> Result<Response> {
                 }),
                 parent: parent.as_ref().map(|p| p.id),
                 follow_up: pr.as_ref().map(|p| p.url.clone()),
-                start: parent.as_ref().map(|p| p.branch.as_str()),
+                start: parent
+                    .as_ref()
+                    .map(|p| p.branch.as_str())
+                    .or(stack.as_deref()),
+                base: stack.clone(),
             },
         )?;
         if let Some(raw) = &raw {
@@ -243,6 +293,7 @@ pub fn new(cwd: &Path, a: NewArgs, mode: Mode) -> Result<Response> {
                     parent: Some(item.id),
                     follow_up: None,
                     start: Some(item.branch.as_str()),
+                    base: None,
                 };
                 match create(&repo, spec) {
                     Ok(c) => children.push((c, part.clone())),
@@ -472,7 +523,7 @@ fn create(repo: &Repo, spec: Spec) -> Result<Item> {
         ("id", &id.to_string()),
         ("branch", branch.as_str()),
         ("slug", &slug(&spec.title)),
-        ("base", repo.config.base.as_str()),
+        ("base", spec.base.as_deref().unwrap_or(&repo.config.base)),
     ];
     let cmd = worktree_command(&repo.config.worktree, &vars, spec.start);
     run_shell(&cmd, &repo.main_root)?;
@@ -489,14 +540,24 @@ fn create(repo: &Repo, spec: Spec) -> Result<Item> {
         })?;
     // A custom worktree command may ignore `{start}`: bring a fresh child up
     // to its parent's tip when that is a fast-forward.
+    // The new branch has no commits of its own yet, so it is reset to the
+    // start point; if that fails, say so rather than build on the wrong code.
     if let Some(start) = spec.start
         && let (Ok(head), Ok(tip)) = (
             git::head(&worktree),
-            git::run(&worktree, &["rev-parse", start]),
+            git::run(&worktree, &["rev-parse", &format!("{start}^{{commit}}")]),
         )
-        && head != tip
+        && head != tip.trim()
+        && let Err(e) = git::run(&worktree, &["reset", "--hard", "-q", tip.trim()])
     {
-        let _ = git::run(&worktree, &["merge", "--ff-only", "-q", start]);
+        return Err(HallError::new(
+            ErrorCode::CommandFailed,
+            format!(
+                "the worktree command ignored the start point {start}, and moving {branch} there failed: {}",
+                e.message
+            ),
+        )
+        .next(["git worktree list", "hall doctor"]));
     }
     let created = ev(
         &actor(),
@@ -505,7 +566,7 @@ fn create(repo: &Repo, spec: Spec) -> Result<Item> {
             title: spec.title,
             branch,
             worktree: paths::display(&worktree),
-            base: repo.config.base.clone(),
+            base: spec.base.unwrap_or_else(|| repo.config.base.clone()),
             issue: spec.issue,
             request: spec.request,
             adopted: false,
@@ -556,21 +617,22 @@ fn orchestration_next(parent: &Item, children: &[(Item, Part)]) -> Vec<String> {
 }
 
 /// The item that shipped this PR, if Hallmark has it.
-fn shipped_by(repo: &Repo, url: &str) -> Option<ItemId> {
+fn shipped_by(repo: &Repo, url: &str) -> Option<Item> {
     repo.index()
         .ok()?
         .items(true)
         .ok()?
         .into_iter()
         .find(|i| i.pr_url.as_deref() == Some(url))
-        .map(|i| i.id)
 }
 
 /// The request for a follow-up item: the PR and its review feedback.
 pub fn follow_up_request(
     pr: &crate::gh::GhPr,
     shipped: Option<ItemId>,
+    stacked_on: Option<&str>,
     extra: Option<&str>,
+    failing_ci: &[(String, Option<String>)],
 ) -> String {
     let mut s = format!(
         "Follow-up to PR #{} \"{}\" ({})",
@@ -579,7 +641,12 @@ pub fn follow_up_request(
     if let Some(id) = shipped {
         s.push_str(&format!(", which shipped {id}"));
     }
-    s.push_str(".\nAddress the review feedback below.\n");
+    if let Some(branch) = stacked_on {
+        s.push_str(&format!(
+            ". The PR is still open: this item starts from its branch, {branch}, and ships into it"
+        ));
+    }
+    s.push_str(".\nAddress the CI failures and the review feedback below.\n");
     if let Some(e) = extra.map(str::trim).filter(|e| !e.is_empty()) {
         s.push_str(&format!("\n{e}\n"));
     }
@@ -634,7 +701,37 @@ pub fn follow_up_request(
         s.push_str(&lines.join("\n"));
         s.push('\n');
     }
-    clip(&s, 12_000)
+    if !failing_ci.is_empty() {
+        // After everything a person wrote, and capped as a whole, so the
+        // final cut can only ever reach the logs.
+        let each = 6_000 / failing_ci.len();
+        s.push_str("\nFailing CI checks:\n");
+        for (name, log) in failing_ci {
+            s.push_str(&format!("- {name}\n"));
+            if let Some(log) = log {
+                s.push_str(&format!("\n```text\n{}\n```\n", clip_lines(log, each)));
+            }
+        }
+    }
+    // Keep the line breaks: the request carries lists and log excerpts.
+    match s.char_indices().nth(12_000) {
+        Some((cut, _)) => format!("{}\n…", &s[..cut]),
+        None => s,
+    }
+}
+
+/// Keeps the end of `s` within `max` bytes, on a line boundary.
+fn clip_lines(s: &str, max: usize) -> String {
+    if s.len() <= max {
+        return s.to_string();
+    }
+    let mut start = s.len() - max;
+    while !s.is_char_boundary(start) {
+        start += 1;
+    }
+    let tail = &s[start..];
+    let tail = tail.split_once('\n').map_or(tail, |(_, rest)| rest);
+    format!("…\n{tail}")
 }
 
 /// The first line of a request, trimmed to a title.
@@ -814,6 +911,11 @@ mod tests {
     #[test]
     fn follow_up_requests_carry_the_feedback() {
         let pr = GhPr {
+            state: "OPEN".into(),
+            head: "hm/H-0007-retry".into(),
+            base: "main".into(),
+            head_oid: String::new(),
+            cross_repo: false,
             number: 12,
             title: "Retry webhooks".into(),
             body: "Adds retries.".into(),
@@ -835,10 +937,25 @@ mod tests {
                 ..comment("alice", "Use saturating_mul here.")
             }],
         };
-        let r = follow_up_request(&pr, Some(ItemId(7)), Some("Keep it small."));
+        let ci = vec![(
+            "test (ubuntu-latest)".to_string(),
+            Some("thread 'x' panicked at tests/setup.rs:405:14:\nText file busy".to_string()),
+        )];
+        let r = follow_up_request(
+            &pr,
+            Some(ItemId(7)),
+            Some("hm/H-0007-retry"),
+            Some("Keep it small."),
+            &ci,
+        );
         assert!(r.starts_with(
-            "Follow-up to PR #12 \"Retry webhooks\" (https://github.com/acme/app/pull/12), which shipped H-0007."
+            "Follow-up to PR #12 \"Retry webhooks\" (https://github.com/acme/app/pull/12), which shipped H-0007. \
+             The PR is still open: this item starts from its branch, hm/H-0007-retry, and ships into it."
+        ), "{r}");
+        assert!(r.contains(
+            "Failing CI checks:\n- test (ubuntu-latest)\n\n```text\nthread 'x' panicked"
         ));
+        assert!(r.contains("Text file busy"));
         assert!(r.contains("Keep it small."));
         assert!(r.contains("- @alice (changes requested): Backoff needs a cap."));
         assert!(r.contains("- @alice on src/retry.rs:14: Use saturating_mul here."));
@@ -850,6 +967,6 @@ mod tests {
             line_comments: vec![],
             ..pr
         };
-        assert!(follow_up_request(&quiet, None, None).contains("No review comments"));
+        assert!(follow_up_request(&quiet, None, None, None, &[]).contains("No review comments"));
     }
 }

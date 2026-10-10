@@ -169,6 +169,19 @@ pub struct GhPr {
     pub reviews: Vec<GhComment>,
     #[serde(default)]
     pub comments: Vec<GhComment>,
+    /// OPEN, CLOSED or MERGED.
+    #[serde(default)]
+    pub state: String,
+    #[serde(default, rename = "headRefName")]
+    pub head: String,
+    #[serde(default, rename = "baseRefName")]
+    pub base: String,
+    /// The commit the PR's head is at on GitHub.
+    #[serde(default, rename = "headRefOid")]
+    pub head_oid: String,
+    /// The PR comes from a fork.
+    #[serde(default, rename = "isCrossRepository")]
+    pub cross_repo: bool,
     /// Comments on lines of the diff (`gh api …/pulls/<n>/comments`).
     #[serde(default, skip_deserializing)]
     pub line_comments: Vec<GhComment>,
@@ -184,7 +197,7 @@ pub fn pr(dir: &Path, pr: &str) -> Result<GhPr> {
             "view",
             pr,
             "--json",
-            "number,url,title,body,reviews,comments",
+            "number,url,title,body,reviews,comments,state,headRefName,baseRefName,headRefOid,isCrossRepository",
         ])
         .output()?;
     if !out.status.success() {
@@ -220,6 +233,137 @@ pub fn pr(dir: &Path, pr: &str) -> Result<GhPr> {
     Ok(p)
 }
 
+/// One CI check of a PR, as `gh pr checks --json` reports it.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct GhCheck {
+    pub name: String,
+    /// pass, fail, pending, skipping or cancel.
+    #[serde(default)]
+    pub bucket: String,
+    #[serde(default)]
+    pub link: Option<String>,
+}
+
+/// The PR's CI checks. An empty list means it has none (yet).
+pub fn pr_checks(dir: &Path, pr: &str) -> Result<Vec<GhCheck>> {
+    let out = Command::new(gh()?)
+        .current_dir(dir)
+        .args(["pr", "checks", pr, "--json", "name,bucket,link"])
+        .output()?;
+    // `gh pr checks` exits 8 while checks are pending and 1 when one failed,
+    // with the JSON on stdout either way. A PR without checks gets an error
+    // message and no JSON: that is an empty list.
+    if out.stdout.iter().all(u8::is_ascii_whitespace)
+        && String::from_utf8_lossy(&out.stderr).contains("no checks reported")
+    {
+        return Ok(Vec::new());
+    }
+    serde_json::from_slice(&out.stdout).map_err(|e| {
+        HallError::new(
+            ErrorCode::GhUnavailable,
+            format!(
+                "gh pr checks {pr}: {e}: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            ),
+        )
+        .next(["gh auth status", "hall doctor"])
+    })
+}
+
+/// A PR's state: OPEN, CLOSED or MERGED.
+pub fn pr_state(dir: &Path, pr: &str) -> Result<String> {
+    let out = Command::new(gh()?)
+        .current_dir(dir)
+        .args(["pr", "view", pr, "--json", "state", "--jq", ".state"])
+        .output()?;
+    if !out.status.success() {
+        return Err(HallError::new(
+            ErrorCode::GhUnavailable,
+            format!(
+                "gh pr view {pr} failed: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            ),
+        )
+        .next(["gh auth status", "hall doctor"]));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+/// The run and job IDs in a check's link
+/// (`…/actions/runs/<run>/job/<job>`).
+pub fn run_and_job(link: &str) -> Option<(String, String)> {
+    let rest = link.split("/actions/runs/").nth(1)?;
+    let mut parts = rest.split('/');
+    let run = parts.next()?.to_string();
+    let job = (parts.next()? == "job")
+        .then(|| parts.next())
+        .flatten()?
+        .to_string();
+    (run.chars().all(|c| c.is_ascii_digit()) && job.chars().all(|c| c.is_ascii_digit()))
+        .then_some((run, job))
+}
+
+/// The tail of a failed job's log (`gh run view --job --log-failed`),
+/// focused on the lines that say what broke. None when gh can't read it.
+pub fn failed_log(dir: &Path, link: &str, max_lines: usize) -> Option<String> {
+    let (run, job) = run_and_job(link)?;
+    let out = Command::new(gh().ok()?)
+        .current_dir(dir)
+        .args(["run", "view", &run, "--job", &job, "--log-failed"])
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    let excerpt = log_excerpt(&text, max_lines);
+    (!excerpt.trim().is_empty()).then_some(excerpt)
+}
+
+/// The useful part of a CI log: lines around panics, errors and failures,
+/// without the runner's timestamps, at most `max` lines.
+pub fn log_excerpt(log: &str, max: usize) -> String {
+    let lines: Vec<String> = log
+        .lines()
+        .map(|l| {
+            // "job\tstep\t2026-10-10T02:41:18.1Z text": keep the text.
+            let l = l.rsplit('\t').next().unwrap_or(l);
+            match l.split_once("Z ") {
+                Some((ts, rest)) if ts.len() >= 20 && ts.as_bytes()[4] == b'-' => rest.to_string(),
+                _ => l.to_string(),
+            }
+        })
+        .collect();
+    let hot: Vec<usize> = lines
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| {
+            let l = l.to_ascii_lowercase();
+            l.contains("panicked")
+                || l.contains("error")
+                || l.contains("failed")
+                || l.contains("failures:")
+                || l.contains("assert")
+        })
+        .map(|(i, _)| i)
+        .collect();
+    let mut keep = vec![false; lines.len()];
+    for i in hot {
+        let from = i.saturating_sub(2);
+        for k in keep.iter_mut().skip(from).take(i + 6 - from) {
+            *k = true;
+        }
+    }
+    let mut out: Vec<&str> = lines
+        .iter()
+        .zip(&keep)
+        .filter(|(_, k)| **k)
+        .map(|(l, _)| l.as_str())
+        .collect();
+    if out.is_empty() {
+        out = lines.iter().map(String::as_str).collect();
+    }
+    let start = out.len().saturating_sub(max);
+    out[start..].join("\n")
+}
+
 /// `https://github.com/o/r/pull/12` → (o, r).
 fn owner_repo(url: &str) -> Option<(String, String)> {
     let rest = url.split("://").nth(1)?;
@@ -239,6 +383,35 @@ pub fn auth_status() -> Option<(PathBuf, bool)> {
         .map(|o| o.status.success())
         .unwrap_or(false);
     Some((gh, ok))
+}
+
+#[cfg(test)]
+mod ci_tests {
+    use super::*;
+
+    #[test]
+    fn check_links_name_their_run_and_job() {
+        assert_eq!(
+            run_and_job("https://github.com/o/r/actions/runs/38017825353/job/114111945371"),
+            Some(("38017825353".into(), "114111945371".into()))
+        );
+        assert_eq!(run_and_job("https://example.com/status/1"), None);
+    }
+
+    #[test]
+    fn log_excerpts_keep_what_broke() {
+        let log = "test (ubuntu-latest)\tRun cargo test\t2026-10-10T02:41:18.1234567Z running 9 tests\n\
+                   test (ubuntu-latest)\tRun cargo test\t2026-10-10T02:41:18.2Z test a ... ok\n\
+                   test (ubuntu-latest)\tRun cargo test\t2026-10-10T02:41:18.3Z thread 'x' panicked at tests/setup.rs:405:14:\n\
+                   test (ubuntu-latest)\tRun cargo test\t2026-10-10T02:41:18.4Z Text file busy";
+        let e = log_excerpt(log, 40);
+        assert!(
+            e.contains("thread 'x' panicked at tests/setup.rs:405:14:"),
+            "{e}"
+        );
+        assert!(e.contains("Text file busy"), "{e}");
+        assert!(!e.contains("2026-10-10T"), "timestamps go: {e}");
+    }
 }
 
 #[cfg(test)]

@@ -325,6 +325,26 @@ pub enum Body {
         child: ItemId,
         sha: String,
     },
+    /// The shipped PR's CI finished (the daemon watches it after shipping).
+    PrChecks {
+        pr_url: String,
+        passed: bool,
+        /// The checks that failed: name and link.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        failing: Vec<FailingCheck>,
+        /// Set when the PR left the open state while its checks were red:
+        /// `merged` or `closed`. The checks did not pass.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ended: Option<String>,
+    },
+}
+
+/// A CI check that failed on a shipped PR.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct FailingCheck {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link: Option<String>,
 }
 
 impl Body {
@@ -365,6 +385,7 @@ impl Body {
             Body::Planned { .. } => "planned",
             Body::Merged { .. } => "merged",
             Body::ChildMerged { .. } => "child_merged",
+            Body::PrChecks { .. } => "pr_checks",
         }
     }
 
@@ -555,6 +576,16 @@ impl Body {
             }
             Body::Merged { into, sha } => format!("merged into {into} at {}", short(sha)),
             Body::ChildMerged { child, sha } => format!("{child} merged · {}", short(sha)),
+            Body::PrChecks {
+                passed, failing, ..
+            } => {
+                if *passed {
+                    "CI passed on the PR".into()
+                } else {
+                    let names: Vec<&str> = failing.iter().map(|f| f.name.as_str()).collect();
+                    format!("CI failed on the PR: {}", names.join(", "))
+                }
+            }
         }
     }
 }
@@ -611,6 +642,7 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
         stuck_since: None,
         reviewed_sha: None,
         findings: Counts::default(),
+        ci: None,
     };
     let mut ledger = Ledger::default();
     for e in it {
@@ -662,6 +694,19 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
                 })
             }
             Body::Released { .. } => item.hold = None,
+            Body::PrChecks {
+                passed,
+                failing,
+                ended,
+                ..
+            } => {
+                item.ci = Some(crate::item::Ci {
+                    passed: *passed,
+                    ended: ended.clone(),
+                    failing: failing.iter().map(|f| f.name.clone()).collect(),
+                    t: e.t,
+                })
+            }
             Body::Shipped { pr_url, .. } => item.pr_url = pr_url.clone(),
             Body::Dropped { reason, .. } => item.drop_reason = Some(reason.clone()),
             _ => {}
