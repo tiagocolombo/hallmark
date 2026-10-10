@@ -126,12 +126,14 @@ fn event_loop(
             redraw = true;
         }
         // The bell rings when something new lands in your office.
-        let now_waiting = app.inbox().len();
-        if now_waiting > waiting {
-            let _ = std::io::stdout().write_all(b"\x07");
-            let _ = std::io::stdout().flush();
+        if redraw {
+            let now_waiting = app.inbox().len();
+            if now_waiting > waiting {
+                let _ = std::io::stdout().write_all(b"\x07");
+                let _ = std::io::stdout().flush();
+            }
+            waiting = now_waiting;
         }
-        waiting = now_waiting;
     }
 }
 
