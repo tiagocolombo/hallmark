@@ -603,6 +603,7 @@ fn all(cwd: &Path, a: &SetupArgs) -> Result<Response> {
         ));
     } else {
         steps.push(step(format!("use {shown}"), "done", None));
+        steps.push(path_step(&exe, a.dry_run));
     }
 
     // 2. The Claude Code plugin, and the status line unless told not to.
@@ -813,6 +814,76 @@ fn all(cwd: &Path, a: &SetupArgs) -> Result<Response> {
         steps,
     };
     Ok(Response::new(out, next))
+}
+
+/// Makes sure the shell finds this `hall`. Hooks and the daemon use its
+/// absolute path, but you type `hall`: `cargo install` puts it in
+/// `~/.cargo/bin`, which isn't on PATH on a machine whose Rust comes from
+/// Nix rather than rustup. Links it into `~/.local/bin` when that is on
+/// PATH, or says which line to add to the shell profile.
+fn path_step(exe: &Path, dry_run: bool) -> Step {
+    let command = "put hall on PATH".to_string();
+    let found = crate::gh::which("hall").map(|p| paths::normalize(&p));
+    if found.as_deref() == Some(exe) {
+        return step(command, "done", Some("already on PATH".into()));
+    }
+    let dir = exe.parent().map(paths::display).unwrap_or_default();
+    let profile_line = format!("export PATH=\"{dir}:$PATH\"");
+    #[cfg(unix)]
+    if let Some(bin) = local_bin_on_path() {
+        let link = bin.join("hall");
+        let ours = std::fs::read_link(&link).is_ok_and(|t| paths::normalize(&t) == exe);
+        if link.exists() && !ours && std::fs::symlink_metadata(&link).is_ok_and(|m| !m.is_symlink())
+        {
+            return step(
+                command,
+                "warn",
+                Some(format!(
+                    "{} is another hall; remove it, or add `{profile_line}` to your shell profile",
+                    paths::display(&link)
+                )),
+            );
+        }
+        let what = format!("link {} → {}", paths::display(&link), paths::display(exe));
+        if dry_run {
+            return step(command, "planned", Some(what));
+        }
+        let _ = std::fs::remove_file(&link);
+        return match std::fs::create_dir_all(&bin)
+            .and_then(|_| std::os::unix::fs::symlink(exe, &link))
+        {
+            Ok(()) => step(command, "done", Some(what)),
+            Err(e) => step(
+                command,
+                "warn",
+                Some(format!(
+                    "could not {what}: {e}; add `{profile_line}` to your shell profile"
+                )),
+            ),
+        };
+    }
+    let _ = dry_run;
+    step(
+        command,
+        "warn",
+        Some(match found {
+            Some(other) => format!(
+                "`hall` on PATH is {}, not this one; add `{profile_line}` to your shell profile",
+                paths::display(&other)
+            ),
+            None => format!("{dir} isn't on PATH; add `{profile_line}` to your shell profile"),
+        }),
+    )
+}
+
+/// `~/.local/bin` when PATH lists it: the usual home for user programs.
+#[cfg(unix)]
+fn local_bin_on_path() -> Option<PathBuf> {
+    let bin = dirs::home_dir()?.join(".local").join("bin");
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .any(|p| p == bin)
+        .then_some(bin)
 }
 
 /// True when a daemon runs but started before this binary was built, so it

@@ -105,23 +105,28 @@ hall setup
 
 That one command does every step and reports each one; it is safe to repeat:
 
-1. **The Claude Code plugin** (skills, agents, hooks, schemas), written into
+1. **`hall` on your PATH.** Hooks and the daemon use its absolute path, but you
+   type `hall`. When its directory isn't on PATH (`cargo install` into
+   `~/.cargo/bin` on a machine whose Rust comes from Nix), setup links it into
+   `~/.local/bin` if that is on PATH, or tells you the line to add to your
+   shell profile. `hall doctor` checks it too.
+2. **The Claude Code plugin** (skills, agents, hooks, schemas), written into
    Hallmark's data directory and installed at user level through a local
    marketplace, with hook commands that use the absolute path of this `hall`.
-2. **The status line**: `statusLine` in `~/.claude/settings.json` points at
+3. **The status line**: `statusLine` in `~/.claude/settings.json` points at
    `hall statusline`. The rest of the file is kept as it was. A status line of
    your own is kept too: that step is skipped and `--force` replaces it.
    `CLAUDE_CONFIG_DIR` is honored.
-3. **The repo** (`hall init`): `.hallmark.toml` from the gates it detects, a stub
+4. **The repo** (`hall init`): `.hallmark.toml` from the gates it detects, a stub
    `.hallmark/review.md`, a CLAUDE.md section, and the journal. It tells you what
    to commit (`git add .hallmark.toml .hallmark/ CLAUDE.md && git commit -m
    "Adopt Hallmark"`).
-4. **The daemon**, started now and registered to start at login, with the
+5. **The daemon**, started now and registered to start at login, with the
    PATH you ran `hall setup` from. Run it from the shell your project builds in
    (inside `nix develop` for a Nix project), so the gates and `gh` are found.
-5. **A phone topic**: a private, random ntfy topic, if you have no phone
+6. **A phone topic**: a private, random ntfy topic, if you have no phone
    channel yet, with how to subscribe.
-6. **`hall doctor`**, whose fixes go in `next`.
+7. **`hall doctor`**, whose fixes go in `next`.
 
 `--dry-run` shows the plan without doing anything; `--no-statusline`,
 `--no-daemon` and `--no-notify` skip a step. Each step also has its own command

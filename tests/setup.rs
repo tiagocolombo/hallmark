@@ -380,3 +380,67 @@ fn setup_without_a_target_plans_every_step() {
             .any(|s| s["command"] == "hall setup claude --statusline")
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn setup_puts_hall_on_path_through_local_bin() {
+    let env = Env::initialized();
+    let home = env.root.join("user");
+    let bin = home.join(".local").join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    // An installed-looking copy, outside any target/ directory.
+    let installed = env.root.join("cargo-bin").join("hall");
+    std::fs::create_dir_all(installed.parent().unwrap()).unwrap();
+    std::fs::copy(env!("CARGO_BIN_EXE_hall"), &installed).unwrap();
+    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
+    let run = |args: &[&str]| {
+        let out = std::process::Command::new(&installed)
+            .current_dir(&env.repo)
+            .env("HOME", &home)
+            .env("PATH", &path)
+            .env("HALL_HOME", &env.home)
+            .env("HALL_CLAUDE", env.root.join("no-claude-here"))
+            .args(args)
+            .output()
+            .unwrap();
+        serde_json::from_slice::<serde_json::Value>(&out.stdout).unwrap()
+    };
+    let step = |v: &serde_json::Value| {
+        v["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["command"] == "put hall on PATH")
+            .cloned()
+            .unwrap()
+    };
+    let planned = step(&run(&["--json", "setup", "--dry-run"]));
+    assert_eq!(planned["status"], "planned", "{planned}");
+    assert!(!bin.join("hall").exists(), "a dry run links nothing");
+
+    let done = step(&run(&[
+        "--json",
+        "setup",
+        "--no-daemon",
+        "--no-notify",
+        "--no-statusline",
+    ]));
+    assert_eq!(done["status"], "done", "{done}");
+    let target = std::fs::read_link(bin.join("hall")).unwrap();
+    assert_eq!(
+        dunce::canonicalize(target).unwrap(),
+        dunce::canonicalize(&installed).unwrap()
+    );
+    // Once linked, setup and doctor see it on PATH.
+    let again = step(&run(&["--json", "setup", "--dry-run"]));
+    assert_eq!(again["detail"], "already on PATH", "{again}");
+    let doctor = run(&["--json", "doctor"]);
+    let check = doctor["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["name"] == "path")
+        .cloned()
+        .unwrap();
+    assert_eq!(check["ok"], true, "{check}");
+}
