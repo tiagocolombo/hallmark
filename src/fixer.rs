@@ -142,6 +142,7 @@ fn run_claude(
     req.json_schema = Some(crate::plugin::file("schemas/fix.json").to_string());
     req.permission_mode = Some("acceptEdits".into());
     req.allowed_tools = tools(&repo.config.gates);
+    req.env.extend(path_with_hall());
     match runner::run_metered(repo, ctx.runner, Some(id), &req)? {
         Metered::Blocked(stop) => Ok(stop.progress()),
         Metered::Failed {
@@ -218,7 +219,10 @@ fn run_external(
     );
     let timeout = repo.config.budget.timeout_secs(Role::Fixer).max(0) as u64;
     repo.hall.live(&format!("{id} fixer engine: {cmd}"));
-    let run = run_command(&cmd, wt, timeout, &[("HALL_ACTOR", ACTOR)]);
+    let mut env: Vec<(String, String)> = vec![("HALL_ACTOR".into(), ACTOR.into())];
+    env.extend(path_with_hall());
+    let env: Vec<(&str, &str)> = env.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    let run = run_command(&cmd, wt, timeout, &env);
     let runs = repo.hall.item_runs(id);
     std::fs::create_dir_all(&runs)?;
     let stamp = Utc::now().format("%Y%m%dT%H%M%S");
@@ -340,6 +344,18 @@ fn hold(repo: &Repo, id: ItemId, kind: HoldKind, reason: String) -> Result<()> {
 fn append(repo: &Repo, id: ItemId, body: Body) -> Result<()> {
     repo.hall
         .append_item(id, &Event::new(ACTOR, Some(id), body))
+}
+
+/// `PATH` with this binary's directory first, so the fixer (and an external
+/// engine) can run `hall fixed` even when `hall` isn't installed on PATH.
+pub fn path_with_hall() -> Option<(String, String)> {
+    let exe = std::env::current_exe().ok()?;
+    let mut dirs = vec![exe.parent()?.to_path_buf()];
+    if let Some(p) = std::env::var_os("PATH") {
+        dirs.extend(std::env::split_paths(&p));
+    }
+    let joined = std::env::join_paths(dirs).ok()?;
+    Some(("PATH".into(), joined.to_string_lossy().into_owned()))
 }
 
 /// The tools the fixer may use: edit files, commit, read its findings,
@@ -666,6 +682,9 @@ mod tests {
             .collect();
         req.sort();
         assert_eq!(req, ["disputed", "fixed", "summary"]);
+        // `claude -p --json-schema` rejects a draft 2020-12 `$schema` key
+        // ("no schema with key or ref"), checked live with Claude Code 2.1.296.
+        assert!(schema.get("$schema").is_none());
         let r: FixReport = serde_json::from_value(serde_json::json!({
             "summary": "s", "fixed": ["F1"], "disputed": [{"id": "F2", "reason": "r"}]
         }))

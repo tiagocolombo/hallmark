@@ -243,7 +243,18 @@ fn the_fixer_commits_and_records_the_fix_itself() {
         assert!(tools.contains(&t), "{t} in {tools:?}");
     }
     assert!(!tools.iter().any(|t| t.contains("push")));
-    assert_eq!(c["env"], json!([["HALL_ACTOR", "fixer"]]));
+    // HALL_ACTOR marks its events; PATH starts with this `hall`'s directory.
+    let env_vars = c["env"].as_array().unwrap();
+    assert_eq!(env_vars[0], json!(["HALL_ACTOR", "fixer"]));
+    let path = env_vars[1][1].as_str().unwrap();
+    let exe_dir = std::path::Path::new(env!("CARGO_BIN_EXE_hall"))
+        .parent()
+        .unwrap();
+    assert_eq!(
+        std::env::split_paths(path).next().unwrap(),
+        exe_dir,
+        "{path}"
+    );
     let prompt = c["prompt"].as_str().unwrap();
     for s in [
         "F1 · major · correctness · retry.rs:3",

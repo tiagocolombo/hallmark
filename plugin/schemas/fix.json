@@ -1,5 +1,4 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Hallmark fix report",
   "description": "What the fixer did. Hallmark checks it against the worktree: the IDs must be open findings, and fixes need a new commit.",
   "type": "object",
