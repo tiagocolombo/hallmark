@@ -1,8 +1,12 @@
 //! The loop behind `hall daemon run` (what `hall daemon start` launches).
 //!
 //! - One instance: the loop holds `daemon/daemon.lock` for its whole life.
-//! - Every pass: settle an expired pause, run every registered repo in
-//!   parallel, record a new pause, and keep the last pass per repo.
+//! - Each repo has its own schedule: its next pass starts one poll interval
+//!   after its own last pass ended, on its own thread, so a slow repo never
+//!   holds another's queue. The loop settles an expired pause, records a new
+//!   one in every served repo's journal, and keeps the last pass per repo
+//!   (`passes` counts finished per-repo passes). The registry is re-read once
+//!   per poll interval.
 //! - A heartbeat (and what it is doing now) every few seconds, also while
 //!   a long pass runs, so the inbox only flags a daemon that is really gone.
 //! - It reads the state file every second and exits cleanly once `wanted`
@@ -17,8 +21,9 @@ use chrono::Utc;
 use crate::error::{ErrorCode, HallError, Result};
 
 use super::state::{self, DaemonState};
-use super::targets::{self, Target};
+use super::targets::{self, Skip, Target};
 use super::{Outcome, progress_line, record_pause};
+use crate::journal::Hall;
 
 /// The default pause between passes.
 pub const DEFAULT_POLL: Duration = Duration::from_secs(5);
@@ -175,7 +180,8 @@ pub fn run_loop(opts: &Options) -> Result<DaemonState> {
     // a cold build) never holds another repo's queue.
     let current: Arc<Mutex<BTreeMap<String, String>>> = Arc::default();
     let (done_tx, done_rx) = mpsc::channel::<Outcome>();
-    let mut running: BTreeMap<String, std::thread::JoinHandle<()>> = BTreeMap::new();
+    let mut running: BTreeMap<String, (Target, std::thread::JoinHandle<()>)> = BTreeMap::new();
+    let mut halls: BTreeMap<String, Hall> = BTreeMap::new();
     let mut due: BTreeMap<String, Instant> = BTreeMap::new();
     let mut targets: Vec<Target> = Vec::new();
     let mut refreshed: Option<Instant> = None;
@@ -214,29 +220,65 @@ pub fn run_loop(opts: &Options) -> Result<DaemonState> {
                 {
                     continue;
                 }
+                let t_key = t.clone();
                 let (t, only, paused) = (t.clone(), opts.only.clone(), paused.clone());
                 let (cur, tx) = (Arc::clone(&current), done_tx.clone());
                 let handle = std::thread::spawn(move || {
                     let o = super::one(&t, &only, paused.as_ref(), &cur);
                     let _ = tx.send(o);
                 });
-                running.insert(key, handle);
+                running.insert(key, (t_key, handle));
             }
+        }
+        // A thread that died without reporting: record a panic for it. This
+        // runs before the drain, so an outcome sent just before a thread
+        // finished is still in the channel when the drain looks.
+        let mut ended: Vec<Outcome> = Vec::new();
+        let dead: Vec<String> = running
+            .iter()
+            .filter(|(_, (_, h))| h.is_finished())
+            .map(|(k, _)| k.clone())
+            .collect();
+        for k in dead {
+            if let Some((t, h)) = running.remove(&k)
+                && h.join().is_err()
+            {
+                log(&format!("the pass over {k} panicked"));
+                ended.push(Outcome {
+                    target: t,
+                    hall: None,
+                    steps: vec![],
+                    skip: Some(Skip::Error("the pass panicked".into())),
+                });
+            }
+            due.insert(k, Instant::now() + opts.poll);
         }
         // Collect the passes that ended.
         while let Ok(o) = done_rx.try_recv() {
             let key = crate::paths::display(&o.target.path);
-            if let Some(h) = running.remove(&key) {
+            if let Some((_, h)) = running.remove(&key) {
                 let _ = h.join();
             }
-            due.insert(key, Instant::now() + opts.poll);
+            ended.push(o);
+        }
+        for o in ended {
+            let key = crate::paths::display(&o.target.path);
+            due.insert(key.clone(), Instant::now() + opts.poll);
+            if let Some(h) = &o.hall {
+                halls.insert(key, h.clone());
+            }
             for line in progress_lines(&o) {
                 log(&line);
             }
             let now = Utc::now();
+            // A pause reaches every served repo's journal, not just the
+            // reporting one (ADR 0017).
+            let journals: Vec<Hall> = targets
+                .iter()
+                .filter_map(|t| halls.get(&crate::paths::display(&t.path)).cloned())
+                .collect();
             let new_pause = state::update(|s| -> Result<_> {
-                let outcomes = std::slice::from_ref(&o);
-                let p = record_pause(s, outcomes, now)?;
+                let p = record_pause(s, std::slice::from_ref(&o), &journals, now)?;
                 let sum = o.summary();
                 s.repos.retain(|r| r.path != sum.path);
                 s.repos.push(sum);
@@ -251,20 +293,6 @@ pub fn run_loop(opts: &Options) -> Result<DaemonState> {
                     p.reason
                 ));
             }
-        }
-        // A thread that died without reporting: free its slot.
-        let dead: Vec<String> = running
-            .iter()
-            .filter(|(_, h)| h.is_finished())
-            .map(|(k, _)| k.clone())
-            .collect();
-        for k in dead {
-            if let Some(h) = running.remove(&k)
-                && h.join().is_err()
-            {
-                log(&format!("the pass over {k} panicked"));
-            }
-            due.insert(k, Instant::now() + opts.poll);
         }
         if ctl.stop && running.is_empty() {
             break;

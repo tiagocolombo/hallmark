@@ -1,7 +1,7 @@
 //! `hall daemon` (ADR 0014, ADR 0017): one process for every registered
 //! repository. Each pass runs the workers in `worker::ORDER` for each repo;
-//! repositories run in parallel (a thread each), one repo's workers run
-//! one after another.
+//! each repository has its own schedule and thread (see `run`), and one
+//! repo's workers run one after another.
 
 pub mod pause;
 pub mod run;
@@ -276,12 +276,57 @@ pub(crate) fn one(
 pub fn record_pause(
     st: &mut state::DaemonState,
     outcomes: &[Outcome],
+    extra_journals: &[Hall],
     now: chrono::DateTime<Utc>,
 ) -> Result<Option<Pause>> {
     let steps: Vec<Step> = outcomes.iter().flat_map(|o| o.steps.clone()).collect();
     let Some((repo, reason, until)) = pause::requested(&steps) else {
         return Ok(None);
     };
-    let journals: Vec<Hall> = outcomes.iter().filter_map(|o| o.hall.clone()).collect();
+    let mut journals: Vec<Hall> = outcomes.iter().filter_map(|o| o.hall.clone()).collect();
+    for h in extra_journals {
+        if !journals.iter().any(|j| j.repo_events() == h.repo_events()) {
+            journals.push(h.clone());
+        }
+    }
     pause::begin(st, &repo, &reason, until, &journals, now)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_pause_reaches_every_served_journal() {
+        let (a, b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let (ha, hb) = (Hall::new(a.path()), Hall::new(b.path()));
+        ha.create().unwrap();
+        hb.create().unwrap();
+        let o = Outcome {
+            target: Target {
+                name: "app".into(),
+                path: a.path().to_path_buf(),
+            },
+            hall: Some(ha.clone()),
+            steps: vec![Step {
+                repo: "app".into(),
+                worker: "assayer".into(),
+                progress: Progress::Pause {
+                    reason: "rate limited".into(),
+                    until: None,
+                },
+                error: None,
+                skipped: None,
+            }],
+            skip: None,
+        };
+        let mut st = state::DaemonState::default();
+        let p = record_pause(&mut st, &[o], &[ha.clone(), hb.clone()], Utc::now()).unwrap();
+        assert!(p.is_some());
+        for h in [&ha, &hb] {
+            let text = std::fs::read_to_string(h.repo_events()).unwrap();
+            assert!(text.contains("paused"), "{text}");
+        }
+        assert_eq!(st.paused.unwrap().journals.len(), 2);
+    }
 }
