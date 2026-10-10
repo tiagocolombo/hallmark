@@ -8,7 +8,7 @@ expression: v
       "command": "git ls-files missing-file --error-unmatch",
       "duration_ms": "[ms]",
       "exit_code": "[exit]",
-      "log": "[root]/app/.git/hallmark/items/H-0001/checks/r1.log"
+      "log": "checks/r1.log"
     }
   ],
   "findings": [],

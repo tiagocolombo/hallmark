@@ -202,12 +202,14 @@ fn red_checks_go_to_fixing_and_never_reach_a_model() {
     let assay = env.root.join("app-assay");
     assert_eq!(git(&assay, &["rev-parse", "HEAD"]), sha);
 
-    // The fixer sees the failing gate with the log's absolute path.
+    // The fixer sees the failing gate; its log is relative to the item dir.
     let f = env.hall(&env.repo, &["findings", &id]);
     let failing = f.json["failing_checks"].as_array().unwrap();
     assert_eq!(failing.len(), 1);
     assert_eq!(failing[0]["command"], FAIL);
-    assert!(Path::new(failing[0]["log"].as_str().unwrap()).is_file());
+    assert_eq!(failing[0]["log"], "checks/r1.log");
+    let item_dir = env.repo.join(".git/hallmark/items").join(&id);
+    assert!(item_dir.join(failing[0]["log"].as_str().unwrap()).is_file());
     let mut v = scrub(&env, &f.json);
     v["failing_checks"][0]["exit_code"] = json!("[exit]");
     v["failing_checks"][0]["duration_ms"] = json!("[ms]");

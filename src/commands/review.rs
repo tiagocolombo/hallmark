@@ -22,8 +22,8 @@ pub struct FindingsOut {
     pub findings: Vec<Tracked>,
     /// Open findings by severity.
     pub open: Counts,
-    /// The gates that failed in the last checks run, each with the
-    /// absolute path of its log.
+    /// The gates that failed in the last checks run, each with its log
+    /// path relative to the item's journal directory (`checks/r1.log`).
     pub failing_checks: Vec<CheckRun>,
 }
 
@@ -91,13 +91,6 @@ pub fn findings(cwd: &Path, a: FindingsArgs) -> Result<Response> {
         .unwrap_or_default()
         .into_iter()
         .filter(|r| r.exit_code != 0)
-        // Logs are recorded relative to the item's journal directory.
-        .map(|mut r| {
-            r.log = r
-                .log
-                .map(|l| crate::paths::display(&repo.hall.item_dir(item.id).join(l)));
-            r
-        })
         .collect();
     let out = FindingsOut {
         item: ItemView::from(&item),

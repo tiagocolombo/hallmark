@@ -37,7 +37,8 @@ nothing else uses the worktree meanwhile.
   in its own process group, so a timeout kills the whole tree; on Windows
   `taskkill /T` does that. A timed-out gate records exit 124.
 - Output goes to `items/<id>/checks/r<round>.log`. `CheckRun.log` is
-  relative to the item's directory; `hall findings` shows it absolute.
+  relative to the item's directory (`checks/r1.log`), in the journal and in
+  `hall findings`.
 - No gates configured means checks pass with `runs: []`.
 - `checks` is recorded only if the item is still in checks at that commit
   and round.
