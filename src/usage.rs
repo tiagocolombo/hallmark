@@ -157,6 +157,15 @@ pub fn price(model: &str) -> Option<Price> {
         .map(|(_, p)| *p)
 }
 
+/// "$0.004", "$0.43", "$12.80": small runs keep a significant digit.
+pub fn fmt_usd(c: f64) -> String {
+    if c > 0.0 && c < 0.01 {
+        format!("${c:.3}")
+    } else {
+        format!("${c:.2}")
+    }
+}
+
 pub fn fmt_tokens(n: u64) -> String {
     match n {
         n if n >= 1_000_000 => format!("{:.2}M", n as f64 / 1e6),

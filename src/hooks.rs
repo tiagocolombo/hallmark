@@ -613,9 +613,10 @@ impl Ctx {
                 .any(|e| matches!(&e.body, Body::Commit { sha: s, .. } if *s == sha));
             if !seen {
                 let subject = git::subject(&dir, &sha);
+                let actor = headless_actor().unwrap_or_else(|| "agent".into());
                 self.record(
                     Some(item.id),
-                    "agent",
+                    &actor,
                     Body::Commit {
                         sha,
                         subject,
@@ -662,9 +663,10 @@ impl Ctx {
             .clone()
             .filter(|m| !m.trim().is_empty())
         {
+            let actor = headless_actor().unwrap_or_else(|| "agent".into());
             self.record(
                 item,
-                "agent",
+                &actor,
                 Body::Turn {
                     summary: clip(&m, 600),
                 },

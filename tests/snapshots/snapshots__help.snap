@@ -1034,10 +1034,6 @@ expression: v
       "exit": 1
     },
     {
-      "code": "NOT_IMPLEMENTED",
-      "exit": 1
-    },
-    {
       "code": "GH_UNAVAILABLE",
       "exit": 1
     },

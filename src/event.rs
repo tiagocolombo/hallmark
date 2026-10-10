@@ -472,7 +472,7 @@ impl Body {
             Body::Shipped { pr_url, .. } => {
                 format!(
                     "shipped · {}",
-                    pr_url.clone().unwrap_or_else(|| "PR opened".into())
+                    pr_url.clone().unwrap_or_else(|| "pushed".into())
                 )
             }
             Body::Question { qid, text, .. } => format!("question {qid} · \"{}\"", clip(text, 60)),
@@ -493,10 +493,10 @@ impl Body {
                 format!("session waiting · {}", clip(message, 60))
             }
             Body::Usage(u) => format!(
-                "usage · {} · {} tok · ${:.2}",
+                "usage · {} · {} tok · {}",
                 u.model,
                 crate::usage::fmt_tokens(u.tokens()),
-                u.cost_usd
+                crate::usage::fmt_usd(u.cost_usd)
             ),
             Body::SessionStarted { source } => {
                 format!(

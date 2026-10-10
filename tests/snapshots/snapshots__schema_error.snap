@@ -125,11 +125,6 @@ expression: "env.hall(&env.root, &[\"schema\", \"error\"]).json"
             "type": "string"
           },
           {
-            "const": "NOT_IMPLEMENTED",
-            "description": "Not built yet (temporary, while Stage 2 lands).",
-            "type": "string"
-          },
-          {
             "const": "GH_UNAVAILABLE",
             "description": "`gh` is not installed or not logged in.",
             "type": "string"

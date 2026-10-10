@@ -608,16 +608,18 @@ pub fn render_export(repo: &Repo, item: &Item, events: &[Event]) -> String {
             tc += cost;
             let _ = writeln!(
                 s,
-                "| {} | {} | {} | ${cost:.2} |",
+                "| {} | {} | {} | {} |",
                 cell(role),
                 cell(model),
-                crate::usage::fmt_tokens(*tokens)
+                crate::usage::fmt_tokens(*tokens),
+                crate::usage::fmt_usd(*cost)
             );
         }
         let _ = writeln!(
             s,
-            "| **Total** | | **{}** | **${tc:.2}** |",
-            crate::usage::fmt_tokens(tt)
+            "| **Total** | | **{}** | **{}** |",
+            crate::usage::fmt_tokens(tt),
+            crate::usage::fmt_usd(tc)
         );
     }
 

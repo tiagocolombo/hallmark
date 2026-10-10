@@ -193,7 +193,7 @@ pub fn pr_url(out: &str) -> Option<String> {
 /// The PR body: the review summary, rounds, the open minors and nits that
 /// ride along, the checks, usage, the issue it closes, and where the full
 /// record is.
-pub fn pr_body(repo: &Repo, item: &Item, events: &[Event]) -> String {
+pub fn pr_body(_repo: &Repo, item: &Item, events: &[Event]) -> String {
     let id = item.id;
     let mut s = String::new();
     let approval = events.iter().rev().find_map(|e| match &e.body {
@@ -300,11 +300,15 @@ pub fn pr_body(repo: &Repo, item: &Item, events: &[Event]) -> String {
                 None => roles.push((role.clone(), *c)),
             }
         }
-        let by: Vec<String> = roles.iter().map(|(r, c)| format!("{r} ${c:.2}")).collect();
+        let by: Vec<String> = roles
+            .iter()
+            .map(|(r, c)| format!("{r} {}", crate::usage::fmt_usd(*c)))
+            .collect();
         let _ = writeln!(
             s,
-            "\n### Usage\n\n{} tokens · ${cost:.2} at list price ({})",
+            "\n### Usage\n\n{} tokens · {} at list price ({})",
             crate::usage::fmt_tokens(tokens),
+            crate::usage::fmt_usd(cost),
             by.join(", ")
         );
     }
@@ -313,8 +317,7 @@ pub fn pr_body(repo: &Repo, item: &Item, events: &[Event]) -> String {
     }
     let _ = writeln!(
         s,
-        "\n---\n\nThe full record: `hall export {id}` ({}).",
-        crate::paths::display(&record::export_path(repo, id))
+        "\n---\n\nThe full record stays local: `hall export {id}`."
     );
     s
 }

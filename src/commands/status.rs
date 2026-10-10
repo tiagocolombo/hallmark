@@ -74,9 +74,9 @@ impl Render for StatusItem {
     fn render(&self) -> String {
         let mut s = self.item.render();
         s.push_str(&format!(
-            "  usage     {} tokens · ${:.2}\n",
+            "  usage     {} tokens · {}\n",
             fmt_tokens(self.usage.tokens),
-            self.usage.cost_usd
+            crate::usage::fmt_usd(self.usage.cost_usd)
         ));
         if !self.recent.is_empty() {
             s.push_str("\nrecent\n");
@@ -261,17 +261,17 @@ impl Render for UsageOut {
         let mut s = format!(
             "{:<22} {:>8} {:>9} {:>9}\n",
             format!("{:?}", self.by).to_lowercase(),
-            "requests",
+            "runs",
             "tokens",
             "≈ $"
         );
         for r in self.rows.iter().chain(std::iter::once(&self.total)) {
             s.push_str(&format!(
-                "{:<22} {:>8} {:>9} {:>9.2}\n",
+                "{:<22} {:>8} {:>9} {:>9}\n",
                 clip(&r.key, 22),
-                r.requests,
+                r.records,
                 fmt_tokens(r.tokens),
-                r.cost_usd
+                crate::usage::fmt_usd(r.cost_usd).trim_start_matches('$')
             ));
         }
         s.push_str("\nCosts are API list-price equivalents, not a bill.\n");
