@@ -401,7 +401,7 @@ pub struct Library {
     pub briefing_limit: String,
     /// Kinds that skip your approval: rule, false-positive, map, decision.
     pub auto_accept: Vec<String>,
-    /// Unused learnings are proposed for retirement after this long.
+    /// Unused learnings are retired after this long.
     pub retire_after: String,
     /// Where learnings were committed before they moved to the local
     /// store (ADR 0027), relative to the repo root: what

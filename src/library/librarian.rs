@@ -117,10 +117,19 @@ pub fn already_distilled(events: &[Event]) -> Option<&Event> {
     (Some(last) > last_move).then(|| &events[last])
 }
 
-fn earlier(e: &Event) -> Applied {
+fn earlier(e: &Event, store: &Store) -> Applied {
     match &e.body {
         Body::Distilled { learnings, .. } => Applied {
             learnings: learnings.clone(),
+            proposed: learnings
+                .iter()
+                .filter(|id| {
+                    store
+                        .get(id)
+                        .is_some_and(|l| l.learning.status == Status::Proposed)
+                })
+                .cloned()
+                .collect(),
             ..Default::default()
         },
         _ => Applied::default(),
@@ -391,7 +400,7 @@ pub fn distill(repo: &Repo, runner: &dyn Runner, id: ItemId) -> Result<Distill> 
     }
     if let Some(e) = already_distilled(&events) {
         return Ok(Distill::Done {
-            applied: earlier(e),
+            applied: earlier(e, &Store::of(repo)),
             fresh: false,
         });
     }

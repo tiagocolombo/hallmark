@@ -73,6 +73,19 @@ pub struct ReviewOut {
     /// IDs given to `--reject` that the Library doesn't know.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub unknown: Vec<String>,
+    /// Retired in the last 30 days, by you or automatically. `--accept`
+    /// brings one back.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub recently_retired: Vec<Retired>,
+}
+
+/// A learning retired recently.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct Retired {
+    pub id: String,
+    pub title: String,
+    /// The day it was retired (YYYY-MM-DD).
+    pub retired: String,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -172,6 +185,12 @@ impl Render for LibraryOut {
                         ));
                     }
                 }
+                if !r.recently_retired.is_empty() {
+                    t.push_str("Recently retired (--accept brings one back):\n");
+                    for x in &r.recently_retired {
+                        t.push_str(&format!("  {}  {}  {}\n", x.id, x.retired, x.title));
+                    }
+                }
                 t
             }
             LibraryOut::Retire(r) => {
@@ -205,6 +224,12 @@ impl Render for LibraryOut {
                     i.result.imported.len(),
                     i.source
                 );
+                for r in &i.result.renumbered {
+                    t.push_str(&format!(
+                        "  renumbered {} as {} ({}): its ID was taken\n",
+                        r.from, r.to, r.path
+                    ));
+                }
                 for s in &i.result.skipped {
                     t.push_str(&format!("  skipped {}: {}\n", s.path, s.reason));
                 }
@@ -339,6 +364,31 @@ fn pending(store: &Store) -> Vec<Pending> {
         .collect()
 }
 
+/// Learnings retired in the last 30 days (the date is in their body), so
+/// an automatic retirement can be seen and undone with `--accept`.
+fn recently_retired(store: &Store, now: chrono::DateTime<Utc>) -> Vec<Retired> {
+    let mut out = Vec::new();
+    for l in store.read() {
+        if l.learning.status != Status::Retired {
+            continue;
+        }
+        let Some(date) = l.learning.body.lines().rev().find_map(|line| {
+            let d = line.strip_prefix("Retired ")?.get(..10)?;
+            chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()
+        }) else {
+            continue;
+        };
+        if (now.date_naive() - date).num_days() <= 30 {
+            out.push(Retired {
+                id: l.learning.id,
+                title: l.learning.title,
+                retired: date.to_string(),
+            });
+        }
+    }
+    out
+}
+
 fn ids(list: &[String]) -> Result<Vec<String>> {
     list.iter()
         .filter(|s| !s.trim().is_empty())
@@ -433,11 +483,16 @@ fn review(
             ids[0]
         ));
     }
+    let recently_retired = recently_retired(&store, Utc::now());
+    if let Some(r) = recently_retired.first() {
+        next.push(format!("hall library review --accept {}", r.id));
+    }
     let out = LibraryOut::Review(ReviewOut {
         proposed,
         accepted,
         rejected,
         unknown,
+        recently_retired,
     });
     Ok(Response::new(out, next))
 }
@@ -533,9 +588,10 @@ fn import(repo: &Repo, source: Option<PathBuf>) -> Result<Response> {
     };
     let result = store.with_lock(|| portable::import(&store, &entries))?;
     let mut next = Vec::new();
-    if from_base && !entries.is_empty() {
+    if from_base && !entries.is_empty() && result.skipped.is_empty() {
+        next.push("hall new --title \"Move the Library out of the repo\"".into());
         next.push(format!(
-            "git rm -r -q {} && git commit -m \"Move the Library out of the repo\"",
+            "in that item's worktree: git rm -r -q {} && git commit -m \"Move the Library out of the repo\"",
             shell_quote(&dir)
         ));
     }

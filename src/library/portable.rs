@@ -90,9 +90,20 @@ pub struct Skipped {
     pub reason: String,
 }
 
+/// A learning whose ID the store already used for another learning.
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
+pub struct Renumbered {
+    pub path: String,
+    pub from: String,
+    pub to: String,
+}
+
 /// What an import did.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, JsonSchema)]
 pub struct Imported {
+    /// Learnings that came in under a new ID, because theirs was taken.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub renumbered: Vec<Renumbered>,
     /// Learnings added to the store, by ID.
     pub imported: Vec<String>,
     /// Files left out: already in the store, or not learnings.
@@ -118,11 +129,31 @@ pub fn import(store: &Store, entries: &[Entry]) -> Result<Imported> {
             }
         };
         if store.knows(&l.id) {
-            out.skipped.push(Skipped {
+            let same = store
+                .get(&l.id)
+                .is_some_and(|c| c.learning.title == l.title)
+                || store
+                    .history(&l.id)
+                    .iter()
+                    .any(|v| v.learning.title == l.title);
+            if same {
+                out.skipped.push(Skipped {
+                    path: e.path.clone(),
+                    id: Some(l.id.clone()),
+                    reason: "already in the Library".into(),
+                });
+                continue;
+            }
+            // A different learning that reuses the ID: number it afresh.
+            let mut l = l;
+            let old = std::mem::replace(&mut l.id, learning::format_id(store.next_id()));
+            store.add(&l, "", &l.render())?;
+            out.renumbered.push(Renumbered {
                 path: e.path.clone(),
-                id: Some(l.id.clone()),
-                reason: "already in the Library".into(),
+                from: old,
+                to: l.id.clone(),
             });
+            out.imported.push(l.id);
             continue;
         }
         store.add(&l, name, &e.content)?;
