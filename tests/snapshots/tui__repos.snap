@@ -1,0 +1,16 @@
+---
+source: tests/tui.rs
+expression: "screen(&env, &app, W, 12)"
+---
+hall · app (1 of 3 repos)   daemon ● running   ⚑ 3 waiting   rejected today 3 · review tokens 400k         repos · hh:mm
+┌ Repositories (3) ────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│● app                  5 open   ⚑ 3 need you  ok               [root]/app                                             │
+│  lib                  0 open   ⚑ 0 need you  not initialized  [root]/lib                                             │
+│  gone                 0 open   ⚑ 0 need you  missing          [root]/gone                                            │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+↑↓ repo  enter switch  tab next repo  esc board  q quit

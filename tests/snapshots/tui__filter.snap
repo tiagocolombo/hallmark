@@ -1,0 +1,40 @@
+---
+source: tests/tui.rs
+expression: "screen(&env, &app, W, H)"
+---
+hall · app (1 of 1 repo)   daemon ● running   ⚑ 3 waiting   rejected today 3 · review tokens 400k                  hh:mm
+┌ Your office ─⚑ 3 waiting ────────────────────────────────────────────────────────────────────────────────────────────┐
+│ready?     H-0002  Export tenant usage looks done: CSV export with 14 tests                                   –       │
+│question   H-0002  Billed usage or raw events?  [a] billed  [b] raw                                           –       │
+│escalated  H-0007  Migrate billing tables: rejected 1 times                                                   –       │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ Board ───────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│DEVELOPMENT (0)               AWAITING YOU (1)              REVIEW LOOP (0)              CLOSED TODAY (1)             │
+│none                          H-0002 Export tena… needs you none                         H-0005 Tenant check in … #191│
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ H-0002 · Export tenant usage ────────────────────────────────────────────────────────────────────────── awaiting you ┐
+│hh:mm  you       created · "Export tenant usage"                                                                      │
+│hh:mm  you       proposes ready · "CSV export with 14 tests"                                                          │
+│hh:mm  you       question Q-1 · "Billed usage or raw events?"                                                         │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ Findings ────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│no findings yet                                                                                                       │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+/ export▏  enter keep · esc clear
+↑↓ item enter journal ←→ step f findings d diff r ready p pull back x drop / filter w worktree o PR ? help q quit

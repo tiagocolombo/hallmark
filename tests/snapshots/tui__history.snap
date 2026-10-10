@@ -1,0 +1,40 @@
+---
+source: tests/tui.rs
+expression: "screen(&env, &app, W, H)"
+---
+hall · app (1 of 3 repos)   daemon ● running   ⚑ 3 waiting   rejected today 3 · review tokens 400k       history · hh:mm
+┌ History · closed and dropped (2) ────────────────────────────────────────────────────────────────────────────────────┐
+│item    outcome  round rejected     ended      title · why rejected                                                   │
+│H-0006  dropped  r0    rejected 0×  yyyy-mm-dd Old experiment                                                         │
+│                                               dropped: "superseded by H-0003"                                        │
+│H-0005  closed   r2    rejected 1×  yyyy-mm-dd Tenant check in export query                                           │
+│                                               ✗ F1 blocker · security_tenancy · Export reads other tenants           │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+↑↓ item  enter journal  / filter  esc board  ? help  q quit

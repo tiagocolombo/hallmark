@@ -1,0 +1,40 @@
+---
+source: tests/tui.rs
+expression: "screen(&env, &app, W, H)"
+---
+hall · app (1 of 3 repos)   daemon ● running   ⚑ 3 waiting   rejected today 3 · review tokens 400k      findings · hh:mm
+┌ Findings · H-0001 · Retry failed webhook deliveries ────────────────────────────────────────── review · r2 · ####### ┐
+│id   sev     lens             where                title                           status          fix      settled   │
+│F1   major   correctness      src/webhooks.rs:42   Retries can deliver twice       open            #######  —         │
+│F2   minor   evidence         src/webhooks.rs:42   No test for the backoff cap     open            —        —         │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ F1 · Retries can deliver twice ──────────────────────────────────────────────────────────────────────────────────────┐
+│raised    round 1                                                                                                     │
+│scenario  Retries can deliver twice: a retry after a timeout sends the delivery twice                                 │
+│fix       Key deliveries by event ID and skip ones already sent.                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+↑↓ finding  enter scenario + fix  ←→ step  d diff  r ready  p pull back  esc board  ? help  q quit
