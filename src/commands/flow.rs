@@ -304,7 +304,7 @@ pub fn retry(cwd: &Path, a: RetryArgs) -> Result<Response> {
     let repo = Repo::discover(cwd)?;
     let item = repo.resolve(a.id.as_deref())?;
     let actor = actor();
-    let (item, changed) = repo.hall.transact(item.id, |item, _| match item.state {
+    let (item, (changed, note)) = repo.hall.transact(item.id, |item, _| match item.state {
         State::Escalated => Ok((
             vec![ev(
                 &actor,
@@ -313,16 +313,27 @@ pub fn retry(cwd: &Path, a: RetryArgs) -> Result<Response> {
                     reason: a.reason.clone(),
                 },
             )],
-            true,
+            (true, "One more fix round allowed."),
         )),
-        State::Fixing => Ok((vec![], false)),
-        _ => Err(wrong_state(item, "only escalated items get another round")),
+        // A hold (budget, run_failed, ship_failed, other) is lifted; the
+        // item stays where it is and the loop picks it up again (ADR 0016).
+        _ if item.hold.is_some() => Ok((
+            vec![ev(
+                &actor,
+                Some(item.id),
+                Body::Released {
+                    reason: Some(a.reason.clone()),
+                },
+            )],
+            (true, "Released: the loop picks it up again."),
+        )),
+        State::Fixing => Ok((vec![], (false, "One more fix round allowed."))),
+        _ => Err(wrong_state(
+            item,
+            "only escalated or held items can be retried",
+        )),
     })?;
-    Ok(reply(
-        &item,
-        changed,
-        Some("One more fix round allowed.".into()),
-    ))
+    Ok(reply(&item, changed, Some(note.into())))
 }
 
 pub fn propose_ready(cwd: &Path, a: ProposeReadyArgs) -> Result<Response> {

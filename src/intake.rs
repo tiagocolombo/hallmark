@@ -106,7 +106,9 @@ pub fn plan(repo: &Repo, request: &str) -> Outcome {
         Err(e) => return skipped(format!("the Front Desk could not start: {}", e.message)),
     };
     req.json_schema = Some(crate::plugin::file("schemas/plan.json").into());
-    req.allowed_tools = vec!["Read".into(), "Grep".into(), "Glob".into()];
+    req.allowed_tools = ["Read", "Grep", "Glob", "StructuredOutput"]
+        .map(String::from)
+        .to_vec();
     req.env.push(("HALL_NO_HOOKS".into(), "1".into()));
     let runner = runner::from_env();
     match runner::run_metered(repo, runner.as_ref(), None, &req) {

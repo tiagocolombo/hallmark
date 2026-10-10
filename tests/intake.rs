@@ -134,7 +134,10 @@ fn a_split_request_becomes_a_parent_and_children() {
     assert_eq!(c["agent"], "intake");
     assert_eq!(c["model"], "haiku");
     assert_eq!(c["timeout_secs"], 120);
-    assert_eq!(c["allowed_tools"], json!(["Read", "Grep", "Glob"]));
+    assert_eq!(
+        c["allowed_tools"],
+        json!(["Read", "Grep", "Glob", "StructuredOutput"])
+    );
     assert!(c["json_schema"].as_str().unwrap().contains("parallel"));
     assert!(c["prompt"].as_str().unwrap().contains(REQUEST));
     assert!(c["prompt"].as_str().unwrap().contains("api/ (1 files)"));
@@ -603,4 +606,42 @@ fn a_follow_up_item_starts_from_pr_feedback() {
         "{req}"
     );
     assert!(req.contains("- @carol: Log the attempt number."), "{req}");
+}
+
+#[test]
+fn retry_releases_a_held_item() {
+    let env = Env::initialized();
+    let (id, wt) = env.new_item("Held work");
+    // Not held, not escalated: nothing to retry.
+    let r = env.hall(&env.repo, &["retry", &id, "--reason", "again"]);
+    assert_eq!(r.code, 4, "{}", r.stdout);
+    assert_eq!(r.json["error"]["code"], "WRONG_STATE");
+
+    commit_file(&wt, "a.rs", "fn a() {}\n");
+    assert_eq!(env.hall(&wt, &["ready"]).code, 0);
+    let journal = env
+        .repo
+        .join(".git/hallmark/items")
+        .join(&id)
+        .join("events.jsonl");
+    for kind in ["budget", "run_failed", "ship_failed", "other"] {
+        // Holds come from the loop; append one as the runner would.
+        let held = json!({"v": 1, "t": "2026-10-09T12:00:00Z", "actor": "assayer",
+                          "item": id, "event": "held", "kind": kind, "reason": "stopped"});
+        let mut text = std::fs::read_to_string(&journal).unwrap();
+        text.push_str(&format!("{held}\n"));
+        std::fs::write(&journal, text).unwrap();
+
+        let r = env.hall(&env.repo, &["retry", &id, "--reason", "budget raised"]);
+        assert_eq!(r.code, 0, "{kind}: {}", r.stdout);
+        assert_eq!(r.json["changed"], true, "{kind}");
+        assert_eq!(r.json["state"], "checks", "the item keeps its place");
+        let events = env.journal(&id);
+        let last = events.last().unwrap();
+        assert_eq!(last["event"], "released", "{kind}");
+        assert_eq!(last["reason"], "budget raised");
+    }
+    // Released already: nothing left to retry.
+    let r = env.hall(&env.repo, &["retry", &id, "--reason", "again"]);
+    assert_eq!(r.code, 4, "{}", r.stdout);
 }
