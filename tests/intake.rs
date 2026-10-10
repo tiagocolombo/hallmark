@@ -382,6 +382,10 @@ fn a_conflicting_merge_records_nothing() {
     let child_wt = wt(&r, 1);
     let out = std::process::Command::new("git")
         .current_dir(&child_wt)
+        .env("GIT_AUTHOR_NAME", "Hallmark Test")
+        .env("GIT_AUTHOR_EMAIL", "test@hallmark.invalid")
+        .env("GIT_COMMITTER_NAME", "Hallmark Test")
+        .env("GIT_COMMITTER_EMAIL", "test@hallmark.invalid")
         .args([
             "merge",
             "-q",
