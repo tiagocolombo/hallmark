@@ -1,7 +1,7 @@
 ---
 name: librarian
 description: Hallmark's librarian. Distils a closed or escalated item's journal into proposed learnings for the Library.
-tools: Read, Grep, Glob
+tools: Read, Grep, Glob, StructuredOutput
 model: haiku
 ---
 

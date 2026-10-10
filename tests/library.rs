@@ -448,7 +448,10 @@ fn the_librarian_distils_a_closed_item_into_a_knowledge_item() {
     assert_eq!(c["agent"], "librarian");
     assert_eq!(c["model"], "haiku");
     assert!(c["json_schema"].as_str().unwrap().contains("\"updates\""));
-    assert_eq!(c["allowed_tools"], json!(["Read", "Grep", "Glob"]));
+    assert_eq!(
+        c["allowed_tools"],
+        json!(["Read", "Grep", "Glob", "StructuredOutput"])
+    );
     assert!(
         c["env"]
             .as_array()

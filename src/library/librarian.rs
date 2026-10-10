@@ -407,7 +407,14 @@ pub fn distill(repo: &Repo, runner: &dyn Runner, id: ItemId) -> Result<Distill> 
         &repo.main_root,
     )?;
     req.json_schema = Some(crate::plugin::file("schemas/learnings.json").to_string());
-    req.allowed_tools = vec!["Read".into(), "Grep".into(), "Glob".into()];
+    // The agent's `tools:` list must name StructuredOutput too, or a
+    // `--json-schema` run never returns structured_output.
+    req.allowed_tools = vec![
+        "Read".into(),
+        "Grep".into(),
+        "Glob".into(),
+        "StructuredOutput".into(),
+    ];
     req.env.push(("HALL_NO_HOOKS".into(), "1".into()));
     let outcome = match runner::run_metered(repo, runner, Some(id), &req)? {
         Metered::Done(o) => o,
@@ -1105,6 +1112,12 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(p.kind, "map");
+        // Live `claude -p` rejects a 2020-12 `$schema` key in --json-schema.
+        assert!(v.get("$schema").is_none());
+        // A `tools:` list hides StructuredOutput unless it is named.
+        let agent = crate::plugin::file("agents/librarian.md");
+        let tools = agent.lines().find(|l| l.starts_with("tools:")).unwrap();
+        assert!(tools.contains("StructuredOutput"), "{tools}");
     }
 
     #[test]
