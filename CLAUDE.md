@@ -58,7 +58,9 @@ Run all three checks before calling anything done, and report their real output.
 - **Hooks never break a session.**
   - On an internal error, exit 0 and log it.
   - In repos without `<git-common-dir>/hallmark`, do nothing.
-- **Don't spend model usage in tests.** Use the fixtures in `tests/fixtures/`.
+- **Don't spend model usage in tests.** Use the fixtures in `tests/fixtures/`
+  and the fake runner (`HALL_RUNNER=fake:<script>`; `Env::script` and
+  `Env::hall_fake` in `tests/common`).
 
 ## Layout
 
@@ -83,9 +85,22 @@ src/
   gate.rs        shell parsing for the push and commit gates
   hooks.rs       `hall hook <event>` handlers
   plugin.rs      the embedded Claude Code plugin, for `hall setup claude`
+  runner.rs      every `claude -p` run: command shape, timeouts, failures,
+                 usage; the scripted FakeRunner for tests (ADR 0013)
+  findings.rs    verdicts and findings; approval is computed (ADR 0015)
+  lease.rs       work leases and `hall next` candidates (ADR 0014)
+  worker.rs      the daemon's worker ticks, in order
+  daemon/        the loop, state file, pauses, the login service
+  watchman.rs, assayer/, fixer.rs, shipper.rs, resume.rs, notify/,
+  library/       the workers
+  intake.rs      the Front Desk's plan: parallel parts (ADR 0024)
+  budget.rs      budget checks at four levels (ADR 0016)
+  stamp.rs       the hallmark note
+  tui/           the terminal app (a reader)
   commands/      one module per group of commands; meta.rs has
                  `hall help --json` and `hall schema`
-plugin/          the Claude Code plugin: skill, hooks
+plugin/          the Claude Code plugin: skills, agents, schemas, hooks
+                 (every file is embedded via plugin::FILES)
 tests/           integration tests (assert_cmd + tempfile), insta snapshots
 tests/fixtures/  real hook stdin, claude -p results and transcripts from Step 0
 docs/            design, ADRs, spikes
