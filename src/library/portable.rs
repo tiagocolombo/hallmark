@@ -142,10 +142,9 @@ pub fn import(store: &Store, entries: &[Entry]) -> Result<Imported> {
                 continue;
             }
         };
-        if store.knows(&l.id) {
-            let same = store
-                .get(&l.id)
-                .is_some_and(|c| c.learning.title == l.title)
+        if store.knows(&l.id) || store.read().iter().any(|c| c.learning.title == l.title) {
+            // The same learning: under this ID or one an earlier import gave it.
+            let same = store.read().iter().any(|c| c.learning.title == l.title)
                 || store
                     .history(&l.id)
                     .iter()
