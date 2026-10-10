@@ -624,9 +624,19 @@ fn go_on_lifts_a_budget_hold_without_changing_the_budget() {
 
     // Nothing held: nothing to go on with.
     select(&mut app, 2);
+    let before = hall.read_item(ItemId(2)).unwrap().len();
     key(&mut app, KeyCode::Char('g'));
+    assert_eq!(app.input, Some(Input::RetryReason(ItemId(2))));
+    chars(&mut app, "why not");
+    key(&mut app, KeyCode::Enter);
     let st = app.status.clone().unwrap();
     assert!(st.error && st.text.contains("WRONG_STATE"), "{}", st.text);
+
+    // A reason is required.
+    key(&mut app, KeyCode::Char('g'));
+    key(&mut app, KeyCode::Enter);
+    assert!(app.status.as_ref().unwrap().error);
+    assert_eq!(hall.read_item(ItemId(2)).unwrap().len(), before);
 
     add(
         &hall,
@@ -639,6 +649,8 @@ fn go_on_lifts_a_budget_hold_without_changing_the_budget() {
     );
     app.reload_active();
     key(&mut app, KeyCode::Char('g'));
+    chars(&mut app, "worth finishing");
+    key(&mut app, KeyCode::Enter);
     let st = app.status.clone().unwrap();
     assert!(!st.error, "{}", st.text);
     assert!(st.text.contains("800k more tokens"), "{}", st.text);
@@ -648,7 +660,7 @@ fn go_on_lifts_a_budget_hold_without_changing_the_budget() {
     assert_eq!(
         last.body,
         Body::Released {
-            reason: Some("retried from the terminal app".into()),
+            reason: Some("worth finishing".into()),
             granted_tokens: Some(800_000),
         }
     );

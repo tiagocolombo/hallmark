@@ -97,6 +97,7 @@ pub enum Input {
     Filter,
     /// `x`: the reason an item is dropped.
     DropReason(ItemId),
+    RetryReason(ItemId),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -596,7 +597,13 @@ impl App {
             (_, KeyCode::Char('d')) => self.open_diff(),
             (_, KeyCode::Char('r')) => self.ready(),
             (_, KeyCode::Char('p')) => self.pull_back(),
-            (_, KeyCode::Char('g')) => self.retry(),
+            (_, KeyCode::Char('g')) => match self.selected {
+                Some(id) => {
+                    self.input = Some(Input::RetryReason(id));
+                    self.buffer.clear();
+                }
+                None => self.err("No item selected."),
+            },
             (_, KeyCode::Char('x')) => match self.selected {
                 Some(id) => {
                     self.input = Some(Input::DropReason(id));
@@ -635,7 +642,7 @@ impl App {
                     self.filter.clear();
                     self.fix_board_selection();
                 } else {
-                    self.info("Drop cancelled.");
+                    self.info("Cancelled.");
                 }
                 self.input = None;
                 self.buffer.clear();
@@ -649,6 +656,7 @@ impl App {
                         self.fix_board_selection();
                     }
                     Input::DropReason(id) => self.drop_item(id, text.trim()),
+                    Input::RetryReason(id) => self.retry(id, text.trim()),
                 }
             }
             KeyCode::Backspace => {
@@ -837,13 +845,17 @@ impl App {
     /// `g`: go on (`hall retry`): one more fix round for an escalated item,
     /// or lift a hold. A budget hold also grants the item another
     /// `per_item`; the budget itself is unchanged.
-    pub fn retry(&mut self) {
-        if let Some((id, cwd)) = self.target() {
+    pub fn retry(&mut self, id: ItemId, reason: &str) {
+        if reason.is_empty() {
+            self.err("Not retried: a reason is required.");
+            return;
+        }
+        if let Some((_, cwd)) = self.target() {
             let r = flow::retry(
                 &cwd,
                 RetryArgs {
                     id: Some(id.to_string()),
-                    reason: "retried from the terminal app".into(),
+                    reason: reason.into(),
                     tokens: None,
                 },
             );

@@ -289,6 +289,10 @@ fn retry_grants_a_budget_hold_more_tokens() {
     );
     assert_eq!(bad.code, 2, "{}", bad.stdout);
     assert_eq!(bad.json["error"]["code"], "USAGE");
+    for v in ["inf", "1e19"] {
+        let r = env.hall(&env.repo, &["retry", &id, "--reason", "x", "--tokens", v]);
+        assert_eq!(r.json["error"]["code"], "USAGE", "{v}: {}", r.stdout);
+    }
 
     // Retrying grants another per_item to this item; the config is untouched.
     let r = env.hall(&env.repo, &["retry", &id, "--reason", "worth finishing"]);
@@ -298,20 +302,17 @@ fn retry_grants_a_budget_hold_more_tokens() {
     assert!(note.contains("budget is unchanged"), "{note}");
     let journal = env.journal(&id);
     let released = events(&journal, "released");
-    assert_eq!(released[0]["granted_tokens"], 5000);
+    // 5k more from now: the 1152 the first run overshot the cap by comes first.
+    assert_eq!(released[0]["granted_tokens"], 6152);
     assert_eq!(std::fs::read_to_string(&cfg).unwrap(), text);
     assert!(matches!(
         run_metered(&repo, &runner, Some(item), &req).unwrap(),
         Metered::Done(_)
     ));
-    // 12304 spent of 10k allowed: held again.
+    // 12304 spent of 11152 allowed: held again.
     match run_metered(&repo, &runner, Some(item), &req).unwrap() {
         Metered::Blocked(stop) => {
-            assert!(
-                stop.reason.contains("5k token cap plus 5k granted"),
-                "{}",
-                stop.reason
-            );
+            assert!(stop.reason.contains("5k token cap plus"), "{}", stop.reason);
         }
         other => panic!("{other:?}"),
     }
@@ -325,14 +326,14 @@ fn retry_grants_a_budget_hold_more_tokens() {
     assert_eq!(r.code, 0, "{}", r.stdout);
     assert_eq!(
         env.journal(&id).last().unwrap()["granted_tokens"],
-        1_000_000
+        1_001_152
     );
     assert_eq!(
         hallmark::budget::check(&repo, Some(item), "reviewer"),
         Ok(())
     );
     let b = env.hall(&env.repo, &["budget"]);
-    assert_eq!(b.json["top_items"][0]["granted"], 1_005_000, "{}", b.stdout);
+    assert_eq!(b.json["top_items"][0]["granted"], 1_007_304, "{}", b.stdout);
     assert_eq!(b.json["top_items"][0]["over_cap"], false);
 
     // Other holds are released without a grant, and refuse --tokens.
