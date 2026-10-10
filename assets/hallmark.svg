@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Hallmark: a stamped H in an assay-office shield, brass on ink. -->
+  <defs>
+    <linearGradient id="ink" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b3337"/>
+      <stop offset="1" stop-color="#101416"/>
+    </linearGradient>
+    <linearGradient id="brass" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#f3d38a"/>
+      <stop offset="0.55" stop-color="#d9a845"/>
+      <stop offset="1" stop-color="#9a6b12"/>
+    </linearGradient>
+    <linearGradient id="punch" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#151a1c"/>
+      <stop offset="1" stop-color="#2a3134"/>
+    </linearGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#ink)"/>
+  <rect x="104" y="104" width="816" height="816" rx="181" fill="none" stroke="#ffffff" stroke-opacity="0.07" stroke-width="4"/>
+  <!-- the shield, as punched -->
+  <path d="M 330 236 L 694 236 L 744 286 L 744 556 C 744 690 628 770 512 816 C 396 770 280 690 280 556 L 280 286 Z"
+        fill="url(#brass)"/>
+  <path d="M 344 270 L 680 270 L 712 302 L 712 552 C 712 666 612 734 512 776 C 412 734 312 666 312 552 L 312 302 Z"
+        fill="url(#punch)"/>
+  <!-- the H, struck in brass, with serifs -->
+  <g fill="url(#brass)">
+    <rect x="396" y="358" width="64" height="300"/>
+    <rect x="564" y="358" width="64" height="300"/>
+    <rect x="460" y="482" width="104" height="52"/>
+    <rect x="370" y="358" width="116" height="26"/>
+    <rect x="370" y="632" width="116" height="26"/>
+    <rect x="538" y="358" width="116" height="26"/>
+    <rect x="538" y="632" width="116" height="26"/>
+  </g>
+</svg>

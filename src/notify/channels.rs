@@ -180,26 +180,121 @@ fn desktop(m: &Message) -> Result<(), String> {
             .and_then(|mut f| writeln!(f, "{line}"))
             .map_err(|e| format!("desktop log: {e}"));
     }
+    let icon = icon_file();
+    let mut n = notify_rust::Notification::new();
+    n.appname("Hallmark").summary(&m.title).body(&m.body);
     #[cfg(target_os = "macos")]
     {
-        // Deliver as Terminal so the notification has an app to open. A
-        // second call reports "already set", which is fine.
-        let _ = notify_rust::set_application(&notify_rust::get_bundle_identifier_or_default(
-            "Terminal",
-        ));
+        // macOS shows the sending app's icon: send as Hallmark.app (created
+        // and registered with LaunchServices on first use), else as Terminal
+        // with the icon attached. The choice is made once per process.
+        static OURS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        let ours = *OURS.get_or_init(|| {
+            if mac_app().is_some() && notify_rust::set_application(MAC_BUNDLE_ID).is_ok() {
+                return true;
+            }
+            let _ = notify_rust::set_application(&notify_rust::get_bundle_identifier_or_default(
+                "Terminal",
+            ));
+            false
+        });
+        if !ours && let Some(p) = &icon {
+            n.image_path(&p.to_string_lossy());
+        }
     }
-    notify_rust::Notification::new()
-        .appname("Hallmark")
-        .summary(&m.title)
-        .body(&m.body)
-        .show()
-        .map(|_| ())
-        .map_err(|e| format!("desktop: {e}"))
+    #[cfg(all(unix, not(target_os = "macos")))]
+    if let Some(p) = &icon {
+        n.icon(&p.to_string_lossy());
+    }
+    #[cfg(windows)]
+    if let Some(p) = &icon {
+        n.image_path(&p.to_string_lossy());
+    }
+    n.show().map(|_| ()).map_err(|e| format!("desktop: {e}"))
+}
+
+/// Hallmark's icon (`assets/`), embedded so notifications carry it.
+const ICON_PNG: &[u8] = include_bytes!("../../assets/hallmark.png");
+#[cfg(target_os = "macos")]
+const ICON_ICNS: &[u8] = include_bytes!("../../assets/hallmark.icns");
+#[cfg(target_os = "macos")]
+const MAC_BUNDLE_ID: &str = "dev.hallmark.hall";
+
+/// Writes `path` only when its contents differ. True when it wrote.
+fn write_if_changed(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<bool> {
+    if std::fs::read(path).is_ok_and(|old| old == bytes) {
+        return Ok(false);
+    }
+    if let Some(d) = path.parent() {
+        std::fs::create_dir_all(d)?;
+    }
+    std::fs::write(path, bytes)?;
+    Ok(true)
+}
+
+/// The icon as a PNG file under the user data dir, for the notifiers that
+/// take a path.
+fn icon_file() -> Option<std::path::PathBuf> {
+    let p = crate::repo::user_dir().join("assets").join("hallmark.png");
+    write_if_changed(&p, ICON_PNG).ok()?;
+    Some(p)
+}
+
+/// A minimal `Hallmark.app` under the user data dir, registered with
+/// LaunchServices, so macOS shows Hallmark's name and icon on its
+/// notifications. It has no window; opening it does nothing.
+#[cfg(target_os = "macos")]
+fn mac_app() -> Option<std::path::PathBuf> {
+    let app = crate::repo::user_dir().join("Hallmark.app");
+    let contents = app.join("Contents");
+    let plist = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key><string>{MAC_BUNDLE_ID}</string>
+  <key>CFBundleName</key><string>Hallmark</string>
+  <key>CFBundleDisplayName</key><string>Hallmark</string>
+  <key>CFBundleExecutable</key><string>hallmark</string>
+  <key>CFBundleIconFile</key><string>hallmark</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>{v}</string>
+  <key>CFBundleVersion</key><string>{v}</string>
+  <key>LSUIElement</key><true/>
+  <key>NSUserNotificationAlertStyle</key><string>banner</string>
+</dict>
+</plist>
+"#,
+        v = env!("CARGO_PKG_VERSION")
+    );
+    let exe = contents.join("MacOS").join("hallmark");
+    let mut changed = write_if_changed(&contents.join("Info.plist"), plist.as_bytes()).ok()?;
+    changed |=
+        write_if_changed(&contents.join("Resources").join("hallmark.icns"), ICON_ICNS).ok()?;
+    changed |= write_if_changed(&exe, b"#!/bin/sh\nexit 0\n").ok()?;
+    if changed {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).ok()?;
+        let _ = std::process::Command::new(
+            "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister",
+        )
+        .arg("-f")
+        .arg(&app)
+        .output();
+    }
+    Some(app)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_icon_is_embedded() {
+        assert_eq!(&ICON_PNG[..8], b"\x89PNG\r\n\x1a\n");
+        #[cfg(target_os = "macos")]
+        assert_eq!(&ICON_ICNS[..4], b"icns");
+    }
 
     #[test]
     fn phone_urls() {
