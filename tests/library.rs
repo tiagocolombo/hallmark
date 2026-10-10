@@ -1020,10 +1020,8 @@ fn import_reads_committed_learnings_from_the_base() {
     let r = env.hall(&env.repo, &["library", "import"]);
     assert_eq!(r.code, 0, "{}", r.stdout);
     snap!("library_import", scrub(&env, &r.json));
-    assert_eq!(
-        r.json["next"][0],
-        "git rm -r -q .hallmark/knowledge && git commit -m \"Move the Library out of the repo\""
-    );
+    // Entries were skipped, so no hint to remove the committed files.
+    assert_eq!(r.json["next"][0], "hall library review");
     assert!(read_learning(&env, "L-0002").contains("Local version"));
     assert!(read_learning(&env, "L-0004").contains("status: proposed"));
     assert!(read_learning(&env, "L-0005").contains("status: retired"));

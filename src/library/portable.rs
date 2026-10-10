@@ -114,6 +114,20 @@ pub struct Imported {
 /// [`Store::with_lock`].
 pub fn import(store: &Store, entries: &[Entry]) -> Result<Imported> {
     let mut out = Imported::default();
+    // New numbers start above every incoming ID, so a renumbered learning
+    // never collides with one still to come.
+    let incoming_max = entries
+        .iter()
+        .filter_map(|e| {
+            let name = e.path.rsplit(['/', '\\']).next().unwrap_or(&e.path);
+            let fallback = learning::id_from_file_name(name).map(learning::format_id);
+            Learning::parse(&e.content, fallback.as_deref())
+                .ok()
+                .and_then(|l| learning::parse_id(&l.id))
+        })
+        .max()
+        .unwrap_or(0);
+    let mut fresh = store.next_id().max(incoming_max + 1);
     for e in entries {
         let name = e.path.rsplit(['/', '\\']).next().unwrap_or(&e.path);
         let fallback = learning::id_from_file_name(name).map(learning::format_id);
@@ -146,7 +160,8 @@ pub fn import(store: &Store, entries: &[Entry]) -> Result<Imported> {
             }
             // A different learning that reuses the ID: number it afresh.
             let mut l = l;
-            let old = std::mem::replace(&mut l.id, learning::format_id(store.next_id()));
+            let old = std::mem::replace(&mut l.id, learning::format_id(fresh));
+            fresh += 1;
             store.add(&l, "", &l.render())?;
             out.renumbered.push(Renumbered {
                 path: e.path.clone(),

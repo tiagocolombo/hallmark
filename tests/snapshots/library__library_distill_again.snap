@@ -14,6 +14,8 @@ expression: "scrub(&env, &r.json)"
     "hall library review",
     "hall log H-0001 --kind distilled"
   ],
-  "proposed": [],
+  "proposed": [
+    "L-0001"
+  ],
   "retired": []
 }
