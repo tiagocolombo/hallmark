@@ -40,13 +40,18 @@ place.
   own branch, which is checked out in a worktree through the configured
   `worktree` command (started at `origin/<branch>`) if no worktree has it.
   The item records the PR (`created.pr_url`, `created.pr_head`), and its base
-  is the PR's base. Plain `hall adopt` on a branch with an open PR does the
+  is the PR's base when that is an allowed base (see `--base`). Plain `hall adopt` on a branch with an open PR does the
   same, best effort: without `gh`, the item opens a PR of its own as before.
   PRs from forks are refused, since Hallmark can't push to them.
 - **`--base <branch>` stacks.** On reopening or creating, the item can be
-  based on another branch, such as another open PR's: it is reviewed
-  against that branch, and its PR is retargeted to it on update. The base
-  must be a local branch. An open item's base doesn't move.
+  based on another branch: it is reviewed against that branch, and its PR is
+  retargeted to it on update. Only the configured base, or the local branch
+  of an open PR whose item is hallmarked and still at its hallmarked commit,
+  is accepted, so no unreviewed commits ship. With `--pr`, a PR based
+  elsewhere (say `release-1.2`) is refused unless that rule holds; adopt it
+  with `--base <configured base>`, which retargets it on update. An open
+  item's base doesn't move. A worktree rebased or amended since the item
+  shipped can be adopted while the PR is still at the commit the item shipped.
 - **The shipper updates an existing PR.** An item with a PR runs the new
   `update` command instead of `ship`. Placeholders are those of `ship` plus
   `{pr}` (the PR's URL) and `{pr_head}` (the commit the PR's head was at when
@@ -62,7 +67,8 @@ place.
   to the PR since, the lease fails and the item is held (`ship_failed`)
   instead of losing their commits. The PR body isn't rewritten, since a
   teammate's description is theirs; the review summary goes in a comment.
-  The push gate treats `update`'s commands like `ship`'s.
+  The push gate treats `update`'s `git push` like `ship`'s; `gh pr edit` and
+  `gh pr comment` aren't pushes and stay outside it.
 - **What the item shows.** `pr_head` is folded onto the item. `reopened`
   clears `ci`, so the CI watch follows the PR again after the update. A
   closed item's `next` and `now` actions offer `hall adopt --pr <url>`, and

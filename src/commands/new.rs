@@ -395,7 +395,7 @@ pub fn adopt(cwd: &Path, a: AdoptArgs) -> Result<Response> {
     let repo = Repo::discover(cwd)?;
     repo.require_init()?;
     if let Some(base) = &a.base {
-        check_base(&repo, base)?;
+        check_base(&repo, base, None)?;
     }
     if let Some(pr) = &a.pr {
         return adopt_pr(&repo, pr, &a);
@@ -438,7 +438,14 @@ pub fn adopt(cwd: &Path, a: AdoptArgs) -> Result<Response> {
         let url = closed.pr_url.clone().unwrap_or_default();
         let pr = crate::gh::pr(&repo.main_root, &url)?;
         if pr.state == "OPEN" {
-            return reopen(&repo, &closed, &pr, &repo.toplevel, a.base.as_deref());
+            return reopen(
+                &repo,
+                &closed,
+                &pr,
+                &repo.toplevel,
+                a.base.as_deref(),
+                false,
+            );
         }
         // A merged or closed PR is history: the branch starts a new item.
     }
@@ -459,7 +466,7 @@ pub fn adopt(cwd: &Path, a: AdoptArgs) -> Result<Response> {
         .filter(|b| !b.is_empty())
         .unwrap_or_else(|| repo.config.base.clone());
     if let Some(p) = &pr {
-        check_base(&repo, &base)?;
+        check_base(&repo, &base, None)?;
         ensure_has_head(&repo.toplevel, &branch, &p.head_oid)?;
     }
     let item = repo.hall.with_repo_lock(|| {
@@ -539,7 +546,7 @@ fn adopt_pr(repo: &Repo, pr_ref: &str, a: &AdoptArgs) -> Result<Response> {
                 .next([format!("hall new --follow-up {}", pr.url)]));
             }
             let wt = worktree_of(repo, &it.branch).ok_or_else(|| no_worktree(&it))?;
-            return reopen(repo, &it, &pr, &wt, a.base.as_deref());
+            return reopen(repo, &it, &pr, &wt, a.base.as_deref(), true);
         }
         return existing_item(repo, it.id, a.base.as_deref());
     }
@@ -580,7 +587,7 @@ fn adopt_pr(repo: &Repo, pr_ref: &str, a: &AdoptArgs) -> Result<Response> {
     })?;
     let start = format!("origin/{}", pr.head);
     let base = a.base.clone().unwrap_or_else(|| pr.base.clone());
-    check_base(repo, &base)?;
+    check_base(repo, &base, Some(pr.number))?;
     let item = repo.hall.with_repo_lock(|| {
         create(
             repo,
@@ -616,6 +623,7 @@ fn reopen(
     pr: &crate::gh::GhPr,
     worktree: &Path,
     base: Option<&str>,
+    via_pr: bool,
 ) -> Result<Response> {
     if pr.cross_repo {
         return Err(HallError::new(
@@ -631,8 +639,12 @@ fn reopen(
         .map(str::to_string)
         .or_else(|| (!pr.base.is_empty()).then(|| pr.base.clone()))
         .unwrap_or_else(|| item.base.clone());
-    check_base(repo, &base)?;
-    ensure_has_head(worktree, &item.branch, &pr.head_oid)?;
+    check_base(repo, &base, via_pr.then_some(pr.number))?;
+    // The PR still at the commit this item shipped hasn't moved: a rebase or
+    // amend of it is what the update replaces.
+    if item.pr_head.as_deref() != Some(pr.head_oid.as_str()) {
+        ensure_has_head(worktree, &item.branch, &pr.head_oid)?;
+    }
     let id = item.id;
     let url = pr.url.clone();
     let (item, reopened) = repo.hall.transact(id, |it, _| {
@@ -717,7 +729,7 @@ fn adopted(item: &Item, created: bool, reopened: bool) -> Result<Response> {
 /// The base must be a branch here: the review compares against it and the
 /// PR targets it. Beyond the configured base, only the branch of an open PR
 /// Hallmark shipped, still at the commit it reviewed, can be stacked on.
-fn check_base(repo: &Repo, base: &str) -> Result<()> {
+fn check_base(repo: &Repo, base: &str, pr: Option<u64>) -> Result<()> {
     if !git::branch_exists(&repo.main_root, base) {
         return Err(HallError::new(
             ErrorCode::WrongState,
@@ -740,7 +752,10 @@ fn check_base(repo: &Repo, base: &str) -> Result<()> {
         ),
     )
     .next([
-        format!("hall adopt --base {}", repo.config.base),
+        match pr {
+            Some(n) => format!("hall adopt --pr {n} --base {}", repo.config.base),
+            None => format!("hall adopt --base {}", repo.config.base),
+        },
         "hall status --all".into(),
     ]))
 }
@@ -799,10 +814,7 @@ fn ensure_has_head(worktree: &Path, branch: &str, head: &str) -> Result<()> {
             crate::event::short(head)
         ),
     )
-    .next([
-        format!("git pull --ff-only origin {branch}"),
-        "hall adopt".into(),
-    ]))
+    .next([format!("git rebase origin/{branch}"), "hall adopt".into()]))
 }
 
 /// The worktree that has `branch` checked out.

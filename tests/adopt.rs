@@ -198,6 +198,26 @@ fn a_rebased_item_updates_its_pr_under_a_lease() {
 }
 
 #[test]
+fn adopt_accepts_a_branch_rebased_before_adopting() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    let (id, wt, old, _) = shipped(&env, &gh);
+    pr(&gh, "OPEN", &branch_of(&wt), &old);
+
+    commit_file(&env.repo, "other.rs", "fn other() {}\n");
+    git(&wt, &["rebase", "-q", "main"]);
+    let new = git(&wt, &["rev-parse", "HEAD"]);
+    assert_ne!(new, old);
+
+    // The PR is still at the commit the item shipped: the rebase replaces it.
+    let (code, r) = hall_gh(&env, &gh, &wt, &["adopt"]);
+    assert_eq!(code, 0, "{r}");
+    assert_eq!(r["reopened"], true);
+    assert_eq!(state(&env, &id), "development");
+    assert_eq!(git(&wt, &["rev-parse", "HEAD"]), new);
+}
+
+#[test]
 fn an_update_never_overwrites_a_pr_that_moved() {
     let env = Env::initialized();
     let gh = fake_gh(&env);

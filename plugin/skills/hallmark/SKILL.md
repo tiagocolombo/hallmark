@@ -54,8 +54,9 @@ Then do all edits and commits in the returned `worktree`:
 - To rebase, resolve conflicts in or change an open PR, Hallmark's or not:
   `hall adopt --pr <pr>`, or `hall adopt` in its worktree. A shipped item comes
   back to development; after review the shipper updates the PR (a leased
-  force-push). Never push the rebase yourself. Stack it on another PR with
-  `--base <branch>`.
+  force-push). Never push the rebase yourself. `--base <branch>` accepts only
+  the configured base or the branch of another hallmarked open PR; a PR based
+  elsewhere is adopted with `--base <configured base>`, which retargets it.
 - From review feedback on a shipped PR: `hall new --follow-up <pr-url>`.
 - To keep a request as one item, never split: `hall new "<request>" --no-split`.
 
