@@ -350,3 +350,94 @@ to edit with the Edit/Write tools and run git with `git -C <worktree>`.
 Second run: item H-0001 created, `hello.txt` written in the worktree, commit
 `Add hello.txt` recorded by PostToolUse, and the journal shows
 `created → session_bound → prompt → commit → usage → turn`. 5 turns, $0.008.
+
+## End-to-end, Stage 2
+
+Date: 2026-10-10. Claude Code 2.1.296. Every role on Haiku
+(`claude-haiku-5-5`), set in `.hallmark.toml` `[budget]`, with
+`max_usd = 0.50` per review and fix run and a 6-minute timeout. The repo was a
+throwaway with one Python module, one gate (`python3 test_calc.py`), and a
+**local bare remote** as `origin`; the ship command was
+`git push -u origin {branch}` (no GitHub). `HALL_HOME` was a temp dir, and the
+plugin was extracted by `plugin::runtime_dir` into it — nothing was installed
+at user level. The daemon was driven one pass at a time with
+`hall daemon run --once --repo <repo>`.
+
+### H-0001: checks fail, the fixer repairs them, approve, ship
+
+1. `hall new "Add a divide(a, b) function … raises ValueError when b is 0,
+   with tests"`: the Front Desk's intake run kept it as one item —
+   *"one small feature … the two files are tightly coupled, so splitting
+   would add overhead"* (`planned`, `parallel: false`).
+2. As the dev agent, we committed `divide` as `a // b` with a test that
+   expects `ValueError` for `divide(1, 0)`, then `hall ready`.
+3. Pass 1: the assayer ran the gate in its own worktree (`../calc-assay`):
+   exit 1, `checks/r1.log`, state `fixing` — **no review tokens spent**. In
+   the same pass the fixer (cwd = the item's worktree, hooks on) committed
+   `fix checks: divide returns float and raises ValueError on zero` and ran
+   `hall fixed` itself: `fix_submitted` by actor `fixer`. 8 turns, $0.0023.
+4. Pass 2: checks passed at `3bfb962` → `review`.
+5. Pass 3: the review approved (0 findings, $0.0013), `stamp::strike` wrote
+   the note, the shipper pushed `hm/H-0001-…` to the bare remote and the item
+   closed; the librarian found nothing worth keeping (`distilled`, no
+   learnings).
+
+### H-0002: review findings, fix, incremental re-review, approve, ship
+
+1. `hall new --no-split --title "Add clamp(x, lo, hi)"`; we committed
+   `return max(lo, min(x, lo))` (wrong upper bound) with one assert that
+   passes by coincidence (`clamp(-5, 0, 10) == 0`), then `hall ready`.
+2. Checks passed, then round 1 asked for changes
+   (`reviews/r1.md`):
+   - **F1 blocker · correctness · `calc.py:7`** — *"clamp(15, 0, 10): min(15,
+     0) is 0, then max(0, 0) is 0, but the correct result is 10."*
+   - **F2 major · evidence · `test_calc.py:9`** — *"The only clamp test passes
+     on the buggy code."*
+3. The fixer fixed both in one commit (`fix_submitted` claims F1, F2).
+4. Round 2 was incremental (diff since the reviewed commit plus the open
+   findings): both ruled `fixed`, approve. The hallmark note on `a439e3b`:
+   `{"hallmark":1,"item":"H-0002","sha":"a439e3b…","round":2,
+   "reviewer":"claude-haiku-5-5","findings":{"blocker":0,"major":0,…}}`.
+5. Shipped; the librarian proposed one learning (`L-0001`, kind rule: *"A
+   clamp test must assert an in-range value and a value beyond each bound…"*)
+   in a knowledge item, H-0003, which waits in the inbox as "ready?" — it goes
+   through review like any change.
+
+### The push gate passes only the hallmarked commit
+
+`hall hook pre-tool-use` with a `git push` of H-0002's branch, from its
+worktree:
+
+| HEAD | Result |
+| --- | --- |
+| `a439e3b` (hallmarked) | no output: allowed |
+| `e87f7ed` (one more commit) | `deny`: *"e87f7ed has no hallmark. Work reaches GitHub only through review…"* |
+
+### Usage
+
+`hall usage --by role` for the whole run, list price:
+
+| Role | Tokens |
+| --- | --- |
+| fixer | 107k |
+| reviewer | 48k |
+| librarian | 13k |
+| intake | 5k |
+| **total** | **173k · $0.0107** |
+
+`hall export H-0002` wrote the whole record (timeline, checks, both reviews
+with findings and rulings, fixes, usage) to `items/H-0002/export.md`, and the
+shipper's PR body carried the review summary, the settled findings and a
+pointer to `hall export`.
+
+### Found on the way, and fixed
+
+- Workstream live checks (ADR 0013 addendum): a `tools:` list in an agent
+  hides `StructuredOutput`; `--json-schema` rejects a `$schema` key; a bare
+  agent name can be replaced by the checkout's `.claude/agents/`; the
+  checkout's CLAUDE.md and MCP servers load into `--agent` runs. Every
+  headless run is now namespaced (`hallmark:<agent>`) and isolated.
+- Headless runs with hooks on counted usage twice (runner + Stop hook);
+  `HALL_HEADLESS` now leaves it to the runner.
+- Cosmetic: sub-cent costs printed as `$0.00`, and a push without a PR read
+  "PR opened"; both fixed.

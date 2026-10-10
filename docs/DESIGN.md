@@ -41,8 +41,8 @@ rejected, fixed and passed, and why.
 The product is one Rust binary, `hall` (crate `hallmark`), for macOS, Linux and
 Windows:
 
-- With no arguments, it opens the terminal app (Stage 3; until then it prints
-  the status).
+- With no arguments, it opens the terminal app on a terminal, and prints the
+  status as JSON otherwise.
 - Its subcommands serve agents, Claude Code hooks and the daemon.
 
 ## Vocabulary
@@ -256,10 +256,10 @@ Agents are the primary users of `hall`, so the command line is an API.
 | Exit | Meaning | Error codes |
 | --- | --- | --- |
 | 0 | done | — |
-| 1 | internal error | `INTERNAL`, `COMMAND_FAILED`, `GH_UNAVAILABLE` |
-| 2 | bad arguments | `USAGE` |
+| 1 | internal error | `INTERNAL`, `COMMAND_FAILED`, `GH_UNAVAILABLE`, `RUN_FAILED` |
+| 2 | bad arguments | `USAGE`, `INVALID_VERDICT` |
 | 3 | not found | `NOT_A_REPO`, `NOT_INITIALIZED`, `ITEM_NOT_FOUND`, `NO_ITEM`, `QUESTION_NOT_FOUND` |
-| 4 | wrong state | `WRONG_STATE`, `ITEM_IN_REVIEW`, `DIRTY_WORKTREE`, `ALREADY_ANSWERED` |
+| 4 | wrong state | `WRONG_STATE`, `ITEM_IN_REVIEW`, `DIRTY_WORKTREE`, `ALREADY_ANSWERED`, `CHILDREN_OPEN`, `MERGE_CONFLICT`, `BUDGET_EXCEEDED` |
 | 5 | gate denied | `GATE_DENIED` |
 | 6 | checks failed | `CHECKS_FAILED` |
 | 7 | claimed by another agent | `CLAIMED` |
@@ -278,7 +278,7 @@ $ echo $?
 
 | Command | Does |
 | --- | --- |
-| `hall` | Status for now; the terminal app in Stage 3. |
+| `hall` | The terminal app on a TTY; JSON status otherwise. |
 | `hall init [--capture] [--base] [--no-claude-md]` | Creates the journal directory. Writes `.hallmark.toml` from detected gates, a stub `.hallmark/review.md`, and the CLAUDE.md section. Registers the repo. |
 | `hall doctor` | Checks git, gh, claude, the plugin, the hooks and the repo. Each failed check names its fix. |
 | `hall setup claude [--dry-run]` | Installs the Claude Code plugin at user level. |
@@ -290,22 +290,32 @@ $ echo $?
 | `hall ready [<id>] [--note]` | Freezes HEAD and queues the item. A dirty worktree is refused. |
 | `hall pull-back [<id>] [--reason]` | Returns the item to development. |
 | `hall drop [<id>] --reason [--keep-worktree]` | Abandons the item. The branch and journal stay. |
-| `hall retry [<id>] --reason` | Allows an escalated item one more round. |
+| `hall retry [<id>] --reason` | Allows an escalated item one more round, or releases a held item. |
 | `hall propose-ready [<id>] --summary` | The agent says the work looks done. |
 | `hall ask <q> [--item] [--options] [--default] [--wait] [--session]` | Records a question. |
-| `hall answer <qid> <answer>` | Records the answer. `next` includes the `--resume` command. |
+| `hall answer <qid> <answer>` | Records the answer; the daemon resumes the asking session with it. |
 | `hall usage [--by item\|room\|role\|model\|day] [--since] [--item]` | Shows tokens and list-price cost. |
 | `hall reindex` | Rebuilds the SQLite index from the journals. |
 | `hall help --json`, `hall schema <cmd>` | Self-description for agents. |
 | `hall hook <event>` | The entry point for Claude Code hooks. |
 
-### Later stages
+### Stages 2 and 3
 
-- `hall daemon`
-- `hall next --role`, `hall findings`, `hall fixed`, `hall verdict`
-- `hall history`, `hall export`, `hall budget`
-- `hall library …`
-- `hall notify test`
+| Command | Used by | Does |
+| --- | --- | --- |
+| `hall new … [--no-split] [--parent] [--follow-up <pr>]` | you, your session | The Front Desk may split a request into parallel parts; `--follow-up` starts from PR feedback. |
+| `hall merge [<child>]` | your session | Merges a parallel part into its parent's branch and closes it. |
+| `hall daemon start\|stop\|status\|run [--at-login]` | you | The review loop for every registered repo (ADR 0014, 0017). |
+| `hall next --role assayer\|fixer\|shipper` | agents | Claims work with a lease (exit 7 `CLAIMED`). |
+| `hall findings [<id>]` | fixer | Open findings and failing checks. |
+| `hall fixed <ids> [--dispute <id> --reason]` | fixer | Records what the commit fixes, resubmits. |
+| `hall verdict --file <json>` | assayer | Records a schema-checked verdict. |
+| `hall history [--rejected] [--lens] [--since]` | you | Closed and dropped items, and why things were rejected. |
+| `hall export [<id>]` | you, shipper | The whole record as Markdown. |
+| `hall budget [--set k=v]` | you | The caps and today's spend. |
+| `hall notify test` | you | A test notification on every channel. |
+| `hall statusline` | Claude Code | One line for the status line. |
+| `hall library search\|review\|retire\|distill` | you, agents | The Library. |
 
 ## Configuration
 
@@ -317,9 +327,11 @@ an item can't loosen its own gate from its worktree (ADR 0012).
 base        = "main"            # hall init detects origin/HEAD
 worktree    = "git worktree add ../{repo}-{id} -b {branch}"
 branch      = "hm/{id}-{slug}"
-ship        = "git push -u origin {branch} && gh pr create --fill"
+ship        = "git push -u origin {branch} && gh pr create --base {base} --head {branch} --title {title} --body-file {body_file}"
 gates       = []                # hall init fills these
 reviewer    = "claude -p"
+fixer       = "claude -p"       # or an external fix engine (Ralph Orchestrator…)
+claude_args = []                # extra arguments for every headless run
 max_rejects = 3
 stuck_after = "30m"
 lenses      = "all"
@@ -328,11 +340,24 @@ rules       = ["CLAUDE.md", "AGENTS.md"]
 [capture]
 mode = "gate"                   # gate | ask | off
 
+[intake]
+split     = "auto"              # the Front Desk splits requests when it can; or "off"
+max_parts = 4
+
 [budget]                        # no caps unless you set them
-review_model = "opus"
-fix_model    = "sonnet"
-intake_model = "haiku"
+review_model    = "opus"
+fix_model       = "sonnet"
+intake_model    = "haiku"
+librarian_model = "haiku"
 # daily = "4M"; per_item = "800k"; [budget.review] max_usd = 3.00, daily = "2M"
+
+[library]
+search         = "builtin"      # or "qmd"
+briefing_limit = "6k"
+auto_accept    = []
+retire_after   = "90d"
+
+# [notify] usually lives in <user data dir>/hallmark/config.toml
 ```
 
 **Templates.**
@@ -406,6 +431,15 @@ concrete scenario that breaks.
 
 **Failures.** A run without `structured_output` counts as failed.
 
+**Isolation** (live checks, ADR 0013 addendum and ADR 0018). Every headless run
+calls the plugin's agent by its namespaced name (`hallmark:principal-engineer`),
+because a branch's `.claude/agents/` would otherwise replace it. The reviewer,
+intake and the librarian run with `--setting-sources user`,
+`--strict-mcp-config`, no CLAUDE.md from the checkout
+(`CLAUDE_CODE_DISABLE_CLAUDE_MDS=1`) and no hooks. The review prompt carries the
+`principal-review` skill and the base branch's rules itself, because a headless
+`--agent` run doesn't preload skills.
+
 **The fixer.** `agents/fixer.md`:
 
 - runs in the item's worktree;
@@ -467,8 +501,9 @@ Your Office holds the following, oldest first. It is derived from the journal.
 | escalated | the item is `escalated` | that item |
 | session waiting | a `Notification` hook, cleared by the next prompt in that session | that session |
 | ready? | the item is `awaiting_you` | nothing |
-| budget | a budget stop | that item |
+| budget, run_failed, ship_failed | a hold: a per-item cap, two failed runs in a row, a failed ship | that item, until `hall retry` |
 | stuck | the watchman | whatever was running |
+| daemon stopped | a daemon that should run has no heartbeat | the loop |
 | learnings | proposed learnings, sent as a digest | nothing |
 
 **Asking a question.** An agent runs:
@@ -481,18 +516,19 @@ The answer comes with `hall answer Q-12 a` (or the option's text). The daemon
 then resumes the asking agent's session with
 `claude -p --resume <session-id> "<answer>"`.
 
-- Stage 1 only records the question and the answer.
 - If a question with a default isn't answered within its wait, the agent goes
   ahead with the default, and the journal says so.
 - Escalations never use a default.
 
-**Notifications** (Stage 2 and later):
+**Notifications** (ADR 0020):
 
-- hooks and the status line
-- the terminal app
+- hooks and the status line (`hall statusline`)
+- the terminal app (and its bell)
 - the desktop (notify-rust)
-- the phone (ntfy, Telegram or Slack)
-- a morning digest
+- the phone: ntfy by default (a random topic), Telegram, or a Slack webhook.
+  Only the item, the question and its options are sent, never code.
+- a morning digest, quiet hours for the phone, a reminder every `remind`, and
+  routes per inbox kind under `[notify.route]`
 
 ## The Library (Stage 2)
 
@@ -518,6 +554,33 @@ with one collection per repo.
 **Where rules belong.** CLAUDE.md is for rules that are always true; situational
 knowledge goes in the Library.
 
+## Parallel parts (Stage 2, ADR 0024)
+
+The Front Desk's intake run (Haiku, `plugin/agents/intake.md`,
+`schemas/plan.json`) decides whether a request splits into parts that are truly
+independent: disjoint paths, no ordering, each testable alone. Hallmark checks
+the plan (2 to `max_parts` parts, no overlapping paths) and fails open: any
+doubt makes one item.
+
+- A split makes a **parent** item and one **child** item per part, each with its
+  own branch (cut from the parent's) and worktree.
+- **Your session's Claude orchestrates**: the skill tells it to run one subagent
+  per child in parallel, each confined to its worktree.
+- `hall merge <child>` merges a finished part into the parent's branch and closes
+  it (`merged`); conflicts abort the merge and say how to resolve them.
+- `hall ready <parent>` is refused (`CHILDREN_OPEN`) while a part is open, and
+  `hall ready <child>` is refused: the principal engineer reviews **once**, the
+  integrated parent. The daemon never takes child items.
+
+## The daemon (Stage 2, ADR 0014, 0017)
+
+One process (`hall daemon start`, optionally at login) runs passes over every
+registered repo; repos run in parallel, and each repo's workers run in order:
+watchman, resume, assayer, fixer, shipper, librarian, notify. Leases keep one
+worker per item and one assayer per repo. A rate limit or the daily budget
+pauses the model workers until the reset, recorded as `paused`. Stopping is a
+flag in the state file, so it works the same on every OS.
+
 ## What we reuse
 
 | Need | Reused |
@@ -531,7 +594,7 @@ knowledge goes in the Library.
 | File watching and locks | notify, fs4 |
 | Index | rusqlite |
 | Daemon and notifications | service-manager, notify-rust |
-| Releases | cargo-dist, later |
+| Releases | dist (cargo-dist), a Nix package |
 
 Two outside tools fit at the edges:
 
@@ -540,7 +603,7 @@ Two outside tools fit at the edges:
 
 ## Build stages
 
-1. **Journal and hooks** (now)
+1. **Journal and hooks** (done)
    - the binary and the agent contract
    - items and the state machine
    - the journal and its index
@@ -550,13 +613,15 @@ Two outside tools fit at the edges:
    - the plugin skeleton with the `hallmark` skill
    - integration tests
    - CI on macOS, Linux and Windows
-2. **The review loop**
+2. **The review loop** (done)
    - the daemon: checks, review, fixer, shipper and watchman
    - the principal-engineer and fixer agents, the verdict schema, and hallmarks
-   - issue linking
+   - the Front Desk's intake plan and parallel parts
+   - issue linking and follow-up items
+   - budgets at four levels, resuming on an answer
    - the Library and the librarian
    - desktop and phone notifications
-3. **The terminal app and releases**
+3. **The terminal app and releases** (done; releases are dry-run only)
    - views: board, journal, findings, history, live, usage and repos
    - qmd as an option
-   - cargo-dist releases
+   - dist releases and a Nix package
