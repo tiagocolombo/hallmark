@@ -149,32 +149,31 @@ pub fn check_with(
         return Ok(());
     };
     if let Some(cap) = b.role(r).and_then(|rb| rb.daily.as_deref())
-        && let Some(limit) = parse_tokens(cap)
+        && let Some(limit) = Cap::parse(cap)
     {
-        let used = room_tokens(ix, r.room(), day);
-        if used >= limit {
+        let used = room_spent(ix, r.room(), day);
+        if limit.reached(&used) {
             return Err(Stop {
                 level: Level::Room,
                 reason: format!(
-                    "the {} reached its daily cap ({} of {} tokens today); {} runs wait until tomorrow (UTC)",
+                    "the {} reached its daily cap ({} today); {} runs wait until tomorrow (UTC)",
                     room_label(r.room()),
-                    fmt_tokens(used),
-                    cap,
+                    limit.show(&used),
                     r.as_str()
                 ),
             });
         }
     }
     if let (Some(id), Some(cap)) = (item, b.per_item.as_deref())
-        && let Some(limit) = parse_tokens(cap)
+        && let Some(limit) = Cap::parse(cap)
     {
-        let used = item_tokens(ix, id);
-        if used >= limit {
+        let used = item_spent(ix, id);
+        if limit.reached(&used) {
             return Err(Stop {
                 level: Level::Item,
                 reason: format!(
-                    "{id} reached its {cap} token cap ({} spent by the loop)",
-                    fmt_tokens(used)
+                    "{id} reached its cap ({} spent by the loop)",
+                    limit.show(&used)
                 ),
             });
         }
@@ -186,24 +185,111 @@ pub fn check_with(
 /// one `hall budget --grant` lifts.
 pub const DAILY_SPENT: &str = "the daily budget is spent";
 
+/// A cap: weighted tokens ("800k", "6M") or dollars at list price ("$15").
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Cap {
+    Tokens(u64),
+    Usd(f64),
+}
+
+impl Cap {
+    pub fn parse(s: &str) -> Option<Cap> {
+        let t = s.trim();
+        match t.strip_prefix('$') {
+            Some(usd) => usd
+                .trim()
+                .parse::<f64>()
+                .ok()
+                .filter(|v| *v >= 0.0)
+                .map(Cap::Usd),
+            None => parse_tokens(t).map(Cap::Tokens),
+        }
+    }
+
+    pub fn reached(&self, s: &Spent) -> bool {
+        match self {
+            Cap::Tokens(limit) => s.tokens >= *limit,
+            Cap::Usd(limit) => s.usd >= *limit,
+        }
+    }
+
+    /// "6.41M of 20M weighted tokens", "$4.15 of $15.00".
+    pub fn show(&self, s: &Spent) -> String {
+        match self {
+            Cap::Tokens(limit) => format!(
+                "{} of {} weighted tokens",
+                fmt_tokens(s.tokens),
+                fmt_tokens(*limit)
+            ),
+            Cap::Usd(limit) => format!("${:.2} of ${limit:.2}", s.usd),
+        }
+    }
+}
+
+/// What the loop spent: tokens weighted by price, and list-price dollars.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Spent {
+    pub tokens: u64,
+    pub usd: f64,
+}
+
+fn spent(ix: &Index, filter: &str, p: impl rusqlite::Params) -> Spent {
+    ix.conn()
+        .query_row(
+            &format!(
+                "SELECT {TOKENS}, SUM(cost_usd) FROM usage WHERE {filter} AND source = 'headless'"
+            ),
+            p,
+            |r| Ok((r.get::<_, Option<f64>>(0)?, r.get::<_, Option<f64>>(1)?)),
+        )
+        .map(|(t, u)| Spent {
+            tokens: t.unwrap_or(0.0).max(0.0).round() as u64,
+            usd: u.unwrap_or(0.0),
+        })
+        .unwrap_or_default()
+}
+
+/// The loop's spend on `item`, ever.
+pub fn item_spent(ix: &Index, item: ItemId) -> Spent {
+    spent(ix, "item = ?1", params![item.to_string()])
+}
+
+/// The loop's spend in `room` on `day` (UTC).
+pub fn room_spent(ix: &Index, room: &str, day: &str) -> Spent {
+    spent(ix, "room = ?1 AND day = ?2", params![room, day])
+}
+
+/// The whole loop's spend on `day` (UTC).
+pub fn daily_spent(ix: &Index, day: &str) -> Spent {
+    spent(ix, "day = ?1", params![day])
+}
+
 /// The daily total's stop, if `[budget] daily` (plus today's grant) is
-/// spent for `day`.
+/// spent for `day`. A grant is in weighted tokens, so it raises a token cap
+/// only; a dollar cap has no grant.
 pub fn daily_stop(ix: &Index, b: &Budget, day: &str) -> Option<Stop> {
     let cap = b.daily.as_deref()?;
-    let limit = parse_tokens(cap)?;
-    let granted = daily_granted(ix, day);
-    let used = daily_tokens(ix, day);
-    let of = match granted {
-        0 => cap.to_string(),
-        g => format!("{cap} + {} granted", fmt_tokens(g)),
+    let used = daily_spent(ix, day);
+    let (limit, shown, hint) = match Cap::parse(cap)? {
+        Cap::Tokens(base) => {
+            let granted = daily_granted(ix, day);
+            let limit = Cap::Tokens(base.saturating_add(granted));
+            let shown = match granted {
+                0 => limit.show(&used),
+                g => format!(
+                    "{} of {} + {} granted weighted tokens",
+                    fmt_tokens(used.tokens),
+                    fmt_tokens(base),
+                    fmt_tokens(g)
+                ),
+            };
+            (limit, shown, ", or `hall budget --grant` lets it go on today")
+        }
+        usd => (usd, usd.show(&used), ""),
     };
-    (used >= limit.saturating_add(granted)).then(|| Stop {
+    limit.reached(&used).then(|| Stop {
         level: Level::Daily,
-        reason: format!(
-            "{DAILY_SPENT} ({} of {of} tokens today); the loop waits until 00:00 UTC, \
-             or `hall budget --grant` lets it go on today",
-            fmt_tokens(used)
-        ),
+        reason: format!("{DAILY_SPENT} ({shown} today); the loop waits until 00:00 UTC{hint}"),
     })
 }
 
@@ -238,14 +324,19 @@ pub fn daily_note(repo: &Repo) -> Option<String> {
 
 fn sum(ix: &Index, sql: &str, p: impl rusqlite::Params) -> u64 {
     ix.conn()
-        .query_row(sql, p, |r| r.get::<_, Option<i64>>(0))
+        .query_row(sql, p, |r| r.get::<_, Option<f64>>(0))
         .ok()
         .flatten()
-        .unwrap_or(0)
-        .max(0) as u64
+        .unwrap_or(0.0)
+        .max(0.0)
+        .round() as u64
 }
 
-const TOKENS: &str = "SUM(COALESCE(input,0) + COALESCE(output,0) + COALESCE(cache_read,0) + COALESCE(cache_write,0))";
+/// Tokens weighted by price, in input tokens: a cache read costs a tenth of
+/// an input token and a cache write 1.25 of one. Without the weights, a long
+/// review that re-reads its cached context spends a cap ten times too fast
+/// (H-0008: 6.15M cache reads, $4.15).
+const TOKENS: &str = "SUM(COALESCE(input,0) + COALESCE(output,0) + COALESCE(cache_read,0) * 0.1 + COALESCE(cache_write,0) * 1.25)";
 
 /// Tokens the loop (headless runs) spent on `item`, ever.
 pub fn item_tokens(ix: &Index, item: ItemId) -> u64 {
@@ -306,7 +397,7 @@ pub fn top_items(ix: &Index, limit: usize) -> Vec<ItemSpend> {
     let rows = stmt.query_map(params![limit as i64], |r| {
         Ok((
             r.get::<_, String>(0)?,
-            r.get::<_, Option<i64>>(1)?.unwrap_or(0),
+            r.get::<_, Option<f64>>(1)?.unwrap_or(0.0).max(0.0).round() as i64,
             r.get::<_, Option<f64>>(2)?.unwrap_or(0.0),
             r.get::<_, i64>(3)?,
         ))
@@ -360,6 +451,47 @@ mod tests {
     }
 
     #[test]
+    fn cache_reads_weigh_a_tenth_and_caps_can_be_dollars() {
+        let (_d, hall) = hall();
+        let id = ItemId(1);
+        // H-0008's review: 6.15M cache reads, 190k cache writes, 70k output.
+        add(
+            &hall,
+            Some(id),
+            Body::Usage(Usage {
+                source: "headless".into(),
+                room: "assay".into(),
+                role: "reviewer".into(),
+                model: "claude-opus-5-5".into(),
+                input_tokens: 94,
+                output_tokens: 69_956,
+                cache_read_tokens: 6_145_981,
+                cache_write_tokens: 190_338,
+                cost_usd: 4.15,
+                ..Default::default()
+            }),
+        );
+        let ix = Index::synced(&hall).unwrap();
+        let day = today();
+        let spent = item_spent(&ix, id);
+        // 94 + 69,956 + 614,598 + 237,923 ≈ 922.6k, not 6.41M.
+        assert_eq!(spent.tokens, 922_571, "{spent:?}");
+        let mut b = Budget {
+            per_item: Some("6M".into()),
+            ..Budget::default()
+        };
+        assert_eq!(check_with(&ix, &b, Some(id), "fixer", &day), Ok(()));
+        b.per_item = Some("$5".into());
+        assert_eq!(check_with(&ix, &b, Some(id), "fixer", &day), Ok(()));
+        b.per_item = Some("$4".into());
+        let s = check_with(&ix, &b, Some(id), "fixer", &day).unwrap_err();
+        assert!(s.reason.contains("$4.15 of $4.00"), "{}", s.reason);
+        assert_eq!(Cap::parse("$ 15"), Some(Cap::Usd(15.0)));
+        assert_eq!(Cap::parse("800k"), Some(Cap::Tokens(800_000)));
+        assert_eq!(Cap::parse("$x"), None);
+    }
+
+    #[test]
     fn levels_in_order() {
         let (_d, hall) = hall();
         let id = ItemId(1);
@@ -384,7 +516,12 @@ mod tests {
         b.per_item = Some("500k".into());
         let s = check_with(&ix, &b, Some(id), "fixer", &day).unwrap_err();
         assert_eq!(s.level, Level::Item);
-        assert!(s.reason.contains("H-0001 reached its 500k"), "{}", s.reason);
+        assert!(
+            s.reason
+                .contains("H-0001 reached its cap (500k of 500k weighted tokens"),
+            "{}",
+            s.reason
+        );
         // Resume runs never hold an item.
         assert_eq!(check_with(&ix, &b, Some(id), "resume", &day), Ok(()));
 

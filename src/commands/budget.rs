@@ -458,11 +458,11 @@ pub fn apply_sets(text: &str, sets: &[String]) -> Result<(String, Vec<String>)> 
         } else {
             Some(match kind {
                 Kind::Tokens => {
-                    parse_tokens(v).ok_or_else(|| {
-                        HallError::usage(format!(
-                            "--set {s}: {v} is not a token count; use 800k, 4M or 1200"
-                        ))
-                    })?;
+                    if crate::budget::Cap::parse(v).is_none() {
+                        return Err(HallError::usage(format!(
+                            "--set {s}: {v} is not a cap; use tokens (800k, 4M) or dollars ($15)"
+                        )));
+                    }
                     v.into()
                 }
                 Kind::Usd => {
