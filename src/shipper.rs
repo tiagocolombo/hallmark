@@ -106,7 +106,13 @@ fn ship(repo: &Repo, item: &Item) -> Result<Progress> {
         ],
     );
     repo.hall.live(&format!("{id} shipping: {cmd}"));
-    let run = crate::fixer::run_command(&cmd, &wt, SHIP_TIMEOUT_SECS, &[("HALL_ACTOR", ACTOR)]);
+    // The ship command finds `gh` where Hallmark does (HALL_GH, PATH, Nix store).
+    let path = crate::gh::path_with_gh().map(|p| p.to_string_lossy().into_owned());
+    let mut env = vec![("HALL_ACTOR", ACTOR)];
+    if let Some(p) = &path {
+        env.push(("PATH", p.as_str()));
+    }
+    let run = crate::fixer::run_command(&cmd, &wt, SHIP_TIMEOUT_SECS, &env);
     let runs = repo.hall.item_runs(id);
     std::fs::create_dir_all(&runs)?;
     let _ = std::fs::write(

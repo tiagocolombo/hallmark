@@ -40,6 +40,9 @@ pub struct RunRequest {
     pub agent: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// Retried with when `model` is unavailable; `--fallback-model` too.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fallback_model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
     pub prompt: String,
@@ -88,6 +91,11 @@ impl RunRequest {
         }
         if let Some(m) = &self.model {
             a.extend(["--model".into(), m.clone()]);
+        }
+        if let Some(f) = &self.fallback_model
+            && self.model.as_ref() != Some(f)
+        {
+            a.extend(["--fallback-model".into(), f.clone()]);
         }
         if let Some(e) = &self.effort {
             a.extend(["--effort".into(), e.clone()]);
@@ -171,6 +179,7 @@ pub fn request(
             }
         }),
         model: Some(b.model(role)),
+        fallback_model: b.fallback(role),
         effort: b.effort(role),
         prompt,
         json_schema: None,
@@ -195,6 +204,8 @@ pub enum Failure {
     Timeout,
     /// `--max-budget-usd` stopped it.
     Budget,
+    /// The model isn't available to this account; nothing was spent.
+    ModelUnavailable { model: String },
     /// Claude's plan limit: the daemon pauses until `until`.
     RateLimited {
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -211,6 +222,7 @@ impl Failure {
         match self {
             Failure::Timeout => "timed out".into(),
             Failure::Budget => "reached --max-budget-usd".into(),
+            Failure::ModelUnavailable { model } => format!("model {model} is unavailable"),
             Failure::RateLimited { until: Some(u) } => {
                 format!("rate limited until {}", u.to_rfc3339())
             }
@@ -384,6 +396,18 @@ pub fn classify(
             ),
         });
     };
+    // An API error before any model ran: an unknown or unavailable model
+    // ("[claude-code:unrecognized_model] …"). It costs nothing.
+    if r.terminal_reason.as_deref() == Some("api_error")
+        && r.model_usage.is_empty()
+        && format!("{raw} {stderr}")
+            .to_ascii_lowercase()
+            .contains("model")
+    {
+        return Some(Failure::ModelUnavailable {
+            model: String::new(),
+        });
+    }
     let subtype = r.subtype.as_deref().unwrap_or("");
     if subtype.contains("budget") {
         return Some(Failure::Budget);
@@ -665,7 +689,28 @@ pub fn run_metered(
     }
     repo.hall
         .live(&format!("{} {} run started", label(item), req.role));
-    let outcome = runner.run(req);
+    let mut outcome = runner.run(req);
+    // The role's model isn't available: retry once with its fallback.
+    if matches!(outcome.failure, Some(Failure::ModelUnavailable { .. }))
+        && let Some(fb) = req.fallback_model.clone()
+        && req.model.as_ref() != Some(&fb)
+    {
+        repo.hall.live(&format!(
+            "{} {} model {} unavailable; retrying with {fb}",
+            label(item),
+            req.role,
+            req.model.as_deref().unwrap_or("(default)")
+        ));
+        let mut again = req.clone();
+        again.model = Some(fb);
+        again.fallback_model = None;
+        outcome = runner.run(&again);
+    }
+    if let Some(Failure::ModelUnavailable { model }) = &mut outcome.failure
+        && model.is_empty()
+    {
+        *model = req.model.clone().unwrap_or_default();
+    }
     if let Some(id) = item {
         let dir = repo.hall.item_runs(id);
         std::fs::create_dir_all(&dir)?;
@@ -839,6 +884,29 @@ mod tests {
         )
         .unwrap();
         assert_eq!(classify(Some(&budget), "", "", true), Some(Failure::Budget));
+    }
+
+    #[test]
+    fn an_unavailable_model_is_recognized() {
+        // What Claude Code 2.1.296 printed for an unknown model (live, $0).
+        let raw = "[claude-code:unrecognized_model] {\"model\":\"claude-x\"}\n\
+            {\"total_cost_usd\":0,\"modelUsage\":{},\"terminal_reason\":\"api_error\",\
+            \"session_id\":\"s\"}";
+        let r = PrintResult::parse(raw).unwrap();
+        assert!(matches!(
+            classify(Some(&r), raw, "", true),
+            Some(Failure::ModelUnavailable { .. })
+        ));
+        let req = RunRequest {
+            model: Some("claude-fable-5-1".into()),
+            fallback_model: Some("claude-opus-5-5".into()),
+            ..Default::default()
+        };
+        assert!(
+            req.args()
+                .join(" ")
+                .contains("--fallback-model claude-opus-5-5")
+        );
     }
 
     #[test]

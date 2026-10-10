@@ -200,6 +200,9 @@ pub struct PrintResult {
     pub model_usage: BTreeMap<String, ModelUsage>,
     #[serde(default)]
     pub permission_denials: Vec<serde_json::Value>,
+    /// `completed`, or why the run ended (`api_error`, …).
+    #[serde(default)]
+    pub terminal_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]

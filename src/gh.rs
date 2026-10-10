@@ -44,6 +44,19 @@ pub fn which(name: &str) -> Option<PathBuf> {
     None
 }
 
+/// PATH with the directory of the `gh` Hallmark found in front, so
+/// configured commands (the ship command) find it where Hallmark does,
+/// such as in the Nix store. None when gh is missing or already first.
+pub fn path_with_gh() -> Option<std::ffi::OsString> {
+    let dir = find()?.parent()?.to_path_buf();
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    let rest: Vec<PathBuf> = std::env::split_paths(&path).collect();
+    if rest.first() == Some(&dir) {
+        return None;
+    }
+    std::env::join_paths(std::iter::once(dir).chain(rest)).ok()
+}
+
 fn nix_store_gh() -> Option<PathBuf> {
     let store = Path::new("/nix/store");
     let mut found: Vec<(Vec<u64>, PathBuf)> = std::fs::read_dir(store)

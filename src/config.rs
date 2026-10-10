@@ -193,6 +193,11 @@ impl Budget {
         self.role(r).and_then(|b| b.max_usd)
     }
 
+    /// The model to use when the role's model is unavailable or overloaded.
+    pub fn fallback(&self, r: Role) -> Option<String> {
+        self.role(r).and_then(|b| b.fallback.clone())
+    }
+
     pub fn effort(&self, r: Role) -> Option<String> {
         self.role(r).and_then(|b| b.effort.clone())
     }
@@ -423,6 +428,10 @@ pub struct RoleBudget {
     /// Per run time limit ("20m").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout: Option<String>,
+    /// Used when `model` is unavailable (a run that fails fast without
+    /// tokens is retried once with it) or overloaded (`--fallback-model`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fallback: Option<String>,
 }
 
 impl Config {
@@ -556,6 +565,9 @@ max_usd = 3.0
 daily = "2M"
 [budget.fix]
 timeout = "5m"
+[budget.intake]
+model = "claude-fable-5-1"
+fallback = "claude-opus-5-5"
 [notify]
 phone = "ntfy://ntfy.sh/hallmark-7f3k2q"
 quiet_hours = "22:00-07:30"
@@ -574,6 +586,12 @@ split = "off"
         assert_eq!(c.budget.max_usd(Role::Reviewer), Some(3.0));
         assert_eq!(c.budget.timeout_secs(Role::Fixer), 300);
         assert_eq!(c.budget.timeout_secs(Role::Reviewer), 1200);
+        assert_eq!(c.budget.model(Role::Intake), "claude-fable-5-1");
+        assert_eq!(
+            c.budget.fallback(Role::Intake).as_deref(),
+            Some("claude-opus-5-5")
+        );
+        assert_eq!(c.budget.fallback(Role::Fixer), None);
         let n = c.notify();
         assert!(n.desktop);
         assert_eq!(n.route.channels("ready"), ["desktop", "phone"]);
