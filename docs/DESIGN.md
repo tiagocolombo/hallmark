@@ -71,7 +71,7 @@ The docs and the terminal app describe Hallmark as a building.
 | Assay Office | The test bench (checks) and the principal engineer (review) | Checks, Review |
 | Repair Shop | The fixer | Fixing |
 | Stamping Room | The hallmark is struck | Hallmarked |
-| Dispatch Dock | The ship command opens the PR | Closed |
+| Dispatch Dock | The ship command opens the PR; `update` updates an adopted or reopened one | Closed |
 
 A **watchman** patrols the corridor. It flags any item with no new event for
 `stuck_after` (30 minutes by default), and a daemon that has stopped.
@@ -283,7 +283,7 @@ $ echo $?
 | `hall doctor` | Checks git, gh, claude, the plugin, the hooks and the repo. Each failed check names its fix. |
 | `hall setup claude [--dry-run]` | Installs the Claude Code plugin at user level. |
 | `hall new [<request>] [--title] [--issue <n>] [--open] [--branch]` | Creates an item, its branch and its worktree. `--open` starts Claude there. |
-| `hall adopt [--title]` | Turns the current branch and worktree into an item. |
+| `hall adopt [--title] [--pr] [--base]` | Turns the current branch and worktree, or an open PR (`--pr`, Hallmark's or not), into an item that updates that PR. On the branch of a shipped item whose PR is still open, reopens the item (`closed → development`). `--base` stacks it on another branch (ADR 0027). |
 | `hall status [<id>] [--all]` | Lists items by state, or shows one item in detail. |
 | `hall log [<id>] [--kind] [--limit]` | Prints the item's journal. |
 | `hall inbox` | Lists everything waiting for you, oldest first. |

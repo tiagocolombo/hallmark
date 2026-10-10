@@ -2,7 +2,9 @@
 //!
 //! One tick claims one hallmarked item, checks that its branch is still at
 //! the hallmarked commit, writes the PR body, runs the configured `ship`
-//! command in the worktree, and records `shipped` (the item closes). It
+//! command in the worktree, and records `shipped` (the item closes). An
+//! item that already has a PR (adopted, or reopened to rebase it: ADR 0027)
+//! runs `update` instead, which replaces the PR's head under a lease. It
 //! never ships a commit without a hallmark: a branch that moved past it is
 //! held for you instead. Child items never ship; they merge into their
 //! parent (the lease candidates skip them).
@@ -130,8 +132,25 @@ fn ship(repo: &Repo, item: &Item) -> Result<Progress> {
         .as_ref()
         .map(|i| i.number.to_string())
         .unwrap_or_default();
+    // An item that already has a PR (adopted, or reopened for a rebase)
+    // updates it; anything else opens one.
+    let (template, pr, pr_head) = match (&item.pr_url, &item.pr_head) {
+        (Some(pr), Some(head)) => (&repo.config.update, pr.as_str(), head.as_str()),
+        (Some(pr), None) => {
+            return held(
+                repo,
+                id,
+                format!(
+                    "{pr} has no known head commit, so an update push can't be leased; \
+                     run `hall adopt` in {} to record it",
+                    item.worktree
+                ),
+            );
+        }
+        (None, _) => (&repo.config.ship, "", ""),
+    };
     let cmd = crate::commands::new::fill_shell(
-        &repo.config.ship,
+        template,
         &[
             ("branch", item.branch.as_str()),
             ("id", &id.to_string()),
@@ -139,9 +158,18 @@ fn ship(repo: &Repo, item: &Item) -> Result<Progress> {
             ("title", item.title.as_str()),
             ("body_file", &crate::paths::display(&body_file)),
             ("issue", &issue),
+            ("pr", pr),
+            ("pr_head", pr_head),
         ],
     );
-    repo.hall.live(&format!("{id} shipping: {cmd}"));
+    repo.hall.live(&format!(
+        "{id} {}: {cmd}",
+        if pr.is_empty() {
+            "shipping"
+        } else {
+            "updating its PR"
+        }
+    ));
     // The ship command finds `gh` where Hallmark does (HALL_GH, PATH, Nix store).
     let path = crate::gh::path_with_gh().map(|p| p.to_string_lossy().into_owned());
     let mut env = vec![("HALL_ACTOR", ACTOR)];
@@ -159,9 +187,17 @@ fn ship(repo: &Repo, item: &Item) -> Result<Progress> {
         format!("$ {cmd}\n{}\n{}", run.stdout, run.stderr),
     );
     if let Some(why) = run.failure() {
-        return held(repo, id, format!("the ship command {why}"));
+        let which = if item.pr_url.is_some() {
+            "update"
+        } else {
+            "ship"
+        };
+        return held(repo, id, format!("the {which} command {why}"));
     }
-    let pr_url = pr_url(&run.stdout);
+    let pr_url = match &item.pr_url {
+        Some(u) => Some(u.clone()),
+        None => pr_url(&run.stdout),
+    };
     let (item, shipped) = repo.hall.transact(id, |it, _| {
         if it.state != State::Hallmarked {
             return Ok((vec![], false));

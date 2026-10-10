@@ -221,6 +221,11 @@ pub fn pull_back(cwd: &Path, a: PullBackArgs) -> Result<Response> {
     let actor = actor();
     let (item, changed) = repo.hall.transact(item.id, |item, _| match item.state {
         State::Development => Ok((vec![], false)),
+        State::Closed if item.pr_url.is_some() && item.parent.is_none() => Err(wrong_state(
+            item,
+            "it shipped. To rebase its open PR, resolve conflicts or change it, reopen it with \
+             `hall adopt` in its worktree (or `hall adopt --pr <url>`)",
+        )),
         s if s.is_terminal() => Err(wrong_state(item, "it can't come back")),
         _ => Ok((
             vec![ev(

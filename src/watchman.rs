@@ -101,6 +101,7 @@ mod tests {
             frozen_sha: None,
             hallmark_sha: None,
             pr_url: None,
+            pr_head: None,
             summary: None,
             drop_reason: None,
             adopted: false,

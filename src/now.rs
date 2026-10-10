@@ -335,6 +335,15 @@ fn now_with(
                 format!("hall export {id}"),
                 "the whole record as Markdown",
             )];
+            // Its PR can still need a rebase or a conflict fix (ADR 0027).
+            if let Some(u) = &item.pr_url
+                && item.parent.is_none()
+            {
+                n.actions.push(act(
+                    format!("hall adopt --pr {u}"),
+                    "reopen it while its PR is open: rebase, resolve conflicts or change it",
+                ));
+            }
         }
         State::Dropped => {
             n.status = "done".into();

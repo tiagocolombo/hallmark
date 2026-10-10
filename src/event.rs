@@ -116,6 +116,26 @@ pub enum Body {
         /// The PR whose feedback started this follow-up item.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         follow_up: Option<String>,
+        /// The open PR this item took over (`hall adopt --pr`): the item
+        /// updates it instead of opening a new one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pr_url: Option<String>,
+        /// The commit that PR's head was at when the item took it over.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pr_head: Option<String>,
+    },
+    /// A shipped item came back to development through its open PR
+    /// (`hall adopt`), to rebase it, resolve conflicts or change it. When it
+    /// is hallmarked again, the shipper updates that PR.
+    Reopened {
+        pr_url: String,
+        /// The commit the PR's head was at on reopening; the update push
+        /// replaces exactly that.
+        pr_head: String,
+        /// The branch the item is reviewed against and the PR targets now.
+        base: String,
+        /// Where the work happens now.
+        worktree: String,
     },
     /// A prompt typed in a Claude Code session.
     Prompt {
@@ -402,6 +422,7 @@ impl Body {
             Body::Distilled { .. } => "distilled",
             Body::Planned { .. } => "planned",
             Body::Merged { .. } => "merged",
+            Body::Reopened { .. } => "reopened",
             Body::ChildMerged { .. } => "child_merged",
             Body::PrChecks { .. } => "pr_checks",
         }
@@ -428,6 +449,7 @@ impl Body {
             Body::FixSubmitted { .. } => Action::Resubmit,
             Body::Shipped { .. } => Action::Ship,
             Body::Merged { .. } => Action::Merge,
+            Body::Reopened { .. } => Action::Reopen,
             _ => return None,
         })
     }
@@ -617,6 +639,9 @@ impl Body {
                 }
             }
             Body::Merged { into, sha } => format!("merged into {into} at {}", short(sha)),
+            Body::Reopened { pr_url, base, .. } => {
+                format!("reopened from {pr_url} · base {base}")
+            }
             Body::ChildMerged { child, sha } => format!("{child} merged · {}", short(sha)),
             Body::PrChecks {
                 passed, failing, ..
@@ -651,6 +676,8 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
         adopted,
         parent,
         follow_up,
+        pr_url,
+        pr_head,
         ..
     } = &first.body
     else {
@@ -673,7 +700,8 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
         rejects: 0,
         frozen_sha: None,
         hallmark_sha: None,
-        pr_url: None,
+        pr_url: pr_url.clone(),
+        pr_head: pr_head.clone(),
         summary: None,
         drop_reason: None,
         adopted: *adopted,
@@ -749,7 +777,26 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
                     t: e.t,
                 })
             }
-            Body::Shipped { pr_url, .. } => item.pr_url = pr_url.clone(),
+            Body::Shipped { sha, pr_url } => {
+                // An update ship keeps the PR it updated.
+                if pr_url.is_some() {
+                    item.pr_url = pr_url.clone();
+                }
+                item.pr_head = Some(sha.clone());
+            }
+            Body::Reopened {
+                pr_url,
+                pr_head,
+                base,
+                worktree,
+            } => {
+                item.worktree = worktree.clone();
+                item.pr_url = Some(pr_url.clone());
+                item.pr_head = Some(pr_head.clone());
+                item.base = base.clone();
+                // The PR's CI is watched again once the update ships.
+                item.ci = None;
+            }
             Body::Dropped { reason, .. } => item.drop_reason = Some(reason.clone()),
             _ => {}
         }
@@ -777,6 +824,8 @@ mod tests {
             adopted: false,
             parent: None,
             follow_up: None,
+            pr_url: None,
+            pr_head: None,
         })
     }
 
@@ -870,6 +919,94 @@ mod tests {
         let item = fold(ItemId(1), &events).unwrap();
         assert_eq!(item.state, State::Development);
         assert_eq!(item.pr_url, None);
+    }
+
+    /// ready → checks → approve → hallmark → shipped, at `sha`.
+    fn through_review(sha: &str, round: u32, pr_url: Option<&str>) -> Vec<Event> {
+        vec![
+            ev(Body::Ready {
+                sha: sha.into(),
+                round,
+                note: None,
+            }),
+            ev(Body::Checks {
+                sha: sha.into(),
+                round,
+                passed: true,
+                runs: vec![],
+            }),
+            ev(Body::Verdict {
+                sha: sha.into(),
+                round,
+                verdict: VerdictKind::Approve,
+                escalated: false,
+                findings: vec![],
+                prior: vec![],
+                counts: Counts::default(),
+                summary: None,
+                report: None,
+                reviewer: None,
+                learnings: vec![],
+                base: None,
+                since: None,
+            }),
+            ev(Body::Hallmarked {
+                sha: sha.into(),
+                round,
+            }),
+            ev(Body::Shipped {
+                sha: sha.into(),
+                pr_url: pr_url.map(String::from),
+            }),
+        ]
+    }
+
+    #[test]
+    fn a_shipped_item_reopens_through_its_pr_and_ships_again() {
+        let url = "https://github.com/acme/app/pull/7";
+        let reopen = || {
+            ev(Body::Reopened {
+                pr_url: url.into(),
+                pr_head: "aaa".into(),
+                base: "hm/H-0002-parent".into(),
+                worktree: "/tmp/elsewhere".into(),
+            })
+        };
+        // Reopening an item that never shipped does nothing.
+        let item = fold(ItemId(1), &[created(), reopen()]).unwrap();
+        assert_eq!(item.state, State::Development);
+        assert_eq!(item.pr_url, None);
+        assert_eq!(item.base, "main");
+
+        let mut events = vec![created()];
+        events.extend(through_review("aaa", 1, Some(url)));
+        events.push(ev(Body::PrChecks {
+            pr_url: url.into(),
+            passed: false,
+            failing: vec![],
+            ended: None,
+        }));
+        let item = fold(ItemId(1), &events).unwrap();
+        assert_eq!(item.state, State::Closed);
+        assert_eq!(item.pr_head.as_deref(), Some("aaa"));
+        assert!(item.ci.is_some());
+
+        events.push(reopen());
+        let item = fold(ItemId(1), &events).unwrap();
+        assert_eq!(item.state, State::Development);
+        assert_eq!(item.pr_url.as_deref(), Some(url));
+        assert_eq!(item.pr_head.as_deref(), Some("aaa"));
+        assert_eq!(item.base, "hm/H-0002-parent");
+        assert_eq!(item.worktree, "/tmp/elsewhere");
+        assert_eq!(item.ci, None, "CI is watched again after the update");
+
+        // The update ship keeps the PR even when it reports no URL.
+        events.extend(through_review("bbb", 2, None));
+        let item = fold(ItemId(1), &events).unwrap();
+        assert_eq!(item.state, State::Closed);
+        assert_eq!(item.pr_url.as_deref(), Some(url));
+        assert_eq!(item.pr_head.as_deref(), Some("bbb"));
+        assert_eq!(item.hallmark_sha.as_deref(), Some("bbb"));
     }
 
     #[test]

@@ -36,10 +36,13 @@ pub enum Action {
     Ship,
     /// A child item (a parallel part) was merged into its parent's branch.
     Merge,
+    /// A shipped item whose PR is still open goes back to development, to
+    /// rebase it, resolve conflicts or change it (`hall adopt`).
+    Reopen,
 }
 
 impl Action {
-    pub const ALL: [Action; 13] = [
+    pub const ALL: [Action; 14] = [
         Action::ProposeReady,
         Action::Ready,
         Action::PullBack,
@@ -53,6 +56,7 @@ impl Action {
         Action::Retry,
         Action::Ship,
         Action::Merge,
+        Action::Reopen,
     ];
 }
 
@@ -61,6 +65,11 @@ pub fn next(from: State, action: Action) -> Option<State> {
     use Action as A;
     use State as S;
 
+    // A closed item comes back only through its open PR; nothing else
+    // moves a closed or dropped item.
+    if (from, action) == (S::Closed, A::Reopen) {
+        return Some(S::Development);
+    }
     if from.is_terminal() {
         return None;
     }
@@ -141,6 +150,7 @@ mod tests {
             (S::Hallmarked, A::Ship, S::Closed),
             (S::Hallmarked, A::PullBack, S::Development),
             (S::Hallmarked, A::Drop, S::Dropped),
+            (S::Closed, A::Reopen, S::Development),
         ];
         for (from, a, to) in rows {
             t.insert((*from, *a), *to);
@@ -165,8 +175,14 @@ mod tests {
     #[test]
     fn terminal_states_never_move() {
         for a in Action::ALL {
-            assert_eq!(next(S::Closed, a), None);
             assert_eq!(next(S::Dropped, a), None);
+            if a != A::Reopen {
+                assert_eq!(next(S::Closed, a), None);
+            }
+        }
+        // Only a live item is reopened; Reopen moves nothing else.
+        for from in State::ALL.into_iter().filter(|s| *s != S::Closed) {
+            assert_eq!(next(from, A::Reopen), None, "{from:?}");
         }
     }
 

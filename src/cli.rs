@@ -39,7 +39,7 @@ pub enum Cmd {
     Doctor,
     /// Create an item and its worktree.
     New(NewArgs),
-    /// Turn the current branch and worktree into an item.
+    /// Turn the current branch, or an open PR, into an item; reopens a shipped one.
     Adopt(AdoptArgs),
     /// Items by state, or one item in detail.
     Status(StatusArgs),
@@ -153,6 +153,15 @@ pub struct NewArgs {
 pub struct AdoptArgs {
     #[arg(long)]
     pub title: Option<String>,
+    /// Take over an open PR (a URL or number), Hallmark's or not: its branch
+    /// is checked out in a worktree if none has it, and the item updates the
+    /// PR instead of opening one. A PR Hallmark shipped reopens its item.
+    #[arg(long)]
+    pub pr: Option<String>,
+    /// The branch to review against and target, to stack the item on
+    /// another PR (default: the PR's base, else the configured base).
+    #[arg(long)]
+    pub base: Option<String>,
 }
 
 #[derive(Debug, Args)]

@@ -21,6 +21,12 @@ pub struct Config {
     /// Ships a hallmarked commit. Placeholders: {branch} {id} {base}
     /// {title} {body_file} (the PR body the shipper writes) {issue}.
     pub ship: String,
+    /// Updates the open PR of an item that already has one (an adopted PR,
+    /// or a shipped item reopened for a rebase or a conflict fix), instead
+    /// of `ship`. Placeholders: those of `ship`, plus {pr} (the PR's URL)
+    /// and {pr_head} (the commit the PR's head was at when the item took it
+    /// over: the push replaces exactly that).
+    pub update: String,
     /// The repo's checks, run in order at the frozen commit.
     pub gates: Vec<String>,
     /// The command that runs the reviewer.
@@ -59,6 +65,7 @@ impl Default for Config {
             worktree: "git worktree add ../{repo}-{id} -b {branch}".into(),
             branch: "hm/{id}-{slug}".into(),
             ship: "git push -u origin {branch} && gh pr create --base {base} --head {branch} --title {title} --body-file {body_file}".into(),
+            update: "git push --force-with-lease={branch}:{pr_head} origin {branch} && gh pr edit {pr} --base {base} && gh pr comment {pr} --body-file {body_file}".into(),
             gates: Vec::new(),
             reviewer: "claude -p".into(),
             fixer: "claude -p".into(),
@@ -493,19 +500,23 @@ impl Config {
         Ok((Config::default(), None))
     }
 
-    /// The first plain command words of the ship command, used by the push
-    /// gate (`dev submit --pr` → `dev submit`).
+    /// The first plain command words of the ship and update commands, used
+    /// by the push gate (`dev submit --pr` → `dev submit`).
     pub fn ship_prefixes(&self) -> Vec<Vec<String>> {
-        crate::gate::split_segments(&self.ship)
-            .iter()
-            .filter_map(|seg| {
-                let words: Vec<String> = crate::gate::words(seg)
-                    .into_iter()
-                    .take_while(|w| !w.starts_with('-') && !w.contains('{'))
-                    .collect();
-                (words.len() >= 2).then_some(words)
-            })
-            .collect()
+        let mut out: Vec<Vec<String>> = Vec::new();
+        for seg in [&self.ship, &self.update]
+            .into_iter()
+            .flat_map(|c| crate::gate::split_segments(c))
+        {
+            let words: Vec<String> = crate::gate::words(&seg)
+                .into_iter()
+                .take_while(|w| !w.starts_with('-') && !w.contains('{'))
+                .collect();
+            if words.len() >= 2 && !out.contains(&words) {
+                out.push(words);
+            }
+        }
+        out
     }
 }
 
@@ -558,6 +569,7 @@ base     = {base}
 worktree = {worktree}
 branch   = {branch}
 ship     = {ship}
+update   = {update}
 {gates_toml}
 max_rejects = 3
 rules = ["CLAUDE.md", "AGENTS.md"]
@@ -576,6 +588,7 @@ intake_model = "haiku"
         worktree = toml_str(&d.worktree),
         branch = toml_str(&d.branch),
         ship = toml_str(&d.ship),
+        update = toml_str(&d.update),
         capture = toml_str(capture.as_str()),
     )
 }
@@ -681,12 +694,19 @@ mode = "ask"
     #[test]
     fn ship_prefixes() {
         let d = Config::default();
+        // `update` is gated like `ship`: both put commits on GitHub.
         assert_eq!(
             d.ship_prefixes(),
-            vec![vec!["git", "push"], vec!["gh", "pr", "create"]]
+            vec![
+                vec!["git", "push"],
+                vec!["gh", "pr", "create"],
+                vec!["gh", "pr", "edit"],
+                vec!["gh", "pr", "comment"],
+            ]
         );
         let c = Config {
             ship: "dev submit --pr".into(),
+            update: "dev submit --update".into(),
             ..Config::default()
         };
         assert_eq!(c.ship_prefixes(), vec![vec!["dev", "submit"]]);

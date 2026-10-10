@@ -63,7 +63,7 @@ is an **item**, and it moves from room to room:
 | Assay Office | The checks, then the principal engineer's review | the assayer |
 | Repair Shop | A fixer addresses failing checks and findings | the fixer |
 | Stamping Room | The approved commit gets its hallmark, a git note | the assayer |
-| Dispatch Dock | The ship command opens the PR, and the item closes | the shipper |
+| Dispatch Dock | The ship command opens the PR (or `update` updates an adopted one), and the item closes | the shipper |
 
 An item's states:
 
@@ -88,12 +88,15 @@ stateDiagram-v2
     loop --> development: hall pull-back
     escalated --> development: hall pull-back
     development --> dropped: hall drop --reason
+    closed --> development: hall adopt (its PR is still open)
     closed --> [*]
     dropped --> [*]
 ```
 
 Any live item can be dropped with a reason. Closing ends an item's life: later
-PR feedback starts a new item.
+PR feedback starts a new item. The exception is a PR that needs a rebase or a
+conflict fix while it is still open: `hall adopt` brings its item back to
+development, and after review the shipper updates the same PR (ADR 0027).
 
 One item's life, from the replay in the design page:
 
@@ -184,6 +187,7 @@ From the terminal:
 hall new "Retry failed webhook deliveries" --open   # item, branch, worktree; opens Claude there
 hall new --issue 212                                # start from a GitHub issue
 hall adopt                                          # turn the current branch into an item
+hall adopt --pr 7                                   # take over an open PR, or reopen the item that shipped it
 
 hall status                 # items by state
 hall log H-0042             # the item's journal
@@ -244,7 +248,7 @@ Agents are the main users of `hall`, so every command follows these rules:
 | `hall doctor` | Checks the install. |
 | `hall setup claude` | Installs the Claude Code plugin. `--statusline`, `--dry-run` |
 | `hall new [<request>]` | Creates an item and its worktree; splits into parallel parts when it can. `--title`, `--issue <n>`, `--no-split`, `--parent <id>`, `--follow-up <pr>`, `--open`, `--branch` |
-| `hall adopt` | Turns the current branch and worktree into an item. |
+| `hall adopt [--pr] [--base]` | Turns the current branch and worktree, or an open PR, into an item. A shipped item whose PR is still open is reopened: rebase it, resolve conflicts or change it, and the shipper updates the PR after review (ADR 0027). |
 | `hall merge [<child>]` | Merges a parallel part into its parent's branch and closes it. |
 | `hall status [<id>]` | Lists items by state, or shows one item with a **now** block: queued (and what is ahead), the gate running, the reviewer's run, the fixer, a hold, and what you can do. `--all` includes closed and dropped items. |
 | `hall log [<id>]` | Prints the journal. `--kind <event>`, `--limit <n>` |

@@ -878,6 +878,8 @@ mod tests {
                 adopted: false,
                 parent: None,
                 follow_up: None,
+                pr_url: None,
+                pr_head: None,
             }),
             ev(Body::Ready {
                 sha: "abc".into(),

@@ -33,4 +33,5 @@ a decision, add a new record that supersedes the old one. Don't edit the old one
 | [0025](0025-watch-ci-after-shipping.md) | Watch CI after shipping; follow-ups carry it and stack on open PRs | Accepted |
 | [0026](0026-parallel-phases.md) | Every phase runs in parallel, with configurable slots | Accepted |
 | [0027](0027-the-library-stays-local.md) | The Library stays local: learnings live next to the journal | Accepted |
+| [0027](0027-adopt-open-prs.md) | Adopt open PRs: reopen shipped items, take over the rest | Accepted |
 | [0028](0028-grant-the-daily-budget.md) | Grant the daily budget for today, without changing the cap | Accepted |

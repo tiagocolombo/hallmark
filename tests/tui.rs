@@ -223,6 +223,8 @@ fn building() -> Env {
             adopted: false,
             parent: Some(ItemId(3)),
             follow_up: None,
+            pr_url: None,
+            pr_head: None,
         },
     );
     add(
