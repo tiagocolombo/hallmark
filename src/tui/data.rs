@@ -261,14 +261,14 @@ impl UsageData {
     fn load(ix: &Index, now: DateTime<Utc>) -> crate::error::Result<UsageData> {
         let today = start_of_day(now);
         let by_room = ix.usage(UsageBy::Room, Some(today), None)?;
-        let loop_today = by_room
-            .iter()
-            .filter(|r| r.key != "workshop")
-            .fold(crate::budget::Spent::default(), |mut s, r| {
+        let loop_today = by_room.iter().filter(|r| r.key != "workshop").fold(
+            crate::budget::Spent::default(),
+            |mut s, r| {
                 s.tokens += r.weighted_tokens();
                 s.usd += r.cost_usd;
                 s
-            });
+            },
+        );
         let first_day = (now - Duration::days(USAGE_DAYS - 1))
             .format("%Y-%m-%d")
             .to_string();

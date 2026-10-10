@@ -717,7 +717,12 @@ mod tests {
 
     #[test]
     fn bars() {
-        let tokens = |used| budget::Cap::Tokens(100).fraction(&Spent { tokens: used, usd: 0.0 });
+        let tokens = |used| {
+            budget::Cap::Tokens(100).fraction(&Spent {
+                tokens: used,
+                usd: 0.0,
+            })
+        };
         assert_eq!(pct_bar(tokens(61) * 100.0), "██████░░░░  61%");
         assert_eq!(pct_bar(tokens(300) * 100.0), "██████████ 300%");
         // A dollar cap reads dollars, whatever the tokens say.
