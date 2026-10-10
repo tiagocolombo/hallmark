@@ -189,6 +189,26 @@ pub fn doctor(cwd: &Path) -> Result<Response> {
             }
         }
     }
+    // You type `hall`; hooks and the daemon use the absolute path.
+    let exe = crate::paths::normalize(&std::env::current_exe()?);
+    let on_path = crate::gh::which("hall").map(|p| crate::paths::normalize(&p));
+    checks.push(check(
+        "path",
+        on_path.as_deref() == Some(exe.as_path()),
+        match &on_path {
+            Some(p) if p == &exe => "hall is on PATH".to_string(),
+            Some(p) => format!(
+                "`hall` on PATH is {}, not {}",
+                paths::display(p),
+                paths::display(&exe)
+            ),
+            None => format!(
+                "{} isn't on PATH",
+                paths::display(exe.parent().unwrap_or(&exe))
+            ),
+        },
+        Some("hall setup"),
+    ));
     let running = crate::daemon::state::instance_running();
     let paused = crate::daemon::state::load().and_then(|s| s.paused);
     checks.push(check(
