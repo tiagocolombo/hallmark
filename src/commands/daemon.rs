@@ -295,7 +295,7 @@ fn run_once(cwd: &Path, only: &[String], repo: Option<&str>) -> Result<Response>
     })??;
     let paused = in_force.filter(|_| only.is_empty());
     let outcomes = daemon::pass_all(&targets, only, paused.as_ref(), &mut |_| {});
-    let new_pause = state::update(|s| daemon::record_pause(s, &outcomes, Utc::now()))??;
+    let new_pause = state::update(|s| daemon::record_pause(s, &outcomes, &[], Utc::now()))??;
     let mut out = DaemonOut::new("run", state::instance_running());
     out.steps = outcomes.iter().flat_map(|o| o.steps.clone()).collect();
     out.repos = outcomes

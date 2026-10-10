@@ -22,7 +22,7 @@ across repositories, restarts and `hall daemon run --once`.
     `STALE_AFTER_SECS`).
 - **Stop by file, not by signal.**
   - `hall daemon stop` sets `wanted = false`. The loop reads the state
-    file every second, finishes the pass in progress, clears its
+    file every second, finishes the passes in progress, clears its
     heartbeat, records `stopped_at` and exits.
   - `stop` waits up to 10s for the lock to be released. This works the
     same on Windows, where there is no SIGTERM.
@@ -52,9 +52,13 @@ across repositories, restarts and `hall daemon run --once`.
   - `HALL_DAEMON_SERVICE_DRY=1` reports the definition and installs
     nothing, for tests and CI.
 - **Passes.**
-  - Every pass re-reads the registry (`repos.json`), so a newly
+  - The registry (`repos.json`) is re-read every poll interval, so a newly
     initialized repo joins without a restart.
-  - Each repository gets a thread, and one repo's workers run in order.
+  - Each repository has its own schedule and thread: its next pass starts
+    one poll interval after its own last pass ended, so a slow repo never
+    holds another's queue. One repo's workers run in order.
+  - `passes` in the state counts finished per-repo passes.
+  - A stop waits for the passes in progress, so a long model run delays it.
   - A missing or uninitialized repo is skipped, and only noted in its
     last-pass summary. Nothing is written to its journal.
   - The poll interval is 5s (`HALL_DAEMON_POLL` overrides it).
