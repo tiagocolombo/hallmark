@@ -283,9 +283,15 @@ fn a_review_with_blockers_requests_changes() {
     ] {
         assert!(env_pairs.contains(&want), "{want}");
     }
+    // Each review has its own checkout at its commit (ADR 0026), removed
+    // once the verdict is recorded.
     let cwd = PathBuf::from(call["cwd"].as_str().unwrap());
-    assert!(cwd.ends_with("app-assay"), "{}", cwd.display());
-    assert_eq!(git(&cwd, &["rev-parse", "HEAD"]), sha);
+    assert!(
+        cwd.ends_with(format!("app-review-{id}")),
+        "{}",
+        cwd.display()
+    );
+    assert!(!cwd.exists(), "removed after the verdict");
 
     let prompt = call["prompt"].as_str().unwrap();
     assert!(

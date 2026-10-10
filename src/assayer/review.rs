@@ -96,6 +96,8 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
                 reviewer,
                 Some(review_base),
             )?;
+            // The next round, if any, checks out afresh.
+            super::remove_review_checkout(repo, item.id);
             Ok(Progress::worked(format!(
                 "{} review round {}: {}{} ({} findings, {} blocker, {} major open)",
                 item.id,
@@ -120,7 +122,7 @@ pub fn request(
 ) -> Result<(RunRequest, String)> {
     let default_effort = repo.config.budget.effort(Role::Reviewer);
     let review = super::prompt::prepare(repo, item, events, sha, default_effort.as_deref())?;
-    let wt = super::checkout(repo, sha)?;
+    let wt = super::checkout_review(repo, item.id, sha)?.path;
     let mut req = runner::request(
         repo,
         Role::Reviewer,

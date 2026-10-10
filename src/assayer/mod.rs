@@ -66,33 +66,105 @@ pub fn worktree_path(repo: &Repo) -> PathBuf {
     parent.join(format!("{}-assay", repo.name))
 }
 
-/// Checks out `sha` (detached) in the assay worktree, creating it when
+/// A checkout the assayer works in, at one commit. A check slot is locked
+/// for as long as this lives, so two checks never share a worktree.
+pub struct Checkout {
+    pub path: PathBuf,
+    _lock: Option<std::fs::File>,
+}
+
+/// Checks out `sha` for the checks in a free slot of the assay pool:
+/// `../<repo>-assay`, then `../<repo>-assay-2`, … up to `[parallel] checks`.
+/// Slots are reused, so ignored build caches stay warm; tracked changes and
+/// untracked files from an earlier run are discarded.
+pub fn checkout_checks(repo: &Repo, sha: &str) -> Result<Checkout> {
+    use fs4::FileExt;
+    let slots = repo.config.parallel.checks.max(1);
+    let dir = repo.hall.root.join("slots");
+    std::fs::create_dir_all(&dir)?;
+    for k in 1..=slots {
+        let f = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(dir.join(format!("checks-{k}.lock")))?;
+        if FileExt::try_lock(&f).is_err() {
+            continue;
+        }
+        let path = if k == 1 {
+            worktree_path(repo)
+        } else {
+            let p = worktree_path(repo);
+            p.with_file_name(format!(
+                "{}-{k}",
+                p.file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default()
+            ))
+        };
+        let path = checkout_at(repo, &path, sha)?;
+        return Ok(Checkout {
+            path,
+            _lock: Some(f),
+        });
+    }
+    Err(HallError::new(
+        ErrorCode::Claimed,
+        format!("every check slot ({slots}) is busy"),
+    )
+    .next(["hall daemon status"]))
+}
+
+/// Checks out `sha` for an item's review: its own worktree,
+/// `../<repo>-review-<id>`, so reviews run side by side. The item's lease
+/// keeps it to one review at a time.
+pub fn checkout_review(repo: &Repo, item: crate::item::ItemId, sha: &str) -> Result<Checkout> {
+    let p = worktree_path(repo);
+    let path = p.with_file_name(format!("{}-review-{item}", repo.name));
+    Ok(Checkout {
+        path: checkout_at(repo, &path, sha)?,
+        _lock: None,
+    })
+}
+
+/// Removes an item's review checkout once its verdict is recorded.
+pub fn remove_review_checkout(repo: &Repo, item: crate::item::ItemId) {
+    let p = worktree_path(repo);
+    let path = p.with_file_name(format!("{}-review-{item}", repo.name));
+    if path.exists() {
+        let _ = git::run(
+            &repo.main_root,
+            &["worktree", "remove", "--force", &path.to_string_lossy()],
+        );
+    }
+}
+
+/// Checks out `sha` (detached) in the worktree at `path`, creating it when
 /// needed. Tracked changes and untracked files from an earlier run are
 /// discarded; ignored files (build caches) are kept.
-pub fn checkout(repo: &Repo, sha: &str) -> Result<PathBuf> {
-    let path = worktree_path(repo);
-    let norm = paths::normalize(&path);
+fn checkout_at(repo: &Repo, path: &Path, sha: &str) -> Result<PathBuf> {
+    let norm = paths::normalize(path);
     let known = git::worktrees(&repo.main_root)?
         .iter()
         .any(|w| w.path == norm);
     if known && path.join(".git").exists() {
-        git::run(&path, &["checkout", "-q", "--detach", "-f", sha])?;
-        git::run(&path, &["clean", "-fdq"])?;
+        git::run(path, &["checkout", "-q", "--detach", "-f", sha])?;
+        git::run(path, &["clean", "-fdq"])?;
         return Ok(norm);
     }
     // A worktree whose directory is gone, or a stale registration.
     let _ = git::run(&repo.main_root, &["worktree", "prune"]);
-    if path.exists() && !is_empty_dir(&path) {
+    if path.exists() && !is_empty_dir(path) {
         return Err(HallError::new(
             ErrorCode::CommandFailed,
             format!(
-                "{} exists and is not this repo's assay worktree",
-                paths::display(&path)
+                "{} exists and is not one of this repo's assay worktrees",
+                paths::display(path)
             ),
         )
         .next([format!(
             "move {} away, then run the assayer again",
-            paths::display(&path)
+            paths::display(path)
         )]));
     }
     let p = path.to_string_lossy().into_owned();
@@ -100,7 +172,7 @@ pub fn checkout(repo: &Repo, sha: &str) -> Result<PathBuf> {
         &repo.main_root,
         &["worktree", "add", "-q", "--detach", &p, sha],
     )?;
-    Ok(paths::normalize(&path))
+    Ok(paths::normalize(path))
 }
 
 fn is_empty_dir(p: &Path) -> bool {
