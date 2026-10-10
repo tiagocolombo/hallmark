@@ -458,6 +458,10 @@ pub fn adopt(cwd: &Path, a: AdoptArgs) -> Result<Response> {
         .or_else(|| pr.as_ref().map(|p| p.base.clone()))
         .filter(|b| !b.is_empty())
         .unwrap_or_else(|| repo.config.base.clone());
+    if let Some(p) = &pr {
+        check_base(&repo, &base)?;
+        ensure_has_head(&repo.toplevel, &branch, &p.head_oid)?;
+    }
     let item = repo.hall.with_repo_lock(|| {
         let id: ItemId = repo.hall.next_item_id()?;
         let created = ev(
@@ -576,6 +580,7 @@ fn adopt_pr(repo: &Repo, pr_ref: &str, a: &AdoptArgs) -> Result<Response> {
     })?;
     let start = format!("origin/{}", pr.head);
     let base = a.base.clone().unwrap_or_else(|| pr.base.clone());
+    check_base(repo, &base)?;
     let item = repo.hall.with_repo_lock(|| {
         create(
             repo,
@@ -627,6 +632,7 @@ fn reopen(
         .or_else(|| (!pr.base.is_empty()).then(|| pr.base.clone()))
         .unwrap_or_else(|| item.base.clone());
     check_base(repo, &base)?;
+    ensure_has_head(worktree, &item.branch, &pr.head_oid)?;
     let id = item.id;
     let url = pr.url.clone();
     let (item, reopened) = repo.hall.transact(id, |it, _| {
@@ -709,18 +715,93 @@ fn adopted(item: &Item, created: bool, reopened: bool) -> Result<Response> {
 }
 
 /// The base must be a branch here: the review compares against it and the
-/// PR targets it.
+/// PR targets it. Beyond the configured base, only the branch of an open PR
+/// Hallmark shipped, still at the commit it reviewed, can be stacked on.
 fn check_base(repo: &Repo, base: &str) -> Result<()> {
-    if git::branch_exists(&repo.main_root, base) {
+    if !git::branch_exists(&repo.main_root, base) {
+        return Err(HallError::new(
+            ErrorCode::WrongState,
+            format!("the base {base} is not a branch in this repository"),
+        )
+        .next([
+            format!("git fetch origin {base}:{base}"),
+            "git branch --list".into(),
+        ]));
+    }
+    if stackable_base(repo, base) {
         return Ok(());
     }
     Err(HallError::new(
         ErrorCode::WrongState,
-        format!("the base {base} is not a branch in this repository"),
+        format!(
+            "the base {base} is neither {} nor the branch of an open PR still at its hallmarked \
+             commit; its commits would ship without review",
+            repo.config.base
+        ),
     )
     .next([
-        format!("git fetch origin {base}:{base}"),
-        "git branch --list".into(),
+        format!("hall adopt --base {}", repo.config.base),
+        "hall status --all".into(),
+    ]))
+}
+
+/// Whether `base` may be reviewed against and shipped into: the configured
+/// base, or the local branch of an open PR whose item is hallmarked and whose
+/// tip is still that hallmarked commit (what `hall new --follow-up` requires).
+pub fn stackable_base(repo: &Repo, base: &str) -> bool {
+    if base == repo.config.base {
+        return true;
+    }
+    let Ok(ix) = repo.index() else {
+        return false;
+    };
+    let Ok(items) = ix.items(true) else {
+        return false;
+    };
+    let tip = git::run(
+        &repo.main_root,
+        &["rev-parse", &format!("{base}^{{commit}}")],
+    )
+    .map(|t| t.trim().to_string())
+    .unwrap_or_default();
+    items.iter().any(|i| {
+        i.branch == base
+            && !tip.is_empty()
+            && i.hallmark_sha.as_deref() == Some(tip.as_str())
+            && i.pr_url
+                .as_deref()
+                .is_some_and(|u| crate::gh::pr_state(&repo.main_root, u).is_ok_and(|s| s == "OPEN"))
+    })
+}
+
+/// The worktree must hold the PR's head, so an update push only replaces
+/// commits the item had. Fetches the branch; a clean worktree behind the PR
+/// is fast-forwarded.
+fn ensure_has_head(worktree: &Path, branch: &str, head: &str) -> Result<()> {
+    let has = |w: &Path| git::ok(w, &["merge-base", "--is-ancestor", head, "HEAD"]);
+    if head.is_empty() || has(worktree) {
+        return Ok(());
+    }
+    let _ = git::run(worktree, &["fetch", "-q", "origin", branch]);
+    if has(worktree) {
+        return Ok(());
+    }
+    if git::ok(worktree, &["merge-base", "--is-ancestor", "HEAD", head])
+        && git::dirty_files(worktree).is_ok_and(|d| d.is_empty())
+        && git::run(worktree, &["merge", "-q", "--ff-only", head]).is_ok()
+    {
+        return Ok(());
+    }
+    Err(HallError::new(
+        ErrorCode::WrongState,
+        format!(
+            "the PR's head {} is not in this worktree; an update would overwrite it",
+            crate::event::short(head)
+        ),
+    )
+    .next([
+        format!("git pull --ff-only origin {branch}"),
+        "hall adopt".into(),
     ]))
 }
 

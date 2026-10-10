@@ -796,6 +796,8 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
                 item.base = base.clone();
                 // The PR's CI is watched again once the update ships.
                 item.ci = None;
+                // Reviewed again like any other change.
+                item.rejects = 0;
             }
             Body::Dropped { reason, .. } => item.drop_reason = Some(reason.clone()),
             _ => {}

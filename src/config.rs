@@ -512,7 +512,12 @@ impl Config {
                 .into_iter()
                 .take_while(|w| !w.starts_with('-') && !w.contains('{'))
                 .collect();
-            if words.len() >= 2 && !out.contains(&words) {
+            // Commenting on or editing a PR puts no commits on GitHub.
+            let no_commits = words.len() >= 3
+                && words[0] == "gh"
+                && words[1] == "pr"
+                && matches!(words[2].as_str(), "comment" | "edit");
+            if words.len() >= 2 && !no_commits && !out.contains(&words) {
                 out.push(words);
             }
         }
@@ -694,15 +699,11 @@ mode = "ask"
     #[test]
     fn ship_prefixes() {
         let d = Config::default();
-        // `update` is gated like `ship`: both put commits on GitHub.
+        // `update` is gated like `ship` where it moves commits; commenting on
+        // or editing a PR pushes nothing.
         assert_eq!(
             d.ship_prefixes(),
-            vec![
-                vec!["git", "push"],
-                vec!["gh", "pr", "create"],
-                vec!["gh", "pr", "edit"],
-                vec!["gh", "pr", "comment"],
-            ]
+            vec![vec!["git", "push"], vec!["gh", "pr", "create"]]
         );
         let c = Config {
             ship: "dev submit --pr".into(),

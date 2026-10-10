@@ -314,13 +314,19 @@ fn reopening_can_stack_the_item_on_another_branch() {
     assert_eq!(code, 4, "{e}");
     assert_eq!(state(&env, &id), "closed");
 
-    git(&env.repo, &["branch", "-q", "parent-pr"]);
-    let (code, r) = hall_gh(&env, &gh, &wt, &["adopt", "--base", "parent-pr"]);
+    // A local branch that isn't an open PR's hallmarked tip would ship its
+    // commits unreviewed: refused too.
+    git(&env.repo, &["branch", "-q", "scratch"]);
+    let (code, e) = hall_gh(&env, &gh, &wt, &["adopt", "--base", "scratch"]);
+    assert_eq!(code, 4, "{e}");
+    assert_eq!(state(&env, &id), "closed");
+
+    let (code, r) = hall_gh(&env, &gh, &wt, &["adopt", "--base", "main"]);
     assert_eq!(code, 0, "{r}");
     assert_eq!(r["reopened"], true);
-    assert_eq!(r["base"], "parent-pr");
+    assert_eq!(r["base"], "main");
     // An open item's base doesn't move.
-    let (code, e) = hall_gh(&env, &gh, &wt, &["adopt", "--base", "main"]);
+    let (code, e) = hall_gh(&env, &gh, &wt, &["adopt", "--base", "scratch"]);
     assert_eq!(code, 4, "{e}");
 }
 

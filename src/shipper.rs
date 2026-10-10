@@ -123,6 +123,33 @@ fn ship(repo: &Repo, item: &Item) -> Result<Progress> {
             );
         }
     }
+    if base != repo.config.base && !crate::commands::new::stackable_base(repo, &base) {
+        return held(
+            repo,
+            id,
+            format!(
+                "the base {base} is neither {} nor the branch of an open PR still at its \
+                 hallmarked commit; its commits would ship without review",
+                repo.config.base
+            ),
+        );
+    }
+    // An update only makes sense while the PR is open.
+    if let Some(url) = &item.pr_url
+        && let Ok(state) = crate::gh::pr_state(&repo.main_root, url)
+        && !state.is_empty()
+        && state != "OPEN"
+    {
+        return held(
+            repo,
+            id,
+            format!(
+                "the PR {url} is {}, so there is nothing to update. Nothing was pushed: \
+                 continue in a new item with `hall new --follow-up {url}`",
+                state.to_lowercase()
+            ),
+        );
+    }
     let events = repo.hall.read_item(id)?;
     let body = pr_body(repo, item, &events);
     let body_file = body_path(repo, id);
