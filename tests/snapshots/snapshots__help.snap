@@ -949,6 +949,29 @@ expression: v
       "name": "library distill",
       "schema": "hall schema library",
       "usage": "hall library distill [OPTIONS] <ID>"
+    },
+    {
+      "about": "Everything the Claude Code heads-up display shows, in one call",
+      "args": [
+        {
+          "help": "The Claude Code session, for its item when the directory has none",
+          "name": "session",
+          "required": false,
+          "syntax": "--session <session>",
+          "takes_value": true
+        },
+        {
+          "default": "6",
+          "help": "Lines of the daemon's Live log to include",
+          "name": "lines",
+          "required": false,
+          "syntax": "--lines <lines>",
+          "takes_value": true
+        }
+      ],
+      "name": "hud",
+      "schema": "hall schema hud",
+      "usage": "hall hud [OPTIONS]"
     }
   ],
   "contract": [

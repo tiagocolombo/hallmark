@@ -95,6 +95,8 @@ pub enum Cmd {
     Statusline,
     /// The Library: learnings from past reviews.
     Library(LibraryArgs),
+    /// Everything the Claude Code heads-up display shows, in one call.
+    Hud(HudArgs),
 }
 
 #[derive(Debug, Args)]
@@ -433,6 +435,16 @@ pub struct BudgetArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct HudArgs {
+    /// The Claude Code session, for its item when the directory has none.
+    #[arg(long)]
+    pub session: Option<String>,
+    /// Lines of the daemon's Live log to include.
+    #[arg(long, default_value_t = 6)]
+    pub lines: usize,
+}
+
+#[derive(Debug, Args)]
 pub struct NotifyArgs {
     #[command(subcommand)]
     pub action: NotifyAction,
@@ -583,5 +595,6 @@ fn dispatch(cmd: Option<Cmd>, cwd: &std::path::Path, mode: Mode) -> Result<Respo
         Some(Cmd::Notify(a)) => notify::notify(cwd, a),
         Some(Cmd::Statusline) => notify::statusline(cwd),
         Some(Cmd::Library(a)) => library::library(cwd, a),
+        Some(Cmd::Hud(a)) => hud::hud(cwd, a),
     }
 }

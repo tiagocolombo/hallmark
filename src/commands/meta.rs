@@ -10,6 +10,7 @@ use super::daemon::DaemonOut;
 use super::doctor::DoctorOut;
 use super::fix::FixedOut;
 use super::flow::FlowOut;
+use super::hud::HudOut;
 use super::init::InitOut;
 use super::library::LibraryOut;
 use super::merge::MergeOut;
@@ -270,6 +271,7 @@ pub const SCHEMA_NAMES: &[&str] = &[
     "notify",
     "statusline",
     "library",
+    "hud",
     "error",
     "event",
     "config",
@@ -306,6 +308,7 @@ pub fn schema_value(name: &str) -> Option<serde_json::Value> {
         "notify" => schema_for!(Out<NotifyOut>),
         "statusline" => schema_for!(StatuslineOut),
         "library" => schema_for!(Out<LibraryOut>),
+        "hud" => schema_for!(Out<HudOut>),
         // What the principal engineer returns (plugin/schemas/verdict.json).
         "verdict-input" => schema_for!(crate::findings::ModelVerdict),
         "error" => schema_for!(ErrorEnvelope),

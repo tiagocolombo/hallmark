@@ -7,6 +7,7 @@ pub mod daemon;
 pub mod doctor;
 pub mod fix;
 pub mod flow;
+pub mod hud;
 pub mod init;
 pub mod library;
 pub mod merge;

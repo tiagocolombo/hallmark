@@ -1,0 +1,53 @@
+# Hallmark settings for Hallmark itself: Hallmark reviews Hallmark.
+# `hall schema config` describes every key. The assayer reads review settings
+# from the base branch, so a change here applies once it is merged.
+
+base     = "main"
+worktree = "git worktree add ../{repo}-{id} -b {branch}"
+branch   = "hm/{id}-{slug}"
+ship     = "git push -u origin {branch} && gh pr create --base {base} --head {branch} --title {title} --body-file {body_file}"
+
+# The toolchain comes from the Nix shell (dev.toml), so the gates run in it.
+gates = [
+  "nix develop --command cargo fmt --check",
+  "nix develop --command cargo clippy --all-targets -- -D warnings",
+  "nix develop --command cargo test --all-targets",
+]
+
+max_rejects = 3
+stuck_after = "45m"
+rules = ["CLAUDE.md"]
+
+[capture]
+mode = "gate"
+
+[intake]
+split     = "auto"
+max_parts = 4
+
+[budget]
+review_model    = "claude-opus-5-5"     # reviews
+fix_model       = "claude-sonnet-5-5"   # fixes
+intake_model    = "claude-fable-5-1"    # planning: the Front Desk
+librarian_model = "claude-haiku-5-5"
+per_item = "6M"
+daily    = "40M"
+
+[budget.review]
+effort  = "high"
+max_usd = 6.0
+timeout = "30m"
+
+[budget.fix]
+max_usd = 4.0
+timeout = "40m"
+
+[budget.intake]
+fallback = "claude-opus-5-5"            # when Fable isn't available
+max_usd  = 1.0
+timeout  = "4m"
+
+[library]
+search         = "builtin"
+briefing_limit = "6k"
+retire_after   = "90d"
