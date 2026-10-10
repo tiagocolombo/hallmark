@@ -472,7 +472,15 @@ mod tests {
             serde_json::from_str(crate::plugin::file("schemas/plan.json")).unwrap();
         assert_eq!(
             v["required"],
-            serde_json::json!(["parallel", "reason", "parts"])
+            serde_json::json!(["parallel", "parts", "reason"])
         );
+        // Claude Code's --json-schema validator rejects a draft 2020-12
+        // `$schema` key ("no schema with key or ref"), and the run fails.
+        assert!(v.get("$schema").is_none());
+        // An agent with a `tools:` list must allow StructuredOutput, or a
+        // --json-schema run answers in prose and has no structured_output.
+        let agent = crate::plugin::file("agents/intake.md");
+        let tools = agent.lines().find(|l| l.starts_with("tools:")).unwrap();
+        assert!(tools.contains("StructuredOutput"), "{tools}");
     }
 }

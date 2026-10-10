@@ -25,6 +25,17 @@ scheduler for this.
   `CLAUDE.md`/`AGENTS.md` headings). The agent's prompt
   (`plugin/agents/intake.md`) splits only truly independent work: disjoint
   files, no ordering, each part testable alone.
+- **What the live runs taught** (Claude Code 2.1.296, Haiku), pinned by unit
+  tests:
+  - a schema with `"$schema": ".../draft/2020-12/schema"` is rejected by
+    `--json-schema` ("no schema with key or ref"), so `plan.json` has none;
+  - an agent whose frontmatter lists `tools:` must include
+    `StructuredOutput`, or the model writes the JSON as prose and the run
+    has no `structured_output`;
+  - Haiku omitted an optional `parts` array, and kept omitting it under an
+    `if/then` rule (5 retries, then `error_max_structured_output_retries`).
+    `parts` is therefore required, listed second, and described as "always
+    present; empty when not splitting".
 - **Hallmark checks the plan**, not the model: 2 to `max_parts` parts, each
   with a title, a request and paths; no absolute or `..` paths; and **no two
   parts may overlap**. Paths are compared component-wise, and globs through

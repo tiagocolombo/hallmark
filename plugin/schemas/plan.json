@@ -1,5 +1,4 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Hallmark intake plan",
   "type": "object",
   "properties": {
@@ -7,13 +6,9 @@
       "type": "boolean",
       "description": "True only when the request splits into parts that are truly independent: disjoint files, no ordering, each testable alone."
     },
-    "reason": {
-      "type": "string",
-      "description": "One or two sentences: why the parts are independent, or why the request stays one item."
-    },
     "parts": {
       "type": "array",
-      "description": "The independent parts when parallel is true; empty otherwise.",
+      "description": "Always present. When parallel is true: the 2 or more independent parts. When parallel is false: an empty list.",
       "items": {
         "type": "object",
         "properties": {
@@ -34,8 +29,12 @@
         "required": ["title", "request", "paths"],
         "additionalProperties": false
       }
+    },
+    "reason": {
+      "type": "string",
+      "description": "One or two sentences: why the parts are independent, or why the request stays one item."
     }
   },
-  "required": ["parallel", "reason", "parts"],
+  "required": ["parallel", "parts", "reason"],
   "additionalProperties": false
 }
