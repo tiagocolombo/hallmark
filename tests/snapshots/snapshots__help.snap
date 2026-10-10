@@ -858,6 +858,14 @@ expression: v
           "required": false,
           "syntax": "--kind <kind>",
           "takes_value": true
+        },
+        {
+          "default": "false",
+          "help": "Include proposed learnings (open knowledge items, and the base)",
+          "name": "proposed",
+          "required": false,
+          "syntax": "--proposed",
+          "takes_value": false
         }
       ],
       "name": "library search",

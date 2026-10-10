@@ -1,0 +1,41 @@
+---
+source: tests/library.rs
+expression: "scrub(&env, &r.json)"
+---
+{
+  "accepted": [],
+  "action": "review",
+  "items": [
+    "H-0002"
+  ],
+  "next": [
+    "hall library review --accept L-0001,L-0002",
+    "hall library review --reject L-0001 --reason \"<why>\""
+  ],
+  "proposed": [
+    {
+      "change": "new",
+      "id": "L-0001",
+      "item": "H-0002",
+      "kind": "rule",
+      "path": ".hallmark/knowledge/L-0001-retries-must-check-the-endpoint.md",
+      "scope": [
+        "apps/api/**"
+      ],
+      "status": "proposed",
+      "title": "Retries must check the endpoint"
+    },
+    {
+      "change": "new",
+      "id": "L-0002",
+      "item": "H-0002",
+      "kind": "false-positive",
+      "path": ".hallmark/knowledge/L-0002-do-not-flag-jitter.md",
+      "scope": [],
+      "status": "proposed",
+      "title": "Do not flag jitter"
+    }
+  ],
+  "rejected": [],
+  "retiring": []
+}

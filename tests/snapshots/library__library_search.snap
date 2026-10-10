@@ -1,0 +1,41 @@
+---
+source: tests/library.rs
+expression: "scrub(&env, &r.json)"
+---
+{
+  "action": "search",
+  "backend": "builtin",
+  "next": [
+    "hall library retire L-0001 --reason \"<why it no longer holds>\"",
+    "hall library review"
+  ],
+  "query": "webhook retries endpoint",
+  "results": [
+    {
+      "id": "L-0001",
+      "kind": "rule",
+      "lens": "correctness",
+      "path": ".hallmark/knowledge/L-0001-retries-must-check-the-endpoint.md",
+      "scope": [
+        "apps/api/src/webhooks/**"
+      ],
+      "score": 0.649,
+      "status": "accepted",
+      "title": "Retries must check the endpoint still exists",
+      "used": 0
+    },
+    {
+      "id": "L-0002",
+      "kind": "false-positive",
+      "lens": "correctness",
+      "path": ".hallmark/knowledge/L-0002-backoff-jitter-lives-in-the-queue.md",
+      "scope": [
+        "apps/api/src/queue/**"
+      ],
+      "score": 0.0,
+      "status": "accepted",
+      "title": "Backoff jitter lives in the queue",
+      "used": 0
+    }
+  ]
+}

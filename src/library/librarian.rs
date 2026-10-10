@@ -690,7 +690,11 @@ pub fn apply(
                 };
                 let mut l = prev;
                 for s in sources {
-                    if !l.source.contains(&s) {
+                    let covered = l
+                        .source
+                        .iter()
+                        .any(|x| *x == s || x.starts_with(&format!("{s}/")));
+                    if !covered {
                         l.source.push(s);
                     }
                 }
@@ -1070,6 +1074,37 @@ mod tests {
             !eligible(&item, &events),
             "knowledge items are not distilled"
         );
+    }
+
+    #[test]
+    fn the_schema_matches_the_code() {
+        let v: serde_json::Value =
+            serde_json::from_str(crate::plugin::file("schemas/learnings.json")).unwrap();
+        let item = &v["properties"]["learnings"]["items"]["properties"];
+        let kinds: Vec<&str> = item["kind"]["enum"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|k| k.as_str().unwrap())
+            .collect();
+        let want: Vec<&str> = Kind::ALL.iter().map(|k| k.as_str()).collect();
+        assert_eq!(kinds, want);
+        let lenses: Vec<&str> = item["lens"]["enum"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|k| k.as_str().unwrap())
+            .collect();
+        let mut want: Vec<&str> = Lens::ALL.iter().map(|l| l.as_str()).collect();
+        want.push("");
+        assert_eq!(lenses, want);
+        // Every field the model returns is one `Proposal` reads.
+        let p: Proposal = serde_json::from_value(serde_json::json!({
+            "updates": "", "kind": "map", "scope": [], "lens": "",
+            "source": ["H-0001"], "title": "t", "body": "b"
+        }))
+        .unwrap();
+        assert_eq!(p.kind, "map");
     }
 
     #[test]
