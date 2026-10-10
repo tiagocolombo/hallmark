@@ -13,3 +13,6 @@ packages = ["cargo", "rustc", "clippy", "rustfmt", "rust-analyzer", "gh"]
 test = "cargo test --all-targets"
 lint = "cargo fmt --check && cargo clippy --all-targets -- -D warnings"
 build = "cargo build --release"
+# Install (or upgrade) hall from this checkout, then set everything up:
+# the Claude Code plugin, this repo, the daemon at login, a phone topic.
+install = "cargo install --path . --locked && \"${CARGO_HOME:-$HOME/.cargo}/bin/hall\" setup"

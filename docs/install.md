@@ -97,44 +97,50 @@ Overlay users can use `overlays.default`, which adds `pkgs.hallmark`.
 
 ## 2. Set up
 
-Once per machine:
+In the repository you want reviewed:
 
 ```sh
-hall setup claude --statusline   # the Claude Code plugin, plus Hallmark's status line
-hall daemon start --at-login     # the review loop, now and at every login
-hall notify test                 # check your notification channels
+hall setup
 ```
 
-`hall setup claude` writes the plugin (skills, agents, hooks, schemas) into
-Hallmark's data directory and installs it at user level through a local
-marketplace. Hook commands use the absolute path of the `hall` that ran setup.
-To see the plan without doing anything, add `--dry-run`.
+That one command does every step and reports each one; it is safe to repeat:
 
-`--statusline` sets `statusLine` in `~/.claude/settings.json`. It keeps the
-rest of the file as it was. If you already have a status line of your own, it
-stops and changes nothing. Add `--force` to replace it.
-`CLAUDE_CONFIG_DIR` is honored.
+1. **The Claude Code plugin** (skills, agents, hooks, schemas), written into
+   Hallmark's data directory and installed at user level through a local
+   marketplace, with hook commands that use the absolute path of this `hall`.
+2. **The status line**: `statusLine` in `~/.claude/settings.json` points at
+   `hall statusline`. The rest of the file is kept as it was. A status line of
+   your own is kept too: that step is skipped and `--force` replaces it.
+   `CLAUDE_CONFIG_DIR` is honored.
+3. **The repo** (`hall init`): `.hallmark.toml` from the gates it detects, a stub
+   `.hallmark/review.md`, a CLAUDE.md section, and the journal. It tells you what
+   to commit (`git add .hallmark.toml .hallmark/ CLAUDE.md && git commit -m
+   "Adopt Hallmark"`).
+4. **The daemon**, started now and registered to start at login, with the
+   PATH you ran `hall setup` from. Run it from the shell your project builds in
+   (inside `nix develop` for a Nix project), so the gates and `gh` are found.
+5. **A phone topic**: a private, random ntfy topic, if you have no phone
+   channel yet, with how to subscribe.
+6. **`hall doctor`**, whose fixes go in `next`.
 
-Then, once per repo:
-
-```sh
-cd your-repo
-hall init
-git add .hallmark.toml .hallmark/ CLAUDE.md && git commit -m "Adopt Hallmark"
-hall doctor                      # checks everything and names the fix for each problem
-```
+`--dry-run` shows the plan without doing anything; `--no-statusline`,
+`--no-daemon` and `--no-notify` skip a step. Each step also has its own command
+(`hall setup claude [--statusline]`, `hall init`, `hall daemon start
+--at-login`, `hall notify test`, `hall doctor`).
 
 Restart Claude Code so it loads the plugin.
+
+**In Hallmark's own repository**, `dev install` does all of it: it runs
+`cargo install --path . --locked` and then `hall setup` from the installed copy.
 
 ## Upgrading
 
 Upgrade the binary the same way you installed it: rerun the installer, use
-`brew upgrade hall`, `cargo install … --locked --force`, or
-`nix profile upgrade`. Then **rerun `hall setup claude`**. The plugin is
+`brew upgrade hall`, `cargo install … --locked --force`, `nix profile upgrade`,
+or `dev install` in Hallmark's repo. Then **rerun `hall setup`**. The plugin is
 embedded in the binary, so this refreshes the skills, agents and hooks to
-match. It also re-points the hooks and the status line if `hall` moved.
-Restart the daemon (`hall daemon stop && hall daemon start --at-login`) and
-Claude Code. `hall doctor` reports hooks that point at a stale `hall`.
+match, re-points the hooks and the status line if `hall` moved, and restarts
+the daemon when it runs an older `hall`. Then restart Claude Code.
 
 ## Windows notes
 

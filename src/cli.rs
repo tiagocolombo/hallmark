@@ -267,8 +267,12 @@ pub struct HookArgs {
 
 #[derive(Debug, Args)]
 pub struct SetupArgs {
+    /// Only this part. Without one, `hall setup` does everything: the
+    /// Claude Code plugin and status line, this repo, the daemon at login,
+    /// a phone topic, then `hall doctor`. Safe to repeat; re-run it after
+    /// upgrading hall.
     #[arg(value_enum)]
-    pub target: SetupTarget,
+    pub target: Option<SetupTarget>,
     /// Print what would be done without doing it.
     #[arg(long)]
     pub dry_run: bool,
@@ -276,9 +280,18 @@ pub struct SetupArgs {
     /// ~/.claude/settings.json.
     #[arg(long)]
     pub statusline: bool,
-    /// With --statusline: replace a status line that isn't Hallmark's.
-    #[arg(long, requires = "statusline")]
+    /// Replace a status line that isn't Hallmark's.
+    #[arg(long)]
     pub force: bool,
+    /// `hall setup`: leave Claude Code's status line alone.
+    #[arg(long)]
+    pub no_statusline: bool,
+    /// `hall setup`: don't start the daemon or install its login service.
+    #[arg(long)]
+    pub no_daemon: bool,
+    /// `hall setup`: don't create a phone topic.
+    #[arg(long)]
+    pub no_notify: bool,
 }
 
 #[derive(Debug, Args)]
@@ -582,7 +595,7 @@ fn dispatch(cmd: Option<Cmd>, cwd: &std::path::Path, mode: Mode) -> Result<Respo
         Some(Cmd::Help(a)) => meta::help(a, mode),
         Some(Cmd::Schema(a)) => meta::schema(a),
         Some(Cmd::Hook(a)) => crate::hooks::run(a.event, cwd),
-        Some(Cmd::Setup(a)) => setup::setup(a),
+        Some(Cmd::Setup(a)) => setup::setup(cwd, a),
         Some(Cmd::Daemon(a)) => daemon::daemon(cwd, a),
         Some(Cmd::Next(a)) => next::next(cwd, a),
         Some(Cmd::Findings(a)) => review::findings(cwd, a),

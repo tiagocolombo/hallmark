@@ -323,3 +323,60 @@ fn step<'a>(reply: &'a Value, prefix: &str) -> &'a Value {
         .find(|s| s["command"].as_str().unwrap().starts_with(prefix))
         .unwrap_or_else(|| panic!("no step {prefix}: {reply}"))
 }
+
+#[test]
+fn setup_without_a_target_plans_every_step() {
+    let env = Env::initialized();
+    let r = env.hall(&env.repo, &["setup", "--dry-run"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(r.json["target"], "all");
+    let steps: Vec<(String, String)> = r.json["steps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| {
+            (
+                s["command"].as_str().unwrap().to_string(),
+                s["status"].as_str().unwrap().to_string(),
+            )
+        })
+        .collect();
+    let has =
+        |cmd: &str, status: &str| steps.iter().any(|(c, s)| c.starts_with(cmd) && s == status);
+    assert!(
+        has("hall setup claude --statusline", "planned"),
+        "{steps:?}"
+    );
+    assert!(has("hall init", "planned"), "{steps:?}");
+    assert!(has("hall daemon start --at-login", "planned"), "{steps:?}");
+    assert!(has("hall notify test", "planned"), "{steps:?}");
+    // A dry run changes nothing: no plugin written, no daemon state.
+    assert!(!env.home.join("claude-plugin").exists());
+    assert!(!env.home.join("daemon").join("state.json").exists());
+
+    let r = env.hall(
+        &env.repo,
+        &[
+            "setup",
+            "--dry-run",
+            "--no-daemon",
+            "--no-notify",
+            "--no-statusline",
+        ],
+    );
+    let steps = r.json["steps"].as_array().unwrap();
+    let status = |cmd: &str| {
+        steps
+            .iter()
+            .find(|s| s["command"].as_str().unwrap().starts_with(cmd))
+            .map(|s| s["status"].as_str().unwrap().to_string())
+    };
+    assert_eq!(status("hall daemon").as_deref(), Some("skipped"));
+    assert_eq!(status("hall notify").as_deref(), Some("skipped"));
+    assert_eq!(status("hall setup claude").as_deref(), Some("planned"));
+    assert!(
+        !steps
+            .iter()
+            .any(|s| s["command"] == "hall setup claude --statusline")
+    );
+}

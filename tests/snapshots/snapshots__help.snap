@@ -466,8 +466,9 @@ expression: v
       "about": "One-time machine setup",
       "args": [
         {
+          "help": "Only this part. Without one, `hall setup` does everything: the Claude Code plugin and status line, this repo, the daemon at login, a phone topic, then `hall doctor`. Safe to repeat; re-run it after upgrading hall",
           "name": "target",
-          "required": true,
+          "required": false,
           "syntax": "<target>",
           "takes_value": true,
           "values": [
@@ -492,16 +493,40 @@ expression: v
         },
         {
           "default": "false",
-          "help": "With --statusline: replace a status line that isn't Hallmark's",
+          "help": "Replace a status line that isn't Hallmark's",
           "name": "force",
           "required": false,
           "syntax": "--force",
+          "takes_value": false
+        },
+        {
+          "default": "false",
+          "help": "`hall setup`: leave Claude Code's status line alone",
+          "name": "no_statusline",
+          "required": false,
+          "syntax": "--no-statusline",
+          "takes_value": false
+        },
+        {
+          "default": "false",
+          "help": "`hall setup`: don't start the daemon or install its login service",
+          "name": "no_daemon",
+          "required": false,
+          "syntax": "--no-daemon",
+          "takes_value": false
+        },
+        {
+          "default": "false",
+          "help": "`hall setup`: don't create a phone topic",
+          "name": "no_notify",
+          "required": false,
+          "syntax": "--no-notify",
           "takes_value": false
         }
       ],
       "name": "setup",
       "schema": "hall schema setup",
-      "usage": "hall setup [OPTIONS] <TARGET>"
+      "usage": "hall setup [OPTIONS] [TARGET]"
     },
     {
       "about": "Run the review loop in the background for every registered repo",

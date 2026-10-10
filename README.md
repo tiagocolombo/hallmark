@@ -134,15 +134,27 @@ gives the contributor toolchain.
 
 ## Setup
 
+One command, in the repository you want reviewed:
+
 ```sh
-hall setup claude --statusline   # once per machine: the Claude Code plugin, plus the status line
-cd your-repo
-hall init                        # once per repo: journal, .hallmark.toml, CLAUDE.md section
-git add .hallmark.toml .hallmark/ CLAUDE.md && git commit -m "Adopt Hallmark"
-hall daemon start --at-login     # the review loop, for every repo, at login
-hall notify test                 # pick a phone topic and test your channels
-hall doctor                      # checks everything and names the fix for each problem
+hall setup
 ```
+
+It does every step, reports each one, and is safe to repeat (re-run it after
+upgrading `hall`; it restarts the daemon on the new binary):
+
+1. installs the Claude Code plugin and points Claude Code's status line at
+   `hall statusline` (keeps someone else's status line unless `--force`);
+2. sets up the repo (`hall init`), and says what to commit;
+3. starts the daemon and its login service, with the PATH you ran it from
+   (so `nix`, `gh` and your toolchain are found);
+4. creates a private phone topic if you have none;
+5. runs `hall doctor`.
+
+`--dry-run` shows the plan; `--no-statusline`, `--no-daemon` and `--no-notify`
+skip a step. In this repository, `dev install` installs `hall` from the
+checkout and runs `hall setup` (it's `cargo install --path . --locked && hall
+setup` inside `nix develop`).
 
 **What `hall init` writes:**
 

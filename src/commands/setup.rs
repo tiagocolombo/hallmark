@@ -1,4 +1,5 @@
-//! `hall setup claude`: install the plugin for Claude Code at user level,
+//! `hall setup`: every step of setting Hallmark up, in one command (see
+//! [`all`]). `hall setup claude`: install the plugin for Claude Code at user level,
 //! through a local marketplace (docs/decisions/0009), and with
 //! `--statusline`, point Claude Code's status line at `hall statusline`
 //! (docs/decisions/0023).
@@ -33,7 +34,7 @@ pub struct SetupOut {
     pub steps: Vec<Step>,
 }
 
-#[derive(Debug, Serialize, JsonSchema)]
+#[derive(Debug, Serialize, serde::Deserialize, JsonSchema)]
 pub struct StatusLineOut {
     /// Claude Code's user settings file.
     pub settings: String,
@@ -97,8 +98,20 @@ fn step(command: String, status: &str, detail: Option<String>) -> Step {
     }
 }
 
-pub fn setup(a: SetupArgs) -> Result<Response> {
-    let SetupTarget::Claude = a.target;
+pub fn setup(cwd: &Path, a: SetupArgs) -> Result<Response> {
+    match a.target {
+        Some(SetupTarget::Claude) => {
+            if a.force && !a.statusline {
+                return Err(HallError::usage("--force goes with --statusline")
+                    .next(["hall setup claude --statusline --force"]));
+            }
+            claude(&a)
+        }
+        None => all(cwd, &a),
+    }
+}
+
+fn claude(a: &SetupArgs) -> Result<Response> {
     let exe = paths::normalize(&std::env::current_exe()?);
     let dir = user_dir().join("claude-plugin");
     let claude = claude_bin();
@@ -561,6 +574,259 @@ fn write_atomic(path: &Path, text: &str) -> Result<()> {
     std::fs::write(&tmp, text)?;
     std::fs::rename(&tmp, path)?;
     Ok(())
+}
+
+// ── hall setup: everything ──────────────────────────────────────────────────
+
+/// `hall setup`: the plugin and status line, this repo, the daemon at
+/// login, a phone topic, then `hall doctor`. Every step is idempotent and
+/// reported; a failed step doesn't stop the others.
+fn all(cwd: &Path, a: &SetupArgs) -> Result<Response> {
+    use crate::cli::{DaemonAction, DaemonArgs, InitArgs, NotifyAction, NotifyArgs};
+    let exe = paths::normalize(&std::env::current_exe()?);
+    let shown = paths::display(&exe);
+    let planned = |command: &str| step(command.to_string(), "planned", None);
+    let mut steps = Vec::new();
+    let mut next: Vec<String> = Vec::new();
+
+    // 1. Which hall the hooks and the daemon will run.
+    if shown.contains("/target/debug/") || shown.contains("/target/release/") {
+        steps.push(step(
+            format!("use {shown}"),
+            "warn",
+            Some(
+                "this is a build directory, and the plugin and the daemon will run this file. \
+                 Install hall (`dev install`, or `cargo install --path . --locked`) and run \
+                 `hall setup` from the installed copy."
+                    .into(),
+            ),
+        ));
+    } else {
+        steps.push(step(format!("use {shown}"), "done", None));
+    }
+
+    // 2. The Claude Code plugin, and the status line unless told not to.
+    let mut claude_args = SetupArgs {
+        target: Some(SetupTarget::Claude),
+        dry_run: a.dry_run,
+        statusline: !a.no_statusline,
+        force: a.force,
+        no_statusline: a.no_statusline,
+        no_daemon: a.no_daemon,
+        no_notify: a.no_notify,
+    };
+    let mut plugin_files = Vec::new();
+    let mut statusline = None;
+    let mut result = claude(&claude_args);
+    if let Err(e) = &result
+        && e.code == ErrorCode::Usage
+        && claude_args.statusline
+    {
+        // Someone else's status line: keep it, install the rest.
+        steps.push(step(
+            "set Claude Code's status line to hall statusline".into(),
+            "skipped",
+            Some(e.message.clone()),
+        ));
+        next.push("hall setup claude --statusline --force".into());
+        claude_args.statusline = false;
+        result = claude(&claude_args);
+    }
+    match result {
+        Ok(r) => {
+            let sub = r.value["steps"].as_array().cloned().unwrap_or_default();
+            let failed = sub.iter().any(|s| s["status"] == "failed");
+            plugin_files =
+                serde_json::from_value(r.value["plugin_files"].clone()).unwrap_or_default();
+            statusline = serde_json::from_value(r.value["statusline"].clone())
+                .ok()
+                .flatten();
+            steps.push(step(
+                format!(
+                    "hall setup claude{}",
+                    if claude_args.statusline {
+                        " --statusline"
+                    } else {
+                        ""
+                    }
+                ),
+                if a.dry_run {
+                    "planned"
+                } else if failed {
+                    "failed"
+                } else {
+                    "done"
+                },
+                Some(format!(
+                    "{} plugin files; restart Claude Code to load them",
+                    plugin_files.len()
+                )),
+            ));
+        }
+        Err(e) => steps.push(step("hall setup claude".into(), "failed", Some(e.message))),
+    }
+
+    // 3. This repository.
+    match crate::repo::Repo::discover(cwd) {
+        Err(_) => steps.push(step(
+            "hall init".into(),
+            "skipped",
+            Some("not in a git repository".into()),
+        )),
+        Ok(_) if a.dry_run => steps.push(planned("hall init")),
+        Ok(_) => match super::init::init(
+            cwd,
+            InitArgs {
+                capture: None,
+                base: None,
+                no_claude_md: false,
+            },
+        ) {
+            Ok(r) => {
+                let created: Vec<String> =
+                    serde_json::from_value(r.value["created"].clone()).unwrap_or_default();
+                let detail = if created.is_empty() {
+                    "already set up".to_string()
+                } else {
+                    next.push(format!(
+                        "git add {} && git commit -m \"Adopt Hallmark\"",
+                        created.join(" ")
+                    ));
+                    format!("wrote {}", created.join(", "))
+                };
+                steps.push(step("hall init".into(), "done", Some(detail)));
+            }
+            Err(e) => steps.push(step("hall init".into(), "failed", Some(e.message))),
+        },
+    }
+
+    // 4. The daemon, at login; restarted when this hall is newer than it.
+    if a.no_daemon {
+        steps.push(step("hall daemon start --at-login".into(), "skipped", None));
+    } else if a.dry_run {
+        steps.push(planned("hall daemon start --at-login"));
+    } else {
+        let mut detail = Vec::new();
+        if daemon_is_stale(&exe) {
+            let _ = super::daemon::daemon(
+                cwd,
+                DaemonArgs {
+                    action: DaemonAction::Stop { at_login: false },
+                },
+            );
+            detail.push("restarted it on the new hall".to_string());
+        }
+        match super::daemon::daemon(
+            cwd,
+            DaemonArgs {
+                action: DaemonAction::Start { at_login: true },
+            },
+        ) {
+            Ok(r) => {
+                if let Some(n) = r.value["note"].as_str() {
+                    detail.push(n.to_string());
+                }
+                steps.push(step(
+                    "hall daemon start --at-login".into(),
+                    "done",
+                    (!detail.is_empty()).then(|| detail.join("; ")),
+                ));
+            }
+            Err(e) => steps.push(step(
+                "hall daemon start --at-login".into(),
+                "failed",
+                Some(e.message),
+            )),
+        }
+    }
+
+    // 5. A private phone topic, once.
+    let has_phone = crate::repo::Repo::discover(cwd)
+        .ok()
+        .map(|r| r.config.notify())
+        .or_else(|| {
+            crate::config::UserConfig::load()
+                .ok()
+                .and_then(|u| u.notify)
+        })
+        .is_some_and(|n| n.phone.is_some());
+    if a.no_notify || has_phone {
+        steps.push(step(
+            "hall notify test".into(),
+            "skipped",
+            has_phone.then(|| "a phone channel is already set".into()),
+        ));
+    } else if a.dry_run {
+        steps.push(planned("hall notify test"));
+    } else {
+        match super::notify::notify(
+            cwd,
+            NotifyArgs {
+                action: NotifyAction::Test { channel: None },
+            },
+        ) {
+            Ok(r) => steps.push(step(
+                "hall notify test".into(),
+                "done",
+                r.value["subscribe"].as_str().map(String::from),
+            )),
+            Err(e) => steps.push(step("hall notify test".into(), "failed", Some(e.message))),
+        }
+    }
+
+    // 6. Check everything.
+    if !a.dry_run {
+        match super::doctor::doctor(cwd) {
+            Ok(r) => {
+                let failing: Vec<String> = r.value["checks"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter(|c| c["ok"] == false)
+                    .filter_map(|c| c["name"].as_str().map(String::from))
+                    .collect();
+                for f in r.value["next"].as_array().into_iter().flatten() {
+                    if let Some(f) = f.as_str() {
+                        next.push(f.to_string());
+                    }
+                }
+                steps.push(step(
+                    "hall doctor".into(),
+                    if failing.is_empty() { "done" } else { "warn" },
+                    (!failing.is_empty()).then(|| format!("not yet: {}", failing.join(", "))),
+                ));
+            }
+            Err(e) => steps.push(step("hall doctor".into(), "failed", Some(e.message))),
+        }
+    }
+
+    next.push("restart Claude Code to load the plugin".into());
+    next.push("hall new \"<request>\"".into());
+    next.dedup();
+    let out = SetupOut {
+        target: "all".into(),
+        marketplace_dir: paths::display(&user_dir().join("claude-plugin")),
+        hall: shown,
+        dry_run: a.dry_run,
+        plugin_files,
+        statusline,
+        steps,
+    };
+    Ok(Response::new(out, next))
+}
+
+/// True when a daemon runs but started before this binary was built, so it
+/// runs an older hall.
+fn daemon_is_stale(exe: &Path) -> bool {
+    if !crate::daemon::state::instance_running() {
+        return false;
+    }
+    let started = crate::daemon::state::load().and_then(|s| s.started_at);
+    let built = std::fs::metadata(exe)
+        .and_then(|m| m.modified())
+        .ok()
+        .map(chrono::DateTime::<chrono::Utc>::from);
+    matches!((started, built), (Some(s), Some(b)) if b > s)
 }
 
 #[cfg(test)]
