@@ -391,18 +391,34 @@ fn setup_puts_hall_on_path_through_local_bin() {
     // An installed-looking copy, outside any target/ directory.
     let installed = env.root.join("cargo-bin").join("hall");
     std::fs::create_dir_all(installed.parent().unwrap()).unwrap();
-    std::fs::copy(env!("CARGO_BIN_EXE_hall"), &installed).unwrap();
+    // A hard link, not a copy: a copy is open for writing until it's done,
+    // and on Linux a process another test thread forks meanwhile inherits
+    // that handle, so running the copy fails with "Text file busy". A link
+    // writes nothing. Across filesystems it has to be a copy, and `spawn`
+    // below retries while the file is busy.
+    if std::fs::hard_link(env!("CARGO_BIN_EXE_hall"), &installed).is_err() {
+        std::fs::copy(env!("CARGO_BIN_EXE_hall"), &installed).unwrap();
+    }
     let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
     let run = |args: &[&str]| {
-        let out = std::process::Command::new(&installed)
-            .current_dir(&env.repo)
-            .env("HOME", &home)
-            .env("PATH", &path)
-            .env("HALL_HOME", &env.home)
-            .env("HALL_CLAUDE", env.root.join("no-claude-here"))
-            .args(args)
-            .output()
-            .unwrap();
+        let mut tries = 0;
+        let out = loop {
+            let r = std::process::Command::new(&installed)
+                .current_dir(&env.repo)
+                .env("HOME", &home)
+                .env("PATH", &path)
+                .env("HALL_HOME", &env.home)
+                .env("HALL_CLAUDE", env.root.join("no-claude-here"))
+                .args(args)
+                .output();
+            match r {
+                Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy && tries < 50 => {
+                    tries += 1;
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                }
+                r => break r.unwrap(),
+            }
+        };
         serde_json::from_slice::<serde_json::Value>(&out.stdout).unwrap()
     };
     let step = |v: &serde_json::Value| {
