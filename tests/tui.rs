@@ -367,6 +367,7 @@ fn load(env: &Env, cwd: &Path) -> App {
         wanted: true,
         paused: None,
         current: Some("reviewing H-0001 round 2".into()),
+        ..Default::default()
     });
     app
 }
