@@ -262,10 +262,15 @@ impl Ctx {
             },
         )?;
         let inbox = self.inbox_count();
-        let text = match &item {
+        let mut text = match &item {
             Some(i) => item_context(i, inbox),
             None => repo_context(&self.repo, &self.items, inbox),
         };
+        // The daily budget is spent: the loop waits, this session doesn't.
+        if let Some(note) = crate::budget::daily_note(&self.repo) {
+            text.push(' ');
+            text.push_str(&note);
+        }
         Ok(Some(context(HookEvent::SessionStart, text)))
     }
 
@@ -298,6 +303,11 @@ impl Ctx {
                 i.id, i.id
             ),
             _ => return Ok(None),
+        };
+        // An item in the loop won't move while the daily budget is spent.
+        let note = match crate::budget::daily_note(&self.repo) {
+            Some(b) if i.state.in_loop() => format!("{note} {b}"),
+            _ => note,
         };
         Ok(Some(context(HookEvent::UserPromptSubmit, note)))
     }

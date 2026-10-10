@@ -1,41 +1,536 @@
 //! `hall budget` (workstream D): the caps at four levels and today's spend.
+//! `--set key=value` edits the main checkout's `.hallmark.toml` in place,
+//! keeping its comments and layout.
 
 use std::path::Path;
 
 use schemars::JsonSchema;
 use serde::Serialize;
 
+use crate::budget::{self, ItemSpend, ROLES, room_label, table_key};
 use crate::cli::BudgetArgs;
-use crate::error::{HallError, Result};
+use crate::config::{self, Config, parse_duration, parse_tokens};
+use crate::error::{ErrorCode, HallError, Result};
 use crate::output::{Render, Response};
+use crate::repo::Repo;
+use crate::usage::fmt_tokens;
 
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct BudgetOut {
+    /// The UTC date "today" means for the daily caps.
+    pub day: String,
+    /// Per-run settings by role: model, effort, `max_usd`, timeout.
+    pub runs: Vec<RunCap>,
+    /// The item, room and daily caps, with today's loop spend.
     pub caps: Vec<Cap>,
+    /// The items the loop spent most on (all time), against `per_item`.
+    pub top_items: Vec<TopItem>,
+    /// Tokens your own Claude Code sessions used today: measured, never capped.
+    pub workshop_today: u64,
     /// Settings written by --set.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub set: Vec<String>,
+    /// The file --set wrote, when it changed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub written: Option<String>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct RunCap {
+    /// reviewer, fixer, intake, librarian.
+    pub role: String,
+    /// The `[budget.<key>]` table: review, fix, intake, librarian.
+    pub key: String,
+    pub model: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
+    /// `--max-budget-usd` for each run; none means no per-run cap.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_usd: Option<f64>,
+    /// The per-run time limit, in seconds.
+    pub timeout_secs: i64,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct Cap {
-    /// run, item, room, daily.
+    /// item, room, daily.
     pub level: String,
     /// The key in .hallmark.toml, such as budget.review.daily.
     pub key: String,
+    /// The room, for room caps (assay, repair, front, library).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub room: Option<String>,
+    /// As written in the config; none means not capped.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit_tokens: Option<u64>,
     /// Spent today (tokens), where it applies.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub used: Option<u64>,
+    /// True when the cap stops work now.
+    pub reached: bool,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct TopItem {
+    #[serde(flatten)]
+    pub spend: ItemSpend,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state: Option<String>,
+    /// At or over `per_item`.
+    pub over_cap: bool,
+}
+
+fn bar(used: u64, limit: u64) -> String {
+    let pct = if limit == 0 {
+        100.0
+    } else {
+        used as f64 / limit as f64 * 100.0
+    };
+    let filled = ((pct / 10.0).round() as usize).min(10);
+    format!(
+        "{}{} {:>3.0}%",
+        "█".repeat(filled),
+        "░".repeat(10 - filled),
+        pct
+    )
 }
 
 impl Render for BudgetOut {
     fn render(&self) -> String {
-        format!("{} caps\n", self.caps.len())
+        let mut s = format!("hall · budget · today ({} UTC)\n\n", self.day);
+        s.push_str("per run      model    effort  max_usd  timeout\n");
+        for r in &self.runs {
+            s.push_str(&format!(
+                "  {:10} {:8} {:7} {:8} {}m\n",
+                r.role,
+                r.model,
+                r.effort.as_deref().unwrap_or("—"),
+                r.max_usd
+                    .map(|u| format!("${u:.2}"))
+                    .unwrap_or_else(|| "—".into()),
+                r.timeout_secs / 60
+            ));
+        }
+        s.push_str("\nper day                  used     cap\n");
+        for c in self.caps.iter().filter(|c| c.level != "item") {
+            let label = match &c.room {
+                Some(r) => room_label(r).to_string(),
+                None => "daily total".into(),
+            };
+            let used = c.used.unwrap_or(0);
+            let tail = match (c.limit.as_deref(), c.limit_tokens) {
+                (Some(l), Some(t)) => format!("{l:>6}  {}", bar(used, t)),
+                (Some(l), None) => format!("{l:>6}  (unreadable)"),
+                _ => "  not capped".into(),
+            };
+            s.push_str(&format!("  {label:20} {:>8}  {tail}\n", fmt_tokens(used)));
+        }
+        s.push_str(&format!(
+            "  {:20} {:>8}    not capped (your sessions)\n",
+            "Workshop",
+            fmt_tokens(self.workshop_today)
+        ));
+        if let Some(c) = self.caps.iter().find(|c| c.level == "item") {
+            s.push_str(&format!(
+                "\nper item: {}\n",
+                c.limit.as_deref().unwrap_or("not capped")
+            ));
+            for t in &self.top_items {
+                let cap = c.limit_tokens;
+                let note = match cap {
+                    Some(_) if t.over_cap => "over item cap".to_string(),
+                    Some(l) => bar(t.spend.tokens, l),
+                    None => String::new(),
+                };
+                s.push_str(&format!(
+                    "  {} {:>8}  ${:<7.2} {:12} {note}\n",
+                    t.spend.item,
+                    fmt_tokens(t.spend.tokens),
+                    t.spend.cost_usd,
+                    t.state.as_deref().unwrap_or("")
+                ));
+            }
+        }
+        for line in &self.set {
+            s.push_str(&format!("\nset {line}"));
+        }
+        if !self.set.is_empty() {
+            s.push('\n');
+        }
+        s
     }
 }
 
-pub fn budget(_cwd: &Path, _a: BudgetArgs) -> Result<Response> {
-    Err(HallError::not_implemented("hall budget"))
+pub fn budget(cwd: &Path, a: BudgetArgs) -> Result<Response> {
+    let mut repo = Repo::discover(cwd)?;
+    repo.require_init()?;
+    let mut set = Vec::new();
+    let mut written = None;
+    if !a.set.is_empty() {
+        let path = repo.main_root.join(config::FILE_NAME);
+        let text = std::fs::read_to_string(&path).unwrap_or_default();
+        let (new_text, applied) = apply_sets(&text, &a.set)?;
+        set = applied;
+        if new_text != text {
+            std::fs::write(&path, &new_text)?;
+            written = Some(crate::paths::display(&path));
+        }
+        repo.config = Config::parse(&new_text)?;
+    }
+    let b = &repo.config.budget;
+    let ix = repo.index()?;
+    let day = budget::today();
+    let runs = ROLES
+        .iter()
+        .map(|r| RunCap {
+            role: r.as_str().into(),
+            key: table_key(*r).into(),
+            model: b.model(*r),
+            effort: b.effort(*r),
+            max_usd: b.max_usd(*r),
+            timeout_secs: b.timeout_secs(*r),
+        })
+        .collect();
+    let mut caps = Vec::new();
+    let per_item = b.per_item.as_ref().and_then(|l| parse_tokens(l));
+    caps.push(Cap {
+        level: "item".into(),
+        key: "budget.per_item".into(),
+        room: None,
+        limit: b.per_item.clone(),
+        limit_tokens: per_item,
+        used: None,
+        reached: false,
+    });
+    for r in ROLES {
+        let limit = b.role(r).and_then(|rb| rb.daily.clone());
+        let limit_tokens = limit.as_deref().and_then(parse_tokens);
+        let used = budget::room_tokens(&ix, r.room(), &day);
+        caps.push(Cap {
+            level: "room".into(),
+            key: format!("budget.{}.daily", table_key(r)),
+            room: Some(r.room().into()),
+            reached: limit_tokens.is_some_and(|l| used >= l),
+            limit,
+            limit_tokens,
+            used: Some(used),
+        });
+    }
+    let daily_tokens = b.daily.as_deref().and_then(parse_tokens);
+    let used = budget::daily_tokens(&ix, &day);
+    caps.push(Cap {
+        level: "daily".into(),
+        key: "budget.daily".into(),
+        room: None,
+        limit: b.daily.clone(),
+        limit_tokens: daily_tokens,
+        used: Some(used),
+        reached: daily_tokens.is_some_and(|l| used >= l),
+    });
+    let items = ix.items(true)?;
+    let top_items: Vec<TopItem> = budget::top_items(&ix, 5)
+        .into_iter()
+        .map(|spend| {
+            let it = items.iter().find(|i| i.id == spend.item);
+            TopItem {
+                over_cap: per_item.is_some_and(|l| spend.tokens >= l),
+                title: it.map(|i| i.title.clone()),
+                state: it.map(|i| match &i.hold {
+                    Some(h) => format!("held ({})", h.kind.as_str()),
+                    None => i.state.as_str().to_string(),
+                }),
+                spend,
+            }
+        })
+        .collect();
+    let out = BudgetOut {
+        day: day.clone(),
+        runs,
+        caps,
+        top_items,
+        workshop_today: budget::workshop_tokens(&ix, &day),
+        set,
+        written,
+    };
+    Ok(Response::new(
+        out,
+        vec![
+            "hall budget --set daily=4M per_item=800k".into(),
+            "hall usage --by room --since 24h".into(),
+            "hall usage --by item".into(),
+        ],
+    ))
+}
+
+/// What a `--set` key is.
+enum Kind {
+    Tokens,
+    Usd,
+    Duration,
+    Text,
+}
+
+/// Resolves `key` to (table path under budget, key, kind).
+fn resolve_key(key: &str) -> Option<(Option<&'static str>, &'static str, Kind)> {
+    let key = key.trim().trim_start_matches("budget.");
+    match key {
+        "daily" => return Some((None, "daily", Kind::Tokens)),
+        "per_item" => return Some((None, "per_item", Kind::Tokens)),
+        "review_model" => return Some((None, "review_model", Kind::Text)),
+        "fix_model" => return Some((None, "fix_model", Kind::Text)),
+        "intake_model" => return Some((None, "intake_model", Kind::Text)),
+        "librarian_model" => return Some((None, "librarian_model", Kind::Text)),
+        _ => {}
+    }
+    let (table, field) = key.split_once('.')?;
+    let table = table_key(budget::role_of(table)?);
+    let (field, kind) = match field {
+        "daily" => ("daily", Kind::Tokens),
+        "max_usd" => ("max_usd", Kind::Usd),
+        "timeout" => ("timeout", Kind::Duration),
+        "model" => ("model", Kind::Text),
+        "effort" => ("effort", Kind::Text),
+        _ => return None,
+    };
+    Some((Some(table), field, kind))
+}
+
+const KEYS: &str = "daily, per_item, <role>.daily, <role>.max_usd, <role>.timeout, <role>.model, \
+                    <role>.effort, review_model, fix_model, intake_model, librarian_model \
+                    (roles: review, fix, intake, librarian)";
+
+/// Applies `key=value` settings to `.hallmark.toml` text with toml_edit,
+/// keeping comments and layout. `none` (or `off`) removes a cap. The result
+/// must still parse as a [`Config`].
+pub fn apply_sets(text: &str, sets: &[String]) -> Result<(String, Vec<String>)> {
+    let mut doc: toml_edit::DocumentMut = text.parse().map_err(|e| {
+        HallError::new(
+            ErrorCode::Usage,
+            format!(".hallmark.toml doesn't parse: {e}"),
+        )
+        .next(["hall doctor"])
+    })?;
+    let mut applied = Vec::new();
+    for s in sets.iter().flat_map(|s| s.split_whitespace()) {
+        let (k, v) = s.split_once('=').ok_or_else(|| {
+            HallError::usage(format!("--set {s}: use key=value, such as daily=4M"))
+        })?;
+        let (table, field, kind) = resolve_key(k).ok_or_else(|| {
+            HallError::usage(format!("--set {s}: unknown key {k}; keys: {KEYS}"))
+                .next(["hall budget", "hall schema config"])
+        })?;
+        let v = v.trim().trim_matches('"');
+        let remove = matches!(v.to_ascii_lowercase().as_str(), "none" | "off" | "");
+        let value: Option<toml_edit::Value> = if remove {
+            None
+        } else {
+            Some(match kind {
+                Kind::Tokens => {
+                    parse_tokens(v).ok_or_else(|| {
+                        HallError::usage(format!(
+                            "--set {s}: {v} is not a token count; use 800k, 4M or 1200"
+                        ))
+                    })?;
+                    v.into()
+                }
+                Kind::Usd => {
+                    let n: f64 = v
+                        .trim_start_matches('$')
+                        .parse()
+                        .ok()
+                        .filter(|n: &f64| n.is_finite() && *n > 0.0)
+                        .ok_or_else(|| {
+                            HallError::usage(format!(
+                                "--set {s}: {v} is not an amount in USD, such as 3 or 1.50"
+                            ))
+                        })?;
+                    n.into()
+                }
+                Kind::Duration => {
+                    parse_duration(v).ok_or_else(|| {
+                        HallError::usage(format!(
+                            "--set {s}: {v} is not a duration; use 20m, 90s or 1h"
+                        ))
+                    })?;
+                    v.into()
+                }
+                Kind::Text => v.into(),
+            })
+        };
+        let name = match table {
+            Some(t) => format!("budget.{t}.{field}"),
+            None => format!("budget.{field}"),
+        };
+        // `hall init` leaves hints such as `# daily    = "4M"` at the end
+        // of [budget]; a key that is now set replaces its hint.
+        if table.is_none() && value.is_some() {
+            drop_hint(&mut doc, field);
+        }
+        let budget = doc
+            .entry("budget")
+            .or_insert(toml_edit::table())
+            .as_table_like_mut()
+            .ok_or_else(|| HallError::usage("budget in .hallmark.toml is not a table"))?;
+        let target: &mut dyn toml_edit::TableLike = match table {
+            None => budget,
+            Some(t) => {
+                if budget.get(t).is_none() {
+                    if value.is_none() {
+                        applied.push(format!("{name} = none"));
+                        continue;
+                    }
+                    budget.insert(t, toml_edit::table());
+                }
+                budget
+                    .get_mut(t)
+                    .and_then(|i| i.as_table_like_mut())
+                    .ok_or_else(|| {
+                        HallError::usage(format!("budget.{t} in .hallmark.toml is not a table"))
+                    })?
+            }
+        };
+        match value {
+            None => {
+                target.remove(field);
+                applied.push(format!("{name} = none"));
+            }
+            Some(val) => {
+                applied.push(format!("{name} = {}", val.to_string().trim()));
+                set_value(target, field, val);
+            }
+        }
+    }
+    let out = doc.to_string();
+    Config::parse(&out).map_err(|e| {
+        HallError::new(
+            ErrorCode::Usage,
+            format!(
+                "the new settings don't make a valid .hallmark.toml: {}",
+                e.message
+            ),
+        )
+    })?;
+    Ok((out, applied))
+}
+
+/// Sets `field`, keeping an existing value's comment and spacing; an equal
+/// value is left untouched.
+fn set_value(target: &mut dyn toml_edit::TableLike, field: &str, val: toml_edit::Value) {
+    match target.get_mut(field).and_then(|i| i.as_value_mut()) {
+        Some(old) if old.to_string().trim() == val.to_string().trim() => {}
+        Some(old) => {
+            let decor = old.decor().clone();
+            *old = val;
+            *old.decor_mut() = decor;
+        }
+        None => {
+            target.insert(field, toml_edit::Item::Value(val));
+        }
+    }
+}
+
+/// Removes commented-out hints for `field` (`# daily    = "4M"`) from the
+/// end of the file, where `hall init` leaves them.
+fn drop_hint(doc: &mut toml_edit::DocumentMut, field: &str) {
+    let Some(trailing) = doc.trailing().as_str().map(String::from) else {
+        return;
+    };
+    let is_hint = |l: &str| {
+        l.trim_start()
+            .strip_prefix('#')
+            .and_then(|r| r.trim_start().strip_prefix(field))
+            .is_some_and(|r| r.trim_start().starts_with('='))
+    };
+    if !trailing.lines().any(is_hint) {
+        return;
+    }
+    let mut kept: String = trailing
+        .lines()
+        .filter(|l| !is_hint(l))
+        .map(|l| format!("{l}\n"))
+        .collect();
+    if kept.trim().is_empty() {
+        kept.clear();
+    }
+    doc.set_trailing(kept);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sets_keep_comments_and_are_idempotent() {
+        let text = config::render_initial("main", &[], config::CaptureMode::Gate);
+        let sets = vec![
+            "daily=4M per_item=800k".to_string(),
+            "review.max_usd=3".into(),
+            "review.daily=2M".into(),
+            "fix.model=sonnet".into(),
+            "fixer.timeout=5m".into(),
+        ];
+        let (out, applied) = apply_sets(&text, &sets).unwrap();
+        assert_eq!(applied.len(), 6, "{applied:?}");
+        assert!(out.contains("# Hallmark settings for this repository"));
+        assert!(out.contains("# gate: edits need an item"));
+        let c = Config::parse(&out).unwrap();
+        assert_eq!(c.budget.daily.as_deref(), Some("4M"));
+        assert_eq!(c.budget.per_item.as_deref(), Some("800k"));
+        assert_eq!(c.budget.max_usd(config::Role::Reviewer), Some(3.0));
+        assert_eq!(c.budget.model(config::Role::Fixer), "sonnet");
+        assert_eq!(c.budget.timeout_secs(config::Role::Fixer), 300);
+        // init's commented hints for the keys now set are gone.
+        assert!(!out.contains("# daily"), "{out}");
+        assert!(!out.contains("# per_item"), "{out}");
+        let (again, _) = apply_sets(&out, &sets).unwrap();
+        assert_eq!(again, out, "idempotent");
+        let (removed, _) = apply_sets(&out, &["daily=none".into()]).unwrap();
+        assert_eq!(Config::parse(&removed).unwrap().budget.daily, None);
+        // Changing a value keeps its trailing comment.
+        let (c2, _) = apply_sets(
+            "[budget]\ndaily = \"1M\" # whole loop\n",
+            &["daily=2M".into()],
+        )
+        .unwrap();
+        assert_eq!(c2, "[budget]\ndaily = \"2M\" # whole loop\n");
+    }
+
+    #[test]
+    fn bad_sets_are_usage_errors() {
+        for s in [
+            "daily=lots",
+            "nope=1",
+            "review.max_usd=-1",
+            "review.timeout=5",
+            "daily",
+            "ship.daily=1M",
+        ] {
+            let e = apply_sets("", &[s.to_string()]).unwrap_err();
+            assert_eq!(e.code, ErrorCode::Usage, "{s}");
+        }
+    }
+
+    #[test]
+    fn creates_tables_in_an_empty_file() {
+        let (out, _) = apply_sets("", &["intake.daily=100k".into()]).unwrap();
+        let c = Config::parse(&out).unwrap();
+        assert_eq!(
+            c.budget
+                .role(config::Role::Intake)
+                .unwrap()
+                .daily
+                .as_deref(),
+            Some("100k")
+        );
+    }
+
+    #[test]
+    fn bars() {
+        assert_eq!(bar(61, 100), "██████░░░░  61%");
+        assert_eq!(bar(300, 100), "██████████ 300%");
+    }
 }

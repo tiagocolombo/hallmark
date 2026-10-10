@@ -1,0 +1,26 @@
+---
+source: tests/usage_notify.rs
+expression: v
+---
+{
+  "created_topic": "[topic]",
+  "next": [
+    "hall notify test --channel phone",
+    "hall inbox"
+  ],
+  "sent": [
+    {
+      "channel": "desktop",
+      "detail": "desktop",
+      "ok": true
+    },
+    {
+      "channel": "phone",
+      "detail": "new topic: subscribe first, then test it with --channel phone",
+      "ok": true,
+      "skipped": true
+    }
+  ],
+  "subscribe": "Your phone channel is the private ntfy topic [topic]. Install the ntfy app (https://ntfy.sh), subscribe to [topic], then run `hall notify test --channel phone`. Keep the name to yourself: anyone who knows it can read the topic.",
+  "user_config": "[root]/home/config.toml"
+}

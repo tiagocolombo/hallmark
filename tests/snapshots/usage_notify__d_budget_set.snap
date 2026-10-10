@@ -1,0 +1,106 @@
+---
+source: tests/usage_notify.rs
+expression: v
+---
+{
+  "caps": [
+    {
+      "key": "budget.per_item",
+      "level": "item",
+      "limit": "800k",
+      "limit_tokens": 800000,
+      "reached": false
+    },
+    {
+      "key": "budget.review.daily",
+      "level": "room",
+      "limit": "2M",
+      "limit_tokens": 2000000,
+      "reached": false,
+      "room": "assay",
+      "used": 1200000
+    },
+    {
+      "key": "budget.fix.daily",
+      "level": "room",
+      "reached": false,
+      "room": "repair",
+      "used": 300000
+    },
+    {
+      "key": "budget.intake.daily",
+      "level": "room",
+      "reached": false,
+      "room": "front",
+      "used": 0
+    },
+    {
+      "key": "budget.librarian.daily",
+      "level": "room",
+      "reached": false,
+      "room": "library",
+      "used": 0
+    },
+    {
+      "key": "budget.daily",
+      "level": "daily",
+      "limit": "4M",
+      "limit_tokens": 4000000,
+      "reached": false,
+      "used": 1500000
+    }
+  ],
+  "day": "[day]",
+  "next": [
+    "hall budget --set daily=4M per_item=800k",
+    "hall usage --by room --since 24h",
+    "hall usage --by item"
+  ],
+  "runs": [
+    {
+      "key": "review",
+      "max_usd": 3.0,
+      "model": "opus",
+      "role": "reviewer",
+      "timeout_secs": 1200
+    },
+    {
+      "key": "fix",
+      "model": "sonnet",
+      "role": "fixer",
+      "timeout_secs": 1200
+    },
+    {
+      "key": "intake",
+      "model": "haiku",
+      "role": "intake",
+      "timeout_secs": 120
+    },
+    {
+      "key": "librarian",
+      "model": "haiku",
+      "role": "librarian",
+      "timeout_secs": 1200
+    }
+  ],
+  "set": [
+    "budget.daily = \"4M\"",
+    "budget.per_item = \"800k\"",
+    "budget.review.max_usd = 3.0",
+    "budget.review.daily = \"2M\"",
+    "budget.fix.model = \"sonnet\""
+  ],
+  "top_items": [
+    {
+      "cost_usd": 2.5,
+      "item": "H-0001",
+      "over_cap": true,
+      "runs": 2,
+      "state": "development",
+      "title": "Retry webhooks",
+      "tokens": 1500000
+    }
+  ],
+  "workshop_today": 2000000,
+  "written": "[root]/app/.hallmark.toml"
+}
