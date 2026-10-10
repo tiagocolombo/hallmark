@@ -189,11 +189,17 @@ pub fn doctor(cwd: &Path) -> Result<Response> {
             }
         }
     }
+    let running = crate::daemon::state::instance_running();
+    let paused = crate::daemon::state::load().and_then(|s| s.paused);
     checks.push(check(
         "daemon",
-        true,
-        "not part of Stage 1; reviews queue until it ships",
-        None,
+        running,
+        match (&paused, running) {
+            (Some(p), true) => format!("running, paused: {}", p.reason),
+            (None, true) => "running".to_string(),
+            (_, false) => "not running; reviews wait in the queue".to_string(),
+        },
+        Some("hall daemon start --at-login"),
     ));
 
     let healthy = checks.iter().all(|c| c.ok);
