@@ -404,7 +404,10 @@ fn a_conflicting_merge_records_nothing() {
     assert_eq!(m.code, 0, "{}", m.stdout);
     assert_eq!(m.json["open_children"], json!([]));
     assert_eq!(
-        std::fs::read_to_string(parent_wt.join("README.md")).unwrap(),
+        // Windows checkouts may turn LF into CRLF.
+        std::fs::read_to_string(parent_wt.join("README.md"))
+            .unwrap()
+            .replace("\r\n", "\n"),
         "# api and web\n"
     );
 }

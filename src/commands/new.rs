@@ -697,12 +697,21 @@ pub fn shell_quote(s: &str) -> String {
 
 /// A command line run through the platform shell: `sh -c`, or `cmd /C` on
 /// Windows.
+///
+/// On Windows the line goes to cmd.exe verbatim (`/S /C "<line>"` through
+/// `raw_arg`): `Command::arg` would escape its quotes as `\"`, which cmd.exe
+/// doesn't understand, and break any command with a quoted argument, such
+/// as `git commit -m "fix F1"` or a ship command's `--title {title}`.
 pub fn shell(cmd: &str) -> Command {
-    if cfg!(windows) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
         let mut c = Command::new("cmd");
-        c.arg("/C").arg(cmd);
+        c.raw_arg(format!("/S /C \"{cmd}\""));
         c
-    } else {
+    }
+    #[cfg(not(windows))]
+    {
         let mut c = Command::new("sh");
         c.arg("-c").arg(cmd);
         c
@@ -744,6 +753,14 @@ mod tests {
         );
         assert_eq!(title_from_branch("hm/H-0003-fix-login"), "Fix login");
         assert_eq!(title_from_branch("feature/new_billing"), "New billing");
+    }
+
+    #[test]
+    fn shell_keeps_quoted_arguments() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = run_shell("git --version && echo \"two words\"", dir.path()).unwrap();
+        assert!(out.contains("two words"), "{out}");
+        assert!(!out.contains('\\'), "{out}");
     }
 
     #[test]
