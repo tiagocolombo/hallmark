@@ -73,7 +73,9 @@ pub fn watched(items: &[Item], now: DateTime<Utc>) -> Vec<Item> {
                 && match &i.ci {
                     None => now - i.state_since < Duration::hours(GIVE_UP_HOURS),
                     // A failed PR is watched until it turns green or closes.
-                    Some(c) => !c.passed && c.ended.is_none() && now - c.t < Duration::hours(GIVE_UP_HOURS),
+                    Some(c) => {
+                        !c.passed && c.ended.is_none() && now - c.t < Duration::hours(GIVE_UP_HOURS)
+                    }
                 }
         })
         .cloned()
@@ -216,10 +218,7 @@ fn record(
     let what = if passed {
         format!("{id}: CI passed on {url}")
     } else if let Some(e) = &ended {
-        format!(
-            "{id}: {url} {e} with CI failing: {}",
-            names.join(", ")
-        )
+        format!("{id}: {url} {e} with CI failing: {}", names.join(", "))
     } else {
         format!("{id}: CI failed on {url}: {}", names.join(", "))
     };
