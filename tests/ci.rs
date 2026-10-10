@@ -230,3 +230,55 @@ fn a_pr_whose_head_moved_is_not_stacked_on() {
     assert_eq!(out.status.code(), Some(0), "{j}");
     assert_eq!(j["base"], "main");
 }
+
+fn ci_entries(env: &Env) -> usize {
+    env.hall(&env.repo, &["inbox"]).json["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["kind"] == "ci_failed")
+        .count()
+}
+
+#[test]
+fn a_pr_merged_with_red_checks_keeps_its_ci_failed_entry() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    let (id, _) = shipped(&env);
+    pr(&gh, "OPEN", "x", "");
+    checks(
+        &gh,
+        json!([{"name": "test (ubuntu-latest)", "bucket": "fail"}]),
+    );
+    assert_eq!(ci_pass(&env, &gh)["steps"][0]["progress"], "worked");
+    pr(&gh, "MERGED", "x", "");
+    std::fs::remove_file(env.repo.join(".git/hallmark/ci-watch.json")).unwrap();
+    assert_eq!(ci_pass(&env, &gh)["steps"][0]["progress"], "worked");
+    let recorded = events(&env, &id, "pr_checks");
+    assert_eq!(recorded.len(), 2);
+    assert_eq!(recorded[1]["passed"], false);
+    assert_eq!(recorded[1]["ended"], "merged");
+    assert_eq!(ci_entries(&env), 1);
+    // The watch stops there.
+    std::fs::remove_file(env.repo.join(".git/hallmark/ci-watch.json")).unwrap();
+    assert_eq!(ci_pass(&env, &gh)["steps"][0]["progress"], "idle");
+    assert_eq!(events(&env, &id, "pr_checks").len(), 2);
+}
+
+#[test]
+fn a_pr_closed_with_red_checks_leaves_the_inbox_without_passing() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    let (id, _) = shipped(&env);
+    pr(&gh, "OPEN", "x", "");
+    checks(&gh, json!([{"name": "test", "bucket": "fail"}]));
+    assert_eq!(ci_pass(&env, &gh)["steps"][0]["progress"], "worked");
+    assert_eq!(ci_entries(&env), 1);
+    pr(&gh, "CLOSED", "x", "");
+    std::fs::remove_file(env.repo.join(".git/hallmark/ci-watch.json")).unwrap();
+    assert_eq!(ci_pass(&env, &gh)["steps"][0]["progress"], "worked");
+    let recorded = events(&env, &id, "pr_checks");
+    assert_eq!(recorded[1]["passed"], false);
+    assert_eq!(recorded[1]["ended"], "closed");
+    assert_eq!(ci_entries(&env), 0);
+}

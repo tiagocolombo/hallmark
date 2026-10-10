@@ -240,6 +240,9 @@ pub struct Ci {
     /// The failing checks' names.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub failing: Vec<String>,
+    /// `merged` or `closed` when the PR ended with red checks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ended: Option<String>,
     pub t: DateTime<Utc>,
 }
 

@@ -87,6 +87,7 @@ fn ship(repo: &Repo, item: &Item) -> Result<Progress> {
     }
     // A follow-up stacked on a PR ships into that PR's branch, which only
     // works while the PR is open.
+    let mut base = item.base.clone();
     if item.base != repo.config.base
         && let Some(url) = repo
             .index()?
@@ -98,17 +99,27 @@ fn ship(repo: &Repo, item: &Item) -> Result<Progress> {
         && !state.is_empty()
         && state != "OPEN"
     {
-        return held(
-            repo,
-            id,
-            format!(
-                "the PR {url} this item is stacked on is {}; its branch {} is no longer a place to ship into. \
-                 Rebase the item onto {} and `hall pull-back {id}` to send it to review against it",
-                state.to_lowercase(),
-                item.base,
+        if state == "MERGED" {
+            // The parent's work reached the base: ship there.
+            repo.hall.live(&format!(
+                "{id}: the PR {url} it is stacked on merged; shipping into {}",
                 repo.config.base
-            ),
-        );
+            ));
+            base = repo.config.base.clone();
+        } else {
+            return held(
+                repo,
+                id,
+                format!(
+                    "the PR {url} this item is stacked on was {} without merging, so {} is no \
+                     place to ship into. Nothing can re-target an item's base: drop it \
+                     (`hall drop {id}`) and redo the work with `hall new` from {}",
+                    state.to_lowercase(),
+                    item.base,
+                    repo.config.base
+                ),
+            );
+        }
     }
     let events = repo.hall.read_item(id)?;
     let body = pr_body(repo, item, &events);
@@ -124,7 +135,7 @@ fn ship(repo: &Repo, item: &Item) -> Result<Progress> {
         &[
             ("branch", item.branch.as_str()),
             ("id", &id.to_string()),
-            ("base", item.base.as_str()),
+            ("base", base.as_str()),
             ("title", item.title.as_str()),
             ("body_file", &crate::paths::display(&body_file)),
             ("issue", &issue),

@@ -332,6 +332,10 @@ pub enum Body {
         /// The checks that failed: name and link.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         failing: Vec<FailingCheck>,
+        /// Set when the PR left the open state while its checks were red:
+        /// `merged` or `closed`. The checks did not pass.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ended: Option<String>,
     },
 }
 
@@ -691,10 +695,14 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
             }
             Body::Released { .. } => item.hold = None,
             Body::PrChecks {
-                passed, failing, ..
+                passed,
+                failing,
+                ended,
+                ..
             } => {
                 item.ci = Some(crate::item::Ci {
                     passed: *passed,
+                    ended: ended.clone(),
                     failing: failing.iter().map(|f| f.name.clone()).collect(),
                     t: e.t,
                 })

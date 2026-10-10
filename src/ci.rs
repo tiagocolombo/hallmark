@@ -73,7 +73,7 @@ pub fn watched(items: &[Item], now: DateTime<Utc>) -> Vec<Item> {
                 && match &i.ci {
                     None => now - i.state_since < Duration::hours(GIVE_UP_HOURS),
                     // A failed PR is watched until it turns green or closes.
-                    Some(c) => !c.passed && now - c.t < Duration::hours(GIVE_UP_HOURS),
+                    Some(c) => !c.passed && c.ended.is_none() && now - c.t < Duration::hours(GIVE_UP_HOURS),
                 }
         })
         .cloned()
@@ -146,9 +146,29 @@ pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
         return match conclude(&checks) {
             Outcome::Passed => record(ctx, item.id, &url, true, vec![]),
             _ => {
-                if crate::gh::pr_state(&repo.main_root, &url).is_ok_and(|s| s != "OPEN") {
-                    // Closed or merged: nothing left to wait for.
-                    record(ctx, item.id, &url, true, vec![])
+                let ended = crate::gh::pr_state(&repo.main_root, &url)
+                    .ok()
+                    .and_then(|s| ended_by(&s));
+                if let Some(ended) = ended {
+                    // Closed or merged with the checks still red: stop
+                    // watching, but never record that they passed.
+                    let failing = match conclude(&checks) {
+                        Outcome::Failed(f) => f,
+                        _ => item
+                            .ci
+                            .as_ref()
+                            .map(|c| {
+                                c.failing
+                                    .iter()
+                                    .map(|n| FailingCheck {
+                                        name: n.clone(),
+                                        link: None,
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default(),
+                    };
+                    record(ctx, item.id, &url, false, failing, Some(ended))
                 } else {
                     Ok(Progress::Idle)
                 }
@@ -157,8 +177,17 @@ pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
     }
     match conclude(&checks) {
         Outcome::Waiting => Ok(Progress::Idle),
-        Outcome::Passed => record(ctx, item.id, &url, true, vec![]),
-        Outcome::Failed(failing) => record(ctx, item.id, &url, false, failing),
+        Outcome::Passed => record(ctx, item.id, &url, true, vec![], None),
+        Outcome::Failed(failing) => record(ctx, item.id, &url, false, failing, None),
+    }
+}
+
+/// `merged` or `closed` for a PR that left the open state.
+pub fn ended_by(state: &str) -> Option<String> {
+    match state {
+        "MERGED" => Some("merged".into()),
+        "CLOSED" => Some("closed".into()),
+        _ => None,
     }
 }
 
@@ -168,6 +197,7 @@ fn record(
     url: &str,
     passed: bool,
     failing: Vec<FailingCheck>,
+    ended: Option<String>,
 ) -> Result<Progress> {
     let names: Vec<String> = failing.iter().map(|f| f.name.clone()).collect();
     ctx.repo.hall.append_item(
@@ -179,11 +209,17 @@ fn record(
                 pr_url: url.to_string(),
                 passed,
                 failing,
+                ended: ended.clone(),
             },
         ),
     )?;
     let what = if passed {
         format!("{id}: CI passed on {url}")
+    } else if let Some(e) = &ended {
+        format!(
+            "{id}: {url} {e} with CI failing: {}",
+            names.join(", ")
+        )
     } else {
         format!("{id}: CI failed on {url}: {}", names.join(", "))
     };
@@ -201,6 +237,13 @@ mod tests {
             bucket: bucket.into(),
             link: Some(format!("https://github.com/o/r/actions/runs/1/job/{name}")),
         }
+    }
+
+    #[test]
+    fn a_pr_that_ended_red_never_counts_as_passed() {
+        assert_eq!(ended_by("OPEN"), None);
+        assert_eq!(ended_by("MERGED").as_deref(), Some("merged"));
+        assert_eq!(ended_by("CLOSED").as_deref(), Some("closed"));
     }
 
     #[test]

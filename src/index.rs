@@ -491,7 +491,9 @@ impl Index {
             let followed = all
                 .iter()
                 .any(|f| f.follow_up.as_deref() == Some(url.as_str()) && f.state != State::Dropped);
-            if ci.passed || followed {
+            // A PR closed unmerged has nothing left to fix; one merged with
+            // red checks is a failure on the base branch.
+            if ci.passed || followed || ci.ended.as_deref() == Some("closed") {
                 continue;
             }
             out.push(InboxEntry {
