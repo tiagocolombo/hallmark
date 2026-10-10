@@ -144,7 +144,7 @@ pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
     // goes green, or a fix pushed on GitHub, clears the inbox entry.
     if item.ci.as_ref().is_some_and(|c| !c.passed) {
         return match conclude(&checks) {
-            Outcome::Passed => record(ctx, item.id, &url, true, vec![]),
+            Outcome::Passed => record(ctx, item.id, &url, true, vec![], None),
             _ => {
                 let ended = crate::gh::pr_state(&repo.main_root, &url)
                     .ok()
