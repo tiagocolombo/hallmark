@@ -462,6 +462,15 @@ pub struct BudgetArgs {
     /// review.max_usd=3, review.daily=2M (repeatable).
     #[arg(long, num_args = 1..)]
     pub set: Vec<String>,
+    /// Let the loop go past the daily budget today without changing it:
+    /// today's cap becomes `daily` plus this many tokens (default: another
+    /// `daily`), and a daily-budget pause lifts now. Repeating it with the
+    /// same amount changes nothing; it ends at 00:00 UTC.
+    #[arg(long, num_args = 0..=1, default_missing_value = "daily", value_name = "TOKENS")]
+    pub grant: Option<String>,
+    /// Why, for the journal (with --grant).
+    #[arg(long, requires = "grant")]
+    pub reason: Option<String>,
 }
 
 #[derive(Debug, Args)]

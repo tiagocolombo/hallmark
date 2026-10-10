@@ -312,7 +312,7 @@ $ echo $?
 | `hall verdict --file <json>` | assayer | Records a schema-checked verdict. |
 | `hall history [--rejected] [--lens] [--since]` | you | Closed and dropped items, and why things were rejected. |
 | `hall export [<id>]` | you, shipper | The whole record as Markdown. |
-| `hall budget [--set k=v]` | you | The caps and today's spend. |
+| `hall budget [--set k=v] [--grant [<tokens>]]` | you | The caps and today's spend. `--grant` lets the loop go past the daily cap for today (default: another `daily`) and lifts the budget pause; the cap is unchanged. |
 | `hall notify test` | you | A test notification on every channel. |
 | `hall statusline` | Claude Code | One line for the status line. |
 | `hall library search\|review\|retire\|distill` | you, agents | The Library. |
