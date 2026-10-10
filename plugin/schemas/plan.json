@@ -1,24 +1,40 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Hallmark intake plan",
   "type": "object",
   "properties": {
-    "parallel": { "type": "boolean" },
-    "reason": { "type": "string" },
+    "parallel": {
+      "type": "boolean",
+      "description": "True only when the request splits into parts that are truly independent: disjoint files, no ordering, each testable alone."
+    },
     "parts": {
       "type": "array",
+      "description": "Always present. When parallel is true: the 2 or more independent parts. When parallel is false: an empty list.",
       "items": {
         "type": "object",
         "properties": {
-          "title": { "type": "string" },
-          "request": { "type": "string" },
-          "paths": { "type": "array", "items": { "type": "string" } }
+          "title": {
+            "type": "string",
+            "description": "A short imperative title, at most 60 characters."
+          },
+          "request": {
+            "type": "string",
+            "description": "A self-contained request for the developer who builds only this part: what to change, where, and how to check it."
+          },
+          "paths": {
+            "type": "array",
+            "description": "Repository-relative files, directories or globs this part touches. Parts must not share any path.",
+            "items": { "type": "string" }
+          }
         },
         "required": ["title", "request", "paths"],
         "additionalProperties": false
       }
+    },
+    "reason": {
+      "type": "string",
+      "description": "One or two sentences: why the parts are independent, or why the request stays one item."
     }
   },
-  "required": ["parallel", "reason", "parts"],
+  "required": ["parallel", "parts", "reason"],
   "additionalProperties": false
 }

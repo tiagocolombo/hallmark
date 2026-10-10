@@ -51,6 +51,45 @@ Then do all edits and commits in the returned `worktree`:
 
 - From a GitHub issue: `hall new --issue 212`. The PR will close it.
 - On an existing branch or worktree: `hall adopt`.
+- From review feedback on a shipped PR: `hall new --follow-up <pr-url>`.
+- To keep a request as one item, never split: `hall new "<request>" --no-split`.
+
+`hall new` asks the Front Desk whether the request splits into independent
+parts. The reply's `plan` says what it decided and why. If the reply has
+`children`, follow **Parallel parts** below instead.
+
+## Parallel parts
+
+When `hall new` returns `children`, the item it returned is the **parent**
+and each child is one independent part with its own branch and worktree. You
+are the orchestrator; the principal engineer reviews the parent once, when
+every part is in.
+
+1. **Launch one subagent per child, all in the same message**, so they run in
+   parallel (the Agent tool). Give each one:
+   - the child's id, its absolute `worktree` path and its `request`;
+   - "Edit files only inside this worktree, with the Edit and Write tools and
+     absolute paths. Run git there with `git -C <worktree>`. Commit your work.
+     Don't push and don't run `hall ready`. Run the repo's gates in the
+     worktree. Report what you did and what you checked."
+2. **As each subagent finishes**, check its report, then merge the part into
+   the parent's branch:
+   ```
+   hall merge H-0043
+   ```
+   On `MERGE_CONFLICT` nothing was merged: in the child's worktree, merge the
+   parent's branch (`git -C <child-worktree> merge <parent-branch>`), fix the
+   conflicts, commit, and run `hall merge` again, as the error's `next` says.
+   A part that turns out unnecessary: `hall drop H-0044 --reason "..."`.
+3. **When every part is merged or dropped**, run the gates in the parent's
+   worktree on the merged whole and fix anything that broke there (commit in
+   the parent's worktree). Summarise, run
+   `hall propose-ready <parent> --summary "..."` and ask the human; when they
+   say ready, `hall ready <parent>`.
+
+`hall ready` on a parent with open parts fails with `CHILDREN_OPEN`; on a part
+it fails with `WRONG_STATE` (parts merge, they aren't reviewed alone). To add
+a part by hand: `hall new "<request>" --parent <parent>`.
 
 **Edit gate.** If an edit or commit is denied with `NO_ITEM` (or similar), run
 the command in the denial's `next`, move into the worktree, and carry on. Don't
@@ -102,5 +141,6 @@ option letter, `a`).
 
 `development` → `awaiting_you` → `checks` → `review` → `fixing` → back to
 `checks`; `escalated` after 3 rejected reviews; `hallmarked` → `closed` when
-the PR opens; `dropped` at any time. You work only in `development`. Later PR
-feedback starts a new item.
+the PR opens; `dropped` at any time. You work only in `development`. A
+parallel part goes `development` → `closed` when `hall merge` merges it into
+its parent. Later PR feedback starts a new item (`hall new --follow-up`).

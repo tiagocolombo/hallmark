@@ -1,0 +1,40 @@
+---
+source: tests/intake.rs
+expression: "scrub(&env, &m.json)"
+---
+{
+  "base": "main",
+  "branch": "hm/H-0002-api-client-retries",
+  "changed": true,
+  "created_at": "[time]",
+  "id": "H-0002",
+  "next": [
+    "hall merge H-0003",
+    "hall status H-0001"
+  ],
+  "open_children": [
+    "H-0003"
+  ],
+  "parent": {
+    "base": "main",
+    "branch": "hm/H-0001-add-retries-to-the-api-client-and-a",
+    "created_at": "[time]",
+    "id": "H-0001",
+    "rejects": 0,
+    "room": "Workshop",
+    "round": 0,
+    "state": "development",
+    "state_since": "[time]",
+    "title": "Add retries to the API client and a status banner to the web app",
+    "worktree": "[root]/app-H-0001"
+  },
+  "rejects": 0,
+  "room": "Dispatch Dock",
+  "round": 0,
+  "sha": "[sha]",
+  "state": "closed",
+  "state_since": "[time]",
+  "title": "API client retries",
+  "worktree": "[root]/app-H-0002",
+  "worktree_removed": true
+}

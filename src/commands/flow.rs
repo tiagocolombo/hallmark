@@ -64,9 +64,59 @@ fn reply(item: &Item, changed: bool, note: Option<String>) -> Response {
     )
 }
 
+/// A parallel part never goes to review on its own: it merges into its
+/// parent, and the parent is reviewed once, as a whole (ADR 0024).
+fn part_not_reviewed(item: &Item) -> Option<HallError> {
+    let parent = item.parent?;
+    if item.state.is_terminal() {
+        return None;
+    }
+    Some(
+        HallError::new(
+            ErrorCode::WrongState,
+            format!(
+                "{} is a parallel part of {parent}; parts merge into their parent, \
+                 which goes to review once every part is in",
+                item.id
+            ),
+        )
+        .next([
+            format!("hall merge {}", item.id),
+            format!("hall status {parent}"),
+        ]),
+    )
+}
+
+/// CHILDREN_OPEN: the parent waits for its parts.
+fn children_open(item: &Item, open: &[Item], what: &str) -> HallError {
+    let ids: Vec<String> = open
+        .iter()
+        .map(|c| format!("{} ({})", c.id, c.state))
+        .collect();
+    let mut next = Vec::new();
+    for c in open {
+        next.push(format!("hall merge {}", c.id));
+        next.push(format!("hall drop {} --reason \"<why>\"", c.id));
+    }
+    next.push(format!("hall status {}", item.id));
+    HallError::new(
+        ErrorCode::ChildrenOpen,
+        format!(
+            "{} has parts still open: {}; {what}",
+            item.id,
+            ids.join(", ")
+        ),
+    )
+    .next(next)
+}
+
 pub fn ready(cwd: &Path, a: ReadyArgs) -> Result<Response> {
     let repo = Repo::discover(cwd)?;
     let item = repo.resolve(a.id.as_deref())?;
+    if let Some(e) = part_not_reviewed(&item) {
+        return Err(e);
+    }
+    let open = super::merge::open_children(&repo, item.id)?;
     let wt = Path::new(&item.worktree);
     if !wt.is_dir() {
         return Err(HallError::new(
@@ -80,6 +130,13 @@ pub fn ready(cwd: &Path, a: ReadyArgs) -> Result<Response> {
     let actor = actor();
     let (item, (changed, note)) = repo.hall.transact(item.id, |item, _| match item.state {
         State::Development | State::AwaitingYou => {
+            if !open.is_empty() {
+                return Err(children_open(
+                    item,
+                    &open,
+                    "merge or drop each one first; the whole goes to review once",
+                ));
+            }
             if !dirty.is_empty() {
                 return Err(HallError::new(
                     ErrorCode::DirtyWorktree,
@@ -195,6 +252,14 @@ pub fn drop(cwd: &Path, a: DropArgs) -> Result<Response> {
     if item.state.is_terminal() {
         return Err(wrong_state(&item, "it can't be dropped"));
     }
+    let open = super::merge::open_children(&repo, item.id)?;
+    if !open.is_empty() {
+        return Err(children_open(
+            &item,
+            &open,
+            "drop (or merge) each part first",
+        ));
+    }
     let wt = paths::normalize(Path::new(&item.worktree));
     let mut note = None;
     let removable = !a.keep_worktree && wt.is_dir() && wt != repo.main_root;
@@ -239,7 +304,7 @@ pub fn retry(cwd: &Path, a: RetryArgs) -> Result<Response> {
     let repo = Repo::discover(cwd)?;
     let item = repo.resolve(a.id.as_deref())?;
     let actor = actor();
-    let (item, changed) = repo.hall.transact(item.id, |item, _| match item.state {
+    let (item, (changed, note)) = repo.hall.transact(item.id, |item, _| match item.state {
         State::Escalated => Ok((
             vec![ev(
                 &actor,
@@ -248,16 +313,27 @@ pub fn retry(cwd: &Path, a: RetryArgs) -> Result<Response> {
                     reason: a.reason.clone(),
                 },
             )],
-            true,
+            (true, "One more fix round allowed."),
         )),
-        State::Fixing => Ok((vec![], false)),
-        _ => Err(wrong_state(item, "only escalated items get another round")),
+        // A hold (budget, run_failed, ship_failed, other) is lifted; the
+        // item stays where it is and the loop picks it up again (ADR 0016).
+        _ if item.hold.is_some() => Ok((
+            vec![ev(
+                &actor,
+                Some(item.id),
+                Body::Released {
+                    reason: Some(a.reason.clone()),
+                },
+            )],
+            (true, "Released: the loop picks it up again."),
+        )),
+        State::Fixing => Ok((vec![], (false, "One more fix round allowed."))),
+        _ => Err(wrong_state(
+            item,
+            "only escalated or held items can be retried",
+        )),
     })?;
-    Ok(reply(
-        &item,
-        changed,
-        Some("One more fix round allowed.".into()),
-    ))
+    Ok(reply(&item, changed, Some(note.into())))
 }
 
 pub fn propose_ready(cwd: &Path, a: ProposeReadyArgs) -> Result<Response> {

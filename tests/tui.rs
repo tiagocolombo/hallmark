@@ -638,6 +638,21 @@ fn drop_asks_for_a_reason() {
     assert!(app.status.as_ref().unwrap().error, "a reason is required");
     assert_eq!(hall.load_item(ItemId(3)).unwrap().state, State::Development);
 
+    // A parent with an open parallel part can't be dropped (CHILDREN_OPEN)…
+    key(&mut app, KeyCode::Char('x'));
+    chars(&mut app, "split differently");
+    key(&mut app, KeyCode::Enter);
+    let st = app.status.clone().unwrap();
+    assert!(st.error && st.text.contains("CHILDREN_OPEN"), "{}", st.text);
+    assert_eq!(hall.load_item(ItemId(3)).unwrap().state, State::Development);
+
+    // …until the part is dropped first.
+    select(&mut app, 4);
+    key(&mut app, KeyCode::Char('x'));
+    chars(&mut app, "folded into the parent");
+    key(&mut app, KeyCode::Enter);
+    assert_eq!(hall.load_item(ItemId(4)).unwrap().state, State::Dropped);
+    select(&mut app, 3);
     key(&mut app, KeyCode::Char('x'));
     chars(&mut app, "split differently");
     key(&mut app, KeyCode::Enter);
