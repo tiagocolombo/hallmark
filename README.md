@@ -194,7 +194,7 @@ hall pull-back H-0042       # back to development
 hall drop H-0041 --reason "superseded by H-0044"
 hall usage --by model --since 7d
 
-hall                        # the terminal app: board, journal, findings, history, live, usage, repos
+hall                        # the terminal app: your office, board, journal, findings, history, live, usage, repos
 hall history --rejected --since 7d
 hall export H-0042          # the whole record as Markdown
 hall budget                 # caps and today's spend; --set per_item=800k

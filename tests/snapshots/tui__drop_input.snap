@@ -1,6 +1,5 @@
 ---
 source: tests/tui.rs
-assertion_line: 628
 expression: "screen(&env, &app, W, H)"
 ---
 hall · app (1 of 1 repo)   daemon ● running   ⚑ 3 waiting   rejected today 3 · review tokens 400k                  hh:mm
@@ -8,7 +7,7 @@ hall · app (1 of 1 repo)   daemon ● running   ⚑ 3 waiting   rejected today 
 │ready?     H-0002  Export tenant usage looks done: CSV export with 14 tests                                   –       │
 │question   H-0002  Billed usage or raw events?  [a] billed  [b] raw                                           –       │
 │escalated  H-0007  Migrate billing tables: rejected 1 times                                                   –       │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+└────────────────────────────────────────────────────────────────────────────────────────────── i read in full and act ┘
 ┌ Board ───────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │DEVELOPMENT (2)               AWAITING YOU (2)              REVIEW LOOP (1)              CLOSED TODAY (2)             │
 │H-0003 Rate limit the public… H-0002 Export tena… needs you H-0001 Retry fail… review r2 H-0005 Tenant check in … #191│
@@ -38,4 +37,4 @@ hall · app (1 of 1 repo)   daemon ● running   ⚑ 3 waiting   rejected today 
 │no findings yet                                                                                                       │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 Drop H-0003, reason: not now▏  enter drop · esc cancel
-↑↓ item enter journal ←→ step f findings d diff r ready p pull back x drop / filter w worktree o PR ? help q quit
+↑↓ item enter journal i your office ←→ step f findings d diff r ready p pull back x drop / filter ? help q quit

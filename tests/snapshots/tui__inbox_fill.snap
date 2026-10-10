@@ -1,0 +1,40 @@
+---
+source: tests/tui.rs
+expression: "screen(&env, &app, W, H)"
+---
+hall · app (1 of 1 repo)   daemon ● running   ⚑ 2 waiting   rejected today 3 · review tokens 400k    your office · hh:mm
+┌ Your office ─⚑ 2 waiting ────────────────────────────────────────────────────────────────────────────────────────────┐
+│1.  ready?     H-0002  Export tenant usage looks done: CSV export with 14 tests                               –       │
+│2.  escalated  H-0007  Migrate billing tables: rejected 1 times                                               –       │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ 2. escalated · H-0007 · Migrate billing tables ─────────────────────────────────────────────────────────── waiting – ┐
+│Migrate billing tables: rejected 1 times                                                                              │
+│                                                                                                                      │
+│Why       The review rejected it too many times; the loop stopped and waits for your decision.                        │
+│Evidence  now: Rejected 1 times; it waits for your decision                                                           │
+│          F1 blocker src/webhooks.rs:42: Migration isn't reversible                                                   │
+│                                                                                                                      │
+│What you can do                                                                                                       │
+│ 1  hall findings H-0007                                                                                              │
+│    read the open findings in full                                                                                    │
+│ 2  hall retry H-0007 --reason "<why>"                                                                                │
+│    allow one more fix round                                                                                          │
+│ 3  hall pull-back H-0007                                                                                             │
+│    take it back to development and fix it yourself                                                                   │
+│ 4  hall drop H-0007 --reason "<why>"                                                                                 │
+│    abandon it                                                                                                        │
+│ 5  hall log H-0007                                                                                                   │
+│    read its whole journal                                                                                            │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+└──────────────────────────────────────────────────────────── 1-9 runs an action; one with <…> asks for the text first ┘
+hall retry H-0007 --reason <why> · why: the reviewer misread the migration▏  enter run · esc cancel
+↑↓ entry  1-9 run action  enter journal  pgup pgdn scroll  d diff  w worktree  o PR  esc board  ? help  q quit
