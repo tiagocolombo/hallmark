@@ -21,6 +21,7 @@ expression: "scrub(&env, &env.hall(&env.repo, &[\"inbox\"]).json)"
     }
   ],
   "next": [
+    "hall inbox 1",
     "hall answer Q-1 billed"
   ]
 }

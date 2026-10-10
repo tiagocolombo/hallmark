@@ -356,6 +356,10 @@ pub struct SessionState {
     pub last_request: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub started_at: Option<DateTime<Utc>>,
+    /// Inbox entries this session has already been told about
+    /// (`kind:item:qid`), so each is announced once.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub told: Vec<String>,
 }
 
 /// A ready item waiting for the assayer.

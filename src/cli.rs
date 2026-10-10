@@ -43,8 +43,10 @@ pub enum Cmd {
     Status(StatusArgs),
     /// An item's journal.
     Log(LogArgs),
-    /// Everything waiting for you, oldest first.
-    Inbox,
+    /// Everything waiting for you, oldest first; `hall inbox <n>` explains one.
+    Inbox(InboxArgs),
+    /// Follow an item live until it leaves the loop or needs you.
+    Watch(WatchArgs),
     /// Freeze the commit and send the item to review.
     Ready(ReadyArgs),
     /// Stop review and return the item to development.
@@ -165,6 +167,21 @@ pub struct LogArgs {
     /// Only the last N events.
     #[arg(long)]
     pub limit: Option<usize>,
+}
+
+#[derive(Debug, Args)]
+pub struct InboxArgs {
+    /// One entry to explain: its number in the list, a question ID (Q-3)
+    /// or an item ID.
+    pub entry: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct WatchArgs {
+    pub id: Option<String>,
+    /// Stop watching after this long, such as 30m.
+    #[arg(long, default_value = "30m")]
+    pub timeout: String,
 }
 
 #[derive(Debug, Args)]
@@ -582,7 +599,8 @@ fn dispatch(cmd: Option<Cmd>, cwd: &std::path::Path, mode: Mode) -> Result<Respo
         Some(Cmd::Adopt(a)) => new::adopt(cwd, a),
         Some(Cmd::Status(a)) => status::status(cwd, a.id.as_deref(), a.all, false),
         Some(Cmd::Log(a)) => status::log(cwd, a),
-        Some(Cmd::Inbox) => status::inbox(cwd),
+        Some(Cmd::Inbox(a)) => status::inbox(cwd, a),
+        Some(Cmd::Watch(a)) => watch::watch(cwd, a, mode),
         Some(Cmd::Ready(a)) => flow::ready(cwd, a),
         Some(Cmd::PullBack(a)) => flow::pull_back(cwd, a),
         Some(Cmd::Drop(a)) => flow::drop(cwd, a),

@@ -233,6 +233,14 @@ impl Render for SchemaOut {
 #[derive(Serialize, JsonSchema)]
 #[serde(untagged)]
 #[allow(dead_code, clippy::large_enum_variant)]
+enum InboxReply {
+    List(Out<InboxOut>),
+    Detail(Out<super::status::InboxDetail>),
+}
+
+#[derive(Serialize, JsonSchema)]
+#[serde(untagged)]
+#[allow(dead_code, clippy::large_enum_variant)]
 enum StatusReply {
     List(Out<StatusList>),
     Item(Out<StatusItem>),
@@ -272,6 +280,7 @@ pub const SCHEMA_NAMES: &[&str] = &[
     "statusline",
     "library",
     "hud",
+    "watch",
     "error",
     "event",
     "config",
@@ -286,7 +295,8 @@ pub fn schema_value(name: &str) -> Option<serde_json::Value> {
         "new" | "adopt" => schema_for!(Out<NewOut>),
         "status" => schema_for!(StatusReply),
         "log" => schema_for!(Out<LogOut>),
-        "inbox" => schema_for!(Out<InboxOut>),
+        "inbox" => schema_for!(InboxReply),
+        "watch" => schema_for!(Out<super::watch::WatchOut>),
         "ready" | "pull-back" | "drop" | "retry" | "propose-ready" => schema_for!(Out<FlowOut>),
         "ask" => schema_for!(Out<AskOut>),
         "answer" => schema_for!(Out<AnswerOut>),

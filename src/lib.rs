@@ -27,6 +27,7 @@ pub mod journal;
 pub mod lease;
 pub mod library;
 pub mod notify;
+pub mod now;
 pub mod output;
 pub mod paths;
 pub mod plugin;
