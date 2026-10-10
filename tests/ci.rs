@@ -28,7 +28,7 @@ fn fake_gh(env: &Env) -> PathBuf {
     std::fs::write(
         &gh,
         format!(
-            "#!/bin/sh\ncase \"$1 $2\" in\n  'pr checks') cat '{d}/checks.json' ;;\n  'pr view') cat '{d}/pr.json' ;;\n  'run view') cat '{d}/log.txt' ;;\n  api*) echo '[]' ;;\n  *) exit 1 ;;\nesac\n"
+            "#!/bin/sh\ncase \"$1 $2\" in\n  'pr checks') cat '{d}/checks.json' ;;\n  'pr view') case \"$*\" in *--jq*) cat '{d}/state.txt' ;; *) cat '{d}/pr.json' ;; esac ;;\n  'run view') cat '{d}/log.txt' ;;\n  api*) echo '[]' ;;\n  *) exit 1 ;;\nesac\n"
         ),
     )
     .unwrap();
@@ -41,8 +41,9 @@ fn checks(gh: &Path, list: Value) {
     std::fs::write(gh.parent().unwrap().join("checks.json"), list.to_string()).unwrap();
 }
 
-fn pr(gh: &Path, state: &str, head: &str) {
-    let v = json!({"number": 1, "url": URL, "title": "Put hall on PATH", "body": "",
+fn pr(gh: &Path, state: &str, head: &str, oid: &str) {
+    std::fs::write(gh.parent().unwrap().join("state.txt"), state).unwrap();
+    let v = json!({"headRefOid": oid, "isCrossRepository": false,"number": 1, "url": URL, "title": "Put hall on PATH", "body": "",
                    "state": state, "headRefName": head, "baseRefName": "main",
                    "reviews": [], "comments": []});
     std::fs::write(gh.parent().unwrap().join("pr.json"), v.to_string()).unwrap();
@@ -78,6 +79,7 @@ fn a_red_check_lands_in_the_inbox_until_a_follow_up_takes_it() {
     let env = Env::initialized();
     let gh = fake_gh(&env);
     let (id, _) = shipped(&env);
+    pr(&gh, "OPEN", "x", "");
 
     // Still running: nothing is recorded.
     checks(
@@ -103,9 +105,10 @@ fn a_red_check_lands_in_the_inbox_until_a_follow_up_takes_it() {
     assert_eq!(recorded.len(), 1);
     assert_eq!(recorded[0]["passed"], false);
     assert_eq!(recorded[0]["failing"][0]["name"], "test (ubuntu-latest)");
-    // Concluded: the watch is over for this item.
+    // Still red on an open PR: nothing new is recorded.
     std::fs::remove_file(env.repo.join(".git/hallmark/ci-watch.json")).unwrap();
     assert_eq!(ci_pass(&env, &gh)["steps"][0]["progress"], "idle");
+    assert_eq!(events(&env, &id, "pr_checks").len(), 1);
 
     let inbox = env.hall(&env.repo, &["inbox"]);
     let entry = inbox.json["entries"]
@@ -123,7 +126,7 @@ fn a_red_check_lands_in_the_inbox_until_a_follow_up_takes_it() {
 
     // The follow-up carries the failing check and its log, and takes the
     // entry out of the inbox. The PR is merged, so it starts from main.
-    pr(&gh, "MERGED", "hm/H-0001-put-hall-on-path");
+    pr(&gh, "MERGED", "hm/H-0001-put-hall-on-path", "");
     let out = env
         .cmd(&env.repo)
         .env("HALL_GH", &gh)
@@ -160,7 +163,7 @@ fn a_follow_up_to_an_open_pr_stacks_on_its_branch() {
     let (id, sha) = shipped(&env);
     let branch = env.journal(&id)[0]["branch"].as_str().unwrap().to_string();
     checks(&gh, json!([]));
-    pr(&gh, "OPEN", &branch);
+    pr(&gh, "OPEN", &branch, &sha);
     let out = env
         .cmd(&env.repo)
         .env("HALL_GH", &gh)
@@ -178,4 +181,52 @@ fn a_follow_up_to_an_open_pr_stacks_on_its_branch() {
     assert!(created["request"].as_str().unwrap().contains(&format!(
         "starts from its branch, {branch}, and ships into it"
     )));
+}
+
+#[test]
+fn a_failed_pr_that_turns_green_clears_the_inbox() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    let (id, _) = shipped(&env);
+    pr(&gh, "OPEN", "x", "");
+    checks(&gh, json!([{"name": "test", "bucket": "fail"}]));
+    assert_eq!(ci_pass(&env, &gh)["steps"][0]["progress"], "worked");
+    // Re-run, green: the watch notices, and the entry is gone.
+    checks(&gh, json!([{"name": "test", "bucket": "pass"}]));
+    std::fs::remove_file(env.repo.join(".git/hallmark/ci-watch.json")).unwrap();
+    assert_eq!(ci_pass(&env, &gh)["steps"][0]["progress"], "worked");
+    assert_eq!(events(&env, &id, "pr_checks").len(), 2);
+    let inbox = env.hall(&env.repo, &["inbox"]);
+    assert!(
+        !inbox.json["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["kind"] == "ci_failed")
+    );
+}
+
+#[test]
+fn a_pr_whose_head_moved_is_not_stacked_on() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    let (id, _) = shipped(&env);
+    let branch = env.journal(&id)[0]["branch"].as_str().unwrap().to_string();
+    checks(&gh, json!([]));
+    // GitHub's head is not the commit that was hallmarked.
+    pr(
+        &gh,
+        "OPEN",
+        &branch,
+        "0000000000000000000000000000000000000000",
+    );
+    let out = env
+        .cmd(&env.repo)
+        .env("HALL_GH", &gh)
+        .args(["--json", "new", "--follow-up", URL])
+        .output()
+        .unwrap();
+    let j: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(out.status.code(), Some(0), "{j}");
+    assert_eq!(j["base"], "main");
 }

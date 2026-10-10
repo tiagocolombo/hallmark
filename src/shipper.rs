@@ -85,6 +85,31 @@ fn ship(repo: &Repo, item: &Item) -> Result<Progress> {
             ),
         );
     }
+    // A follow-up stacked on a PR ships into that PR's branch, which only
+    // works while the PR is open.
+    if item.base != repo.config.base
+        && let Some(url) = repo
+            .index()?
+            .items(true)?
+            .into_iter()
+            .find(|i| i.branch == item.base)
+            .and_then(|i| i.pr_url)
+        && let Ok(state) = crate::gh::pr_state(&repo.main_root, &url)
+        && !state.is_empty()
+        && state != "OPEN"
+    {
+        return held(
+            repo,
+            id,
+            format!(
+                "the PR {url} this item is stacked on is {}; its branch {} is no longer a place to ship into. \
+                 Rebase the item onto {} and `hall pull-back {id}` to send it to review against it",
+                state.to_lowercase(),
+                item.base,
+                repo.config.base
+            ),
+        );
+    }
     let events = repo.hall.read_item(id)?;
     let body = pr_body(repo, item, &events);
     let body_file = body_path(repo, id);

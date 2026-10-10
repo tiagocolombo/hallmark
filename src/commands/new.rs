@@ -183,28 +183,35 @@ pub fn new(cwd: &Path, a: NewArgs, mode: Mode) -> Result<Response> {
     };
     // A follow-up to a PR that is still open stacks on it: it starts from
     // the PR's branch and is reviewed against and shipped into it.
-    let stack: Option<(String, String)> = match &pr {
-        Some(p) if p.state == "OPEN" && !p.head.is_empty() => {
-            let start = if git::branch_exists(&repo.main_root, &p.head) {
-                p.head.clone()
-            } else {
-                git::run(&repo.main_root, &["fetch", "-q", "origin", &p.head])?;
-                format!("origin/{}", p.head)
-            };
-            Some((start, p.head.clone()))
+    // Only a PR Hallmark shipped, still at the commit it reviewed, is stacked
+    // on: its branch is local, and the rules the follow-up is hallmarked under
+    // were themselves reviewed. Anything else starts from the configured base.
+    let shipped = pr.as_ref().and_then(|p| shipped_by(&repo, &p.url));
+    let stack: Option<String> = match (&pr, &shipped) {
+        (Some(p), Some(it))
+            if p.state == "OPEN"
+                && !p.cross_repo
+                && !p.head_oid.is_empty()
+                && it.hallmark_sha.as_deref() == Some(p.head_oid.as_str())
+                && git::branch_exists(&repo.main_root, &it.branch)
+                && git::run(
+                    &repo.main_root,
+                    &["rev-parse", &format!("{}^{{commit}}", it.branch)],
+                )
+                .is_ok_and(|tip| tip.trim() == p.head_oid) =>
+        {
+            Some(it.branch.clone())
         }
         _ => None,
     };
     let request = match &pr {
-        Some(p) => {
-            let shipped = shipped_by(&repo, &p.url);
-            Some(follow_up_request(
-                p,
-                shipped,
-                a.request.as_deref(),
-                &failing_ci,
-            ))
-        }
+        Some(p) => Some(follow_up_request(
+            p,
+            shipped.as_ref().map(|i| i.id),
+            stack.as_deref(),
+            a.request.as_deref(),
+            &failing_ci,
+        )),
         None => a.request.clone().or_else(|| {
             issue.as_ref().map(|i| {
                 format!("#{} {}\n\n{}", i.number, i.title, i.body)
@@ -259,8 +266,8 @@ pub fn new(cwd: &Path, a: NewArgs, mode: Mode) -> Result<Response> {
                 start: parent
                     .as_ref()
                     .map(|p| p.branch.as_str())
-                    .or(stack.as_ref().map(|(start, _)| start.as_str())),
-                base: stack.as_ref().map(|(_, base)| base.clone()),
+                    .or(stack.as_deref()),
+                base: stack.clone(),
             },
         )?;
         if let Some(raw) = &raw {
@@ -533,14 +540,24 @@ fn create(repo: &Repo, spec: Spec) -> Result<Item> {
         })?;
     // A custom worktree command may ignore `{start}`: bring a fresh child up
     // to its parent's tip when that is a fast-forward.
+    // The new branch has no commits of its own yet, so it is reset to the
+    // start point; if that fails, say so rather than build on the wrong code.
     if let Some(start) = spec.start
         && let (Ok(head), Ok(tip)) = (
             git::head(&worktree),
-            git::run(&worktree, &["rev-parse", start]),
+            git::run(&worktree, &["rev-parse", &format!("{start}^{{commit}}")]),
         )
-        && head != tip
+        && head != tip.trim()
+        && let Err(e) = git::run(&worktree, &["reset", "--hard", "-q", tip.trim()])
     {
-        let _ = git::run(&worktree, &["merge", "--ff-only", "-q", start]);
+        return Err(HallError::new(
+            ErrorCode::CommandFailed,
+            format!(
+                "the worktree command ignored the start point {start}, and moving {branch} there failed: {}",
+                e.message
+            ),
+        )
+        .next(["git worktree list", "hall doctor"]));
     }
     let created = ev(
         &actor(),
@@ -600,20 +617,20 @@ fn orchestration_next(parent: &Item, children: &[(Item, Part)]) -> Vec<String> {
 }
 
 /// The item that shipped this PR, if Hallmark has it.
-fn shipped_by(repo: &Repo, url: &str) -> Option<ItemId> {
+fn shipped_by(repo: &Repo, url: &str) -> Option<Item> {
     repo.index()
         .ok()?
         .items(true)
         .ok()?
         .into_iter()
         .find(|i| i.pr_url.as_deref() == Some(url))
-        .map(|i| i.id)
 }
 
 /// The request for a follow-up item: the PR and its review feedback.
 pub fn follow_up_request(
     pr: &crate::gh::GhPr,
     shipped: Option<ItemId>,
+    stacked_on: Option<&str>,
     extra: Option<&str>,
     failing_ci: &[(String, Option<String>)],
 ) -> String {
@@ -624,22 +641,12 @@ pub fn follow_up_request(
     if let Some(id) = shipped {
         s.push_str(&format!(", which shipped {id}"));
     }
-    if pr.state == "OPEN" && !pr.head.is_empty() {
+    if let Some(branch) = stacked_on {
         s.push_str(&format!(
-            ". The PR is still open: this item starts from its branch, {}, and ships into it",
-            pr.head
+            ". The PR is still open: this item starts from its branch, {branch}, and ships into it"
         ));
     }
     s.push_str(".\nAddress the CI failures and the review feedback below.\n");
-    if !failing_ci.is_empty() {
-        s.push_str("\nFailing CI checks:\n");
-        for (name, log) in failing_ci {
-            s.push_str(&format!("- {name}\n"));
-            if let Some(log) = log {
-                s.push_str(&format!("\n```text\n{}\n```\n", clip_lines(log, 4_000)));
-            }
-        }
-    }
     if let Some(e) = extra.map(str::trim).filter(|e| !e.is_empty()) {
         s.push_str(&format!("\n{e}\n"));
     }
@@ -693,6 +700,18 @@ pub fn follow_up_request(
         s.push_str("\nReview feedback:\n");
         s.push_str(&lines.join("\n"));
         s.push('\n');
+    }
+    if !failing_ci.is_empty() {
+        // After everything a person wrote, and capped as a whole, so the
+        // final cut can only ever reach the logs.
+        let each = 6_000 / failing_ci.len();
+        s.push_str("\nFailing CI checks:\n");
+        for (name, log) in failing_ci {
+            s.push_str(&format!("- {name}\n"));
+            if let Some(log) = log {
+                s.push_str(&format!("\n```text\n{}\n```\n", clip_lines(log, each)));
+            }
+        }
     }
     // Keep the line breaks: the request carries lists and log excerpts.
     match s.char_indices().nth(12_000) {
@@ -895,6 +914,8 @@ mod tests {
             state: "OPEN".into(),
             head: "hm/H-0007-retry".into(),
             base: "main".into(),
+            head_oid: String::new(),
+            cross_repo: false,
             number: 12,
             title: "Retry webhooks".into(),
             body: "Adds retries.".into(),
@@ -920,7 +941,13 @@ mod tests {
             "test (ubuntu-latest)".to_string(),
             Some("thread 'x' panicked at tests/setup.rs:405:14:\nText file busy".to_string()),
         )];
-        let r = follow_up_request(&pr, Some(ItemId(7)), Some("Keep it small."), &ci);
+        let r = follow_up_request(
+            &pr,
+            Some(ItemId(7)),
+            Some("hm/H-0007-retry"),
+            Some("Keep it small."),
+            &ci,
+        );
         assert!(r.starts_with(
             "Follow-up to PR #12 \"Retry webhooks\" (https://github.com/acme/app/pull/12), which shipped H-0007. \
              The PR is still open: this item starts from its branch, hm/H-0007-retry, and ships into it."
@@ -940,6 +967,6 @@ mod tests {
             line_comments: vec![],
             ..pr
         };
-        assert!(follow_up_request(&quiet, None, None, &[]).contains("No review comments"));
+        assert!(follow_up_request(&quiet, None, None, None, &[]).contains("No review comments"));
     }
 }

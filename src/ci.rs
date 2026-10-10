@@ -58,6 +58,9 @@ pub fn conclude(checks: &[GhCheck]) -> Outcome {
 struct Watch {
     #[serde(default)]
     last: BTreeMap<String, DateTime<Utc>>,
+    /// What was already logged, so a stuck PR doesn't fill the live log.
+    #[serde(default)]
+    noted: std::collections::BTreeSet<String>,
 }
 
 /// The shipped items whose PR checks haven't finished, oldest check first.
@@ -66,9 +69,12 @@ pub fn watched(items: &[Item], now: DateTime<Utc>) -> Vec<Item> {
         .iter()
         .filter(|i| {
             i.state == State::Closed
-                && i.ci.is_none()
                 && i.pr_url.as_deref().is_some_and(|u| u.contains("/pull/"))
-                && now - i.state_since < Duration::hours(GIVE_UP_HOURS)
+                && match &i.ci {
+                    None => now - i.state_since < Duration::hours(GIVE_UP_HOURS),
+                    // A failed PR is watched until it turns green or closes.
+                    Some(c) => !c.passed && now - c.t < Duration::hours(GIVE_UP_HOURS),
+                }
         })
         .cloned()
         .collect()
@@ -79,14 +85,34 @@ pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
     let now = Utc::now();
     let items = repo.index()?.items(true)?;
     let candidates = watched(&items, now);
-    if candidates.is_empty() {
-        return Ok(Progress::Idle);
-    }
     let path = repo.hall.root.join("ci-watch.json");
     let mut watch: Watch = std::fs::read_to_string(&path)
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default();
+    // Say once when the watch gave up on a PR whose checks never finished.
+    let mut changed = false;
+    for i in items.iter().filter(|i| {
+        i.state == State::Closed
+            && i.ci.is_none()
+            && i.pr_url.as_deref().is_some_and(|u| u.contains("/pull/"))
+            && now - i.state_since >= Duration::hours(GIVE_UP_HOURS)
+    }) {
+        if watch.noted.insert(format!("gave-up-{}", i.id)) {
+            changed = true;
+            repo.hall.live(&format!(
+                "{} CI watch gave up after {GIVE_UP_HOURS}h: {} never reported finished checks",
+                i.id,
+                i.pr_url.as_deref().unwrap_or("its PR")
+            ));
+        }
+    }
+    if changed {
+        let _ = std::fs::write(&path, serde_json::to_string(&watch)?);
+    }
+    if candidates.is_empty() {
+        return Ok(Progress::Idle);
+    }
     let due = candidates
         .into_iter()
         .filter(|i| {
@@ -105,11 +131,30 @@ pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
     let checks = match crate::gh::pr_checks(&repo.main_root, &url) {
         Ok(c) => c,
         Err(e) => {
-            repo.hall
-                .live(&format!("{} CI watch: {}", item.id, e.message));
+            // Once per item, not once a minute.
+            if watch.noted.insert(format!("error-{}", item.id)) {
+                repo.hall
+                    .live(&format!("{} CI watch: {}", item.id, e.message));
+                let _ = std::fs::write(&path, serde_json::to_string(&watch)?);
+            }
             return Ok(Progress::Idle);
         }
     };
+    // After a failure the watch goes on while the PR is open: a re-run that
+    // goes green, or a fix pushed on GitHub, clears the inbox entry.
+    if item.ci.as_ref().is_some_and(|c| !c.passed) {
+        return match conclude(&checks) {
+            Outcome::Passed => record(ctx, item.id, &url, true, vec![]),
+            _ => {
+                if crate::gh::pr_state(&repo.main_root, &url).is_ok_and(|s| s != "OPEN") {
+                    // Closed or merged: nothing left to wait for.
+                    record(ctx, item.id, &url, true, vec![])
+                } else {
+                    Ok(Progress::Idle)
+                }
+            }
+        };
+    }
     match conclude(&checks) {
         Outcome::Waiting => Ok(Progress::Idle),
         Outcome::Passed => record(ctx, item.id, &url, true, vec![]),
