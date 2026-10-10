@@ -8,7 +8,7 @@ use std::path::Path;
 use schemars::JsonSchema;
 use serde::Serialize;
 
-use crate::budget::{self, ItemSpend, ROLES, room_label, table_key};
+use crate::budget::{self, ItemSpend, ROLES, Spent, room_label, table_key};
 use crate::cli::BudgetArgs;
 use crate::config::{self, Config, parse_duration, parse_tokens};
 use crate::error::{ErrorCode, HallError, Result};
@@ -80,13 +80,20 @@ pub struct Cap {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// The limit of a token cap, in weighted tokens.
     pub limit_tokens: Option<u64>,
-    /// Spent today (tokens), where it applies.
+    /// The limit of a dollar cap.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit_usd: Option<f64>,
+    /// Spent today (weighted tokens), where it applies.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub used: Option<u64>,
     /// For the daily cap: tokens granted on top of it today (`--grant`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub granted: Option<u64>,
+    /// Spent today (dollars at list price), where it applies.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub used_usd: Option<f64>,
     /// True when the cap stops work now.
     pub reached: bool,
 }
@@ -103,12 +110,7 @@ pub struct TopItem {
     pub over_cap: bool,
 }
 
-fn bar(used: u64, limit: u64) -> String {
-    let pct = if limit == 0 {
-        100.0
-    } else {
-        used as f64 / limit as f64 * 100.0
-    };
+fn pct_bar(pct: f64) -> String {
     let filled = ((pct / 10.0).round() as usize).min(10);
     format!(
         "{}{} {:>3.0}%",
@@ -116,6 +118,33 @@ fn bar(used: u64, limit: u64) -> String {
         "░".repeat(10 - filled),
         pct
     )
+}
+
+impl Cap {
+    /// The cap as the budget checks read it.
+    fn cap(&self) -> Option<budget::Cap> {
+        match (self.limit_tokens, self.limit_usd) {
+            (Some(t), _) => Some(budget::Cap::Tokens(t)),
+            (_, Some(u)) => Some(budget::Cap::Usd(u)),
+            _ => None,
+        }
+    }
+}
+
+fn spent_of(s: &ItemSpend) -> Spent {
+    Spent {
+        tokens: s.tokens,
+        usd: s.cost_usd,
+    }
+}
+
+/// A cap's limit fields: (weighted tokens, dollars).
+fn limits(cap: Option<budget::Cap>) -> (Option<u64>, Option<f64>) {
+    match cap {
+        Some(budget::Cap::Tokens(t)) => (Some(t), None),
+        Some(budget::Cap::Usd(u)) => (None, Some(u)),
+        None => (None, None),
+    }
 }
 
 impl Render for BudgetOut {
@@ -141,14 +170,20 @@ impl Render for BudgetOut {
                 None => "daily total".into(),
             };
             let used = c.used.unwrap_or(0);
+            let spent = Spent {
+                tokens: used,
+                usd: c.used_usd.unwrap_or(0.0),
+            };
             let granted = c.granted.unwrap_or(0);
-            let tail = match (c.limit.as_deref(), c.limit_tokens) {
-                (Some(l), Some(t)) if granted > 0 => format!(
+            let tail = match (c.limit.as_deref(), c.cap()) {
+                (Some(l), Some(budget::Cap::Tokens(t))) if granted > 0 => format!(
                     "{l:>6}  {} (+{} granted today)",
-                    bar(used, t.saturating_add(granted)),
+                    pct_bar(budget::Cap::Tokens(t.saturating_add(granted)).fraction(&spent) * 100.0),
                     fmt_tokens(granted)
                 ),
-                (Some(l), Some(t)) => format!("{l:>6}  {}", bar(used, t)),
+                (Some(l), Some(cap)) => {
+                    format!("{l:>6}  {}", pct_bar(cap.fraction(&spent) * 100.0))
+                }
                 (Some(l), None) => format!("{l:>6}  (unreadable)"),
                 _ => "  not capped".into(),
             };
@@ -165,10 +200,9 @@ impl Render for BudgetOut {
                 c.limit.as_deref().unwrap_or("not capped")
             ));
             for t in &self.top_items {
-                let cap = c.limit_tokens;
-                let note = match cap {
+                let note = match c.cap() {
                     Some(_) if t.over_cap => "over item cap".to_string(),
-                    Some(l) => bar(t.spend.tokens, l),
+                    Some(cap) => pct_bar(cap.fraction(&spent_of(&t.spend)) * 100.0),
                     None => String::new(),
                 };
                 s.push_str(&format!(
@@ -242,44 +276,57 @@ pub fn budget(cwd: &Path, a: BudgetArgs) -> Result<Response> {
         })
         .collect();
     let mut caps = Vec::new();
-    let per_item = b.per_item.as_ref().and_then(|l| parse_tokens(l));
+    let per_item = b.per_item.as_deref().and_then(budget::Cap::parse);
+    let (limit_tokens, limit_usd) = limits(per_item);
     caps.push(Cap {
         level: "item".into(),
         key: "budget.per_item".into(),
         room: None,
         limit: b.per_item.clone(),
-        limit_tokens: per_item,
+        limit_tokens,
+        limit_usd,
         used: None,
+        used_usd: None,
         granted: None,
         reached: false,
     });
     for r in ROLES {
         let limit = b.role(r).and_then(|rb| rb.daily.clone());
-        let limit_tokens = limit.as_deref().and_then(parse_tokens);
-        let used = budget::room_tokens(&ix, r.room(), &day);
+        let cap = limit.as_deref().and_then(budget::Cap::parse);
+        let (limit_tokens, limit_usd) = limits(cap);
+        let used = budget::room_spent(&ix, r.room(), &day);
         caps.push(Cap {
             level: "room".into(),
             key: format!("budget.{}.daily", table_key(r)),
             room: Some(r.room().into()),
-            reached: limit_tokens.is_some_and(|l| used >= l),
+            reached: cap.is_some_and(|c| c.reached(&used)),
             limit,
             limit_tokens,
-            used: Some(used),
+            limit_usd,
+            used: Some(used.tokens),
+            used_usd: Some(used.usd),
             granted: None,
         });
     }
-    let daily_tokens = b.daily.as_deref().and_then(parse_tokens);
-    let used = budget::daily_tokens(&ix, &day);
-    let granted = budget::daily_granted(&ix, &day);
+    let daily_cap = b.daily.as_deref().and_then(budget::Cap::parse);
+    let (limit_tokens, limit_usd) = limits(daily_cap);
+    let used = budget::daily_spent(&ix, &day);
+    // A grant raises a token cap only (ADR 0028).
+    let granted = match daily_cap {
+        Some(budget::Cap::Tokens(_)) => budget::daily_granted(&ix, &day),
+        _ => 0,
+    };
     caps.push(Cap {
         level: "daily".into(),
         key: "budget.daily".into(),
         room: None,
         limit: b.daily.clone(),
-        limit_tokens: daily_tokens,
-        used: Some(used),
+        limit_tokens,
+        limit_usd,
+        used: Some(used.tokens),
+        used_usd: Some(used.usd),
         granted: (granted > 0).then_some(granted),
-        reached: daily_tokens.is_some_and(|l| used >= l.saturating_add(granted)),
+        reached: budget::daily_stop(&ix, b, &day).is_some(),
     });
     let items = ix.items(true)?;
     let top_items: Vec<TopItem> = budget::top_items(&ix, 5)
@@ -287,7 +334,7 @@ pub fn budget(cwd: &Path, a: BudgetArgs) -> Result<Response> {
         .map(|spend| {
             let it = items.iter().find(|i| i.id == spend.item);
             TopItem {
-                over_cap: per_item.is_some_and(|l| spend.tokens >= l),
+                over_cap: per_item.is_some_and(|c| c.reached(&spent_of(&spend))),
                 title: it.map(|i| i.title.clone()),
                 state: it.map(|i| match &i.hold {
                     Some(h) => format!("held ({})", h.kind.as_str()),
@@ -326,12 +373,24 @@ pub fn budget(cwd: &Path, a: BudgetArgs) -> Result<Response> {
 /// already has exactly this one) and lifts the daemon's daily-budget pause.
 fn grant(repo: &Repo, day: &str, tokens: &str, reason: Option<&str>) -> Result<GrantOut> {
     let b = &repo.config.budget;
-    let Some(daily) = b.daily.as_deref().and_then(parse_tokens) else {
-        return Err(HallError::new(
-            ErrorCode::WrongState,
-            "there is no daily budget to go past: `[budget] daily` isn't set",
-        )
-        .next(["hall budget"]));
+    let daily = match b.daily.as_deref().and_then(budget::Cap::parse) {
+        Some(budget::Cap::Tokens(t)) => t,
+        // A grant is in weighted tokens; it can't raise a dollar cap.
+        Some(budget::Cap::Usd(_)) => {
+            return Err(HallError::new(
+                ErrorCode::WrongState,
+                "the daily budget is in dollars; --grant raises a token cap only: \
+                 raise `[budget] daily` to go on today",
+            )
+            .next(["hall budget"]));
+        }
+        None => {
+            return Err(HallError::new(
+                ErrorCode::WrongState,
+                "there is no daily budget to go past: `[budget] daily` isn't set",
+            )
+            .next(["hall budget"]));
+        }
     };
     let tokens = if tokens.trim() == "daily" {
         daily
@@ -658,7 +717,14 @@ mod tests {
 
     #[test]
     fn bars() {
-        assert_eq!(bar(61, 100), "██████░░░░  61%");
-        assert_eq!(bar(300, 100), "██████████ 300%");
+        let tokens = |used| budget::Cap::Tokens(100).fraction(&Spent { tokens: used, usd: 0.0 });
+        assert_eq!(pct_bar(tokens(61) * 100.0), "██████░░░░  61%");
+        assert_eq!(pct_bar(tokens(300) * 100.0), "██████████ 300%");
+        // A dollar cap reads dollars, whatever the tokens say.
+        let usd = budget::Cap::Usd(15.0).fraction(&Spent {
+            tokens: 6_410_000,
+            usd: 7.5,
+        });
+        assert_eq!(pct_bar(usd * 100.0), "█████░░░░░  50%");
     }
 }

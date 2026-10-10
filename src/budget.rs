@@ -213,6 +213,23 @@ impl Cap {
         }
     }
 
+    /// The fraction of the cap `s` has used (1.0 when the cap is zero).
+    pub fn fraction(&self, s: &Spent) -> f64 {
+        let (used, limit) = match self {
+            Cap::Tokens(l) => (s.tokens as f64, *l as f64),
+            Cap::Usd(l) => (s.usd, *l),
+        };
+        if limit <= 0.0 { 1.0 } else { used / limit }
+    }
+
+    /// The limit alone: "20M", "$15.00".
+    pub fn limit_label(&self) -> String {
+        match self {
+            Cap::Tokens(l) => fmt_tokens(*l),
+            Cap::Usd(l) => format!("${l:.2}"),
+        }
+    }
+
     /// "6.41M of 20M weighted tokens", "$4.15 of $15.00".
     pub fn show(&self, s: &Spent) -> String {
         match self {
