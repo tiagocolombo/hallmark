@@ -255,6 +255,104 @@ impl Ctx {
             .unwrap_or_default()
     }
 
+    /// What waits for the human, with each entry's actions, for Claude to
+    /// pass on. With `only_new`, just the entries this session hasn't been
+    /// told about yet. Marks them told.
+    fn waiting_brief(&mut self, only_new: bool) -> Option<String> {
+        if headless_actor().is_some() {
+            return None;
+        }
+        let ix = self.repo.index().ok()?;
+        let entries = ix.inbox().ok()?;
+        let key = |e: &crate::index::InboxEntry| {
+            format!(
+                "{}:{}:{}",
+                e.kind,
+                e.item.map(|i| i.to_string()).unwrap_or_default(),
+                e.qid
+                    .clone()
+                    .unwrap_or_else(|| e.session.clone().unwrap_or_default())
+            ) + &format!(":{}", e.since.timestamp_millis())
+        };
+        let told = self
+            .session
+            .as_ref()
+            .map(|s| s.told.clone())
+            .unwrap_or_default();
+        let shown: Vec<(usize, crate::index::InboxEntry)> = entries
+            .iter()
+            .cloned()
+            .enumerate()
+            .filter(|(_, e)| !only_new || !told.contains(&key(e)))
+            .collect();
+        if shown.is_empty() {
+            // Still forget entries that left, so one that comes back is new.
+            if let Some(sess) = self.session.as_mut() {
+                let live: Vec<String> = entries.iter().map(key).collect();
+                let before = sess.told.len();
+                sess.told.retain(|k| live.contains(k));
+                if sess.told.len() != before {
+                    let sess = sess.clone();
+                    let _ = self.repo.hall.save_session(&sess);
+                }
+            }
+            return None;
+        }
+        let mut s = format!(
+            "Hallmark: {} waiting for the human{}. Tell them first, in a line or two each, \
+             and offer to run the action they pick (run it for them when they choose):",
+            if only_new {
+                "new entries are"
+            } else {
+                "entries are"
+            },
+            if entries.len() > shown.len() {
+                format!(" ({} in all)", entries.len())
+            } else {
+                String::new()
+            }
+        );
+        for (i, e) in shown.iter().take(5) {
+            let detail = crate::commands::status::explain(&self.repo, &ix, e.clone(), i + 1).ok();
+            let who = e.item.map(|i| format!(" {i}")).unwrap_or_default();
+            s.push_str(&format!(
+                "\n{}. {}{who}: {} (waiting {}). Details: `hall inbox {}`.",
+                i + 1,
+                e.kind,
+                clip(&e.text, 140),
+                crate::commands::age(e.since),
+                i + 1
+            ));
+            if let Some(d) = detail {
+                let acts: Vec<String> = d
+                    .actions
+                    .iter()
+                    .take(4)
+                    .map(|a| format!("`{}` ({})", a.command, a.does))
+                    .collect();
+                s.push_str(&format!(" Actions: {}.", acts.join("; ")));
+            }
+        }
+        if shown.len() > 5 {
+            s.push_str("\nThe rest: `hall inbox`.");
+        }
+        if let Some(sess) = self.session.as_mut() {
+            for e in &entries {
+                let k = key(e);
+                if !sess.told.contains(&k) {
+                    sess.told.push(k);
+                }
+            }
+            // Forget entries that left the inbox, so a new one with the same
+            // key is announced again.
+            let live: Vec<String> = entries.iter().map(key).collect();
+            sess.told.retain(|k| live.contains(k));
+            let sess = sess.clone();
+            let _ = self.repo.hall.save_session(&sess);
+        }
+        Some(s)
+    }
+
     fn inbox_count(&self) -> usize {
         self.repo
             .index()
@@ -304,6 +402,11 @@ impl Ctx {
                 i.id, i.title, i.worktree, i.id
             );
         }
+        // What waits for the human, with the actions, so Claude raises it.
+        if let Some(brief) = self.waiting_brief(false) {
+            text.push_str("\n\n");
+            text.push_str(&brief);
+        }
         // The daily budget is spent: the loop waits, this session doesn't.
         if let Some(note) = crate::budget::daily_note(&self.repo) {
             text.push(' ');
@@ -315,6 +418,19 @@ impl Ctx {
     // --- UserPromptSubmit -------------------------------------------------
 
     fn user_prompt_submit(&mut self) -> Result<Option<Value>> {
+        let note = self.prompt_note()?;
+        // New inbox entries since this session last heard: Claude passes them on.
+        let brief = self.waiting_brief(true);
+        Ok(match (note, brief) {
+            (None, None) => None,
+            (Some(n), None) => Some(context(HookEvent::UserPromptSubmit, n)),
+            (None, Some(b)) => Some(context(HookEvent::UserPromptSubmit, b)),
+            (Some(n), Some(b)) => Some(context(HookEvent::UserPromptSubmit, format!("{n}\n\n{b}"))),
+        })
+    }
+
+    /// The note about this session's item, if it needs one.
+    fn prompt_note(&mut self) -> Result<Option<String>> {
         let item = self.item();
         let text = self.input.prompt.clone().unwrap_or_default();
         let headless = headless_actor();
@@ -360,7 +476,7 @@ impl Ctx {
             Some(b) if i.state.in_loop() => format!("{note} {b}"),
             _ => note,
         };
-        Ok(Some(context(HookEvent::UserPromptSubmit, note)))
+        Ok(Some(note))
     }
 
     // --- PreToolUse: the gate --------------------------------------------

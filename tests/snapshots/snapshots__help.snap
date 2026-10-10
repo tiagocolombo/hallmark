@@ -179,11 +179,41 @@ expression: v
       "usage": "hall log [OPTIONS] [ID]"
     },
     {
-      "about": "Everything waiting for you, oldest first",
-      "args": [],
+      "about": "Everything waiting for you, oldest first; `hall inbox <n>` explains one",
+      "args": [
+        {
+          "help": "One entry to explain: its number in the list, a question ID (Q-3) or an item ID",
+          "name": "entry",
+          "required": false,
+          "syntax": "<entry>",
+          "takes_value": true
+        }
+      ],
       "name": "inbox",
       "schema": "hall schema inbox",
-      "usage": "hall inbox [OPTIONS]"
+      "usage": "hall inbox [OPTIONS] [ENTRY]"
+    },
+    {
+      "about": "Follow an item live until it leaves the loop or needs you",
+      "args": [
+        {
+          "name": "id",
+          "required": false,
+          "syntax": "<id>",
+          "takes_value": true
+        },
+        {
+          "default": "30m",
+          "help": "Stop watching after this long, such as 30m",
+          "name": "timeout",
+          "required": false,
+          "syntax": "--timeout <timeout>",
+          "takes_value": true
+        }
+      ],
+      "name": "watch",
+      "schema": "hall schema watch",
+      "usage": "hall watch [OPTIONS] [ID]"
     },
     {
       "about": "Freeze the commit and send the item to review",

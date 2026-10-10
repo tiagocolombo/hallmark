@@ -1,5 +1,6 @@
 ---
 source: tests/tui.rs
+assertion_line: 628
 expression: "screen(&env, &app, W, H)"
 ---
 hall · app (1 of 1 repo)   daemon ● running   ⚑ 3 waiting   rejected today 3 · review tokens 400k                  hh:mm
@@ -14,9 +15,9 @@ hall · app (1 of 1 repo)   daemon ● running   ⚑ 3 waiting   rejected today 
 │└ H-0004 Rate limit: documen… H-0007 Migrate … escalated ×1                              H-0006 Old experiment dropped│
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌ H-0003 · Rate limit the public API ───────────────────────────────────────────────────────────────────── development ┐
+│now In development in [root]/app-H-0003 (–)                                                                           │
 │hh:mm  you       created · "Rate limit the public API"                                                                │
 │hh:mm  you       usage · opus · 1.20M tok · $9.50                                                                     │
-│                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │

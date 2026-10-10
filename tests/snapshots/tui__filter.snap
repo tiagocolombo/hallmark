@@ -1,5 +1,6 @@
 ---
 source: tests/tui.rs
+assertion_line: 563
 expression: "screen(&env, &app, W, H)"
 ---
 hall · app (1 of 1 repo)   daemon ● running   ⚑ 3 waiting   rejected today 3 · review tokens 400k                  hh:mm
@@ -13,10 +14,10 @@ hall · app (1 of 1 repo)   daemon ● running   ⚑ 3 waiting   rejected today 
 │none                          H-0002 Export tena… needs you none                         H-0005 Tenant check in … #191│
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌ H-0002 · Export tenant usage ────────────────────────────────────────────────────────────────────────── awaiting you ┐
+│now The agent says it looks done; it waits for your call (–)                                                          │
 │hh:mm  you       created · "Export tenant usage"                                                                      │
 │hh:mm  you       proposes ready · "CSV export with 14 tests"                                                          │
 │hh:mm  you       question Q-1 · "Billed usage or raw events?"                                                         │
-│                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │

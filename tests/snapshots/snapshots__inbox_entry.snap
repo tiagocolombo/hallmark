@@ -1,0 +1,72 @@
+---
+source: tests/snapshots.rs
+assertion_line: 101
+expression: "scrub(&env, &r.json)"
+---
+{
+  "actions": [
+    {
+      "command": "hall ready H-0001",
+      "does": "send it to checks and review"
+    },
+    {
+      "command": "hall pull-back H-0001",
+      "does": "not yet: back to development"
+    },
+    {
+      "command": "hall drop H-0001 --reason \"<why>\"",
+      "does": "abandon it"
+    },
+    {
+      "command": "hall log H-0001",
+      "does": "read its whole journal"
+    }
+  ],
+  "answer_with": [
+    "hall ready H-0001",
+    "hall pull-back H-0001"
+  ],
+  "evidence": [
+    "now: The agent says it looks done; it waits for your call",
+    "summary: done"
+  ],
+  "item": "H-0001",
+  "kind": "ready",
+  "next": [
+    "hall ready H-0001",
+    "hall pull-back H-0001",
+    "hall drop H-0001 --reason \"<why>\"",
+    "hall log H-0001"
+  ],
+  "now": {
+    "actions": [
+      {
+        "command": "hall ready H-0001",
+        "does": "send it to checks and review"
+      },
+      {
+        "command": "hall pull-back H-0001",
+        "does": "not yet: back to development"
+      },
+      {
+        "command": "hall drop H-0001 --reason \"<why>\"",
+        "does": "abandon it"
+      },
+      {
+        "command": "hall log H-0001",
+        "does": "read its whole journal"
+      }
+    ],
+    "detail": [
+      "summary: done"
+    ],
+    "doing": "The agent says it looks done; it waits for your call",
+    "elapsed": "[elapsed]",
+    "since": "[time]",
+    "status": "waiting_for_you"
+  },
+  "number": 1,
+  "since": "[time]",
+  "text": "Usage page looks done: done",
+  "why": "The agent says the work looks done. It goes to review only when you say so."
+}

@@ -1,5 +1,6 @@
 ---
 source: tests/tui.rs
+assertion_line: 436
 expression: "screen(&env, &app, W, H)"
 ---
 hall · app (1 of 3 repos)   daemon ● running   ⚑ 3 waiting   rejected today 3 · review tokens 400k                 hh:mm
@@ -14,6 +15,7 @@ hall · app (1 of 3 repos)   daemon ● running   ⚑ 3 waiting   rejected today
 │└ H-0004 Rate limit: documen… H-0007 Migrate … escalated ×1                              H-0006 Old experiment dropped│
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌ H-0001 · Retry failed webhook deliveries ───────────────────────────────────────────────────── review · r2 · ####### ┐
+│now Next for the review; the daemon picks it up on its next pass (–)                                                  │
 │hh:mm  you       created · "Retry failed webhook deliveries"                                                          │
 │hh:mm  you       ready · round 1 · #######                                                                            │
 │hh:mm  assayer   checks passed · round 1                                                                              │
@@ -22,7 +24,6 @@ hall · app (1 of 3 repos)   daemon ● running   ⚑ 3 waiting   rejected today
 │hh:mm  fixer     fix submitted ####### · F1                                                                           │
 │hh:mm  fixer     usage · sonnet · 100k tok · $0.90                                                                    │
 │hh:mm  assayer   checks passed · round 2                                                                              │
-│                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │

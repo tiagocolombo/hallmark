@@ -19,6 +19,7 @@ pub mod record;
 pub mod review;
 pub mod setup;
 pub mod status;
+pub mod watch;
 
 use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
@@ -148,8 +149,12 @@ pub fn next_for(item: &Item) -> Vec<String> {
 
 /// "12m", "3h 05m", "2d".
 pub fn age(since: DateTime<Utc>) -> String {
-    let s = (Utc::now() - since).num_seconds().max(0);
-    match s {
+    age_secs((Utc::now() - since).num_seconds())
+}
+
+/// A duration in seconds, as `age` writes it.
+pub fn age_secs(s: i64) -> String {
+    match s.max(0) {
         s if s < 60 => format!("{s}s"),
         s if s < 3600 => format!("{}m", s / 60),
         s if s < 86_400 => format!("{}h {:02}m", s / 3600, (s % 3600) / 60),

@@ -125,6 +125,26 @@ hall usage --by item            # tokens and cost
 To answer "why was it rejected?", read the item's log and report the findings
 with their severity, file and reason.
 
+## When something waits for the human
+
+Hallmark's hooks tell you when entries wait in the human's inbox (a
+question, "ready?", an escalation, a hold, a failed CI, a stuck item). When
+they do:
+
+1. **Say so first**, before anything else in your reply: one or two lines per
+   entry, in plain words, with what it needs from them.
+2. **Offer the actions** the hook listed, with what each does, and ask which
+   one they want. `hall inbox <n>` shows an entry's evidence (findings,
+   failing checks, the question's options) when they want details.
+3. **Run the action they pick** for them (`hall ready H-0042`,
+   `hall answer Q-3 a`, `hall retry H-0039 --reason "…"`), then report the
+   result. Don't pick for them.
+
+To see what an item is doing at any time: `hall status <id>` has a **now**
+block (queued and what is ahead, which gate is running, the reviewer's run,
+the fixer, a hold and how to release it), and `hall watch <id>` follows it
+live.
+
 ## Questions
 
 When you need a decision from the human, ask through Hallmark so it reaches

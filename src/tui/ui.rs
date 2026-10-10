@@ -554,6 +554,21 @@ fn journal_pane(f: &mut Frame, area: Rect, app: &App, full: bool) {
         return;
     };
     let mut lines: Vec<Line> = Vec::new();
+    if app.cursor.is_none()
+        && let Some((doing, since)) = app.repo().and_then(|r| r.data.now.get(&item.id))
+    {
+        lines.push(Line::from(vec![
+            Span::styled("now ", fg(DIM)),
+            Span::styled(
+                format!(
+                    "{} ({})",
+                    doing.replace(&item.worktree, &app.show_path(&item.worktree)),
+                    app.age(*since)
+                ),
+                fg(INFO),
+            ),
+        ]));
+    }
     if full {
         lines.push(Line::from(vec![
             Span::styled(format!("{} ", item.state.room()), fg(DIM)),

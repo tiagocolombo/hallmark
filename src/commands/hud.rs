@@ -51,6 +51,10 @@ pub struct HudItem {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent: Option<ItemId>,
     pub state_since: DateTime<Utc>,
+    /// What it is doing now, and for how long ("Checks, round 1: running
+    /// gate 2/3 … (1m)").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub now: Option<String>,
 }
 
 impl From<&Item> for HudItem {
@@ -69,6 +73,7 @@ impl From<&Item> for HudItem {
             stuck: i.stuck_since.is_some(),
             parent: i.parent,
             state_since: i.state_since,
+            now: None,
         }
     }
 }
@@ -147,7 +152,7 @@ pub fn hud(cwd: &Path, a: HudArgs) -> Result<Response> {
                     State::Checks | State::Review | State::Fixing | State::Hallmarked
                 )
         })
-        .map(HudItem::from)
+        .map(|i| with_now(&repo, i, &items))
         .collect();
     let inbox = ix.inbox()?;
     let needs_you: Vec<HudEntry> = inbox
@@ -188,7 +193,7 @@ pub fn hud(cwd: &Path, a: HudArgs) -> Result<Response> {
     };
 
     let live = tail(&repo.hall.live_log(), a.lines);
-    let item = mine.as_ref().map(HudItem::from);
+    let item = mine.as_ref().map(|i| with_now(&repo, i, &items));
     let line = line(
         &repo.name,
         item.as_ref(),
@@ -213,6 +218,16 @@ pub fn hud(cwd: &Path, a: HudArgs) -> Result<Response> {
         next.push(format!("hall status {}", i.id));
     }
     Ok(Response::new(out, next))
+}
+
+/// An item for the HUD, with its `now` line.
+fn with_now(repo: &Repo, i: &Item, items: &[Item]) -> HudItem {
+    let mut h = HudItem::from(i);
+    if let Ok(events) = repo.hall.read_item(i.id) {
+        let n = crate::now::now_cheap(repo, i, items, &events);
+        h.now = Some(format!("{} ({})", n.doing, n.elapsed));
+    }
+    h
 }
 
 /// "hallmark · H-0042 review r2 · daemon: reviewing H-0042 · ⚑ 2 · 1.2M/4M today"

@@ -1,0 +1,51 @@
+---
+source: tests/snapshots.rs
+assertion_line: 120
+expression: "scrub(&env, &json!(lines))"
+---
+[
+  {
+    "doing": "In development in [root]/app-H-0001",
+    "id": "H-0001",
+    "state": "development",
+    "status": "working",
+    "t": "[time]"
+  },
+  {
+    "changes": 1,
+    "id": "H-0001",
+    "next": [
+      "hall propose-ready H-0001 --summary \"<what was done>\"",
+      "hall ready H-0001",
+      "hall drop H-0001 --reason \"<why>\"",
+      "hall log H-0001"
+    ],
+    "now": {
+      "actions": [
+        {
+          "command": "hall propose-ready H-0001 --summary \"<what was done>\"",
+          "does": "say it looks done; the human decides"
+        },
+        {
+          "command": "hall ready H-0001",
+          "does": "freeze HEAD and send it to checks and review"
+        },
+        {
+          "command": "hall drop H-0001 --reason \"<why>\"",
+          "does": "abandon it; the branch and journal stay"
+        },
+        {
+          "command": "hall log H-0001",
+          "does": "read its whole journal"
+        }
+      ],
+      "detail": "[detail]",
+      "doing": "In development in [root]/app-H-0001",
+      "elapsed": "[elapsed]",
+      "since": "[time]",
+      "status": "working"
+    },
+    "state": "development",
+    "stopped": "left_loop"
+  }
+]

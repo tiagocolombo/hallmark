@@ -245,9 +245,10 @@ Agents are the main users of `hall`, so every command follows these rules:
 | `hall new [<request>]` | Creates an item and its worktree; splits into parallel parts when it can. `--title`, `--issue <n>`, `--no-split`, `--parent <id>`, `--follow-up <pr>`, `--open`, `--branch` |
 | `hall adopt` | Turns the current branch and worktree into an item. |
 | `hall merge [<child>]` | Merges a parallel part into its parent's branch and closes it. |
-| `hall status [<id>]` | Lists items by state, or shows one item. `--all` includes closed and dropped items. |
+| `hall status [<id>]` | Lists items by state, or shows one item with a **now** block: queued (and what is ahead), the gate running, the reviewer's run, the fixer, a hold, and what you can do. `--all` includes closed and dropped items. |
 | `hall log [<id>]` | Prints the journal. `--kind <event>`, `--limit <n>` |
-| `hall inbox` | Everything waiting for you: questions, "ready?", escalations, holds, stuck items, waiting sessions. |
+| `hall inbox [<n>]` | Everything waiting for you: questions, "ready?", escalations, holds, stuck items, waiting sessions. `hall inbox 1` explains one: why it waits, the evidence, and each action. |
+| `hall watch [<id>]` | Follows an item live until it leaves the loop or needs you. |
 | `hall ready [<id>]` | Freezes the commit and queues the item for review. |
 | `hall pull-back [<id>]` | Returns the item to development. |
 | `hall drop [<id>] --reason <r>` | Abandons the item. The branch and journal stay. `--keep-worktree` |

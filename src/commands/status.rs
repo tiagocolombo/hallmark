@@ -68,6 +68,8 @@ pub struct StatusItem {
     pub usage: UsageRow,
     /// The last few journal events, newest last.
     pub recent: Vec<Event>,
+    /// What it is doing now, and what you can do.
+    pub now: crate::now::Now,
 }
 
 impl Render for StatusItem {
@@ -78,6 +80,7 @@ impl Render for StatusItem {
             fmt_tokens(self.usage.tokens),
             crate::usage::fmt_usd(self.usage.cost_usd)
         ));
+        s.push_str(&self.now.render());
         if !self.recent.is_empty() {
             s.push_str("\nrecent\n");
             for e in &self.recent {
@@ -111,12 +114,16 @@ pub fn status(cwd: &Path, id: Option<&str>, all: bool, bare: bool) -> Result<Res
             .unwrap_or_default();
         let events = repo.hall.read_item(item.id)?;
         let recent = events[events.len().saturating_sub(5)..].to_vec();
+        let live = ix.items(false)?;
+        let now = crate::now::now(&repo, &item, &live, &events);
+        let next: Vec<String> = now.actions.iter().map(|a| a.command.clone()).collect();
         let out = StatusItem {
             item: ItemView::from(&item),
             usage,
             recent,
+            now,
         };
-        return Ok(Response::new(out, next_for(&item)));
+        return Ok(Response::new(out, next));
     }
     let items: Vec<ItemView> = ix.items(all)?.iter().map(ItemView::from).collect();
     let inbox = ix.inbox()?.len();
@@ -233,16 +240,223 @@ impl Render for InboxOut {
     }
 }
 
-pub fn inbox(cwd: &Path) -> Result<Response> {
+pub fn inbox(cwd: &Path, a: crate::cli::InboxArgs) -> Result<Response> {
     let repo = Repo::discover(cwd)?;
     repo.require_init()?;
-    let entries = repo.index()?.inbox()?;
-    let next: Vec<String> = entries
-        .iter()
-        .flat_map(|e| e.answer_with.first().cloned())
-        .take(5)
-        .collect();
+    let ix = repo.index()?;
+    let entries = ix.inbox()?;
+    if let Some(which) = &a.entry {
+        return inbox_detail(&repo, &ix, entries, which);
+    }
+    let mut next: Vec<String> = Vec::new();
+    if !entries.is_empty() {
+        next.push("hall inbox 1".into());
+    }
+    next.extend(
+        entries
+            .iter()
+            .flat_map(|e| e.answer_with.first().cloned())
+            .take(5),
+    );
     Ok(Response::new(InboxOut { entries }, next))
+}
+
+/// One inbox entry, explained.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct InboxDetail {
+    /// Its place in `hall inbox` (1 is the oldest).
+    pub number: usize,
+    #[serde(flatten)]
+    pub entry: InboxEntry,
+    /// Why it waits for you.
+    pub why: String,
+    /// What it rests on: the question and options, findings, failing checks.
+    pub evidence: Vec<String>,
+    /// What you can do, and what each does.
+    pub actions: Vec<crate::now::Action>,
+    /// The item's state now, when the entry is about an item.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub now: Option<crate::now::Now>,
+}
+
+impl Render for InboxDetail {
+    fn render(&self) -> String {
+        let who = self.entry.item.map(|i| format!(" {i}")).unwrap_or_default();
+        let mut s = format!(
+            "⚑ {}. {}{who} · waiting {}
+
+{}
+
+{}
+",
+            self.number,
+            self.entry.kind,
+            age(self.entry.since),
+            self.entry.text,
+            self.why
+        );
+        if !self.evidence.is_empty() {
+            s.push('\n');
+            for e in &self.evidence {
+                s.push_str(&format!("  {e}\n"));
+            }
+        }
+        s.push_str("\nWhat you can do:\n");
+        for a in &self.actions {
+            s.push_str(&format!("  {:44} {}\n", a.command, a.does));
+        }
+        s
+    }
+}
+
+fn inbox_detail(
+    repo: &Repo,
+    ix: &Index,
+    entries: Vec<InboxEntry>,
+    which: &str,
+) -> Result<Response> {
+    let w = which.trim();
+    let pos = w
+        .parse::<usize>()
+        .ok()
+        .and_then(|n| n.checked_sub(1))
+        .filter(|n| *n < entries.len())
+        .or_else(|| {
+            entries
+                .iter()
+                .position(|e| e.qid.as_deref().is_some_and(|q| q.eq_ignore_ascii_case(w)))
+        })
+        .or_else(|| {
+            let id: crate::item::ItemId = w.parse().ok()?;
+            entries.iter().position(|e| e.item == Some(id))
+        })
+        .ok_or_else(|| {
+            HallError::new(
+                ErrorCode::ItemNotFound,
+                format!("nothing in the inbox matches {w}"),
+            )
+            .next(["hall inbox"])
+        })?;
+    let out = explain(repo, ix, entries[pos].clone(), pos + 1)?;
+    let actions = out.actions.clone();
+    let next = actions.into_iter().map(|a| a.command).collect();
+    Ok(Response::new(out, next))
+}
+
+/// One inbox entry explained: why it waits, the evidence, the actions.
+/// `number` is its place in `hall inbox`.
+pub fn explain(repo: &Repo, ix: &Index, entry: InboxEntry, number: usize) -> Result<InboxDetail> {
+    let item = entry.item.and_then(|id| repo.hall.load_item(id).ok());
+    let now = match &item {
+        Some(i) => {
+            let events = repo.hall.read_item(i.id)?;
+            Some(crate::now::now(repo, i, &ix.items(false)?, &events))
+        }
+        None => None,
+    };
+    let act = |c: &str, d: &str| crate::now::Action {
+        command: c.to_string(),
+        does: d.to_string(),
+    };
+    let (why, mut evidence, actions): (String, Vec<String>, Vec<crate::now::Action>) = match entry
+        .kind
+        .as_str()
+    {
+        "question" => {
+            let qid = entry.qid.clone().unwrap_or_default();
+            let q = ix.question(&qid)?;
+            let mut ev = vec![format!("question: {}", entry.text)];
+            let mut acts = Vec::new();
+            for (i, o) in entry.options.iter().enumerate() {
+                let letter = (b'a' + i as u8) as char;
+                ev.push(format!("[{letter}] {o}"));
+                acts.push(act(
+                    &format!("hall answer {qid} {letter}"),
+                    &format!("answer \"{o}\"; the asking agent resumes with it"),
+                ));
+            }
+            if acts.is_empty() {
+                acts.push(act(
+                    &format!("hall answer {qid} \"<answer>\""),
+                    "answer in your words; the asking agent resumes with it",
+                ));
+            }
+            if let Some(d) = &entry.default {
+                let when = q
+                    .and_then(|q| q.deadline)
+                    .map(|t| format!(" at {}", t.format("%H:%M UTC")))
+                    .unwrap_or_default();
+                ev.push(format!("default: {d}, used if nobody answers{when}"));
+            }
+            (
+                    "An agent asked you this and waits for the answer; its session resumes once you answer.".into(),
+                    ev,
+                    acts,
+                )
+        }
+        "session_waiting" => (
+            "A Claude Code session waits for you: a permission prompt, or a reply.".into(),
+            vec![],
+            entry
+                .answer_with
+                .iter()
+                .map(|c| {
+                    act(
+                        c,
+                        "you run this yourself in a terminal to open that session; Claude can't",
+                    )
+                })
+                .collect(),
+        ),
+        "daemon_stopped" => (
+            "The daemon should run but has no fresh heartbeat, so nothing moves through the loop."
+                .into(),
+            vec![],
+            vec![
+                act("hall daemon start", "start it again"),
+                act("hall daemon status", "see what it last did"),
+            ],
+        ),
+        kind => {
+            let why = match kind {
+                "ready" => {
+                    "The agent says the work looks done. It goes to review only when you say so."
+                }
+                "escalated" => {
+                    "The review rejected it too many times; the loop stopped and waits for your decision."
+                }
+                "budget" => "It reached its budget, so the loop stopped working on it.",
+                "run_failed" => {
+                    "A model run failed twice in a row, so the loop stopped working on it."
+                }
+                "ship_failed" => "The ship command failed, so it hasn't been pushed.",
+                "stuck" => "Nothing has happened to it for longer than `stuck_after`.",
+                "ci_failed" => "The shipped PR's CI failed after the review approved it.",
+                _ => "It needs your decision.",
+            };
+            let acts = match &now {
+                Some(n) => n.actions.clone(),
+                None => entry
+                    .answer_with
+                    .iter()
+                    .map(|c| act(c, "settle it"))
+                    .collect(),
+            };
+            (why.into(), vec![], acts)
+        }
+    };
+    if let Some(n) = &now {
+        evidence.push(format!("now: {}", n.doing));
+        evidence.extend(n.detail.iter().cloned());
+    }
+    Ok(InboxDetail {
+        number,
+        entry,
+        why,
+        evidence,
+        actions,
+        now,
+    })
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
