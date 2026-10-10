@@ -1,0 +1,40 @@
+---
+source: tests/tui.rs
+expression: "screen(&env, &app, W, H)"
+---
+hall · app (1 of 3 repos)   daemon ● running   ⚑ 3 waiting   rejected today 3 · review tokens 400k         usage · hh:mm
+┌ Usage · by room · today (UTC) ───────────────────────────────────────────────────────────────────────────────────────┐
+│room                           runs   tokens    ≈ $       budget                                                      │
+│Workshop                       1      1.20M     9.50      not capped                                                  │
+│Assay Office                   1      400k      4.20      ██░░░░░░░░  20% of 2.00M                                    │
+│Repair Shop                    1      100k      0.90      —                                                           │
+│total                          3      1.70M     14.60     loop █░░░░░░░░░  12% of 4.00M                               │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ Most expensive items ────────────────────────────────────────────────────────────────────────────────────────────────┐
+│H-0003 Rate limit the public … 1      1.20M     9.50      ██████████ 150% of 800k                                     │
+│H-0001 Retry failed webhook d… 2      500k      5.10      ██████░░░░  62% of 800k                                     │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+b by room  i by item  m by model  d by day  esc board  ? help  q quit

@@ -1,0 +1,40 @@
+---
+source: tests/tui.rs
+expression: "screen(&env, &app, W, H)"
+---
+hall · app (1 of 3 repos)   daemon ● running   ⚑ 3 waiting   rejected today 3 · review tokens 400k                 hh:mm
+┌ Your office ─⚑ 3 waiting ────────────────────────────────────────────────────────────────────────────────────────────┐
+│ready?     H-0002  Export tenant usage looks done: CSV export with 14 tests                                   –       │
+│question   H-0002  Billed usage or raw events?  [a] billed  [b] raw                                           –       │
+│escalated  H-0007  Migrate billing tables: rejected 1 times                                                   –       │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ Board ───────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│DEVELOPMENT (2)               AWAITING YOU (2)              REVIEW LOOP (1)              CLOSED TODAY (2)             │
+│H-0003 Rate limit the public… H-0002 Export tena… needs you H-0001 Retry fail… review r2 H-0005 Tenant check in … #191│
+│└ H-0004 Rate limit: documen… H-0007 Migrate … escalated ×1                              H-0006 Old experiment dropped│
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ H-0001 · Retry failed webhook deliveries ───────────────────────────────────────────────────── review · r2 · ####### ┐
+│hh:mm  you       created · "Retry failed webhook deliveries"                                                          │
+│hh:mm  you       ready · round 1 · #######                                                                            │
+│hh:mm  assayer   checks passed · round 1                                                                              │
+│hh:mm  assayer   usage · opus · 400k tok · $4.20                                                                      │
+│hh:mm  assayer   review · changes · round 1 · 2 findings                                                              │
+│hh:mm  fixer     fix submitted ####### · F1                                                                           │
+│hh:mm  fixer     usage · sonnet · 100k tok · $0.90                                                                    │
+│hh:mm  assayer   checks passed · round 2                                                                              │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ Findings ────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│F1   major   correctness      Retries can deliver twice              src/webhooks.rs:42     open · fix claimed #######│
+│F2   minor   evidence         No test for the backoff cap            src/webhooks.rs:42     open                      │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+↑↓ item enter journal ←→ step f findings d diff r ready p pull back x drop / filter w worktree o PR ? help q quit

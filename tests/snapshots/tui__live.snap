@@ -1,0 +1,40 @@
+---
+source: tests/tui.rs
+expression: "screen(&env, &app, W, H)"
+---
+hall · app (1 of 3 repos)   daemon ● running   ⚑ 3 waiting   rejected today 3 · review tokens 400k          live · hh:mm
+┌ Daemon ──────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│● running · pid 4242 · started hh:mm · heartbeat –                                                                    │
+│now: reviewing H-0001 round 2                                                                                         │
+│                                                                                                                      │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ Live · live.log ─────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│hh:mm:ss assayer: running gates for H-0001 round 2                                                                    │
+│hh:mm:ss assayer: cargo test passed in 1.2s                                                                           │
+│hh:mm:ss assayer: reviewing H-0001 round 2 with opus                                                                  │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+↑↓ scroll  esc board  tab next repo  q quit

@@ -1,0 +1,40 @@
+---
+source: tests/tui.rs
+expression: "screen(&env, &app, W, H)"
+---
+hall · app (1 of 3 repos)   daemon ● running   ⚑ 3 waiting   rejected today 3 · review tokens 400k       journal · hh:mm
+┌ H-0001 · Retry failed webhook deliveries ───────────────────────────────────────────────────── review · r2 · ####### ┐
+│Assay Office · round 2 · rejected 1 · branch hm/H-0001-retry-failed-webhook-deliveries                                │
+│worktree [root]/app-H-0001                                                                                            │
+│replay ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━● 8/8 now│
+│                                                                                                                      │
+│hh:mm  you       created · "Retry failed webhook deliveries"                                                          │
+│hh:mm  you       ready · round 1 · #######                                                                            │
+│hh:mm  assayer   checks passed · round 1                                                                              │
+│hh:mm  assayer   usage · opus · 400k tok · $4.20                                                                      │
+│hh:mm  assayer   review · changes · round 1 · 2 findings                                                              │
+│hh:mm  fixer     fix submitted ####### · F1                                                                           │
+│hh:mm  fixer     usage · sonnet · 100k tok · $0.90                                                                    │
+│hh:mm  assayer   checks passed · round 2                                                                              │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+↑↓ item enter journal ←→ step f findings d diff r ready p pull back x drop / filter w worktree o PR ? help q quit

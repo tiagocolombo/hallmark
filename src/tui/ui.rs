@@ -87,11 +87,11 @@ fn title_bar(f: &mut Frame, area: Rect, app: &App) {
         Span::styled("hall", bold().fg(BRASS)),
         Span::raw(format!(" · {name} ")),
         Span::styled(
-            format!(
-                "({} of {n} repo{})",
-                app.active + 1,
-                if n == 1 { "" } else { "s" }
-            ),
+            match n {
+                0 => "(no repos)".to_string(),
+                1 => "(1 of 1 repo)".to_string(),
+                n => format!("({} of {n} repos)", app.active + 1),
+            },
             fg(DIM),
         ),
         Span::raw("   daemon "),
@@ -172,11 +172,11 @@ fn key_bar(f: &mut Frame, area: Rect, app: &App) {
             ("r", "ready"),
             ("p", "pull back"),
             ("x", "drop"),
+            ("/", "filter"),
             ("w", "worktree"),
             ("o", "PR"),
             ("h", "history"),
             ("u", "usage"),
-            ("/", "filter"),
             ("?", "help"),
             ("q", "quit"),
         ],
@@ -228,10 +228,31 @@ fn key_bar(f: &mut Frame, area: Rect, app: &App) {
             ("q", "quit"),
         ],
     };
+    // Two spaces between keys when they all fit, else one. The last two
+    // (help, quit) always show; the others while they fit.
+    let full: usize = keys
+        .iter()
+        .map(|(k, w)| k.chars().count() + w.chars().count() + 3)
+        .sum();
+    let gap = if full <= area.width as usize { 2 } else { 1 };
+    let width = |(k, w): &(&str, &str)| k.chars().count() + w.chars().count() + 1 + gap;
+    let split = keys.len().saturating_sub(2);
+    let (rest, tail) = keys.split_at(split);
+    let mut room = (area.width as usize).saturating_sub(tail.iter().map(width).sum());
+    let mut shown: Vec<&(&str, &str)> = Vec::new();
+    for k in rest {
+        let w = width(k);
+        if w > room {
+            break;
+        }
+        room -= w;
+        shown.push(k);
+    }
+    shown.extend(tail);
     let mut spans = Vec::new();
-    for (k, what) in keys {
+    for (k, what) in shown {
         spans.push(Span::styled(*k, bold().fg(BRASS)));
-        spans.push(Span::styled(format!(" {what}  "), fg(DIM)));
+        spans.push(Span::styled(format!(" {what}{}", " ".repeat(gap)), fg(DIM)));
     }
     f.render_widget(Paragraph::new(Line::from(spans)), area);
 }
@@ -506,8 +527,11 @@ fn item_heading(app: &App) -> (String, String) {
 fn journal_pane(f: &mut Frame, area: Rect, app: &App, full: bool) {
     let (title, meta) = item_heading(app);
     let (pos, n) = app.replay_position();
-    let mut block =
-        pane(title).title(Line::from(Span::styled(format!(" {meta} "), fg(INFO))).right_aligned());
+    let mut block = pane(title);
+    if !meta.is_empty() {
+        block =
+            block.title(Line::from(Span::styled(format!(" {meta} "), fg(INFO))).right_aligned());
+    }
     if app.cursor.is_some() {
         block = block.title_bottom(
             Line::from(Span::styled(
@@ -594,7 +618,9 @@ fn journal_pane(f: &mut Frame, area: Rect, app: &App, full: bool) {
 fn scrubber(app: &App, width: usize) -> Line<'static> {
     let (pos, n) = app.replay_position();
     let label = format!(" {pos}/{n}");
-    let w = width.saturating_sub(label.len() + 8).max(4);
+    let w = width
+        .saturating_sub("replay ".len() + label.len() + " now".len())
+        .max(4);
     let mark = if n <= 1 {
         w - 1
     } else {
@@ -683,7 +709,7 @@ fn findings_pane(f: &mut Frame, area: Rect, app: &App) {
             Constraint::Length(16),
             Constraint::Min(20),
             Constraint::Length(22),
-            Constraint::Length(24),
+            Constraint::Length(26),
         ],
     )
     .block(block);
@@ -735,7 +761,12 @@ fn findings_view(f: &mut Frame, area: Rect, app: &App) {
     let rows: Vec<Row> = list
         .iter()
         .map(|t| {
-            let (st, c) = finding_status(t);
+            let (st, c) = match t.status {
+                FStatus::Open if t.dispute.is_some() => ("open · disputed", BRASS),
+                FStatus::Open => ("open", STOP),
+                FStatus::Fixed => ("fixed", OK),
+                FStatus::Withdrawn => ("withdrawn", DIM),
+            };
             Row::new(vec![
                 Span::raw(t.finding.id.clone()),
                 Span::styled(
@@ -746,7 +777,6 @@ fn findings_view(f: &mut Frame, area: Rect, app: &App) {
                 Span::styled(where_(t), fg(DIM)),
                 Span::raw(t.finding.title.clone()),
                 Span::styled(st, fg(c)),
-                Span::raw(format!("r{}", t.finding.round)),
                 Span::raw(
                     t.claimed_by
                         .as_deref()
@@ -763,7 +793,7 @@ fn findings_view(f: &mut Frame, area: Rect, app: &App) {
         })
         .collect();
     let header = Row::new(vec![
-        "id", "sev", "lens", "where", "title", "status", "raised", "fix", "settled",
+        "id", "sev", "lens", "where", "title", "status", "fix", "settled",
     ])
     .style(bold().fg(DIM));
     let t = Table::new(
@@ -772,10 +802,9 @@ fn findings_view(f: &mut Frame, area: Rect, app: &App) {
             Constraint::Length(4),
             Constraint::Length(7),
             Constraint::Length(16),
-            Constraint::Length(22),
+            Constraint::Length(20),
             Constraint::Min(16),
-            Constraint::Length(22),
-            Constraint::Length(6),
+            Constraint::Length(15),
             Constraint::Length(8),
             Constraint::Length(10),
         ],
@@ -788,6 +817,10 @@ fn findings_view(f: &mut Frame, area: Rect, app: &App) {
     if detail_h > 0 {
         let t = list[app.finding_sel.min(list.len() - 1)];
         let mut lines = vec![
+            Line::from(vec![
+                Span::styled("raised    ", bold().fg(DIM)),
+                Span::raw(format!("round {}", t.finding.round)),
+            ]),
             Line::from(vec![
                 Span::styled("scenario  ", bold().fg(DIM)),
                 Span::raw(t.finding.scenario.clone()),
@@ -888,7 +921,7 @@ fn history(f: &mut Frame, area: Rect, app: &App) {
         [
             Constraint::Length(7),
             Constraint::Length(8),
-            Constraint::Length(4),
+            Constraint::Length(5),
             Constraint::Length(12),
             Constraint::Length(10),
             Constraint::Min(20),
@@ -898,8 +931,8 @@ fn history(f: &mut Frame, area: Rect, app: &App) {
         Row::new(vec![
             "item",
             "outcome",
-            "",
-            "",
+            "round",
+            "rejected",
             "ended",
             "title · why rejected",
         ])
@@ -1186,7 +1219,7 @@ fn item_rows(app: &App, rows: &[UsageRow], cap: Option<u64>, n: usize) -> Vec<Ro
         .map(|r| {
             let item = r.key.parse().ok().and_then(|id| repo.data.item(id));
             let key = match item {
-                Some(it) => format!("{} {}", it.id, it.title),
+                Some(it) => clip(&format!("{} {}", it.id, it.title), 30),
                 None => r.key.clone(),
             };
             let b = match (item, cap) {

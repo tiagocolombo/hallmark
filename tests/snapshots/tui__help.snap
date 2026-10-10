@@ -1,0 +1,40 @@
+---
+source: tests/tui.rs
+expression: "screen(&env, &app, W, H)"
+---
+hall · app (1 of 3 repos)   daemon ● running   ⚑ 3 waiting   rejected today 3 · review tokens 400k                 hh:mm
+┌ Your office ─⚑ 3 waiting ────────────────────────────────────────────────────────────────────────────────────────────┐
+│ready?     H-0002  Export tenant usage looks done: CSV export with 14 tests                                   –       │
+│question   H-0002  Billed usage or raw events?  [a] billed  [b] raw                                           –       │
+│escalated  H-0007  Migrate billing tables: rejected 1 times                                                   –       │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ Board ────────────────────┌ Keys ────────────────────────────────────────────────────────┐───────────────────────────┐
+│DEVELOPMENT (2)            │                                                              │OSED TODAY (2)             │
+│H-0003 Rate limit the publi│  ↑ ↓       select an item (or a finding, a row, a repo)      │0005 Tenant check in … #191│
+│└ H-0004 Rate limit: docume│  enter     open the item's journal                           │0006 Old experiment dropped│
+└───────────────────────────│  ← →       step through the journal; the board follows       │───────────────────────────┘
+┌ H-0001 · Retry failed webh│  home end  first event · back to now                         │──── review · r2 · ####### ┐
+│hh:mm  you       created · │  f         findings for this item                            │                           │
+│hh:mm  you       ready · ro│  d         diff at the selected round                        │                           │
+│hh:mm  assayer   checks pas│  r         send to review (hall ready)                       │                           │
+│hh:mm  assayer   usage · op│  p         pull back to development                          │                           │
+│hh:mm  assayer   review · c│  x         drop, with a reason                               │                           │
+│hh:mm  fixer     fix submit│  w         open the item's worktree                          │                           │
+│hh:mm  fixer     usage · so│  o         open the PR                                       │                           │
+│hh:mm  assayer   checks pas│  b         board                                             │                           │
+│                           │  h         history: closed and dropped                       │                           │
+│                           │  u         usage (then b i m d to group)                     │                           │
+│                           │  l         live: what the daemon is doing                    │                           │
+│                           │  R         repositories                                      │                           │
+│                           │  tab       next repository                                   │                           │
+│                           │  /         filter by ID, title or state                      │                           │
+│                           │  esc       back · stop replaying · clear filter              │                           │
+│                           │  q         quit (work carries on)                            │                           │
+│                           │                                                              │                           │
+└───────────────────────────└ any key closes ──────────────────────────────────────────────┘───────────────────────────┘
+┌ Findings ────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│F1   major   correctness      Retries can deliver twice              src/webhooks.rs:42     open · fix claimed #######│
+│F2   minor   evidence         No test for the backoff cap            src/webhooks.rs:42     open                      │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+↑↓ item enter journal ←→ step f findings d diff r ready p pull back x drop / filter w worktree o PR ? help q quit
