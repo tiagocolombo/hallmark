@@ -1,0 +1,70 @@
+---
+source: tests/shipper.rs
+expression: "scrub(&env, &r.json)"
+---
+{
+  "items": [
+    {
+      "base": "main",
+      "blocking": [],
+      "branch": "hm/H-0002-usage-page",
+      "created_at": "[time]",
+      "drop_reason": "superseded by H-0001",
+      "duration": "[duration]",
+      "duration_secs": "[secs]",
+      "ended_at": "[time]",
+      "id": "H-0002",
+      "outcome": "dropped",
+      "reasons": [],
+      "rejected": 0,
+      "rejects": 0,
+      "room": "Records",
+      "round": 0,
+      "state": "dropped",
+      "state_since": "[time]",
+      "title": "Usage page",
+      "worktree": "[root]/app-H-0002"
+    },
+    {
+      "base": "main",
+      "blocking": [
+        {
+          "file": "retry.rs",
+          "id": "F1",
+          "lens": "correctness",
+          "line": 3,
+          "round": 1,
+          "severity": "major",
+          "status": "fixed",
+          "title": "Double delivery"
+        }
+      ],
+      "branch": "hm/H-0001-retry-webhooks",
+      "created_at": "[time]",
+      "duration": "[duration]",
+      "duration_secs": "[secs]",
+      "ended_at": "[time]",
+      "hallmark": "[sha]",
+      "id": "H-0001",
+      "outcome": "closed",
+      "reasons": [
+        "F1 major correctness: Double delivery"
+      ],
+      "rejected": 1,
+      "rejects": 1,
+      "room": "Dispatch Dock",
+      "round": 2,
+      "sha": "[sha]",
+      "state": "closed",
+      "state_since": "[time]",
+      "title": "Retry webhooks",
+      "worktree": "[root]/app-H-0001"
+    }
+  ],
+  "next": [
+    "hall export <id>",
+    "hall log <id>",
+    "hall history --rejected --since 7d"
+  ],
+  "total": 2
+}

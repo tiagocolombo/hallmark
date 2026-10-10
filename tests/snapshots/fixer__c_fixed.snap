@@ -1,0 +1,33 @@
+---
+source: tests/fixer.rs
+expression: "scrub(&env, &r.json)"
+---
+{
+  "base": "main",
+  "branch": "hm/H-0001-retry-webhooks",
+  "changed": true,
+  "created_at": "[time]",
+  "disputes": [
+    {
+      "id": "F2",
+      "reason": "tests/retry.rs already covers a double retry"
+    }
+  ],
+  "fixes": [
+    "F1"
+  ],
+  "id": "H-0001",
+  "next": [
+    "hall status H-0001",
+    "hall findings H-0001 --all",
+    "hall log H-0001"
+  ],
+  "rejects": 1,
+  "room": "Assay Office",
+  "round": 2,
+  "sha": "[sha]",
+  "state": "checks",
+  "state_since": "[time]",
+  "title": "Retry webhooks",
+  "worktree": "[root]/app-H-0001"
+}

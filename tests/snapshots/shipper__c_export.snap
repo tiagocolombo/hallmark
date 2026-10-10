@@ -1,0 +1,25 @@
+---
+source: tests/shipper.rs
+expression: v
+---
+{
+  "id": "H-0001",
+  "markdown": [
+    "# H-0001 · Retry webhooks",
+    "## Timeline",
+    "## Checks",
+    "### Round 1 · passed at `[sha]`",
+    "### Round 2 · passed at `[sha]`",
+    "## Reviews and fixes",
+    "### Review, round 1 · changes requested · `[sha]`",
+    "### Fix by you · `[sha]`",
+    "### Review, round 2 · approved · `[sha]`",
+    "## Findings",
+    "## Hallmark"
+  ],
+  "next": [
+    "hall log H-0001",
+    "hall history"
+  ],
+  "path": "[root]/app/.git/hallmark/items/H-0001/export.md"
+}
