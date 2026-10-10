@@ -1,25 +1,62 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Hallmark proposed learnings",
   "type": "object",
   "properties": {
     "learnings": {
+      "description": "What the item taught, new or updated. Empty when it taught nothing worth keeping.",
       "type": "array",
       "items": {
         "type": "object",
         "properties": {
-          "updates": { "type": "string" },
-          "kind": { "enum": ["rule", "false-positive", "map", "decision"] },
-          "scope": { "type": "array", "items": { "type": "string" } },
-          "lens": { "type": "string" },
-          "title": { "type": "string" },
-          "body": { "type": "string" }
+          "updates": {
+            "description": "The ID of the existing learning this refines (L-0017), or \"\" for a new one.",
+            "type": "string"
+          },
+          "kind": {
+            "description": "rule: a finding that turned out right. false-positive: what not to flag, and why. map: what a module does. decision: the human's ruling on an escalation.",
+            "enum": ["rule", "false-positive", "map", "decision"]
+          },
+          "scope": {
+            "description": "Globs of the repo paths it applies to, as narrow as is true (apps/api/src/webhooks/**). [] only when it applies anywhere.",
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "lens": {
+            "description": "The review lens it informs, or \"\".",
+            "enum": [
+              "first_principles",
+              "correctness",
+              "security_tenancy",
+              "data_migrations",
+              "evidence",
+              "operability",
+              "repo_rules",
+              ""
+            ]
+          },
+          "source": {
+            "description": "Where it came from: H-0042/F1 for a finding, H-0042 for the item.",
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "title": {
+            "description": "One sentence: the learning itself, specific and checkable.",
+            "type": "string"
+          },
+          "body": {
+            "description": "Two to five sentences: when it applies, why, and how to tell. No code copied from the repo.",
+            "type": "string"
+          }
         },
-        "required": ["updates", "kind", "scope", "lens", "title", "body"],
+        "required": ["updates", "kind", "scope", "lens", "source", "title", "body"],
         "additionalProperties": false
       }
     },
-    "retire": { "type": "array", "items": { "type": "string" } }
+    "retire": {
+      "description": "IDs of existing learnings this item shows are wrong or obsolete.",
+      "type": "array",
+      "items": { "type": "string" }
+    }
   },
   "required": ["learnings", "retire"],
   "additionalProperties": false

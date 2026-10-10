@@ -1,0 +1,14 @@
+---
+source: tests/library.rs
+expression: "scrub(&env, &r.json)"
+---
+{
+  "error": {
+    "code": "ITEM_NOT_FOUND",
+    "message": "no learning L-0099",
+    "next": [
+      "hall library review",
+      "hall library search \"<words>\" --proposed"
+    ]
+  }
+}

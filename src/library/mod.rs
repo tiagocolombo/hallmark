@@ -1,5 +1,20 @@
-//! The Library (workstream E): learnings in `.hallmark/knowledge/`, search,
-//! the librarian, briefings and retirement.
+//! The Library (ADR 0021): learnings in `.hallmark/knowledge/`, search,
+//! briefings for reviews, the librarian and retirement.
+//!
+//! - `learning`: the file format (frontmatter + title + body).
+//! - `store`: reading learnings from the base branch and from open
+//!   knowledge items; usage from verdict events.
+//! - `search`: SQLite FTS5 (built in) or qmd.
+//! - `briefing`: what a review is told.
+//! - `knowledge`: knowledge items, which carry learnings through Hallmark.
+//! - `librarian`: distilling items and proposing retirements.
+
+pub mod briefing;
+pub mod knowledge;
+pub mod learning;
+pub mod librarian;
+pub mod search;
+pub mod store;
 
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -20,12 +35,14 @@ pub struct Briefing {
 }
 
 /// The briefing for a review of `changed` paths at `base` (learnings are
-/// read from the base branch, never the branch under review).
-pub fn briefing(_repo: &Repo, _base: &str, _changed: &[String], _diff: &str) -> Result<Briefing> {
-    Ok(Briefing::default())
+/// read from the base branch, never the branch under review). `base` is a
+/// branch or a commit. Only accepted learnings are used: first those whose
+/// scope matches a changed path, then a search with terms from `diff`.
+pub fn briefing(repo: &Repo, base: &str, changed: &[String], diff: &str) -> Result<Briefing> {
+    briefing::briefing(repo, base, changed, diff)
 }
 
 /// Distils closed and escalated items into proposed learnings.
-pub fn librarian_tick(_ctx: &WorkerCtx) -> Result<Progress> {
-    Ok(Progress::Idle)
+pub fn librarian_tick(ctx: &WorkerCtx) -> Result<Progress> {
+    librarian::tick(ctx)
 }

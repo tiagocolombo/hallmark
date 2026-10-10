@@ -1,0 +1,24 @@
+---
+source: tests/library.rs
+expression: "scrub(&env, &r.json)"
+---
+{
+  "accepted": [
+    "L-0001"
+  ],
+  "action": "review",
+  "commits": [
+    "[sha]"
+  ],
+  "items": [
+    "H-0002"
+  ],
+  "next": [
+    "hall ready H-0002"
+  ],
+  "proposed": [],
+  "rejected": [
+    "L-0002"
+  ],
+  "retiring": []
+}

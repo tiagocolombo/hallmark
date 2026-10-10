@@ -1,0 +1,24 @@
+[
+  {
+    "docid": "#5f2a1c",
+    "score": 0.87,
+    "file": "qmd://hallmark-app/base/L-0002-backoff-jitter-lives-in-the-queue.md",
+    "title": "Backoff jitter lives in the queue",
+    "context": "Library learnings",
+    "snippet": "@@ -1,3 @@\nThe queue adds jitter to every retry."
+  },
+  {
+    "docid": "#9b31e0",
+    "score": 0.42,
+    "file": "qmd://hallmark-app/base/L-0001-retries-must-check-the-endpoint.md",
+    "title": "Retries must check the endpoint",
+    "context": "Library learnings",
+    "snippet": "A deleted endpoint keeps its queued deliveries."
+  },
+  {
+    "docid": "#000000",
+    "score": 0.1,
+    "file": "qmd://other-collection/notes/unrelated.md",
+    "title": "Not a learning"
+  }
+]

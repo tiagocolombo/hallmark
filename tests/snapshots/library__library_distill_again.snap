@@ -1,0 +1,20 @@
+---
+source: tests/library.rs
+expression: "scrub(&env, &r.json)"
+---
+{
+  "action": "distill",
+  "changed": false,
+  "item": "H-0001",
+  "knowledge": "H-0002",
+  "learnings": [
+    "L-0001",
+    "L-0002"
+  ],
+  "next": [
+    "hall library review",
+    "hall ready H-0002",
+    "hall log H-0001 --kind distilled"
+  ],
+  "retired": []
+}
