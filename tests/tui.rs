@@ -12,7 +12,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use hallmark::daemon::state::DaemonState;
 use hallmark::event::{Body, CheckRun, Event, Usage, VerdictKind};
 use hallmark::findings::{Counts, Finding, Lens, PriorRuling, PriorStatus, Severity};
-use hallmark::item::{ItemId, State};
+use hallmark::item::{HoldKind, ItemId, State};
 use hallmark::journal::Hall;
 use hallmark::tui::app::Redact;
 use hallmark::tui::{App, Effect, Input, UsageGroup, View, ui};
@@ -613,6 +613,49 @@ fn ready_and_pull_back_go_through_the_journal() {
     assert!(st.error);
     assert!(st.text.contains("WRONG_STATE"), "{}", st.text);
     assert_eq!(hall.load_item(ItemId(5)).unwrap().state, State::Closed);
+}
+
+#[test]
+fn go_on_lifts_a_budget_hold_without_changing_the_budget() {
+    let env = building();
+    let hall = hall_of(&env);
+    let cfg = std::fs::read_to_string(env.repo.join(".hallmark.toml")).unwrap();
+    let mut app = load(&env, &env.repo);
+
+    // Nothing held: nothing to go on with.
+    select(&mut app, 2);
+    key(&mut app, KeyCode::Char('g'));
+    let st = app.status.clone().unwrap();
+    assert!(st.error && st.text.contains("WRONG_STATE"), "{}", st.text);
+
+    add(
+        &hall,
+        2,
+        "assayer",
+        Body::Held {
+            kind: HoldKind::Budget,
+            reason: "H-0002 reached its 800k token cap".into(),
+        },
+    );
+    app.reload_active();
+    key(&mut app, KeyCode::Char('g'));
+    let st = app.status.clone().unwrap();
+    assert!(!st.error, "{}", st.text);
+    assert!(st.text.contains("800k more tokens"), "{}", st.text);
+    assert_eq!(hall.load_item(ItemId(2)).unwrap().hold, None);
+    assert_eq!(app.item().unwrap().hold, None, "reloaded");
+    let last = hall.read_item(ItemId(2)).unwrap().pop().unwrap();
+    assert_eq!(
+        last.body,
+        Body::Released {
+            reason: Some("retried from the terminal app".into()),
+            granted_tokens: Some(800_000),
+        }
+    );
+    assert_eq!(
+        std::fs::read_to_string(env.repo.join(".hallmark.toml")).unwrap(),
+        cfg
+    );
 }
 
 #[test]
