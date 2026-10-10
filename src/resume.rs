@@ -260,8 +260,16 @@ pub fn request(repo: &Repo, p: &Pending) -> Result<RunRequest> {
         cwd,
         resume: Some(p.session.clone()),
         plugin_dir: Some(crate::plugin::runtime_dir()?),
-        extra_args: repo.config.claude_args.clone(),
-        env: vec![("HALL_ACTOR".into(), "agent".into())],
+        env: vec![
+            ("HALL_ACTOR".into(), "agent".into()),
+            // The runner records this run's usage; the Stop hook must not.
+            ("HALL_HEADLESS".into(), "1".into()),
+        ],
+        extra_args: {
+            let mut a = repo.config.claude_args.clone();
+            a.push("--strict-mcp-config".into());
+            a
+        },
         ..Default::default()
     })
 }

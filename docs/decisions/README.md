@@ -18,3 +18,15 @@ a decision, add a new record that supersedes the old one. Don't edit the old one
 | [0010](0010-gate-scope.md) | Where the gates apply | Accepted |
 | [0011](0011-drop-any-time.md) | An item can be dropped at any time | Accepted |
 | [0012](0012-config-from-the-main-checkout.md) | `.hallmark.toml` is read from the main checkout | Accepted |
+| [0013](0013-one-runner-for-claude-p.md) | One runner for every `claude -p` run | Accepted |
+| [0014](0014-daemon-workers-and-leases.md) | The daemon is a loop of workers, with leases | Accepted |
+| [0015](0015-verdicts-findings-and-approval.md) | Verdicts, findings, and who decides approval | Accepted |
+| [0016](0016-budgets-holds-and-pauses.md) | Budgets, holds and pauses | Accepted |
+| [0017](0017-daemon-process-and-pauses.md) | The daemon process: one instance, stop by file, pauses for everyone | Accepted |
+| [0018](0018-the-assay-office.md) | The Assay Office: checks, then an isolated review | Accepted |
+| [0019](0019-fixer-and-shipper.md) | The fixer, the shipper, and the record | Accepted |
+| [0020](0020-notifications-resume-and-budget-accounting.md) | Notifications, resuming on an answer, and what budgets count | Accepted |
+| [0021](0021-the-library.md) | The Library: learnings as reviewed files, read from the base | Accepted |
+| [0022](0022-the-terminal-app-is-a-reader.md) | The terminal app is a reader | Accepted |
+| [0023](0023-packaging-and-releases.md) | Packaging and releases | Accepted |
+| [0024](0024-parallel-parts-and-follow-ups.md) | Parallel parts: the Front Desk splits, the session orchestrates, the parent is reviewed once | Accepted |

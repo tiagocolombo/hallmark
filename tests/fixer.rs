@@ -222,7 +222,7 @@ fn the_fixer_commits_and_records_the_fix_itself() {
     let c = &calls[0];
     assert_eq!(c["role"], "fixer");
     assert_eq!(c["room"], "repair");
-    assert_eq!(c["agent"], "fixer");
+    assert_eq!(c["agent"], "hallmark:fixer");
     assert_eq!(c["model"], "sonnet");
     assert_eq!(c["permission_mode"], "acceptEdits");
     assert_eq!(p(std::path::Path::new(c["cwd"].as_str().unwrap())), p(&wt));
@@ -246,7 +246,10 @@ fn the_fixer_commits_and_records_the_fix_itself() {
     // HALL_ACTOR marks its events; PATH starts with this `hall`'s directory.
     let env_vars = c["env"].as_array().unwrap();
     assert_eq!(env_vars[0], json!(["HALL_ACTOR", "fixer"]));
-    let path = env_vars[1][1].as_str().unwrap();
+    let path = env_vars.iter().find(|v| v[0] == "PATH").unwrap()[1]
+        .as_str()
+        .unwrap();
+    assert!(env_vars.contains(&json!(["HALL_HEADLESS", "1"])));
     let exe_dir = std::path::Path::new(env!("CARGO_BIN_EXE_hall"))
         .parent()
         .unwrap();

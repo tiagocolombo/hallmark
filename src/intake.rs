@@ -109,7 +109,6 @@ pub fn plan(repo: &Repo, request: &str) -> Outcome {
     req.allowed_tools = ["Read", "Grep", "Glob", "StructuredOutput"]
         .map(String::from)
         .to_vec();
-    req.env.push(("HALL_NO_HOOKS".into(), "1".into()));
     let runner = runner::from_env();
     match runner::run_metered(repo, runner.as_ref(), None, &req) {
         Ok(Metered::Done(o)) => {

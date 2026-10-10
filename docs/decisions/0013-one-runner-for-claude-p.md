@@ -52,3 +52,22 @@ any OS.
   scripted model output, on all three systems.
 - A change in Claude Code's result shape breaks the fixture tests rather
   than the loop.
+
+## Addendum: isolation, from the Stage 2 live checks
+
+Live runs (ADR 0018, 0019, 0024) showed three things the runner now handles
+for every role in `runner::request`:
+
+- A `tools:` list in an agent hides the `StructuredOutput` tool, so every
+  agent that lists tools includes it. `--json-schema` also rejects a
+  `$schema` key, so the plugin's schemas have none.
+- A branch's `.claude/agents/<name>.md` replaces a plugin agent called by its
+  bare name, so agents are always called as `hallmark:<name>`.
+- The checkout's CLAUDE.md, settings and MCP servers load into `--agent`
+  runs (7,950 tokens of context against 4,942 without). Every run passes
+  `--strict-mcp-config`; the read-only roles (reviewer, intake, librarian)
+  also pass `--setting-sources user` and `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1`,
+  and run without hooks (`HALL_NO_HOOKS=1`).
+- Every run sets `HALL_HEADLESS=1`. The Stop hook then leaves usage to the
+  runner, which reads it from the result, so a fixer's or a resumed
+  session's turn is counted once.

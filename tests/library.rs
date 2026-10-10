@@ -445,7 +445,7 @@ fn the_librarian_distils_a_closed_item_into_a_knowledge_item() {
     assert_eq!(calls.len(), 1);
     let c = &calls[0];
     assert_eq!(c["role"], "librarian");
-    assert_eq!(c["agent"], "librarian");
+    assert_eq!(c["agent"], "hallmark:librarian");
     assert_eq!(c["model"], "haiku");
     assert!(c["json_schema"].as_str().unwrap().contains("\"updates\""));
     assert_eq!(

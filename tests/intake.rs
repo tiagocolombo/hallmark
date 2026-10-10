@@ -131,7 +131,7 @@ fn a_split_request_becomes_a_parent_and_children() {
     let c = &calls[0];
     assert_eq!(c["role"], "intake");
     assert_eq!(c["room"], "front");
-    assert_eq!(c["agent"], "intake");
+    assert_eq!(c["agent"], "hallmark:intake");
     assert_eq!(c["model"], "haiku");
     assert_eq!(c["timeout_secs"], 120);
     assert_eq!(

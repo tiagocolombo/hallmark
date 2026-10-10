@@ -415,7 +415,6 @@ pub fn distill(repo: &Repo, runner: &dyn Runner, id: ItemId) -> Result<Distill> 
         "Glob".into(),
         "StructuredOutput".into(),
     ];
-    req.env.push(("HALL_NO_HOOKS".into(), "1".into()));
     let outcome = match runner::run_metered(repo, runner, Some(id), &req)? {
         Metered::Done(o) => o,
         Metered::Failed { failure, .. } => {

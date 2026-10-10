@@ -134,6 +134,7 @@ pub fn request(
     prompt: String,
     cwd: &Path,
 ) -> Result<RunRequest> {
+    use crate::config::Role as R;
     let b = &repo.config.budget;
     let actor = match role {
         crate::config::Role::Reviewer => "assayer",
@@ -141,10 +142,34 @@ pub fn request(
         crate::config::Role::Intake => "intake",
         crate::config::Role::Librarian => "librarian",
     };
+    // Every run ignores MCP servers; read-only roles (reviewer, intake,
+    // librarian) also ignore the checkout's settings and CLAUDE.md, so the
+    // branch under review can't steer them (ADR 0013, live check in ADR 0018).
+    let read_only = matches!(role, R::Reviewer | R::Intake | R::Librarian);
+    let mut extra_args = repo.config.claude_args.clone();
+    extra_args.push("--strict-mcp-config".into());
+    let mut env = vec![
+        ("HALL_ACTOR".to_string(), actor.to_string()),
+        // Hooks see this and leave usage to the runner (no double count).
+        ("HALL_HEADLESS".to_string(), "1".to_string()),
+    ];
+    if read_only {
+        extra_args.extend(["--setting-sources".into(), "user".into()]);
+        env.push(("HALL_NO_HOOKS".into(), "1".into()));
+        env.push(("CLAUDE_CODE_DISABLE_CLAUDE_MDS".into(), "1".into()));
+    }
     Ok(RunRequest {
         role: role.as_str().into(),
         room: role.room().into(),
-        agent: agent.map(String::from),
+        // Namespaced: a branch's `.claude/agents/<name>.md` would otherwise
+        // replace the plugin's agent of the same bare name.
+        agent: agent.map(|a| {
+            if a.contains(':') {
+                a.to_string()
+            } else {
+                format!("{}:{a}", crate::plugin::PLUGIN)
+            }
+        }),
         model: Some(b.model(role)),
         effort: b.effort(role),
         prompt,
@@ -157,8 +182,8 @@ pub fn request(
         permission_mode: None,
         resume: None,
         plugin_dir: Some(crate::plugin::runtime_dir()?),
-        extra_args: repo.config.claude_args.clone(),
-        env: vec![("HALL_ACTOR".into(), actor.into())],
+        extra_args,
+        env,
     })
 }
 
@@ -615,11 +640,21 @@ pub fn run_metered(
     item: Option<ItemId>,
     req: &RunRequest,
 ) -> Result<Metered> {
+    // Events about the run carry the run's actor (fixer, assayer…), not
+    // whoever happens to run the daemon.
+    let actor = req
+        .env
+        .iter()
+        .find(|(k, _)| k == "HALL_ACTOR")
+        .map(|(_, v)| v.clone())
+        .unwrap_or_else(crate::repo::actor);
+    let actor = actor.as_str();
     if let Err(stop) = crate::budget::check(repo, item, &req.role) {
         if let (Some(id), crate::budget::Level::Item) = (item, stop.level) {
             record(
                 repo,
                 Some(id),
+                actor,
                 Body::Held {
                     kind: HoldKind::Budget,
                     reason: stop.reason.clone(),
@@ -645,7 +680,7 @@ pub fn run_metered(
     }
     if let Some(r) = &outcome.result {
         for u in r.usage(&req.room, &req.role) {
-            record(repo, item, Body::Usage(u))?;
+            record(repo, item, actor, Body::Usage(u))?;
         }
     }
     let Some(failure) = outcome.failure.clone() else {
@@ -678,6 +713,7 @@ pub fn run_metered(
     record(
         repo,
         item,
+        actor,
         Body::RunFailed {
             role: req.role.clone(),
             reason: failure.describe(),
@@ -689,6 +725,7 @@ pub fn run_metered(
         record(
             repo,
             item,
+            actor,
             Body::Held {
                 kind: HoldKind::RunFailed,
                 reason: format!("the {} run failed twice: {}", req.role, failure.describe()),
@@ -721,8 +758,8 @@ fn label(item: Option<ItemId>) -> String {
     item.map(|i| i.to_string()).unwrap_or_else(|| "repo".into())
 }
 
-fn record(repo: &Repo, item: Option<ItemId>, body: Body) -> Result<()> {
-    let e = Event::new(crate::repo::actor(), item, body);
+fn record(repo: &Repo, item: Option<ItemId>, actor: &str, body: Body) -> Result<()> {
+    let e = Event::new(actor, item, body);
     match item {
         Some(id) => repo.hall.append_item(id, &e),
         None => repo.hall.append(&repo.hall.repo_events(), &e),

@@ -33,11 +33,6 @@ pub const TOOLS: &[&str] = &[
     "StructuredOutput",
 ];
 
-/// Arguments that keep the branch under review out of its own review:
-/// no project or local settings (hooks, permissions, agents from the
-/// checkout's `.claude/`), and no MCP servers (`.mcp.json`).
-pub const ISOLATION_ARGS: &[&str] = &["--setting-sources", "user", "--strict-mcp-config"];
-
 /// Reviews the item at its frozen commit and records the verdict.
 pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
     let repo = ctx.repo;
@@ -136,17 +131,6 @@ pub fn request(
     req.json_schema = Some(crate::plugin::file("schemas/verdict.json").into());
     req.allowed_tools = TOOLS.iter().map(|t| t.to_string()).collect();
     req.effort = review.effort.clone();
-    req.extra_args
-        .extend(ISOLATION_ARGS.iter().map(|a| a.to_string()));
-    req.env.extend([
-        ("HALL_NO_HOOKS".to_string(), "1".to_string()),
-        // No CLAUDE.md from the checkout (the branch's) or the user's home:
-        // the rules come from the base, in the prompt.
-        (
-            "CLAUDE_CODE_DISABLE_CLAUDE_MDS".to_string(),
-            "1".to_string(),
-        ),
-    ]);
     if let Some(path) = path_with_hall() {
         req.env.push(("PATH".into(), path));
     }

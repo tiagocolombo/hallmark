@@ -293,6 +293,17 @@ impl Ctx {
             }
             None => repo_context(&self.repo, &self.items, inbox),
         };
+        // The fixer works on an item in the loop on purpose.
+        if headless_actor().as_deref() == Some("fixer")
+            && let Some(i) = &item
+        {
+            text = format!(
+                "Hallmark: you are the fixer for {} \"{}\" in worktree {}. Fix its failing checks \
+                 and open findings there (`hall findings {}`), commit, and record them with \
+                 `hall fixed <ids>`. Never push.",
+                i.id, i.title, i.worktree, i.id
+            );
+        }
         // The daily budget is spent: the loop waits, this session doesn't.
         if let Some(note) = crate::budget::daily_note(&self.repo) {
             text.push(' ');
@@ -306,10 +317,16 @@ impl Ctx {
     fn user_prompt_submit(&mut self) -> Result<Option<Value>> {
         let item = self.item();
         let text = self.input.prompt.clone().unwrap_or_default();
+        let headless = headless_actor();
         if !text.trim().is_empty() {
-            self.record(item.as_ref().map(|i| i.id), "you", Body::Prompt { text })?;
+            let actor = headless.as_deref().unwrap_or("you");
+            self.record(item.as_ref().map(|i| i.id), actor, Body::Prompt { text })?;
         }
         let Some(i) = item else { return Ok(None) };
+        // The fixer is meant to edit an item in the loop; don't tell it not to.
+        if headless.as_deref() == Some("fixer") {
+            return Ok(None);
+        }
         let note = match i.state {
             s if s.in_loop() => format!(
                 "Hallmark: {} is in the review loop ({}, round {}). Don't edit it. If the human wants \
@@ -614,7 +631,14 @@ impl Ctx {
 
     fn stop(&mut self) -> Result<Option<Value>> {
         let item = self.item().map(|i| i.id);
-        if let (Some(tp), Some(sess)) = (self.input.transcript_path.clone(), self.session.clone()) {
+        // A headless run's usage is recorded by the runner from its result;
+        // counting the transcript too would double it.
+        let transcript = self
+            .input
+            .transcript_path
+            .clone()
+            .filter(|_| headless_actor().is_none());
+        if let (Some(tp), Some(sess)) = (transcript, self.session.clone()) {
             let path = PathBuf::from(&tp);
             if path.is_file() {
                 let u = usage::transcript_usage(
@@ -668,6 +692,18 @@ impl Ctx {
         )?;
         Ok(None)
     }
+}
+
+/// The role of a headless `claude -p` run started by Hallmark's runner
+/// (`HALL_HEADLESS=1`, `HALL_ACTOR=fixer`…), or None in a person's session.
+fn headless_actor() -> Option<String> {
+    std::env::var_os("HALL_HEADLESS")?;
+    Some(
+        std::env::var("HALL_ACTOR")
+            .ok()
+            .filter(|a| !a.trim().is_empty())
+            .unwrap_or_else(|| "agent".into()),
+    )
 }
 
 /// True when the command runs `hall <one of subs>`.
