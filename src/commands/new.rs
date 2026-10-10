@@ -788,16 +788,16 @@ mod tests {
             "git worktree add ../app-H-0002 -b hm/H-0002-x hm/H-0001-p"
         );
         assert_eq!(
-            worktree_command("dev wt new {branch} --from {start}", &v, Some("hm/p")),
-            "dev wt new hm/H-0002-x --from hm/p"
+            worktree_command("rig wt new {branch} --from {start}", &v, Some("hm/p")),
+            "rig wt new hm/H-0002-x --from hm/p"
         );
         assert_eq!(
-            worktree_command("dev wt new {branch} {start}", &v, None),
-            "dev wt new hm/H-0002-x"
+            worktree_command("rig wt new {branch} {start}", &v, None),
+            "rig wt new hm/H-0002-x"
         );
         assert_eq!(
-            worktree_command("dev wt new {branch}", &v, Some("hm/p")),
-            "dev wt new hm/H-0002-x"
+            worktree_command("rig wt new {branch}", &v, Some("hm/p")),
+            "rig wt new hm/H-0002-x"
         );
     }
 

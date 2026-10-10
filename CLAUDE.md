@@ -8,7 +8,7 @@ rely on is in [docs/spikes.md](docs/spikes.md).
 ## Toolchain
 
 The Rust toolchain (cargo, rustc, clippy, rustfmt, rust-analyzer) and `gh` come
-from the Nix shell declared in `dev.toml`:
+from the Nix shell declared in `rig.toml`:
 
 - with direnv: `direnv allow`, once;
 - otherwise: `nix develop`, or `nix develop --command <cmd>`.
