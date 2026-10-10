@@ -484,3 +484,32 @@ fn a_slow_repo_does_not_hold_the_others() {
         "app's gate is still running"
     );
 }
+
+#[test]
+fn resume_lifts_a_pause_before_its_time() {
+    let env = Env::initialized();
+    let now = Utc::now();
+    write_state(
+        &env,
+        json!({
+            "pid": 0, "started_at": null, "heartbeat": null, "wanted": false,
+            "paused": {
+                "reason": "H-0007 review: Claude's plan limit",
+                "until": (now + chrono::Duration::minutes(30)).to_rfc3339(),
+                "since": now.to_rfc3339(),
+                "repo": "app",
+                "journals": [hall_root(&env.repo)],
+            }
+        }),
+    );
+    let r = env.hall(&env.repo, &["daemon", "resume"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(r.json["changed"], true);
+    assert!(r.json["note"].as_str().unwrap().contains("plan limit"));
+    assert!(read_state(&env)["paused"].is_null(), "the pause is gone");
+    assert_eq!(events(&env.repo_journal()).last().unwrap(), "unpaused");
+    // Nothing left to lift.
+    let again = env.hall(&env.repo, &["daemon", "resume"]);
+    assert_eq!(again.json["changed"], false);
+    assert_eq!(again.json["note"], "not paused");
+}
