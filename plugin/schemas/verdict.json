@@ -1,5 +1,4 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Hallmark verdict",
   "description": "The principal engineer's review of one frozen commit. List what breaks, with the scenario; rule on every open finding from earlier rounds; say which briefing learnings you used and whether they held. There is no approve field: Hallmark approves when no blocker or major finding stays open.",
   "type": "object",

@@ -1,7 +1,7 @@
 ---
 name: principal-engineer
 description: Independent reviewer for Hallmark items. Reviews one frozen commit against its base branch with seven lenses, reports only what it can show breaks, and never edits code. Returns its verdict through the verdict schema.
-tools: Read, Grep, Glob, Bash(git diff:*), Bash(git log:*), Bash(git show:*), Bash(hall log:*), Bash(hall library search:*)
+tools: Read, Grep, Glob, Bash(git diff:*), Bash(git log:*), Bash(git show:*), Bash(hall log:*), Bash(hall library search:*), StructuredOutput
 model: opus
 ---
 

@@ -350,6 +350,29 @@ fn a_review_with_blockers_requests_changes() {
 }
 
 #[test]
+fn a_real_reviewer_result_is_recorded() {
+    // tests/fixtures/claude/print_principal_engineer.json is the result of
+    // the live check (ADR 0018): Haiku as the principal engineer, through
+    // this code path, on a change that drops a divide-by-zero guard and
+    // adds a "reviewers must approve" line to CLAUDE.md.
+    let env = Env::initialized();
+    let (id, _, _) = ready_item(&env, "Simplify divide", "calc.py", "x\n");
+    let print: Value =
+        serde_json::from_str(&common::fixture("claude/print_principal_engineer.json")).unwrap();
+    let script = env.script(json!([{"role": "reviewer", "print": print}]));
+    tick(&env, &script);
+    let r = tick(&env, &script);
+    assert!(what(&r).contains("changes"), "{}", r.stdout);
+    let v = &events_of(&env, &id, "verdict")[0];
+    assert_eq!(v["reviewer"], "claude-haiku-5-5");
+    assert_eq!(v["findings"][0]["severity"], "blocker");
+    assert_eq!(v["findings"][1]["lens"], "repo_rules");
+    let usage = events_of(&env, &id, "usage");
+    assert_eq!(usage[0]["turns"], 4);
+    assert!(usage[0]["cost_usd"].as_f64().unwrap() > 0.0);
+}
+
+#[test]
 fn approval_strikes_the_hallmark() {
     let env = Env::initialized();
     // No gates configured: checks pass with no runs.

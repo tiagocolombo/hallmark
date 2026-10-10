@@ -18,7 +18,9 @@ use crate::worker::{Progress, WorkerCtx};
 pub const AGENT: &str = "hallmark:principal-engineer";
 
 /// The reviewer's tools: read-only. Kept equal to the agent's frontmatter
-/// (a test checks).
+/// (a test checks). An agent with a `tools:` list must name
+/// `StructuredOutput`, or `--json-schema` silently yields no
+/// `structured_output` (found in the live check, ADR 0018).
 pub const TOOLS: &[&str] = &[
     "Read",
     "Grep",
@@ -28,6 +30,7 @@ pub const TOOLS: &[&str] = &[
     "Bash(git show:*)",
     "Bash(hall log:*)",
     "Bash(hall library search:*)",
+    "StructuredOutput",
 ];
 
 /// Arguments that keep the branch under review out of its own review:
@@ -244,6 +247,16 @@ mod tests {
             );
         }
         assert!(AGENT.ends_with(":principal-engineer"));
+    }
+
+    #[test]
+    fn the_schema_is_one_claude_accepts() {
+        // Claude Code rejects a `--json-schema` that names a `$schema`
+        // dialect ("no schema with key or ref …/2020-12/schema").
+        let v: serde_json::Value =
+            serde_json::from_str(crate::plugin::file("schemas/verdict.json")).unwrap();
+        assert!(v.get("$schema").is_none());
+        assert_eq!(v["type"], "object");
     }
 
     #[test]
