@@ -370,9 +370,9 @@ retire_after   = "90d"
 **An example override** for a repo with its own tooling:
 
 ```toml
-worktree = "dev wt new {branch}"
-ship     = "dev submit --pr"
-gates    = ["dev test", "dev run build"]
+worktree = "rig wt new {branch}"
+ship     = "rig submit --pr"
+gates    = ["rig test", "rig run build"]
 ```
 
 **Gate detection.** `hall init` detects the gates from the files it finds:

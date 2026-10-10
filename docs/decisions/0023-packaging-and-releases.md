@@ -2,6 +2,10 @@
 
 Status: Accepted, 2026-10-09
 
+> **Note, 2026-10-10:** the `tiagocolombo/dev` tool and flake input are now
+> `tiagocolombo/rig` (the input is `rig`, the spec is `rig.toml`). The decision
+> below is unchanged; read `dev` as `rig` wherever it names the input.
+
 ## Context
 
 ADR 0001 promised a single cargo-dist pipeline for all three operating

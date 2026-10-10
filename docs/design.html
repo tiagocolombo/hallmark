@@ -380,7 +380,7 @@ git commit -m "Adopt Hallmark"</code></pre>
 ✓ Claude Code plugin hallmark (user)
 ✓ hooks: SessionStart UserPromptSubmit PreToolUse
          PostToolUse Stop
-✓ rindahq/platform: gates dev test, dev run build
+✓ rindahq/platform: gates rig test, rig run build
 ✗ daemon not running  →  hall daemon start</code></pre>
     </li>
   </ol>
@@ -1160,9 +1160,9 @@ fix_model    = "sonnet"</code></pre>
     <div>
       <div class="dl-label">Example override: rindahq/platform</div>
 <pre><code># .hallmark.toml
-worktree = "dev wt new {branch}"
-ship     = "dev submit --pr"
-gates    = ["dev test", "dev run build"]
+worktree = "rig wt new {branch}"
+ship     = "rig submit --pr"
+gates    = ["rig test", "rig run build"]
 rules    = ["CLAUDE.md",
             "docs/plan/README.md#leave-alone"]</code></pre>
       <p style="margin-top: 12px">Every command is a setting, so a repo can use its own tooling without Hallmark knowing about it. The reviewer and fixer commands are settings too. Claude Code comes first because its hooks and skills make the session part of the record.</p>
@@ -1252,7 +1252,7 @@ rules    = ["CLAUDE.md",
 
   var STEPS = [
     { t: "09:12", s: "dev", round: "", sha: "", title: "You drop the request",
-      body: "<p>In a normal Claude Code session you type <code>/hallmark Retry failed webhook deliveries with exponential backoff</code>. Claude runs <code>hall new</code>, which creates H-0042 and its worktree with this repo's <code>dev wt new hm/H-0042-webhook-retries</code>. Claude moves into the worktree and the session carries on as usual.</p>",
+      body: "<p>In a normal Claude Code session you type <code>/hallmark Retry failed webhook deliveries with exponential backoff</code>. Claude runs <code>hall new</code>, which creates H-0042 and its worktree with this repo's <code>rig wt new hm/H-0042-webhook-retries</code>. Claude moves into the worktree and the session carries on as usual.</p>",
       logged: "item created, branch, first prompt",
       ev: [["09:12", "you", "created · \"Retry failed webhook deliveries with exponential backoff\""]], f: {} },
     { t: "09:14–09:50", s: "dev", round: "", sha: "4e1a9c0", title: "You and the agent iterate",
@@ -1272,7 +1272,7 @@ rules    = ["CLAUDE.md",
       logged: "ready, frozen commit",
       ev: [["10:04", "you", "ready · round 1 · 7c2d018"]], f: {} },
     { t: "10:09", s: "fixing", round: "r1", sha: "7c2d018", title: "Checks fail",
-      body: "<p><code>dev test</code> fails on the coverage ratchet: new branches in the retry job have no tests. The model review is skipped, so no usage is spent on it, and the failing output goes to the fixer.</p>",
+      body: "<p><code>rig test</code> fails on the coverage ratchet: new branches in the retry job have no tests. The model review is skipped, so no usage is spent on it, and the failing output goes to the fixer.</p>",
       logged: "command, exit code, duration, failing output",
       ev: [["10:09", "assayer", "checks failed · coverage floor, apps/api"]], f: {} },
     { t: "10:17", s: "checks", round: "r2", sha: "b81f3e4", title: "The fixer adds tests",
@@ -1295,7 +1295,7 @@ rules    = ["CLAUDE.md",
       ev: [["10:46", "assayer", "review · approve · F1, F2 verified · 96k tok"], ["10:46", "assayer", "hallmark · 2a9e771"]],
       f: { F1: "verified r3", F2: "verified r3", F3: "to PR body" } },
     { t: "10:47", s: "closed", round: "r3", sha: "2a9e771", title: "On GitHub, item closed",
-      body: "<p>The shipper runs <code>dev submit --pr</code>. PR #191 opens with the review summary and the minor finding in its body, and H-0042 moves to History. The whole record stays in the journal.</p>",
+      body: "<p>The shipper runs <code>rig submit --pr</code>. PR #191 opens with the review summary and the minor finding in its body, and H-0042 moves to History. The whole record stays in the journal.</p>",
       logged: "PR link, 3 rounds, 35 min and 379k tokens in review",
       ev: [["10:47", "shipper", "shipped · PR #191"], ["10:47", "assay", "closed"]],
       f: { F1: "verified r3", F2: "verified r3", F3: "in PR #191" } }
@@ -1486,7 +1486,7 @@ rules    = ["CLAUDE.md",
     assay: { s: "Checks · Review", who: "The test bench (a script running the repo's gates) and the principal engineer", what: "The commit is frozen and tested first. Only if the gates pass does the principal engineer review it, with fresh eyes and rules taken from the base branch, and write a verdict.", c: ["hall verdict", "claude -p --agent principal-engineer"] },
     repair: { s: "Fixing", who: "Fixer agents", what: "Failing checks and open findings arrive with the item. A fixer addresses them and records which findings each commit fixes, or disputes one with a reason. Then the item goes back to the Assay Office.", c: ["hall findings", "hall fixed F1 F2"] },
     stamp: { s: "Hallmarked", who: "The press", what: "An approved commit gets its hallmark: a git note on that exact SHA. Any later commit has none, so the gate won't let it out.", c: ["git notes --ref=hallmark show"] },
-    dispatch: { s: "Closed", who: "The shipper", what: "Checks the hallmark, runs the repo's ship command, writes the review summary and its token cost into the PR and links the issue. The item leaves for GitHub and its file closes.", c: ["git push + gh pr create", "dev submit --pr (in rindahq)"] }
+    dispatch: { s: "Closed", who: "The shipper", what: "Checks the hallmark, runs the repo's ship command, writes the review summary and its token cost into the PR and links the issue. The item leaves for GitHub and its file closes.", c: ["git push + gh pr create", "rig submit --pr (in rindahq)"] }
   };
   var ST = {
     front: { room: "front", x: 110, y: 168 },

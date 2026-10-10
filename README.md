@@ -152,7 +152,7 @@ upgrading `hall`; it restarts the daemon on the new binary):
 5. runs `hall doctor`.
 
 `--dry-run` shows the plan; `--no-statusline`, `--no-daemon` and `--no-notify`
-skip a step. In this repository, `dev install` installs `hall` from the
+skip a step. In this repository, `rig install` installs `hall` from the
 checkout and runs `hall setup` (it's `cargo install --path . --locked && hall
 setup` inside `nix develop`).
 
@@ -326,9 +326,9 @@ digest      = "08:30"
 A repo with its own tooling overrides only the commands:
 
 ```toml
-worktree = "dev wt new {branch}"
-ship     = "dev submit --pr"
-gates    = ["dev test", "dev run build"]
+worktree = "rig wt new {branch}"
+ship     = "rig submit --pr"
+gates    = ["rig test", "rig run build"]
 ```
 
 ## Where things live

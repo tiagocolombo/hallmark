@@ -7,7 +7,7 @@ worktree = "git worktree add ../{repo}-{id} -b {branch}"
 branch   = "hm/{id}-{slug}"
 ship     = "git push -u origin {branch} && gh pr create --base {base} --head {branch} --title {title} --body-file {body_file}"
 
-# The toolchain comes from the Nix shell (dev.toml), so the gates run in it.
+# The toolchain comes from the Nix shell (rig.toml), so the gates run in it.
 gates = [
   "nix develop --command cargo fmt --check",
   "nix develop --command cargo clippy --all-targets -- -D warnings",

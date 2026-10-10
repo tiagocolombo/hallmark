@@ -84,7 +84,7 @@ nix run git+ssh://git@github.com/tiagocolombo/hallmark -- --version  # runs it o
 nix build .#hall                                                     # from a clone: ./result/bin/hall
 ```
 
-The flake depends on a private input (`tiagocolombo/dev`, for the dev shell),
+The flake depends on a private input (`tiagocolombo/rig`, for the dev shell),
 so evaluating it needs SSH access to that repo too. Without that access, build
 from a clone with only nixpkgs:
 
@@ -135,14 +135,14 @@ That one command does every step and reports each one; it is safe to repeat:
 
 Restart Claude Code so it loads the plugin.
 
-**In Hallmark's own repository**, `dev install` does all of it: it runs
+**In Hallmark's own repository**, `rig install` does all of it: it runs
 `cargo install --path . --locked` and then `hall setup` from the installed copy.
 
 ## Upgrading
 
 Upgrade the binary the same way you installed it: rerun the installer, use
 `brew upgrade hall`, `cargo install … --locked --force`, `nix profile upgrade`,
-or `dev install` in Hallmark's repo. Then **rerun `hall setup`**. The plugin is
+or `rig install` in Hallmark's repo. Then **rerun `hall setup`**. The plugin is
 embedded in the binary, so this refreshes the skills, agents and hooks to
 match, re-points the hooks and the status line if `hall` moved, and restarts
 the daemon when it runs an older `hall`. Then restart Claude Code.

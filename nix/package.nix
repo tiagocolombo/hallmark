@@ -1,8 +1,8 @@
 # The `hall` binary, built from this checkout. Needs only nixpkgs:
 #
 #   flake.nix        packages.<system>.{hall,default}, with the nixpkgs the
-#                    private `dev` input pins
-#   nix/default.nix  the same package without flakes or the `dev` input
+#                    private `rig` input pins
+#   nix/default.nix  the same package without flakes or the `rig` input
 #
 # See docs/decisions/0023-packaging-and-releases.md.
 { lib, rustPlatform }:

@@ -1,24 +1,5 @@
 {
   "nodes": {
-    "dev": {
-      "inputs": {
-        "flake-utils": "flake-utils",
-        "nixpkgs": "nixpkgs"
-      },
-      "locked": {
-        "lastModified": 1790646601,
-        "narHash": "sha256-dlqCPE69hoAwrmCgXDkAHVfKF3SEUrh8bDA1JmFLwm8=",
-        "ref": "refs/heads/main",
-        "rev": "b335687a327a09fb19638e636cefcbc4c226ced4",
-        "revCount": 17,
-        "type": "git",
-        "url": "ssh://git@github.com/tiagocolombo/dev"
-      },
-      "original": {
-        "type": "git",
-        "url": "ssh://git@github.com/tiagocolombo/dev"
-      }
-    },
     "flake-utils": {
       "inputs": {
         "systems": "systems"
@@ -53,9 +34,28 @@
         "type": "github"
       }
     },
+    "rig": {
+      "inputs": {
+        "flake-utils": "flake-utils",
+        "nixpkgs": "nixpkgs"
+      },
+      "locked": {
+        "lastModified": 1791653204,
+        "narHash": "sha256-Pc5JnY2LEcb0qRmPPq2xP0jf4EFznvNfJxoEljoV11A=",
+        "ref": "refs/heads/main",
+        "rev": "58c173377dde8562a5ce184becc08622d69650c8",
+        "revCount": 1,
+        "type": "git",
+        "url": "ssh://git@github.com/tiagocolombo/rig"
+      },
+      "original": {
+        "type": "git",
+        "url": "ssh://git@github.com/tiagocolombo/rig"
+      }
+    },
     "root": {
       "inputs": {
-        "dev": "dev"
+        "rig": "rig"
       }
     },
     "systems": {

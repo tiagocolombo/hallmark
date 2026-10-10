@@ -1,7 +1,7 @@
 /target
 *.snap.new
 
-# dev — all local state lives here
+# rig — all local state lives here
 .dev/
 .direnv/
 result
