@@ -60,13 +60,7 @@ pub fn claim(hall: &Hall, id: ItemId, role: &str, holder: &str, ttl: Duration) -
 }
 
 /// `claim`, for a caller that already holds the repo lock.
-fn claim_locked(
-    hall: &Hall,
-    id: ItemId,
-    role: &str,
-    holder: &str,
-    ttl: Duration,
-) -> Result<Lease> {
+fn claim_locked(hall: &Hall, id: ItemId, role: &str, holder: &str, ttl: Duration) -> Result<Lease> {
     let now = Utc::now();
     if let Some(l) = current(hall, id)
         && l.holder != holder

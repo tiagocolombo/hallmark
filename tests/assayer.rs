@@ -234,11 +234,11 @@ fn a_review_with_blockers_requests_changes() {
             finding(
                 "blocker",
                 "retry.rs",
-                "Two workers can retry the same delivery"
+                "Two workers can retry the same delivery",
             ),
             finding("minor", "retry.rs", "Name the backoff constant"),
         ],
-        json!([])
+        json!([]),
     ));
     // Record the reviewer's HEAD while it runs, next to its checkout.
     step["run"] = json!(["git rev-parse HEAD > \"{cwd}.head\""]);
