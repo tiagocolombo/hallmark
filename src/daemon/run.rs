@@ -8,6 +8,8 @@
 //! - It reads the state file every second and exits cleanly once `wanted`
 //!   is false (`hall daemon stop`): no signals, so it works on every OS.
 
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
 
 use chrono::Utc;
@@ -16,7 +18,7 @@ use crate::error::{ErrorCode, HallError, Result};
 
 use super::state::{self, DaemonState};
 use super::targets::{self, Target};
-use super::{Outcome, pass_all, progress_line, record_pause};
+use super::{Outcome, progress_line, record_pause};
 
 /// The default pause between passes.
 pub const DEFAULT_POLL: Duration = Duration::from_secs(5);
@@ -168,74 +170,115 @@ pub fn run_loop(opts: &Options) -> Result<DaemonState> {
         misses: 0,
     };
     let mut announced = Vec::<String>::new();
+    // Each repo runs on its own schedule: its next pass starts one poll
+    // interval after its own last pass ended, so a slow repo (a long review,
+    // a cold build) never holds another repo's queue.
+    let current: Arc<Mutex<BTreeMap<String, String>>> = Arc::default();
+    let (done_tx, done_rx) = mpsc::channel::<Outcome>();
+    let mut running: BTreeMap<String, std::thread::JoinHandle<()>> = BTreeMap::new();
+    let mut due: BTreeMap<String, Instant> = BTreeMap::new();
+    let mut targets: Vec<Target> = Vec::new();
+    let mut refreshed: Option<Instant> = None;
     loop {
         ctl.check();
-        if ctl.stop {
-            break;
-        }
-        let targets = match &opts.repo {
-            Some(t) => vec![t.clone()],
-            None => targets::registered(),
-        };
-        for t in &targets {
-            let key = crate::paths::display(&t.path);
-            if !announced.contains(&key) {
-                if let Ok(r) = targets::open(t) {
-                    r.hall.live(&format!("daemon {pid} is watching {}", t.name));
+        // The registry is read again every poll interval, so a repo added
+        // with `hall init` joins without a restart.
+        if refreshed.is_none_or(|r| r.elapsed() >= opts.poll) {
+            targets = match &opts.repo {
+                Some(t) => vec![t.clone()],
+                None => targets::registered(),
+            };
+            refreshed = Some(Instant::now());
+            for t in &targets {
+                let key = crate::paths::display(&t.path);
+                if !announced.contains(&key) {
+                    if let Ok(r) = targets::open(t) {
+                        r.hall.live(&format!("daemon {pid} is watching {}", t.name));
+                    }
+                    announced.push(key);
                 }
-                announced.push(key);
             }
         }
-        let t0 = Instant::now();
-        let now = Utc::now();
-        let paused = state::update(|s| -> Result<_> {
-            if let Some(p) = super::pause::settle(s, now)? {
-                log(&format!("pause over ({})", p.reason));
+        // Start the repos whose turn it is.
+        if !ctl.stop {
+            let now = Utc::now();
+            let paused = state::update(|s| -> Result<_> {
+                if let Some(p) = super::pause::settle(s, now)? {
+                    log(&format!("pause over ({})", p.reason));
+                }
+                Ok(s.pause_at(now).cloned())
+            })??;
+            for t in &targets {
+                let key = crate::paths::display(&t.path);
+                if running.contains_key(&key) || due.get(&key).is_some_and(|d| *d > Instant::now())
+                {
+                    continue;
+                }
+                let (t, only, paused) = (t.clone(), opts.only.clone(), paused.clone());
+                let (cur, tx) = (Arc::clone(&current), done_tx.clone());
+                let handle = std::thread::spawn(move || {
+                    let o = super::one(&t, &only, paused.as_ref(), &cur);
+                    let _ = tx.send(o);
+                });
+                running.insert(key, handle);
             }
-            Ok(s.pause_at(now).cloned())
-        })??;
-        let outcomes = pass_all(&targets, &opts.only, paused.as_ref(), &mut |c| ctl.tick(c));
-        for line in outcomes.iter().flat_map(progress_lines) {
-            log(&line);
         }
-        let now = Utc::now();
-        let new_pause = state::update(|s| -> Result<_> {
-            let p = record_pause(s, &outcomes, now)?;
-            for o in &outcomes {
+        // Collect the passes that ended.
+        while let Ok(o) = done_rx.try_recv() {
+            let key = crate::paths::display(&o.target.path);
+            if let Some(h) = running.remove(&key) {
+                let _ = h.join();
+            }
+            due.insert(key, Instant::now() + opts.poll);
+            for line in progress_lines(&o) {
+                log(&line);
+            }
+            let now = Utc::now();
+            let new_pause = state::update(|s| -> Result<_> {
+                let outcomes = std::slice::from_ref(&o);
+                let p = record_pause(s, outcomes, now)?;
                 let sum = o.summary();
                 s.repos.retain(|r| r.path != sum.path);
                 s.repos.push(sum);
+                s.passes += 1;
+                s.heartbeat = Some(now);
+                Ok(p)
+            })??;
+            if let Some(p) = new_pause {
+                log(&format!(
+                    "paused until {}: {}",
+                    p.until.map(|u| u.to_rfc3339()).unwrap_or_default(),
+                    p.reason
+                ));
             }
-            s.passes += 1;
-            s.heartbeat = Some(now);
-            s.current = None;
-            Ok(p)
-        })??;
-        if let Some(p) = new_pause {
-            log(&format!(
-                "paused until {}: {}",
-                p.until.map(|u| u.to_rfc3339()).unwrap_or_default(),
-                p.reason
-            ));
         }
-        ctl.current = None;
-        ctl.last_beat = Instant::now();
-        if t0.elapsed() > Duration::from_secs(1) {
-            log(&format!("pass took {}s", t0.elapsed().as_secs()));
-        }
-        // Wait for the next pass, still beating and listening for stop.
-        let next = Instant::now() + opts.poll;
-        while !ctl.stop {
-            let left = next.saturating_duration_since(Instant::now());
-            if left.is_zero() {
-                break;
+        // A thread that died without reporting: free its slot.
+        let dead: Vec<String> = running
+            .iter()
+            .filter(|(_, h)| h.is_finished())
+            .map(|(k, _)| k.clone())
+            .collect();
+        for k in dead {
+            if let Some(h) = running.remove(&k)
+                && h.join().is_err()
+            {
+                log(&format!("the pass over {k} panicked"));
             }
-            std::thread::sleep(left.min(Duration::from_millis(250)));
-            ctl.tick(None);
+            due.insert(k, Instant::now() + opts.poll);
         }
-        if ctl.stop {
+        if ctl.stop && running.is_empty() {
             break;
         }
+        let doing = current.lock().map(|m| m.clone()).unwrap_or_default();
+        let now_doing = (!doing.is_empty()).then(|| {
+            doing
+                .iter()
+                .map(|(r, w)| format!("{r}: {w}"))
+                .collect::<Vec<_>>()
+                .join(" · ")
+        });
+        ctl.tick(now_doing);
+        std::thread::sleep(Duration::from_millis(200));
     }
     let stopped = Utc::now();
     let st = state::update(|s| {

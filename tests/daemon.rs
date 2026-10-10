@@ -406,3 +406,76 @@ fn start_status_stop_in_the_background() {
     assert!(log.contains("daemon started"), "{log}");
     assert!(log.contains("daemon stopped"), "{log}");
 }
+
+/// Replaces the `gates = []` line `hall init` wrote.
+#[cfg(unix)]
+fn set_gates(repo: &Path, gate: &str) {
+    let cfg = repo.join(".hallmark.toml");
+    let text = std::fs::read_to_string(&cfg).unwrap();
+    let text: Vec<String> = text
+        .lines()
+        .map(|l| {
+            if l.starts_with("gates") {
+                format!("gates = [\"{gate}\"]")
+            } else {
+                l.to_string()
+            }
+        })
+        .collect();
+    std::fs::write(&cfg, text.join("\n")).unwrap();
+    git(repo, &["commit", "-qam", "gates"]);
+}
+
+// Unix only: a real background daemon and a gate that sleeps.
+#[cfg(unix)]
+#[test]
+fn a_slow_repo_does_not_hold_the_others() {
+    let env = Env::initialized();
+    let api = second_repo(&env, "api");
+    set_gates(&env.repo, "sleep 8");
+    set_gates(&api, "git --version");
+    let item = |repo: &Path, title: &str| {
+        let r = env.hall(repo, &["new", "--title", title]);
+        assert_eq!(r.code, 0, "{}", r.stdout);
+        let wt = PathBuf::from(r.json["worktree"].as_str().unwrap());
+        commit_file(&wt, "work.txt", title);
+        assert_eq!(env.hall(&wt, &["ready"]).code, 0);
+        r.json["id"].as_str().unwrap().to_string()
+    };
+    let slow = item(&env.repo, "Slow gate");
+    let fast = item(&api, "Fast gate");
+    let verdict = json!({"summary": "Fine.", "findings": [], "prior": [], "learnings": []});
+    let script = env.script(json!([{"role": "reviewer", "structured": verdict}]));
+    let _guard = StopOnDrop(&env);
+    let r = bg(&env, &script, &["daemon", "start"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+
+    // While app's gate sleeps, api's item goes through its checks and, in a
+    // later pass of its own, its review. The old daemon held api's second
+    // pass until app's pass ended.
+    let state = |repo: &Path, id: &str| {
+        env.hall(repo, &["status", id]).json["state"]
+            .as_str()
+            .unwrap_or("")
+            .to_string()
+    };
+    let reviewed = |repo: &Path, id: &str| {
+        let journal = repo
+            .join(".git/hallmark/items")
+            .join(id)
+            .join("events.jsonl");
+        std::fs::read_to_string(journal)
+            .unwrap_or_default()
+            .contains("\"event\":\"verdict\"")
+    };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(6);
+    while !reviewed(&api, &fast) && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    assert!(reviewed(&api, &fast), "api waited for app's slow gate");
+    assert_eq!(
+        state(&env.repo, &slow),
+        "checks",
+        "app's gate is still running"
+    );
+}

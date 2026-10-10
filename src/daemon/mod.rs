@@ -226,7 +226,8 @@ pub fn pass_all(
     })
 }
 
-fn one(
+/// One pass over one target; what each repo's own schedule runs.
+pub(crate) fn one(
     t: &Target,
     only: &[String],
     paused: Option<&Pause>,
