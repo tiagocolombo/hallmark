@@ -11,6 +11,9 @@
 //!   [`Stop::progress`] lets a paused daemon go again.
 //! - **Reached** means spent ≥ cap: the check runs before a run starts, so
 //!   the run that crosses a cap finishes and the next one waits.
+//! - **Daily grants.** `hall budget --grant` lets the loop go past `daily`
+//!   for today without touching the config: today's cap is `daily` plus the
+//!   latest `budget_granted` for today in the repo journal (ADR 0028).
 
 use rusqlite::params;
 use schemars::JsonSchema;
@@ -179,18 +182,45 @@ pub fn check_with(
     Ok(())
 }
 
-/// The daily total's stop, if `[budget] daily` is spent for `day`.
+/// How a daily-budget stop's reason starts; a pause with this reason is the
+/// one `hall budget --grant` lifts.
+pub const DAILY_SPENT: &str = "the daily budget is spent";
+
+/// The daily total's stop, if `[budget] daily` (plus today's grant) is
+/// spent for `day`.
 pub fn daily_stop(ix: &Index, b: &Budget, day: &str) -> Option<Stop> {
     let cap = b.daily.as_deref()?;
     let limit = parse_tokens(cap)?;
+    let granted = daily_granted(ix, day);
     let used = daily_tokens(ix, day);
-    (used >= limit).then(|| Stop {
+    let of = match granted {
+        0 => cap.to_string(),
+        g => format!("{cap} + {} granted", fmt_tokens(g)),
+    };
+    (used >= limit.saturating_add(granted)).then(|| Stop {
         level: Level::Daily,
         reason: format!(
-            "the daily budget is spent ({} of {cap} tokens today); the loop waits until 00:00 UTC",
+            "{DAILY_SPENT} ({} of {of} tokens today); the loop waits until 00:00 UTC, \
+             or `hall budget --grant` lets it go on today",
             fmt_tokens(used)
         ),
     })
+}
+
+/// Tokens granted on top of `daily` for `day`: the latest grant that day.
+pub fn daily_granted(ix: &Index, day: &str) -> u64 {
+    ix.conn()
+        .query_row(
+            "SELECT json_extract(json, '$.tokens') FROM events
+             WHERE event = 'budget_granted' AND json_extract(json, '$.day') = ?1
+             ORDER BY id DESC LIMIT 1",
+            params![day],
+            |r| r.get::<_, Option<i64>>(0),
+        )
+        .ok()
+        .flatten()
+        .unwrap_or(0)
+        .max(0) as u64
 }
 
 /// For hooks: a one-line note when the daily budget is spent, else None.
@@ -200,8 +230,8 @@ pub fn daily_note(repo: &Repo) -> Option<String> {
     let ix = repo.index().ok()?;
     let stop = daily_stop(&ix, &repo.config.budget, &today())?;
     Some(format!(
-        "Hallmark: {}. Reviews and fixes resume tomorrow; this session isn't blocked. \
-         `hall budget` shows the caps.",
+        "Hallmark: {}. This session isn't blocked; if the human wants the loop to go on \
+         today, offer `hall budget --grant` (the cap stays as it is). `hall budget` shows the caps.",
         stop.reason
     ))
 }
@@ -390,6 +420,47 @@ mod tests {
         assert_eq!(item_tokens(&ix, id), 500_000);
         assert_eq!(workshop_tokens(&ix, &day), 9_000_000);
         assert_eq!(top_items(&ix, 5)[0].tokens, 500_000);
+    }
+
+    #[test]
+    fn a_grant_raises_todays_daily_cap_and_the_latest_counts() {
+        let (_d, hall) = hall();
+        add(
+            &hall,
+            Some(ItemId(1)),
+            usage("assay", "reviewer", "headless", 500_000),
+        );
+        let day = today();
+        let grant = |tokens: u64, day: &str| Body::BudgetGranted {
+            day: day.into(),
+            tokens,
+            reason: None,
+        };
+        let b = Budget {
+            daily: Some("400k".into()),
+            ..Default::default()
+        };
+        let ix = Index::synced(&hall).unwrap();
+        let s = check_with(&ix, &b, None, "reviewer", &day).unwrap_err();
+        assert_eq!(s.level, Level::Daily);
+        assert!(s.reason.starts_with(DAILY_SPENT), "{}", s.reason);
+        assert!(s.reason.contains("hall budget --grant"), "{}", s.reason);
+
+        // Another day's grant doesn't count today.
+        add(&hall, None, grant(1_000_000, "2001-01-01"));
+        add(&hall, None, grant(50_000, &day));
+        let ix = Index::synced(&hall).unwrap();
+        assert_eq!(daily_granted(&ix, &day), 50_000);
+        let s = check_with(&ix, &b, None, "reviewer", &day).unwrap_err();
+        assert!(s.reason.contains("400k + 50k granted"), "{}", s.reason);
+
+        // The latest grant for a day replaces the earlier one.
+        add(&hall, None, grant(200_000, &day));
+        let ix = Index::synced(&hall).unwrap();
+        assert_eq!(daily_granted(&ix, &day), 200_000);
+        assert_eq!(check_with(&ix, &b, None, "reviewer", &day), Ok(()));
+        // The cap itself didn't move.
+        assert_eq!(b.daily.as_deref(), Some("400k"));
     }
 
     #[test]
