@@ -1,5 +1,6 @@
-//! The Library (ADR 0021): search, briefings, the librarian, review and
-//! retirement, driven through the real `hall` binary with the fake runner.
+//! The Library (ADR 0021, ADR 0027): the local store, search, briefings, the
+//! librarian, review, retirement, import and export, driven through the
+//! real `hall` binary with the fake runner.
 
 mod common;
 
@@ -9,6 +10,7 @@ use common::{Env, git};
 use insta::assert_json_snapshot;
 use serde_json::{Value, json};
 
+/// Where learnings were committed before ADR 0027.
 const DIR: &str = ".hallmark/knowledge";
 
 fn learning(id: &str, kind: &str, scope: &[&str], status: &str, title: &str, body: &str) -> String {
@@ -19,86 +21,170 @@ fn learning(id: &str, kind: &str, scope: &[&str], status: &str, title: &str, bod
     )
 }
 
-/// Writes learning files into `dir`'s knowledge folder and commits them.
-fn add_learnings(dir: &Path, files: &[(&str, String)]) {
-    std::fs::create_dir_all(dir.join(DIR)).unwrap();
+/// The local store's current learnings.
+fn store(env: &Env) -> PathBuf {
+    env.repo.join(".git/hallmark/library/learnings")
+}
+
+fn history(env: &Env, id: &str) -> Vec<String> {
+    let mut v: Vec<String> =
+        std::fs::read_dir(env.repo.join(".git/hallmark/library/history").join(id))
+            .map(|rd| {
+                rd.flatten()
+                    .map(|e| e.file_name().to_string_lossy().to_string())
+                    .collect()
+            })
+            .unwrap_or_default();
+    v.sort();
+    v
+}
+
+/// Writes learning files into `dir`.
+fn write_files(dir: &Path, files: &[(&str, String)]) {
+    std::fs::create_dir_all(dir).unwrap();
     for (name, text) in files {
-        std::fs::write(dir.join(DIR).join(name), text).unwrap();
+        std::fs::write(dir.join(name), text).unwrap();
     }
+}
+
+/// Commits learning files under `.hallmark/knowledge` in `dir`.
+fn commit_learnings(dir: &Path, files: &[(&str, String)]) {
+    write_files(&dir.join(DIR), files);
     git(dir, &["add", DIR]);
     git(dir, &["commit", "-q", "-m", "docs: learnings"]);
 }
 
-/// The three learnings most tests start from, accepted on main.
-fn seed(env: &Env) {
-    add_learnings(
-        &env.repo,
-        &[
-            (
-                "L-0001-retries-must-check-the-endpoint.md",
-                learning(
-                    "L-0001",
-                    "rule",
-                    &["apps/api/src/webhooks/**"],
-                    "accepted",
-                    "Retries must check the endpoint still exists",
-                    "A deleted endpoint keeps its queued deliveries until the job notices.",
-                ),
+/// The five learnings most tests start from.
+fn seed_files() -> Vec<(&'static str, String)> {
+    vec![
+        (
+            "L-0001-retries-must-check-the-endpoint.md",
+            learning(
+                "L-0001",
+                "rule",
+                &["apps/api/src/webhooks/**"],
+                "accepted",
+                "Retries must check the endpoint still exists",
+                "A deleted endpoint keeps its queued deliveries until the job notices.",
             ),
-            (
-                "L-0002-backoff-jitter-lives-in-the-queue.md",
-                learning(
-                    "L-0002",
-                    "false-positive",
-                    &["apps/api/src/queue/**"],
-                    "accepted",
-                    "Backoff jitter lives in the queue",
-                    "Don't flag a webhook retry for missing jitter: the queue adds it.",
-                ),
+        ),
+        (
+            "L-0002-backoff-jitter-lives-in-the-queue.md",
+            learning(
+                "L-0002",
+                "false-positive",
+                &["apps/api/src/queue/**"],
+                "accepted",
+                "Backoff jitter lives in the queue",
+                "Don't flag a webhook retry for missing jitter: the queue adds it.",
             ),
-            (
-                "L-0003-billing-map.md",
-                learning(
-                    "L-0003",
-                    "map",
-                    &["apps/billing/**"],
-                    "accepted",
-                    "Billing computes invoices nightly",
-                    "The invoice job reads usage rows and never writes them.",
-                ),
+        ),
+        (
+            "L-0003-billing-map.md",
+            learning(
+                "L-0003",
+                "map",
+                &["apps/billing/**"],
+                "accepted",
+                "Billing computes invoices nightly",
+                "The invoice job reads usage rows and never writes them.",
             ),
-            (
-                "L-0004-proposed-webhook-idea.md",
-                learning(
-                    "L-0004",
-                    "rule",
-                    &[],
-                    "proposed",
-                    "Webhook signatures rotate weekly",
-                    "Not approved yet.",
-                ),
+        ),
+        (
+            "L-0004-proposed-webhook-idea.md",
+            learning(
+                "L-0004",
+                "rule",
+                &[],
+                "proposed",
+                "Webhook signatures rotate weekly",
+                "Not approved yet.",
             ),
-            (
-                "L-0005-retired-webhook-rule.md",
-                learning(
-                    "L-0005",
-                    "rule",
-                    &[],
-                    "retired",
-                    "Webhooks used to retry forever",
-                    "Retired.",
-                ),
+        ),
+        (
+            "L-0005-retired-webhook-rule.md",
+            learning(
+                "L-0005",
+                "rule",
+                &[],
+                "retired",
+                "Webhooks used to retry forever",
+                "Retired.",
             ),
-        ],
-    );
+        ),
+    ]
 }
 
-fn configure(env: &Env, toml: &str) {
-    let p = env.repo.join(".hallmark.toml");
-    let mut text = std::fs::read_to_string(&p).unwrap();
-    text.push_str(toml);
-    std::fs::write(&p, text).unwrap();
-    git(&env.repo, &["commit", "-q", "-am", "config: library"]);
+/// Puts the seed learnings in the local store.
+fn seed(env: &Env) {
+    write_files(&store(env), &seed_files());
+}
+
+fn files(dir: &Path) -> Vec<String> {
+    let mut v: Vec<String> = std::fs::read_dir(dir)
+        .map(|rd| {
+            rd.flatten()
+                .map(|e| e.file_name().to_string_lossy().to_string())
+                .filter(|n| n.ends_with(".md"))
+                .collect()
+        })
+        .unwrap_or_default();
+    v.sort();
+    v
+}
+
+fn read_learning(env: &Env, prefix: &str) -> String {
+    let dir = store(env);
+    let name = files(&dir)
+        .into_iter()
+        .find(|f| f.starts_with(prefix))
+        .unwrap_or_else(|| panic!("no {prefix} in {}", dir.display()));
+    std::fs::read_to_string(dir.join(name)).unwrap()
+}
+
+fn ids(v: &Value) -> Vec<String> {
+    v.as_array()
+        .unwrap()
+        .iter()
+        .map(|h| h["id"].as_str().unwrap().to_string())
+        .collect()
+}
+
+fn scrub(env: &Env, v: &Value) -> Value {
+    let s = v.to_string().replace(&common::p(&env.root), "[root]");
+    serde_json::from_str(&s).unwrap()
+}
+
+macro_rules! snap {
+    ($name:expr, $value:expr) => {
+        assert_json_snapshot!($name, $value);
+    };
+}
+
+fn librarian_step(learnings: Value, retire: Value) -> Value {
+    json!({"role": "librarian", "structured": {"learnings": learnings, "retire": retire}})
+}
+
+fn items(env: &Env) -> Vec<String> {
+    let r = env.hall(&env.repo, &["status", "--all"]);
+    r.json["items"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .map(|i| i["id"].as_str().unwrap().to_string())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn inbox_learnings(env: &Env) -> Option<Value> {
+    let r = env.hall(&env.repo, &["inbox"]);
+    r.json["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["kind"] == "learnings")
+        .cloned()
 }
 
 /// Appends a journal event to an item.
@@ -115,6 +201,14 @@ fn append(env: &Env, id: &str, actor: &str, mut body: Value) {
     let mut text = std::fs::read_to_string(&p).unwrap();
     text.push_str(&format!("{body}\n"));
     std::fs::write(&p, text).unwrap();
+}
+
+fn configure(env: &Env, toml: &str) {
+    let p = env.repo.join(".hallmark.toml");
+    let mut text = std::fs::read_to_string(&p).unwrap();
+    text.push_str(toml);
+    std::fs::write(&p, text).unwrap();
+    git(&env.repo, &["commit", "-q", "-am", "config: library"]);
 }
 
 fn verdict(
@@ -215,52 +309,10 @@ fn closed_item(env: &Env, title: &str) -> String {
     id
 }
 
-fn worktree(env: &Env, id: &str) -> PathBuf {
-    PathBuf::from(env.journal(id)[0]["worktree"].as_str().unwrap())
-}
-
-fn files(wt: &Path) -> Vec<String> {
-    let mut v: Vec<String> = std::fs::read_dir(wt.join(DIR))
-        .map(|rd| {
-            rd.flatten()
-                .map(|e| e.file_name().to_string_lossy().to_string())
-                .collect()
-        })
-        .unwrap_or_default();
-    v.sort();
-    v
-}
-
-fn read_learning(wt: &Path, prefix: &str) -> String {
-    let name = files(wt)
-        .into_iter()
-        .find(|f| f.starts_with(prefix))
-        .unwrap_or_else(|| panic!("no {prefix} in {}", wt.display()));
-    std::fs::read_to_string(wt.join(DIR).join(name)).unwrap()
-}
-
-fn scrub(env: &Env, v: &Value) -> Value {
-    let s = v.to_string().replace(&common::p(&env.root), "[root]");
-    serde_json::from_str(&s).unwrap()
-}
-
-macro_rules! snap {
-    ($name:expr, $value:expr) => {
-        assert_json_snapshot!($name, $value, {
-            ".commit" => "[sha]",
-            ".commits[]" => "[sha]",
-        });
-    };
-}
-
-fn librarian_step(learnings: Value, retire: Value) -> Value {
-    json!({"role": "librarian", "structured": {"learnings": learnings, "retire": retire}})
-}
-
 // --- search -----------------------------------------------------------------------
 
 #[test]
-fn search_ranks_filters_and_reads_the_base() {
+fn search_ranks_filters_and_reads_the_local_store() {
     let env = Env::initialized();
     seed(&env);
     let r = env.hall(
@@ -268,24 +320,19 @@ fn search_ranks_filters_and_reads_the_base() {
         &["library", "search", "webhook retries endpoint"],
     );
     assert_eq!(r.code, 0, "{}", r.stdout);
-    let ids: Vec<&str> = r.json["results"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|h| h["id"].as_str().unwrap())
-        .collect();
+    let found = ids(&r.json["results"]);
     assert_eq!(
-        ids[0], "L-0001",
+        found[0], "L-0001",
         "the title match ranks first: {}",
         r.stdout
     );
-    assert!(ids.contains(&"L-0002"));
+    assert!(found.contains(&"L-0002".to_string()));
     assert!(
-        !ids.contains(&"L-0004"),
+        !found.contains(&"L-0004".to_string()),
         "proposed learnings are left out by default"
     );
     assert!(
-        !ids.contains(&"L-0005"),
+        !found.contains(&"L-0005".to_string()),
         "retired learnings are never returned"
     );
     snap!("library_search", scrub(&env, &r.json));
@@ -294,13 +341,7 @@ fn search_ranks_filters_and_reads_the_base() {
         &env.repo,
         &["library", "search", "webhook", "--kind", "false-positive"],
     );
-    let ids: Vec<&str> = r.json["results"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|h| h["id"].as_str().unwrap())
-        .collect();
-    assert_eq!(ids, ["L-0002"]);
+    assert_eq!(ids(&r.json["results"]), ["L-0002"]);
 
     let r = env.hall(
         &env.repo,
@@ -311,6 +352,11 @@ fn search_ranks_filters_and_reads_the_base() {
 
     let r = env.hall(&env.repo, &["library", "search", "webhook", "--limit", "1"]);
     assert_eq!(r.json["results"].as_array().unwrap().len(), 1);
+
+    // Every worktree reads the same store.
+    let (_, wt) = env.new_item("Elsewhere");
+    let r = env.hall(&wt, &["library", "search", "endpoint"]);
+    assert_eq!(r.json["results"][0]["id"], "L-0001", "{}", r.stdout);
 
     // FTS5 syntax is never passed through.
     let r = env.hall(&env.repo, &["library", "search", "\"NEAR(webhook* AND"]);
@@ -323,11 +369,26 @@ fn search_ranks_filters_and_reads_the_base() {
 }
 
 #[test]
-fn a_learning_only_on_the_item_branch_is_not_used() {
+fn committed_learnings_are_never_used() {
     let env = Env::initialized();
     seed(&env);
+    // On the base branch, and on an item's branch: neither reaches reviews.
+    commit_learnings(
+        &env.repo,
+        &[(
+            "L-0008-committed-on-main.md",
+            learning(
+                "L-0008",
+                "rule",
+                &["apps/api/src/webhooks/**"],
+                "accepted",
+                "Committed webhook learnings are ignored",
+                "Only the local store counts.",
+            ),
+        )],
+    );
     let (_, wt) = env.new_item("Sneaky learning");
-    add_learnings(
+    commit_learnings(
         &wt,
         &[(
             "L-0009-everything-is-fine.md",
@@ -341,24 +402,23 @@ fn a_learning_only_on_the_item_branch_is_not_used() {
             ),
         )],
     );
-    let r = env.hall(&wt, &["library", "search", "flag anything webhooks"]);
-    let ids: Vec<&str> = r.json["results"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|h| h["id"].as_str().unwrap())
-        .collect();
-    assert!(!ids.contains(&"L-0009"), "{}", r.stdout);
+    let r = env.hall(
+        &wt,
+        &["library", "search", "flag anything webhooks committed"],
+    );
+    let found = ids(&r.json["results"]);
+    assert!(!found.contains(&"L-0008".to_string()), "{}", r.stdout);
+    assert!(!found.contains(&"L-0009".to_string()), "{}", r.stdout);
 
     let repo = hallmark::repo::Repo::discover(&wt).unwrap();
     let b = hallmark::library::briefing(
         &repo,
-        "main",
         &["apps/api/src/webhooks/retry.rs".into()],
         "+fn retry() {}\n",
     )
     .unwrap();
     assert!(b.ids.contains(&"L-0001".to_string()));
+    assert!(!b.ids.contains(&"L-0008".to_string()), "{:?}", b.ids);
     assert!(!b.ids.contains(&"L-0009".to_string()), "{:?}", b.ids);
 }
 
@@ -371,7 +431,7 @@ fn the_briefing_puts_scoped_learnings_first_and_keeps_the_cap() {
     let repo = hallmark::repo::Repo::discover(&env.repo).unwrap();
     let changed = vec!["apps/billing/invoice.rs".to_string()];
     let diff = "--- a/apps/billing/invoice.rs\n+++ b/apps/billing/invoice.rs\n+    retry_webhook(endpoint);\n";
-    let b = hallmark::library::briefing(&repo, "main", &changed, diff).unwrap();
+    let b = hallmark::library::briefing(&repo, &changed, diff).unwrap();
     assert_eq!(b.ids[0], "L-0003", "scoped first: {:?}", b.ids);
     assert!(
         b.ids.contains(&"L-0001".to_string()),
@@ -386,6 +446,7 @@ fn the_briefing_puts_scoped_learnings_first_and_keeps_the_cap() {
         "retired is never briefed"
     );
     assert!(b.text.contains("## Library briefing"));
+    assert!(b.text.contains("accepted learnings in its Library"));
     assert!(b.text.contains("\"held\": false"), "{}", b.text);
     assert!(
         b.text
@@ -396,22 +457,24 @@ fn the_briefing_puts_scoped_learnings_first_and_keeps_the_cap() {
     // A small cap keeps the scoped learning and drops the rest.
     configure(&env, "\n[library]\nbriefing_limit = \"150\"\n");
     let repo = hallmark::repo::Repo::discover(&env.repo).unwrap();
-    let small = hallmark::library::briefing(&repo, "main", &changed, diff).unwrap();
+    let small = hallmark::library::briefing(&repo, &changed, diff).unwrap();
     assert_eq!(small.ids, ["L-0003"], "{}", small.text);
     assert!(small.tokens <= 150);
 
     // Nothing matches: no briefing at all.
-    let none = hallmark::library::briefing(&repo, "main", &["README.md".into()], "").unwrap();
+    let none = hallmark::library::briefing(&repo, &["README.md".into()], "").unwrap();
     assert!(none.ids.is_empty() && none.text.is_empty());
-    // An unknown base gives an empty briefing, not an error.
-    let none = hallmark::library::briefing(&repo, "no-such-branch", &changed, diff).unwrap();
+
+    // An empty Library gives an empty briefing.
+    std::fs::remove_dir_all(store(&env)).unwrap();
+    let none = hallmark::library::briefing(&repo, &changed, diff).unwrap();
     assert!(none.ids.is_empty());
 }
 
 // --- the librarian ------------------------------------------------------------------
 
 #[test]
-fn the_librarian_distils_a_closed_item_into_a_knowledge_item() {
+fn the_librarian_distils_a_closed_item_into_the_local_store() {
     let env = Env::initialized();
     configure(&env, "\n[library]\nauto_accept = [\"map\"]\n");
     let id = closed_item(&env, "Retry webhooks");
@@ -435,7 +498,10 @@ fn the_librarian_distils_a_closed_item_into_a_knowledge_item() {
     let step = &r.json["steps"][0];
     assert_eq!(step["progress"], "worked", "{}", r.stdout);
     assert!(
-        step["what"].as_str().unwrap().contains("into H-0002"),
+        step["what"]
+            .as_str()
+            .unwrap()
+            .contains("2 learning(s), 1 proposed"),
         "{}",
         r.stdout
     );
@@ -462,44 +528,42 @@ fn the_librarian_distils_a_closed_item_into_a_knowledge_item() {
     assert!(prompt.contains("F2 · minor"), "{prompt}");
     assert!(prompt.contains("The fixer disputed it: the queue adds jitter"));
     assert!(prompt.contains("(none yet)"));
+    assert!(prompt.contains("hallmark/library/learnings/"), "{prompt}");
 
-    // The knowledge item: proposed and auto-accepted files, committed.
-    let k = env.hall(&env.repo, &["status", "H-0002"]);
-    assert_eq!(k.json["title"], format!("Library: learnings from {id}"));
-    assert_eq!(k.json["state"], "awaiting_you", "{}", k.stdout);
-    let wt = worktree(&env, "H-0002");
+    // The local store: one proposed, one auto-accepted.
     assert_eq!(
-        files(&wt),
+        files(&store(&env)),
         [
             "L-0001-retries-must-check-the-endpoint-still.md",
             "L-0002-the-queue-adds-jitter-to-every-retry.md"
         ]
     );
-    let rule = read_learning(&wt, "L-0001");
+    let rule = read_learning(&env, "L-0001");
     assert!(rule.contains("status: proposed"), "{rule}");
     assert!(rule.contains(&format!("source: [\"{id}/F1\"]")), "{rule}");
-    let map = read_learning(&wt, "L-0002");
+    let map = read_learning(&env, "L-0002");
     assert!(map.contains("status: accepted"), "auto_accept: {map}");
     assert!(map.contains(&format!("source: [\"{id}\"]")), "{map}");
-    assert!(git(&wt, &["status", "--porcelain"]).is_empty(), "committed");
-    assert!(git(&wt, &["log", "-1", "--format=%s"]).contains("learnings from H-0001"));
-    let kj = env.journal("H-0002");
-    assert!(kj.iter().any(|e| e["event"] == "commit"));
-    assert!(kj.iter().any(|e| e["event"] == "proposed_ready"));
+
+    // Nothing in the repository: no knowledge item, no file, no commit.
+    assert_eq!(items(&env), std::slice::from_ref(&id));
+    assert!(!env.repo.join(DIR).exists());
+    assert!(git(&env.repo, &["status", "--porcelain"]).is_empty());
 
     // The source item records it, with usage booked to the library room.
     let j = env.journal(&id);
     let d = j.iter().find(|e| e["event"] == "distilled").unwrap();
-    assert_eq!(d["into"], "H-0002");
+    assert_eq!(d.get("into"), None);
     assert_eq!(d["learnings"], json!(["L-0001", "L-0002"]));
     assert!(
         j.iter()
             .any(|e| e["event"] == "usage" && e["room"] == "library")
     );
 
-    // The inbox shows the knowledge item as ready?.
-    let inbox = env.hall(&env.repo, &["inbox"]);
-    assert!(inbox.stdout.contains("H-0002"), "{}", inbox.stdout);
+    // The inbox has one entry for what waits for you.
+    let e = inbox_learnings(&env).expect("a learnings entry");
+    assert_eq!(e["text"], "1 proposed learning to review");
+    assert_eq!(e["answer_with"], json!(["hall library review"]));
 
     // Idempotent: a second pass has nothing to distil, and distill says so.
     let r = env.hall_fake(
@@ -516,7 +580,6 @@ fn the_librarian_distils_a_closed_item_into_a_knowledge_item() {
     // Proposed learnings are searchable with --proposed only.
     let r = env.hall(&env.repo, &["library", "search", "endpoint", "--proposed"]);
     assert_eq!(r.json["results"][0]["id"], "L-0001", "{}", r.stdout);
-    assert_eq!(r.json["results"][0]["item"], "H-0002");
     let r = env.hall(&env.repo, &["library", "search", "endpoint"]);
     assert_eq!(r.json["results"], json!([]));
 }
@@ -555,19 +618,19 @@ fn the_librarian_updates_rather_than_duplicates() {
         "{prompt}"
     );
 
-    let k = r.json["knowledge"].as_str().unwrap().to_string();
-    let wt = worktree(&env, &k);
-    let changed = git(&wt, &["diff", "--name-only", "main", "--", DIR]);
-    let changed: Vec<&str> = changed.lines().collect();
     assert_eq!(
-        changed,
+        files(&store(&env)),
         [
-            ".hallmark/knowledge/L-0001-retries-must-check-the-endpoint.md",
-            ".hallmark/knowledge/L-0006-ship-retries-behind-a-flag.md"
+            "L-0001-retries-must-check-the-endpoint.md",
+            "L-0002-backoff-jitter-lives-in-the-queue.md",
+            "L-0003-billing-map.md",
+            "L-0004-proposed-webhook-idea.md",
+            "L-0005-retired-webhook-rule.md",
+            "L-0006-ship-retries-behind-a-flag.md"
         ],
-        "one file per ID, at its old path; an unknown `updates` is a new learning"
+        "one file per ID, at its old name; an unknown `updates` is a new learning"
     );
-    let l1 = read_learning(&wt, "L-0001");
+    let l1 = read_learning(&env, "L-0001");
     assert!(l1.contains("apps/api/src/jobs/**"), "{l1}");
     assert!(
         l1.contains("Same point again."),
@@ -580,6 +643,25 @@ fn the_librarian_updates_rather_than_duplicates() {
     assert!(
         l1.contains("status: proposed"),
         "an update needs approval again: {l1}"
+    );
+    // The accepted version is kept, and still briefs reviews meanwhile.
+    assert_eq!(history(&env, "L-0001").len(), 1);
+    let repo = hallmark::repo::Repo::discover(&env.repo).unwrap();
+    let b = hallmark::library::briefing(&repo, &["apps/api/src/webhooks/a.rs".into()], "").unwrap();
+    assert_eq!(b.ids[0], "L-0001", "{:?}", b.ids);
+    assert!(b.text.contains("until the job notices"), "{}", b.text);
+    assert!(!b.text.contains("Same point again"), "{}", b.text);
+
+    let r = env.hall(&env.repo, &["library", "review"]);
+    let changes: Vec<(&str, &str)> = r.json["proposed"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| (p["id"].as_str().unwrap(), p["change"].as_str().unwrap()))
+        .collect();
+    assert_eq!(
+        changes,
+        [("L-0001", "update"), ("L-0004", "new"), ("L-0006", "new")]
     );
 }
 
@@ -597,6 +679,7 @@ fn a_failed_librarian_run_is_recorded_and_not_distilled() {
             .any(|e| e["event"] == "run_failed" && e["role"] == "librarian")
     );
     assert!(!j.iter().any(|e| e["event"] == "distilled"));
+    assert!(files(&store(&env)).is_empty());
 
     let r = env.hall(&env.repo, &["library", "distill", "H-0099"]);
     assert_eq!(r.code, 3, "{}", r.stdout);
@@ -609,7 +692,7 @@ fn a_failed_librarian_run_is_recorded_and_not_distilled() {
 // --- review ---------------------------------------------------------------------------
 
 #[test]
-fn review_accepts_and_rejects_in_the_knowledge_item() {
+fn review_accepts_and_rejects_locally() {
     let env = Env::initialized();
     let id = closed_item(&env, "Retry webhooks");
     let script = env.script(json!([librarian_step(
@@ -625,6 +708,10 @@ fn review_accepts_and_rejects_in_the_knowledge_item() {
         env.hall_fake(&env.repo, &script, &["library", "distill", &id])
             .code,
         0
+    );
+    assert_eq!(
+        inbox_learnings(&env).unwrap()["text"],
+        "2 proposed learnings to review"
     );
 
     let r = env.hall(&env.repo, &["library", "review"]);
@@ -646,18 +733,28 @@ fn review_accepts_and_rejects_in_the_knowledge_item() {
     );
     assert_eq!(r.code, 0, "{}", r.stdout);
     snap!("library_review_decided", scrub(&env, &r.json));
-    assert_eq!(r.json["next"][0], "hall ready H-0002");
 
-    let wt = worktree(&env, "H-0002");
-    assert_eq!(files(&wt), ["L-0001-retries-must-check-the-endpoint.md"]);
-    assert!(read_learning(&wt, "L-0001").contains("status: accepted"));
-    let msg = git(&wt, &["log", "-1", "--format=%B"]);
-    assert!(
-        msg.contains("accept L-0001") && msg.contains("reject L-0002"),
-        "{msg}"
+    // At once, and only locally.
+    assert_eq!(
+        files(&store(&env)),
+        ["L-0001-retries-must-check-the-endpoint.md"]
     );
-    assert!(msg.contains("Reason: too obvious"));
-    assert!(git(&wt, &["status", "--porcelain"]).is_empty());
+    assert!(read_learning(&env, "L-0001").contains("status: accepted"));
+    let h = history(&env, "L-0002");
+    assert_eq!(h.len(), 1, "the rejected proposal is kept: {h:?}");
+    assert!(h[0].ends_with("-rejected.md"), "{h:?}");
+    let kept = std::fs::read_to_string(
+        env.repo
+            .join(".git/hallmark/library/history/L-0002")
+            .join(&h[0]),
+    )
+    .unwrap();
+    assert!(kept.contains("too obvious"), "{kept}");
+    assert!(inbox_learnings(&env).is_none(), "nothing waits any more");
+    assert_eq!(items(&env), std::slice::from_ref(&id));
+    let repo = hallmark::repo::Repo::discover(&env.repo).unwrap();
+    let b = hallmark::library::briefing(&repo, &["apps/api/x.rs".into()], "").unwrap();
+    assert_eq!(b.ids, ["L-0001"], "accepted learnings brief at once");
 
     // Idempotent.
     let r = env.hall(
@@ -667,26 +764,82 @@ fn review_accepts_and_rejects_in_the_knowledge_item() {
         ],
     );
     assert_eq!(r.code, 0, "{}", r.stdout);
-    assert_eq!(
-        r.json["commits"],
-        Value::Null,
-        "nothing to commit: {}",
-        r.stdout
-    );
-    assert_eq!(r.json["unknown"], json!(["L-0002"]));
+    assert_eq!(r.json["accepted"], json!(["L-0001"]));
+    assert_eq!(r.json["rejected"], json!(["L-0002"]));
+    assert_eq!(history(&env, "L-0002").len(), 1, "no new record");
 
-    // Unknown IDs to accept are errors, and nothing is written.
-    let r = env.hall(&env.repo, &["library", "review", "--accept", "L-0042"]);
+    // A new learning never reuses a rejected ID.
+    let id2 = closed_item(&env, "Another");
+    let script = env.script(json!([librarian_step(
+        json!([{"updates": "", "kind": "rule", "scope": [], "lens": "", "source": [],
+                "title": "Something new", "body": "New."}]),
+        json!([])
+    )]));
+    let r = env.hall_fake(&env.repo, &script, &["library", "distill", &id2]);
+    assert_eq!(r.json["learnings"], json!(["L-0003"]), "{}", r.stdout);
+
+    // Unknown IDs: --reject reports them, --accept is an error and writes
+    // nothing; an accepted learning can only be retired.
+    let r = env.hall(&env.repo, &["library", "review", "--reject", "L-0042"]);
+    assert_eq!(r.json["unknown"], json!(["L-0042"]), "{}", r.stdout);
+    let r = env.hall(
+        &env.repo,
+        &["library", "review", "--accept", "L-0003,L-0042"],
+    );
     assert_eq!(r.code, 3, "{}", r.stdout);
     assert_eq!(r.json["error"]["code"], "ITEM_NOT_FOUND");
+    assert!(read_learning(&env, "L-0003").contains("status: proposed"));
+    let r = env.hall(&env.repo, &["library", "review", "--reject", "L-0001"]);
+    assert_eq!(r.code, 2, "{}", r.stdout);
+    assert_eq!(r.json["error"]["code"], "USAGE");
     let r = env.hall(&env.repo, &["library", "review", "--accept", "H-1"]);
     assert_eq!(r.code, 2);
+}
+
+#[test]
+fn rejecting_an_update_restores_the_accepted_version() {
+    let env = Env::initialized();
+    seed(&env);
+    let before = read_learning(&env, "L-0002");
+    let id = closed_item(&env, "Queue jitter");
+    let script = env.script(json!([librarian_step(
+        json!([{"updates": "L-0002", "kind": "false-positive", "scope": ["apps/api/**"],
+                "lens": "", "source": [], "title": "Backoff jitter lives in the queue",
+                "body": "A worse version."}]),
+        json!([])
+    )]));
+    assert_eq!(
+        env.hall_fake(&env.repo, &script, &["library", "distill", &id])
+            .code,
+        0
+    );
+    assert!(read_learning(&env, "L-0002").contains("A worse version."));
+
+    let r = env.hall(
+        &env.repo,
+        &[
+            "library", "review", "--reject", "L-0002", "--reason", "worse",
+        ],
+    );
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(r.json["rejected"], json!(["L-0002"]));
+    let after = read_learning(&env, "L-0002");
+    assert!(after.contains("status: accepted"), "{after}");
+    assert!(after.contains("the queue adds it"), "{after}");
+    assert!(!after.contains("A worse version"), "{after}");
+    assert_eq!(
+        hallmark::library::learning::Learning::parse(&after, None).unwrap(),
+        hallmark::library::learning::Learning::parse(&before, None).unwrap()
+    );
+    let h = history(&env, "L-0002");
+    assert_eq!(h.len(), 2, "{h:?}");
+    assert!(h[0].ends_with("-replaced.md") && h[1].ends_with("-rejected.md"));
 }
 
 // --- retirement -----------------------------------------------------------------------
 
 #[test]
-fn a_contradicted_learning_is_proposed_for_retirement() {
+fn a_contradicted_learning_is_retired() {
     let env = Env::initialized();
     seed(&env);
     let (id, _) = env.new_item("Queue work");
@@ -713,11 +866,10 @@ fn a_contradicted_learning_is_proposed_for_retirement() {
     );
     assert_eq!(r.code, 0, "{}", r.stdout);
     assert_eq!(r.json["steps"][0]["progress"], "worked", "{}", r.stdout);
+    assert_eq!(r.json["steps"][0]["what"], "retired L-0002", "{}", r.stdout);
     assert!(env.fake_calls().is_empty(), "retirement needs no model run");
 
-    let k = "H-0002";
-    let wt = worktree(&env, k);
-    let l2 = read_learning(&wt, "L-0002");
+    let l2 = read_learning(&env, "L-0002");
     assert!(l2.contains("status: retired"), "{l2}");
     assert!(
         l2.contains("no longer holds (H-0001: the queue dropped jitter)"),
@@ -728,15 +880,10 @@ fn a_contradicted_learning_is_proposed_for_retirement() {
         "usage written from the journals: {l2}"
     );
     assert!(l2.contains("last_used: "), "{l2}");
-    let l1 = read_learning(&wt, "L-0001");
-    assert!(l1.contains("status: accepted"), "it held: {l1}");
+    assert!(read_learning(&env, "L-0001").contains("status: accepted"));
+    assert_eq!(items(&env), std::slice::from_ref(&id), "no knowledge item");
 
-    let r = env.hall(&env.repo, &["library", "review"]);
-    assert_eq!(r.json["retiring"][0]["id"], "L-0002", "{}", r.stdout);
-    assert_eq!(r.json["retiring"][0]["change"], "retire");
-
-    // The next pass doesn't propose it again (it is pending, and the check
-    // runs at most daily).
+    // The next pass does nothing (the check runs at most daily).
     let r = env.hall_fake(
         &env.repo,
         &script,
@@ -744,43 +891,53 @@ fn a_contradicted_learning_is_proposed_for_retirement() {
     );
     assert_eq!(r.json["steps"][0]["progress"], "idle", "{}", r.stdout);
 
-    // Rejecting the retirement restores the base version.
-    let r = env.hall(&env.repo, &["library", "review", "--reject", "L-0002"]);
+    // You can reinstate it: the last accepted version comes back.
+    let r = env.hall(&env.repo, &["library", "review", "--accept", "L-0002"]);
     assert_eq!(r.code, 0, "{}", r.stdout);
-    assert_eq!(r.json["retiring"], json!([]));
-    assert!(read_learning(&wt, "L-0002").contains("status: accepted"));
+    let l2 = read_learning(&env, "L-0002");
+    assert!(l2.contains("status: accepted"), "{l2}");
+    assert!(!l2.contains("Retired"), "{l2}");
 }
 
 #[test]
-fn unused_learnings_are_proposed_for_retirement() {
+fn unused_learnings_are_retired() {
     let env = Env::initialized();
     configure(&env, "\n[library]\nretire_after = \"30d\"\n");
-    std::fs::create_dir_all(env.repo.join(DIR)).unwrap();
-    std::fs::write(
-        env.repo.join(DIR).join("L-0001-old.md"),
-        learning(
-            "L-0001",
-            "map",
-            &["old/**"],
-            "accepted",
-            "The old module",
-            "Gone soon.",
-        ),
-    )
-    .unwrap();
-    git(&env.repo, &["add", DIR]);
-    let out = std::process::Command::new("git")
-        .current_dir(&env.repo)
-        .args(["commit", "-q", "-m", "docs: an old learning"])
-        .env("GIT_AUTHOR_NAME", "t")
-        .env("GIT_AUTHOR_EMAIL", "t@example.invalid")
-        .env("GIT_COMMITTER_NAME", "t")
-        .env("GIT_COMMITTER_EMAIL", "t@example.invalid")
-        .env("GIT_AUTHOR_DATE", "2020-01-01T00:00:00Z")
-        .env("GIT_COMMITTER_DATE", "2020-01-01T00:00:00Z")
-        .output()
+    write_files(
+        &store(&env),
+        &[
+            (
+                "L-0001-old.md",
+                learning(
+                    "L-0001",
+                    "map",
+                    &["old/**"],
+                    "accepted",
+                    "The old module",
+                    "Gone soon.",
+                ),
+            ),
+            (
+                "L-0002-fresh.md",
+                learning(
+                    "L-0002",
+                    "map",
+                    &["new/**"],
+                    "accepted",
+                    "The new module",
+                    "Here to stay.",
+                ),
+            ),
+        ],
+    );
+    // L-0001 last changed in 2020.
+    let old = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_577_836_800);
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(store(&env).join("L-0001-old.md"))
+        .unwrap()
+        .set_modified(old)
         .unwrap();
-    assert!(out.status.success());
     let script = env.script(json!([]));
     let r = env.hall_fake(
         &env.repo,
@@ -788,9 +945,10 @@ fn unused_learnings_are_proposed_for_retirement() {
         &["daemon", "run", "--once", "--only", "librarian"],
     );
     assert_eq!(r.json["steps"][0]["progress"], "worked", "{}", r.stdout);
-    let l = read_learning(&worktree(&env, "H-0001"), "L-0001");
+    let l = read_learning(&env, "L-0001");
     assert!(l.contains("status: retired"), "{l}");
     assert!(l.contains("not used by any review in 30d"), "{l}");
+    assert!(read_learning(&env, "L-0002").contains("status: accepted"));
 }
 
 #[test]
@@ -809,14 +967,15 @@ fn retire_on_demand() {
     );
     assert_eq!(r.code, 0, "{}", r.stdout);
     snap!("library_retire", scrub(&env, &r.json));
-    let wt = worktree(&env, "H-0001");
-    let l = read_learning(&wt, "L-0003");
+    let l = read_learning(&env, "L-0003");
     assert!(l.contains("status: retired"));
-    assert!(l.contains(": billing was rewritten"), "{l}");
-    assert!(git(&wt, &["log", "-1", "--format=%B"]).contains("billing was rewritten"));
-    let k = env.hall(&env.repo, &["status", "H-0001"]);
-    assert_eq!(k.json["title"], "Library: retire L-0003");
-    assert_eq!(k.json["state"], "awaiting_you");
+    assert!(l.contains(": billing was rewritten."), "{l}");
+    assert_eq!(
+        history(&env, "L-0003").len(),
+        1,
+        "the accepted version is kept"
+    );
+    assert!(items(&env).is_empty(), "no knowledge item");
 
     // Again: nothing changes.
     let r = env.hall(
@@ -825,17 +984,140 @@ fn retire_on_demand() {
     );
     assert_eq!(r.code, 0);
     assert_eq!(r.json["changed"], false);
-    // Another retirement joins the same knowledge item.
-    let r = env.hall(
-        &env.repo,
-        &["library", "retire", "L-0001", "--reason", "obsolete"],
-    );
-    assert_eq!(r.json["item"], "H-0001", "{}", r.stdout);
 
     let r = env.hall(&env.repo, &["library", "retire", "L-0099", "--reason", "x"]);
     assert_eq!(r.code, 3);
     assert_eq!(r.json["error"]["code"], "ITEM_NOT_FOUND");
     snap!("library_error_not_found", scrub(&env, &r.json));
+}
+
+// --- import and export ----------------------------------------------------------------
+
+#[test]
+fn import_reads_committed_learnings_from_the_base() {
+    let env = Env::initialized();
+    let mut committed = seed_files();
+    committed.push(("notes.md", "# not a learning\n".to_string()));
+    commit_learnings(&env.repo, &committed);
+    // Not on the base: never imported by default.
+    let (_, wt) = env.new_item("Branch only");
+    commit_learnings(
+        &wt,
+        &[(
+            "L-0009-branch.md",
+            learning("L-0009", "rule", &[], "accepted", "Branch only", "No."),
+        )],
+    );
+    // A learning already in the store is kept as it is.
+    write_files(
+        &store(&env),
+        &[(
+            "L-0002-local.md",
+            learning("L-0002", "map", &[], "accepted", "Local version", "Mine."),
+        )],
+    );
+
+    let r = env.hall(&env.repo, &["library", "import"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    snap!("library_import", scrub(&env, &r.json));
+    assert_eq!(
+        r.json["next"][0],
+        "git rm -r -q .hallmark/knowledge && git commit -m \"Move the Library out of the repo\""
+    );
+    assert!(read_learning(&env, "L-0002").contains("Local version"));
+    assert!(read_learning(&env, "L-0004").contains("status: proposed"));
+    assert!(read_learning(&env, "L-0005").contains("status: retired"));
+    assert!(!files(&store(&env)).iter().any(|f| f.starts_with("L-0009")));
+    assert_eq!(
+        inbox_learnings(&env).unwrap()["text"],
+        "1 proposed learning to review"
+    );
+
+    // Again: everything is already there.
+    let r = env.hall(&env.repo, &["library", "import"]);
+    assert_eq!(r.json["imported"], json!([]), "{}", r.stdout);
+
+    // Once the repo drops the files, reviews still get them.
+    git(&env.repo, &["rm", "-r", "-q", DIR]);
+    git(
+        &env.repo,
+        &["commit", "-q", "-m", "Move the Library out of the repo"],
+    );
+    let repo = hallmark::repo::Repo::discover(&env.repo).unwrap();
+    let b = hallmark::library::briefing(&repo, &["apps/billing/a.rs".into()], "").unwrap();
+    assert_eq!(b.ids[0], "L-0003", "{:?}", b.ids);
+    let r = env.hall(&env.repo, &["library", "import"]);
+    assert_eq!(r.json["imported"], json!([]));
+    assert_eq!(r.json["skipped"], json!([]));
+
+    // A directory works too; a missing source is a usage error.
+    let r = env.hall(
+        &env.repo,
+        &["library", "import", wt.join(DIR).to_str().unwrap()],
+    );
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(r.json["imported"], json!(["L-0009"]), "{}", r.stdout);
+    let r = env.hall(&env.repo, &["library", "import", "no-such-thing"]);
+    assert_eq!(r.code, 2, "{}", r.stdout);
+    assert_eq!(r.json["error"]["code"], "USAGE");
+}
+
+#[test]
+fn export_then_import_round_trips() {
+    let env = Env::initialized();
+    seed(&env);
+    let before: Vec<(String, String)> = files(&store(&env))
+        .into_iter()
+        .map(|f| {
+            let t = std::fs::read_to_string(store(&env).join(&f)).unwrap();
+            (f, t)
+        })
+        .collect();
+    let out = env.root.join("library.json");
+    let r = env.hall(
+        &env.repo,
+        &["library", "export", "--out", out.to_str().unwrap()],
+    );
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(r.json["count"], 5);
+    assert_eq!(
+        r.json["ids"],
+        json!(["L-0001", "L-0002", "L-0003", "L-0004", "L-0005"])
+    );
+    let file: Value = serde_json::from_str(&std::fs::read_to_string(&out).unwrap()).unwrap();
+    assert_eq!(file["format"], "hallmark-library");
+    assert_eq!(file["version"], 1);
+
+    // Without --out, the reply carries the learnings and imports as well.
+    let r = env.hall(&env.repo, &["library", "export"]);
+    assert_eq!(r.json["learnings"].as_array().unwrap().len(), 5);
+    let reply = env.root.join("reply.json");
+    std::fs::write(&reply, &r.stdout).unwrap();
+
+    // Into an empty Library (another clone, say).
+    for source in [&out, &reply] {
+        std::fs::remove_dir_all(env.repo.join(".git/hallmark/library")).unwrap();
+        let r = env.hall(&env.repo, &["library", "import", source.to_str().unwrap()]);
+        assert_eq!(r.code, 0, "{}", r.stdout);
+        assert_eq!(
+            r.json["imported"],
+            json!(["L-0001", "L-0002", "L-0003", "L-0004", "L-0005"])
+        );
+        let after: Vec<(String, String)> = files(&store(&env))
+            .into_iter()
+            .map(|f| {
+                let t = std::fs::read_to_string(store(&env).join(&f)).unwrap();
+                (f, t)
+            })
+            .collect();
+        assert_eq!(after, before);
+    }
+
+    // Not an export: a usage error.
+    let bad = env.root.join("bad.json");
+    std::fs::write(&bad, "{\"x\": 1}").unwrap();
+    let r = env.hall(&env.repo, &["library", "import", bad.to_str().unwrap()]);
+    assert_eq!(r.code, 2, "{}", r.stdout);
 }
 
 // --- qmd ------------------------------------------------------------------------------
@@ -891,14 +1173,8 @@ fn qmd_answers_from_one_collection() {
     };
     let v = run("webhook retries");
     assert_eq!(v["backend"], "qmd", "{v}");
-    let ids: Vec<&str> = v["results"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|h| h["id"].as_str().unwrap())
-        .collect();
     assert_eq!(
-        ids,
+        ids(&v["results"]),
         ["L-0002", "L-0001"],
         "qmd's order, unknown files dropped"
     );
@@ -915,13 +1191,14 @@ fn qmd_answers_from_one_collection() {
         lines[2],
         "search --json -n 30 -c hallmark-app webhook retries"
     );
-    // Exported: the base's learnings, under base/.
-    let export = env.repo.join(".git/hallmark/library/qmd/hallmark-app/base");
+    // Exported: the accepted learnings being searched.
+    let export = env.repo.join(".git/hallmark/library/qmd/hallmark-app");
     assert!(
         export
             .join("L-0001-retries-must-check-the-endpoint.md")
             .is_file()
     );
+    assert!(!export.join("L-0004-proposed-webhook-idea.md").exists());
 
     // In sync already: the next search only searches.
     run("endpoint");
@@ -936,7 +1213,15 @@ fn the_library_schema_is_served() {
     let r = env.hall(&env.root, &["schema", "library"]);
     assert_eq!(r.code, 0);
     let s = r.json["schema"].to_string();
-    for k in ["results", "proposed", "retiring", "learnings", "action"] {
+    for k in [
+        "results",
+        "proposed",
+        "learnings",
+        "action",
+        "imported",
+        "skipped",
+        "count",
+    ] {
         assert!(s.contains(k), "{k}");
     }
 }

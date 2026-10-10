@@ -403,7 +403,9 @@ pub struct Library {
     pub auto_accept: Vec<String>,
     /// Unused learnings are proposed for retirement after this long.
     pub retire_after: String,
-    /// Where learnings live, relative to the repo root.
+    /// Where learnings were committed before they moved to the local
+    /// store (ADR 0027), relative to the repo root: what
+    /// `hall library import` reads from the base branch.
     pub dir: String,
 }
 

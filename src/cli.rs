@@ -1,5 +1,7 @@
 //! Command-line definition and dispatch.
 
+use std::path::PathBuf;
+
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
 use crate::commands;
@@ -534,16 +536,16 @@ pub enum LibraryAction {
         /// Only this kind: rule, false-positive, map, decision.
         #[arg(long)]
         kind: Option<String>,
-        /// Include proposed learnings (open knowledge items, and the base).
+        /// Include proposed learnings, not only accepted ones.
         #[arg(long)]
         proposed: bool,
     },
     /// List proposed learnings, or accept and reject them.
     Review {
-        /// Learnings to accept (L-0001 …).
+        /// Learnings to accept (L-0001 …); a retired one is reinstated.
         #[arg(long, value_delimiter = ',')]
         accept: Vec<String>,
-        /// Learnings to reject.
+        /// Learnings to reject; an update gives back the version it replaced.
         #[arg(long, value_delimiter = ',')]
         reject: Vec<String>,
         #[arg(long)]
@@ -557,6 +559,18 @@ pub enum LibraryAction {
     },
     /// Run the librarian on one closed or escalated item now.
     Distill { id: String },
+    /// Add learnings to the local Library: committed ones, a directory or an export.
+    Import {
+        /// A directory of learning files or an export file. Default: `[library] dir`
+        /// (.hallmark/knowledge) on the base branch.
+        source: Option<PathBuf>,
+    },
+    /// Write every learning in the local Library to one JSON file.
+    Export {
+        /// The file to write. Without it, the reply carries the learnings.
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]

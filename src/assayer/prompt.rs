@@ -98,8 +98,7 @@ pub fn prepare(
     let effort = effort(default_effort, lines, !sensitive.is_empty());
     let lenses = base.lenses();
     let rules = base::rules(repo, &base);
-    let briefing =
-        crate::library::briefing(repo, &base.sha, &all_changed, &diff).unwrap_or_default();
+    let briefing = crate::library::briefing(repo, &all_changed, &diff).unwrap_or_default();
 
     // --- the prompt ---------------------------------------------------------
     let created = events.iter().find_map(|e| match &e.body {

@@ -1,23 +1,25 @@
-//! `hall library search|review|retire|distill` (ADR 0021).
+//! `hall library search|review|retire|distill|import|export` (ADR 0021,
+//! ADR 0027). Every change is to the local store, under its lock, and takes
+//! effect at once.
 
-use std::collections::BTreeSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use chrono::Utc;
 use schemars::JsonSchema;
 use serde::Serialize;
 
 use crate::cli::{LibraryAction, LibraryArgs};
+use crate::commands::new::shell_quote;
 use crate::config::SearchBackend;
 use crate::error::{ErrorCode, HallError, Result};
 use crate::item::ItemId;
-use crate::library::knowledge::{self, Knowledge};
 use crate::library::learning::{self, Kind, Status};
 use crate::library::librarian::{self, Applied, Distill};
+use crate::library::portable::{self, Entry, ExportFile, Imported};
 use crate::library::search::{self, Hit, Options};
-use crate::library::store::{self, Library, Located};
+use crate::library::store::{self, Located, Store};
 use crate::output::{Render, Response};
-use crate::repo::{Repo, actor};
+use crate::repo::Repo;
 
 /// The reply of every `hall library` action, tagged by `action`.
 #[derive(Debug, Serialize, JsonSchema)]
@@ -27,6 +29,8 @@ pub enum LibraryOut {
     Review(ReviewOut),
     Retire(RetireOut),
     Distill(DistillOut),
+    Import(ImportOut),
+    Export(ExportOut),
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -37,59 +41,47 @@ pub struct SearchOut {
     /// Why the configured backend wasn't used, when it wasn't.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
-    /// Best first. Accepted learnings from the base branch, plus proposed
+    /// Best first. Accepted learnings from the local Library, plus proposed
     /// ones with `--proposed`. Retired learnings are never returned.
     pub results: Vec<Hit>,
 }
 
-/// A learning waiting for a decision.
+/// A learning waiting for your decision.
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct Pending {
     pub id: String,
     pub kind: Kind,
     pub status: Status,
-    /// new, update, or retire.
+    /// new, or update (rejecting an update restores the version it
+    /// replaced).
     pub change: String,
     pub title: String,
     pub scope: Vec<String>,
+    /// The learning's file in the local store.
     pub path: String,
-    /// The knowledge item that carries it; absent when it is proposed on
-    /// the base branch itself.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub item: Option<ItemId>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct ReviewOut {
     /// Proposed learnings still waiting for `--accept` or `--reject`.
     pub proposed: Vec<Pending>,
-    /// Retirements in open knowledge items (`--reject` keeps the learning).
-    pub retiring: Vec<Pending>,
-    /// Accepted by this call (or already accepted).
+    /// Accepted by this call (or already accepted). A retired learning
+    /// given to `--accept` is reinstated.
     pub accepted: Vec<String>,
-    /// Rejected by this call.
+    /// Rejected by this call (or already rejected).
     pub rejected: Vec<String>,
-    /// IDs given to `--reject` that no longer exist anywhere.
+    /// IDs given to `--reject` that the Library doesn't know.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub unknown: Vec<String>,
-    /// Open knowledge items.
-    pub items: Vec<ItemId>,
-    /// Commits this call made, one per knowledge item it changed.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub commits: Vec<String>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct RetireOut {
     pub id: String,
-    /// The knowledge item that carries the retirement.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub item: Option<ItemId>,
     /// False when it was already retired.
     pub changed: bool,
+    /// The learning's file in the local store.
     pub path: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub commit: Option<String>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -100,6 +92,29 @@ pub struct DistillOut {
     pub changed: bool,
     #[serde(flatten)]
     pub applied: Applied,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ImportOut {
+    /// Where the learnings came from: `<base>:<dir>`, a directory, or an
+    /// export file.
+    pub source: String,
+    #[serde(flatten)]
+    pub result: Imported,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ExportOut {
+    /// Learnings exported, every status.
+    pub count: usize,
+    pub ids: Vec<String>,
+    /// The file written, with `--out`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub out: Option<String>,
+    /// The learning files, without `--out`. This reply is itself something
+    /// `hall library import` reads.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub learnings: Option<Vec<Entry>>,
 }
 
 impl Render for LibraryOut {
@@ -120,9 +135,11 @@ impl Render for LibraryOut {
                         h.kind.as_str(),
                         h.score,
                         h.title,
-                        h.item
-                            .map(|i| format!("  ({} in {i})", h.status))
-                            .unwrap_or_default()
+                        if h.status == Status::Accepted {
+                            String::new()
+                        } else {
+                            format!("  ({})", h.status)
+                        }
                     ));
                     if !h.scope.is_empty() {
                         t.push_str(&format!("        scope {}\n", h.scope.join(", ")));
@@ -138,40 +155,43 @@ impl Render for LibraryOut {
                 if !r.rejected.is_empty() {
                     t.push_str(&format!("Rejected {}.\n", r.rejected.join(", ")));
                 }
-                if r.proposed.is_empty() && r.retiring.is_empty() {
-                    t.push_str("No proposed learnings.\n");
+                if !r.unknown.is_empty() {
+                    t.push_str(&format!("Unknown: {}.\n", r.unknown.join(", ")));
                 }
-                for (label, list) in [("Proposed", &r.proposed), ("Retiring", &r.retiring)] {
-                    if list.is_empty() {
-                        continue;
-                    }
-                    t.push_str(&format!("{label}:\n"));
-                    for p in list {
+                if r.proposed.is_empty() {
+                    t.push_str("No proposed learnings.\n");
+                } else {
+                    t.push_str("Proposed:\n");
+                    for p in &r.proposed {
                         t.push_str(&format!(
-                            "  {}  {:7} {:14} {}{}\n",
+                            "  {}  {:6} {:14} {}\n",
                             p.id,
                             p.change,
                             p.kind.as_str(),
                             p.title,
-                            p.item.map(|i| format!("  ({i})")).unwrap_or_default()
                         ));
                     }
                 }
                 t
             }
-            LibraryOut::Retire(r) => match (r.changed, r.item) {
-                (true, Some(i)) => format!("{} will be retired by {i}.\n", r.id),
-                _ => format!("{} is already retired.\n", r.id),
-            },
+            LibraryOut::Retire(r) => {
+                if r.changed {
+                    format!("Retired {}.\n", r.id)
+                } else {
+                    format!("{} is already retired.\n", r.id)
+                }
+            }
             LibraryOut::Distill(d) => {
                 let a = &d.applied;
-                let what = match a.knowledge {
-                    Some(k) => format!(
-                        "{} learning(s) and {} retirement(s) in {k}",
+                let what = if a.learnings.is_empty() && a.retired.is_empty() {
+                    "nothing worth keeping".to_string()
+                } else {
+                    format!(
+                        "{} learning(s), {} waiting for you, {} retired",
                         a.learnings.len(),
+                        a.proposed.len(),
                         a.retired.len()
-                    ),
-                    None => "nothing worth keeping".into(),
+                    )
                 };
                 if d.changed {
                     format!("Distilled {}: {what}.\n", d.item)
@@ -179,6 +199,29 @@ impl Render for LibraryOut {
                     format!("{} was already distilled: {what}.\n", d.item)
                 }
             }
+            LibraryOut::Import(i) => {
+                let mut t = format!(
+                    "Imported {} learning(s) from {}.\n",
+                    i.result.imported.len(),
+                    i.source
+                );
+                for s in &i.result.skipped {
+                    t.push_str(&format!("  skipped {}: {}\n", s.path, s.reason));
+                }
+                t
+            }
+            LibraryOut::Export(e) => match &e.out {
+                Some(out) => format!("Exported {} learning(s) to {out}.\n", e.count),
+                None => format!(
+                    "{} learning(s): {}\n",
+                    e.count,
+                    if e.ids.is_empty() {
+                        "none".to_string()
+                    } else {
+                        e.ids.join(", ")
+                    }
+                ),
+            },
         }
     }
 }
@@ -200,6 +243,8 @@ pub fn library(cwd: &Path, a: LibraryArgs) -> Result<Response> {
         } => review(&repo, &accept, &reject, reason.as_deref()),
         LibraryAction::Retire { id, reason } => retire(&repo, &id, &reason),
         LibraryAction::Distill { id } => distill(&repo, &id),
+        LibraryAction::Import { source } => import(&repo, source),
+        LibraryAction::Export { out } => export(&repo, out),
     }
 }
 
@@ -238,13 +283,11 @@ fn search_cmd(
         return Err(HallError::usage("say what to search for")
             .next(["hall library search \"webhook retries\""]));
     }
-    let base = repo.config.base.clone();
+    let store = Store::of(repo);
     let (docs, statuses) = if proposed {
-        let lib = Library::load(repo, &base)?;
-        let docs: Vec<Located> = lib.effective().into_iter().cloned().collect();
-        (docs, vec![Status::Accepted, Status::Proposed])
+        (store.read(), vec![Status::Accepted, Status::Proposed])
     } else {
-        (store::read_base(repo, &base)?, vec![Status::Accepted])
+        (store.accepted(), vec![Status::Accepted])
     };
     let opts = Options {
         limit,
@@ -261,7 +304,7 @@ fn search_cmd(
     } else if !proposed {
         next.push(format!(
             "hall library search {} --proposed",
-            crate::commands::new::shell_quote(&query)
+            shell_quote(&query)
         ));
     }
     next.push("hall library review".into());
@@ -274,96 +317,33 @@ fn search_cmd(
     Ok(Response::new(out, next))
 }
 
-/// Proposed learnings and pending retirements.
-fn pending(lib: &Library) -> (Vec<Pending>, Vec<Pending>) {
-    let entry = |l: &Located, change: &str| Pending {
-        id: l.learning.id.clone(),
-        kind: l.learning.kind,
-        status: l.learning.status,
-        change: change.into(),
-        title: l.learning.title.clone(),
-        scope: l.learning.scope.clone(),
-        path: l.path.clone(),
-        item: l.item,
-    };
-    let mut proposed = Vec::new();
-    let mut retiring = Vec::new();
-    let mut seen = BTreeSet::new();
-    // The newest version of each ID wins.
-    for l in lib.pending.iter().rev() {
-        if !seen.insert(l.learning.id.clone()) {
-            continue;
-        }
-        let base = lib.base_get(&l.learning.id);
-        match l.learning.status {
-            Status::Proposed => {
-                proposed.push(entry(l, if base.is_some() { "update" } else { "new" }))
-            }
-            Status::Retired if base.is_some_and(|b| b.learning.status != Status::Retired) => {
-                retiring.push(entry(l, "retire"))
-            }
-            _ => {}
-        }
-    }
-    for b in &lib.base {
-        if b.learning.status == Status::Proposed && !seen.contains(&b.learning.id) {
-            proposed.push(entry(b, "new"));
-        }
-    }
-    let key = |p: &Pending| learning::parse_id(&p.id).unwrap_or(0);
-    proposed.sort_by_key(key);
-    retiring.sort_by_key(key);
-    (proposed, retiring)
+/// Proposed learnings, in ID order.
+fn pending(store: &Store) -> Vec<Pending> {
+    store
+        .read()
+        .into_iter()
+        .filter(|l| l.learning.status == Status::Proposed)
+        .map(|l: Located| Pending {
+            change: if store.previous(&l.learning.id).is_some() {
+                "update".into()
+            } else {
+                "new".into()
+            },
+            id: l.learning.id,
+            kind: l.learning.kind,
+            status: l.learning.status,
+            title: l.learning.title,
+            scope: l.learning.scope,
+            path: l.path,
+        })
+        .collect()
 }
 
-/// The raw base file, for restoring it exactly.
-fn base_text(repo: &Repo, path: &str) -> Result<String> {
-    let s = crate::git::run(
-        &repo.main_root,
-        &["show", &format!("{}:{path}", repo.config.base)],
-    )?;
-    Ok(format!("{s}\n"))
-}
-
-/// Knowledge items touched by one call, with what changed in each.
-#[derive(Default)]
-struct Touched {
-    items: Vec<(Knowledge, Vec<String>)>,
-}
-
-impl Touched {
-    fn note(&mut self, k: &Knowledge, line: String) {
-        match self.items.iter_mut().find(|(t, _)| t.item.id == k.item.id) {
-            Some((_, lines)) => lines.push(line),
-            None => self.items.push((k.clone(), vec![line])),
-        }
-    }
-
-    fn get(&self, id: ItemId) -> Option<Knowledge> {
-        self.items
-            .iter()
-            .find(|(k, _)| k.item.id == id)
-            .map(|(k, _)| k.clone())
-    }
-}
-
-fn knowledge_for(
-    repo: &Repo,
-    touched: &Touched,
-    item: Option<ItemId>,
-    who: &str,
-    what: &str,
-) -> Result<Knowledge> {
-    if let Some(id) = item {
-        return match touched.get(id) {
-            Some(k) => Ok(k),
-            None => knowledge::editable(repo, id),
-        };
-    }
-    if let Some((k, _)) = touched.items.first() {
-        return Ok(k.clone());
-    }
-    knowledge::get_or_create(repo, who, what)
+fn ids(list: &[String]) -> Result<Vec<String>> {
+    list.iter()
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| learning_id(s))
+        .collect()
 }
 
 fn review(
@@ -372,136 +352,79 @@ fn review(
     reject: &[String],
     reason: Option<&str>,
 ) -> Result<Response> {
-    let accept: Vec<String> = accept
-        .iter()
-        .filter(|s| !s.trim().is_empty())
-        .map(|s| learning_id(s))
-        .collect::<Result<_>>()?;
-    let reject: Vec<String> = reject
-        .iter()
-        .filter(|s| !s.trim().is_empty())
-        .map(|s| learning_id(s))
-        .collect::<Result<_>>()?;
+    let accept = ids(accept)?;
+    let reject = ids(reject)?;
     if let Some(both) = accept.iter().find(|a| reject.contains(a)) {
         return Err(HallError::usage(format!(
             "{both} is in both --accept and --reject"
         )));
     }
-    let who = actor();
+    let store = Store::of(repo);
     let mut accepted = Vec::new();
     let mut rejected = Vec::new();
     let mut unknown = Vec::new();
-    let mut commits = Vec::new();
     if !accept.is_empty() || !reject.is_empty() {
-        knowledge::with_lock(repo, || {
-            let lib = Library::load(repo, &repo.config.base)?;
+        store.with_lock(|| {
             // Check every ID before writing anything.
             for id in &accept {
-                if lib.get(id).is_none() {
+                if store.get(id).is_none() {
                     return Err(not_found(id));
                 }
             }
             for id in &reject {
-                if lib.pending_get(id).is_none()
-                    && let Some(b) = lib.base_get(id)
-                    && b.learning.status != Status::Proposed
+                if let Some(l) = store.get(id)
+                    && l.learning.status != Status::Proposed
+                    && !store.was_rejected(id)
                 {
                     return Err(HallError::usage(format!(
                         "{id} is {}, not proposed; retire it instead",
-                        b.learning.status
+                        l.learning.status
                     ))
                     .next([format!("hall library retire {id} --reason \"<why>\"")]));
                 }
             }
-            let mut touched = Touched::default();
             for id in &accept {
-                if let Some(p) = lib.pending_get(id) {
-                    if p.learning.status == Status::Proposed {
-                        let k = knowledge_for(repo, &touched, p.item, &who, "accept learnings")?;
-                        let mut l = p.learning.clone();
+                let cur = store.get(id).ok_or_else(|| not_found(id))?;
+                match cur.learning.status {
+                    Status::Proposed => {
+                        let mut l = cur.learning;
                         l.status = Status::Accepted;
-                        knowledge::write(repo, &k, &l, Some(&p.path))?;
-                        touched.note(&k, format!("- accept {id}: {}", l.title));
+                        store.write(&l)?;
                     }
-                } else if let Some(b) = lib.base_get(id) {
-                    if b.learning.status == Status::Proposed {
-                        let k = knowledge_for(repo, &touched, None, &who, "accept learnings")?;
-                        let mut l = b.learning.clone();
+                    Status::Retired => {
+                        // Reinstated: the last accepted version, else this
+                        // one.
+                        let mut l = store
+                            .previous(id)
+                            .map(|v| v.learning)
+                            .filter(|l| l.status == Status::Accepted)
+                            .unwrap_or(cur.learning);
                         l.status = Status::Accepted;
-                        knowledge::write(repo, &k, &l, Some(&b.path))?;
-                        touched.note(&k, format!("- accept {id}: {}", l.title));
+                        store.write(&l)?;
                     }
-                } else {
-                    return Err(not_found(id));
+                    Status::Accepted => {}
                 }
                 accepted.push(id.clone());
             }
+            let now = Utc::now();
             for id in &reject {
-                let base = lib.base_get(id);
-                if let Some(p) = lib.pending_get(id) {
-                    let k = knowledge_for(repo, &touched, p.item, &who, "reject learnings")?;
-                    let restore = match base {
-                        Some(b) => Some((b.path.clone(), base_text(repo, &b.path)?)),
-                        None => None,
-                    };
-                    knowledge::restore(
-                        repo,
-                        &k,
-                        id,
-                        restore.as_ref().map(|(p, t)| (p.as_str(), t.as_str())),
-                    )?;
-                    touched.note(&k, format!("- reject {id}: {}", p.learning.title));
+                if store.was_rejected(id) {
                     rejected.push(id.clone());
-                } else if let Some(b) = base {
-                    let k = knowledge_for(repo, &touched, None, &who, "reject learnings")?;
-                    knowledge::restore(repo, &k, id, None)?;
-                    touched.note(&k, format!("- reject {id}: {}", b.learning.title));
+                } else if store.get(id).is_some() {
+                    store.reject(id, reason, now)?;
                     rejected.push(id.clone());
                 } else {
                     unknown.push(id.clone());
                 }
             }
-            for (k, lines) in &touched.items {
-                let verbs: Vec<&str> = [
-                    (!accepted.is_empty()).then_some("accept"),
-                    (!rejected.is_empty()).then_some("reject"),
-                ]
-                .into_iter()
-                .flatten()
-                .collect();
-                let mut message = format!(
-                    "docs(library): {} learnings\n\n{}",
-                    verbs.join(" and "),
-                    lines.join("\n")
-                );
-                if let Some(r) = reason {
-                    message.push_str(&format!("\n\nReason: {r}"));
-                }
-                if let Some(sha) = knowledge::commit(repo, k, &who, &message)? {
-                    commits.push(sha);
-                }
-                if k.created {
-                    knowledge::propose_ready(
-                        repo,
-                        k,
-                        &who,
-                        "Library: decisions on proposed learnings.",
-                    )?;
-                }
-            }
             Ok(())
         })?;
     }
-    let lib = Library::load(repo, &repo.config.base)?;
-    let (proposed, retiring) = pending(&lib);
-    let items: Vec<ItemId> = store::open_knowledge(repo)?.iter().map(|i| i.id).collect();
+    let proposed = pending(&store);
     let mut next = Vec::new();
     if proposed.is_empty() {
-        for k in store::open_knowledge(repo)? {
-            if store::editable(&k) {
-                next.push(format!("hall ready {}", k.id));
-            }
-        }
+        next.push("hall library search \"<words>\"".to_string());
+        next.push("hall inbox".to_string());
     } else {
         let ids: Vec<&str> = proposed.iter().map(|p| p.id.as_str()).collect();
         next.push(format!("hall library review --accept {}", ids.join(",")));
@@ -510,23 +433,11 @@ fn review(
             ids[0]
         ));
     }
-    if !retiring.is_empty() {
-        next.push(format!(
-            "hall library review --reject {} --reason \"<why keep it>\"",
-            retiring[0].id
-        ));
-    }
-    if next.is_empty() {
-        next.push("hall library search \"<words>\"".into());
-    }
     let out = LibraryOut::Review(ReviewOut {
         proposed,
-        retiring,
         accepted,
         rejected,
         unknown,
-        items,
-        commits,
     });
     Ok(Response::new(out, next))
 }
@@ -536,63 +447,31 @@ fn retire(repo: &Repo, id: &str, reason: &str) -> Result<Response> {
     if reason.trim().is_empty() {
         return Err(HallError::usage("say why with --reason"));
     }
-    let who = actor();
-    let out = knowledge::with_lock(repo, || {
-        let lib = Library::load(repo, &repo.config.base)?;
-        let cur = lib.get(&id).ok_or_else(|| not_found(&id))?;
+    let store = Store::of(repo);
+    let out = store.with_lock(|| {
+        let cur = store.get(&id).ok_or_else(|| not_found(&id))?;
         if cur.learning.status == Status::Retired {
             return Ok(RetireOut {
                 id: id.clone(),
-                item: cur.item,
                 changed: false,
-                path: cur.path.clone(),
-                commit: None,
+                path: cur.path,
             });
         }
-        let k = match cur.item {
-            Some(item) => knowledge::editable(repo, item)?,
-            None => knowledge::get_or_create(repo, &who, &format!("retire {id}"))?,
-        };
-        let now = Utc::now();
-        let mut l = cur.learning.clone();
-        l.status = Status::Retired;
-        l.body = format!(
-            "{}\n\nRetired {}: {}",
-            l.body.trim(),
-            now.format("%Y-%m-%d"),
-            reason.trim()
-        )
-        .trim()
-        .to_string();
+        let mut l = cur.learning;
+        librarian::retire_text(&mut l, reason, Utc::now());
         let stats = store::usage(repo)?;
         librarian::refresh_usage(&mut l, &stats);
-        let base_path = lib.base_get(&id).map(|b| b.path.clone());
-        let path = knowledge::write(repo, &k, &l, base_path.as_deref())?;
-        let commit = knowledge::commit(
-            repo,
-            &k,
-            &who,
-            &format!("docs(library): retire {id}\n\n{}", reason.trim()),
-        )?;
-        knowledge::propose_ready(
-            repo,
-            &k,
-            &who,
-            &format!("Library: retire {id} ({})", crate::output::clip(reason, 80)),
-        )?;
-        librarian::note_retired(repo, std::slice::from_ref(&id), k.item.id, now)?;
+        let written = store.write(&l)?;
         Ok(RetireOut {
             id: id.clone(),
-            item: Some(k.item.id),
             changed: true,
-            path,
-            commit,
+            path: written.path,
         })
     })?;
-    let mut next = vec!["hall library review".to_string()];
-    if let Some(k) = out.item {
-        next.insert(0, format!("hall ready {k}"));
-    }
+    let next = vec![
+        format!("hall library review --accept {id}"),
+        "hall library search \"<words>\"".to_string(),
+    ];
     Ok(Response::new(LibraryOut::Retire(out), next))
 }
 
@@ -604,9 +483,8 @@ fn distill(repo: &Repo, id: &str) -> Result<Response> {
         Distill::Stopped { error, .. } => return Err(error),
     };
     let mut next = Vec::new();
-    if let Some(k) = applied.knowledge {
+    if Store::of(repo).proposed().0 > 0 {
         next.push("hall library review".into());
-        next.push(format!("hall ready {k}"));
     }
     next.push(format!("hall log {id} --kind distilled"));
     let out = LibraryOut::Distill(DistillOut {
@@ -615,4 +493,99 @@ fn distill(repo: &Repo, id: &str) -> Result<Response> {
         applied,
     });
     Ok(Response::new(out, next))
+}
+
+fn import(repo: &Repo, source: Option<PathBuf>) -> Result<Response> {
+    let store = Store::of(repo);
+    let dir = portable::committed_dir(repo);
+    let (label, entries, from_base) = match source {
+        None => {
+            let base = &repo.config.base;
+            (
+                format!("{base}:{dir}"),
+                portable::read_rev(repo, base)?,
+                true,
+            )
+        }
+        Some(p) => {
+            let p = if p.is_absolute() { p } else { repo.cwd.join(p) };
+            let label = crate::paths::display(&p);
+            let entries = if p.is_dir() {
+                portable::read_dir(&p)?
+            } else if p.is_file() {
+                let text = std::fs::read_to_string(&p)?;
+                portable::parse_export(&text).map_err(|e| {
+                    HallError::usage(format!("{label} is not a Library export: {e}")).next([
+                        "hall library export --out <file>",
+                        "hall library import <directory of learning files>",
+                    ])
+                })?
+            } else {
+                return Err(
+                    HallError::usage(format!("no file or directory {label}")).next([
+                        "hall library import",
+                        "hall library import <export file or directory>",
+                    ]),
+                );
+            };
+            (label, entries, false)
+        }
+    };
+    let result = store.with_lock(|| portable::import(&store, &entries))?;
+    let mut next = Vec::new();
+    if from_base && !entries.is_empty() {
+        next.push(format!(
+            "git rm -r -q {} && git commit -m \"Move the Library out of the repo\"",
+            shell_quote(&dir)
+        ));
+    }
+    if store.proposed().0 > 0 {
+        next.push("hall library review".into());
+    }
+    next.push("hall library search \"<words>\"".into());
+    let out = LibraryOut::Import(ImportOut {
+        source: label,
+        result,
+    });
+    Ok(Response::new(out, next))
+}
+
+fn export(repo: &Repo, out: Option<PathBuf>) -> Result<Response> {
+    let store = Store::of(repo);
+    let entries = portable::export(&store)?;
+    let ids: Vec<String> = entries
+        .iter()
+        .filter_map(|e| learning::id_from_file_name(&e.path).map(learning::format_id))
+        .collect();
+    let count = entries.len();
+    let reply = match out {
+        Some(p) => {
+            let p = if p.is_absolute() { p } else { repo.cwd.join(p) };
+            let file = ExportFile {
+                format: portable::FORMAT.into(),
+                version: 1,
+                learnings: entries,
+            };
+            std::fs::write(&p, serde_json::to_string_pretty(&file)? + "\n")?;
+            let shown = crate::paths::display(&p);
+            let next = vec![format!("hall library import {}", shell_quote(&shown))];
+            let out = ExportOut {
+                count,
+                ids,
+                out: Some(shown),
+                learnings: None,
+            };
+            return Ok(Response::new(LibraryOut::Export(out), next));
+        }
+        None => ExportOut {
+            count,
+            ids,
+            out: None,
+            learnings: Some(entries),
+        },
+    };
+    Ok(Response::new(
+        LibraryOut::Export(reply),
+        vec!["hall library export --out <file>".to_string()],
+    ))
 }

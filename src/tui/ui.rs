@@ -384,6 +384,7 @@ fn inbox_pane(f: &mut Frame, area: Rect, app: &App) {
             let (label, c) = match e.kind.as_str() {
                 "ready" => ("ready?", BRASS),
                 "session_waiting" => ("session", INFO),
+                "learnings" => ("learnings", INFO),
                 "daemon_stopped" => ("daemon", STOP),
                 k => (k, STOP),
             };

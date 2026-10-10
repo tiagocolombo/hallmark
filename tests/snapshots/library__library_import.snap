@@ -1,0 +1,30 @@
+---
+source: tests/library.rs
+expression: "scrub(&env, &r.json)"
+---
+{
+  "action": "import",
+  "imported": [
+    "L-0001",
+    "L-0003",
+    "L-0004",
+    "L-0005"
+  ],
+  "next": [
+    "git rm -r -q .hallmark/knowledge && git commit -m \"Move the Library out of the repo\"",
+    "hall library review",
+    "hall library search \"<words>\""
+  ],
+  "skipped": [
+    {
+      "id": "L-0002",
+      "path": ".hallmark/knowledge/L-0002-backoff-jitter-lives-in-the-queue.md",
+      "reason": "already in the Library"
+    },
+    {
+      "path": ".hallmark/knowledge/notes.md",
+      "reason": "not a learning: no frontmatter (the file must start with ---)"
+    }
+  ],
+  "source": "main:.hallmark/knowledge"
+}
