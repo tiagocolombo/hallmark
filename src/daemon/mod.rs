@@ -1,7 +1,7 @@
 //! `hall daemon` (ADR 0014, ADR 0017): one process for every registered
-//! repository. Each pass runs the workers in `worker::ORDER` for each repo;
-//! each repository has its own schedule and thread (see `run`), and one
-//! repo's workers run one after another.
+//! repository. The loop schedules every repo, worker and slot on its own
+//! (ADR 0026), up to the repo's `[parallel]` counts; `pass` runs the workers
+//! in `worker::ORDER` one after another for `hall daemon run --once`.
 
 pub mod pause;
 pub mod run;
@@ -275,10 +275,12 @@ pub(crate) fn one_slot(
             None => "paused".into(),
         });
     } else {
+        // Keyed by repo, worker and slot, so concurrent jobs don't clobber
+        // each other.
         let key = if slot > 1 {
-            format!("{} #{slot}", t.name)
+            format!("{} {name} #{slot}", t.name)
         } else {
-            t.name.clone()
+            format!("{} {name}", t.name)
         };
         if let Ok(mut m) = current.lock() {
             m.insert(key.clone(), name.to_string());

@@ -291,6 +291,12 @@ stuck_after = "30m"
 lenses      = "all"
 rules       = ["CLAUDE.md", "AGENTS.md"]
 
+[parallel]                     # how many of each run at once, per repo
+checks = 2
+review = 4
+fix    = 4
+ship   = 2
+
 [capture]
 mode = "gate"   # gate: edits need an item · ask: Claude asks you · off
 

@@ -41,6 +41,14 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
     };
     let events = repo.hall.read_item(item.id)?;
     let (req, review_base) = request(repo, item, &events, &sha)?;
+    // The review checkout goes away on every exit, verdict or not.
+    struct Cleanup<'a>(&'a crate::repo::Repo, crate::item::ItemId);
+    impl Drop for Cleanup<'_> {
+        fn drop(&mut self) {
+            super::remove_review_checkout(self.0, self.1);
+        }
+    }
+    let _cleanup = Cleanup(repo, item.id);
     match runner::run_metered(repo, ctx.runner, Some(item.id), &req)? {
         Metered::Blocked(stop) => Ok(stop.progress()),
         Metered::Failed {
@@ -96,8 +104,6 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
                 reviewer,
                 Some(review_base),
             )?;
-            // The next round, if any, checks out afresh.
-            super::remove_review_checkout(repo, item.id);
             Ok(Progress::worked(format!(
                 "{} review round {}: {}{} ({} findings, {} blocker, {} major open)",
                 item.id,

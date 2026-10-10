@@ -1,7 +1,7 @@
 # 0026. Every phase runs in parallel, with configurable slots
 
 Status: Accepted, 2026-10-10. Supersedes "one ticket at a time per repo" in
-ADR 0014 and 0018.
+ADR 0014 and 0018, and "one repo's workers run in order" in ADR 0017.
 
 ## Context
 

@@ -1,7 +1,7 @@
 //! The Assay Office (ADR 0015, ADR 0018): runs the gates at the frozen
 //! commit in the assayer's own worktree, then the principal engineer's
-//! review. One ticket at a time per repository; each tick moves one item
-//! one step.
+//! review. Up to `[parallel] checks` and `review` tickets at once per
+//! repository (ADR 0026); each tick moves one item one step.
 //!
 //! - **Checks** (`checks`): the configured gates, in order, at the frozen
 //!   commit. Red checks go to the fixer and never reach a model.
@@ -33,7 +33,7 @@ pub use verdict::{Recorded, record_verdict};
 /// The lease role.
 pub const ROLE: &str = "assayer";
 
-/// Takes one ticket (one at a time per repo) and moves it one step:
+/// Takes one ticket (within the phase's `[parallel]` limit) and moves it one step:
 /// checks, or review. The lease is released when the step ends.
 pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
     let repo = ctx.repo;
@@ -41,7 +41,11 @@ pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
         return Ok(Progress::Idle);
     };
     let out = match item.state {
-        State::Checks => checks::run(ctx, &item),
+        State::Checks => match checks::run(ctx, &item) {
+            // Every check slot is taken: wait for one, that is not an error.
+            Err(e) if e.code == ErrorCode::Claimed => Ok(Progress::Idle),
+            r => r,
+        },
         State::Review => review::run(ctx, &item),
         _ => Ok(Progress::Idle),
     };
