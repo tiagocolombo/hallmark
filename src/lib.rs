@@ -7,6 +7,7 @@
 
 pub mod assayer;
 pub mod budget;
+pub mod ci;
 pub mod cli;
 pub mod commands;
 pub mod config;

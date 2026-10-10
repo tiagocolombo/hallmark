@@ -13,7 +13,7 @@ fn a_daemon_pass_with_nothing_to_do_is_idle() {
     let r = env.hall_fake(&env.repo, &script, &["daemon", "run", "--once"]);
     assert_eq!(r.code, 0, "{}", r.stdout);
     let steps = r.json["steps"].as_array().unwrap();
-    assert_eq!(steps.len(), 7);
+    assert_eq!(steps.len(), hallmark::worker::ORDER.len());
     assert!(
         steps.iter().all(|s| s["progress"] == "idle"),
         "{}",

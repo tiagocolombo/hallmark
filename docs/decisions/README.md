@@ -30,3 +30,4 @@ a decision, add a new record that supersedes the old one. Don't edit the old one
 | [0022](0022-the-terminal-app-is-a-reader.md) | The terminal app is a reader | Accepted |
 | [0023](0023-packaging-and-releases.md) | Packaging and releases | Accepted |
 | [0024](0024-parallel-parts-and-follow-ups.md) | Parallel parts: the Front Desk splits, the session orchestrates, the parent is reviewed once | Accepted |
+| [0025](0025-watch-ci-after-shipping.md) | Watch CI after shipping; follow-ups carry it and stack on open PRs | Accepted |

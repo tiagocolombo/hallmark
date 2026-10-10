@@ -228,6 +228,19 @@ pub struct Item {
     /// Open findings by severity.
     #[serde(default)]
     pub findings: crate::findings::Counts,
+    /// The shipped PR's CI, once it finished.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ci: Option<Ci>,
+}
+
+/// How the shipped PR's CI ended.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Ci {
+    pub passed: bool,
+    /// The failing checks' names.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub failing: Vec<String>,
+    pub t: DateTime<Utc>,
 }
 
 /// Why the loop stopped working on an item.

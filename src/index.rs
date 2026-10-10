@@ -482,6 +482,34 @@ impl Index {
                 since: parse_time(&t),
             });
         }
+        // A shipped PR whose CI failed, until a follow-up item takes it on.
+        let all = self.items(true)?;
+        for item in &all {
+            let (Some(ci), Some(url)) = (&item.ci, &item.pr_url) else {
+                continue;
+            };
+            let followed = all
+                .iter()
+                .any(|f| f.follow_up.as_deref() == Some(url.as_str()) && f.state != State::Dropped);
+            if ci.passed || followed {
+                continue;
+            }
+            out.push(InboxEntry {
+                kind: "ci_failed".into(),
+                item: Some(item.id),
+                qid: None,
+                text: format!(
+                    "{}: CI failed on {url}: {}",
+                    item.title,
+                    ci.failing.join(", ")
+                ),
+                options: vec![],
+                default: None,
+                session: None,
+                since: ci.t,
+                answer_with: vec![format!("hall new --follow-up {url}")],
+            });
+        }
         let now = Utc::now();
         if let Some(st) = crate::daemon::state::load()
             && let Some(since) = st.stopped_unexpectedly(now)

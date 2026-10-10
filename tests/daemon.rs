@@ -79,11 +79,16 @@ fn run_once_covers_every_registered_repo() {
     let r = env.hall_fake(&env.root, &script, &["daemon", "run", "--once"]);
     assert_eq!(r.code, 0, "{}", r.stdout);
     let steps = r.json["steps"].as_array().unwrap();
-    assert_eq!(steps.len(), 14, "{}", r.stdout);
+    assert_eq!(
+        steps.len(),
+        2 * hallmark::worker::ORDER.len(),
+        "{}",
+        r.stdout
+    );
     for name in ["app", "api"] {
         assert_eq!(
             steps.iter().filter(|s| s["repo"] == name).count(),
-            7,
+            hallmark::worker::ORDER.len(),
             "{name}"
         );
     }
@@ -228,7 +233,7 @@ fn a_pause_skips_the_model_workers_until_it_ends() {
     let r = env.hall_fake(&env.repo, &script, &["daemon", "run", "--once"]);
     assert_eq!(r.code, 0, "{}", r.stdout);
     let steps = r.json["steps"].as_array().unwrap();
-    assert_eq!(steps.len(), 7);
+    assert_eq!(steps.len(), hallmark::worker::ORDER.len());
     for s in steps {
         let model =
             ["resume", "assayer", "fixer", "librarian"].contains(&s["worker"].as_str().unwrap());

@@ -107,6 +107,7 @@ mod tests {
             events: 2,
             parent: None,
             follow_up: None,
+            ci: None,
             hold: None,
             stuck_since: None,
             reviewed_sha: None,
