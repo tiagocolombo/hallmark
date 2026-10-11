@@ -106,7 +106,10 @@ pub struct TopItem {
     pub title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state: Option<String>,
-    /// At or over `per_item`.
+    /// Tokens `hall retry` granted this item on top of `per_item`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub granted: Option<u64>,
+    /// At or over `per_item` plus anything granted.
     pub over_cap: bool,
 }
 
@@ -202,11 +205,21 @@ impl Render for BudgetOut {
                 c.limit.as_deref().unwrap_or("not capped")
             ));
             for t in &self.top_items {
-                let note = match c.cap() {
+                let granted = t.granted.unwrap_or(0);
+                let mut note = match c.cap() {
                     Some(_) if t.over_cap => "over item cap".to_string(),
+                    // A grant raises a token cap only.
+                    Some(budget::Cap::Tokens(l)) => pct_bar(
+                        budget::Cap::Tokens(l.saturating_add(granted))
+                            .fraction(&spent_of(&t.spend))
+                            * 100.0,
+                    ),
                     Some(cap) => pct_bar(cap.fraction(&spent_of(&t.spend)) * 100.0),
                     None => String::new(),
                 };
+                if granted > 0 {
+                    note.push_str(&format!(" (+{} granted)", fmt_tokens(granted)));
+                }
                 s.push_str(&format!(
                     "  {} {:>8}  ${:<7.2} {:12} {note}\n",
                     t.spend.item,
@@ -336,7 +349,9 @@ pub fn budget(cwd: &Path, a: BudgetArgs) -> Result<Response> {
         .map(|spend| {
             let it = items.iter().find(|i| i.id == spend.item);
             TopItem {
-                over_cap: per_item.is_some_and(|c| c.reached(&spent_of(&spend))),
+                granted: Some(budget::item_granted(&ix, spend.item)).filter(|g| *g > 0),
+                over_cap: budget::item_allowance(&ix, b, spend.item)
+                    .is_some_and(|c| c.reached(&spent_of(&spend))),
                 title: it.map(|i| i.title.clone()),
                 state: it.map(|i| match &i.hold {
                     Some(h) => format!("held ({})", h.kind.as_str()),
