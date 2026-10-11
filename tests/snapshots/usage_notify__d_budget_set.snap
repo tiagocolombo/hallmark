@@ -18,28 +18,32 @@ expression: v
       "limit_tokens": 2000000,
       "reached": false,
       "room": "assay",
-      "used": 1200000
+      "used": 1200000,
+      "used_usd": 1.25
     },
     {
       "key": "budget.fix.daily",
       "level": "room",
       "reached": false,
       "room": "repair",
-      "used": 300000
+      "used": 300000,
+      "used_usd": 1.25
     },
     {
       "key": "budget.intake.daily",
       "level": "room",
       "reached": false,
       "room": "front",
-      "used": 0
+      "used": 0,
+      "used_usd": 0.0
     },
     {
       "key": "budget.librarian.daily",
       "level": "room",
       "reached": false,
       "room": "library",
-      "used": 0
+      "used": 0,
+      "used_usd": 0.0
     },
     {
       "key": "budget.daily",
@@ -47,7 +51,8 @@ expression: v
       "limit": "4M",
       "limit_tokens": 4000000,
       "reached": false,
-      "used": 1500000
+      "used": 1500000,
+      "used_usd": 2.5
     }
   ],
   "day": "[day]",

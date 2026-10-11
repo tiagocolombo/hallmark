@@ -193,7 +193,8 @@ fn budget_levels_through_run_metered() {
         cwd: wt.clone(),
         ..Default::default()
     };
-    // No caps: the run happens and its usage (6152 tokens) is recorded.
+    // No caps: the run happens and its usage is recorded: 6,152 tokens,
+    // 5,187 weighted by price (cache reads at a tenth, writes at 1.25).
     assert!(matches!(
         run_metered(&repo, &runner, Some(item), &req).unwrap(),
         Metered::Done(_)
@@ -231,7 +232,7 @@ fn budget_levels_through_run_metered() {
     }
 
     // The daily total pauses the daemon until tomorrow.
-    repo.config.budget.daily = Some("6k".into());
+    repo.config.budget.daily = Some("5k".into());
     match run_metered(&repo, &runner, None, &req).unwrap() {
         Metered::Blocked(stop) => {
             assert_eq!(stop.level, Level::Daily);

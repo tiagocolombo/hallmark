@@ -14,7 +14,7 @@ use crate::runner::Runner;
 pub struct WorkerCtx<'a> {
     pub repo: &'a Repo,
     pub runner: &'a dyn Runner,
-    /// The lease holder name: `daemon:<pid>`.
+    /// The lease holder name: `daemon:<pid>:<worker>.<slot>`, one per slot.
     pub holder: String,
 }
 

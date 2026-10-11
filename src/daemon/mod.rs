@@ -1,7 +1,7 @@
 //! `hall daemon` (ADR 0014, ADR 0017): one process for every registered
-//! repository. Each pass runs the workers in `worker::ORDER` for each repo;
-//! each repository has its own schedule and thread (see `run`), and one
-//! repo's workers run one after another.
+//! repository. The loop schedules every repo, worker and slot on its own
+//! (ADR 0026), up to the repo's `[parallel]` counts; `pass` runs the workers
+//! in `worker::ORDER` one after another for `hall daemon run --once`.
 
 pub mod pause;
 pub mod run;
@@ -103,6 +103,11 @@ pub fn pass(
         }
     }
     Ok(steps)
+}
+
+/// The workers, by name, in order (for the scheduler).
+pub fn worker_order() -> impl Iterator<Item = (&'static str, crate::worker::Tick)> {
+    ORDER.iter().copied()
 }
 
 /// One line for a step that did something (worked, paused, failed).
@@ -224,6 +229,88 @@ pub fn pass_all(
             })
             .collect()
     })
+}
+
+/// One worker's tick in one slot of one repo: what the daemon's scheduler
+/// runs (ADR 0026). Each slot has its own lease holder, so two slots never
+/// take the same item.
+pub(crate) fn one_slot(
+    t: &Target,
+    worker: &str,
+    slot: u32,
+    paused: Option<&Pause>,
+    current: &Mutex<BTreeMap<String, String>>,
+) -> Outcome {
+    let repo = match targets::open(t) {
+        Ok(r) => r,
+        Err(skip) => {
+            return Outcome {
+                target: t.clone(),
+                hall: None,
+                steps: vec![],
+                skip: Some(skip),
+            };
+        }
+    };
+    let Some((name, tick)) = ORDER.iter().find(|(n, _)| *n == worker) else {
+        return Outcome {
+            target: t.clone(),
+            hall: Some(repo.hall.clone()),
+            steps: vec![],
+            skip: None,
+        };
+    };
+    let mut step = Step {
+        repo: repo.name.clone(),
+        worker: name.to_string(),
+        progress: Progress::Idle,
+        error: None,
+        skipped: None,
+    };
+    if let Some(p) = paused
+        && pause::is_model_worker(name)
+    {
+        step.skipped = Some(match p.until {
+            Some(u) => format!("paused until {}", u.format("%Y-%m-%d %H:%M UTC")),
+            None => "paused".into(),
+        });
+    } else {
+        // Keyed by repo, worker and slot, so concurrent jobs don't clobber
+        // each other.
+        let key = if slot > 1 {
+            format!("{} {name} #{slot}", t.name)
+        } else {
+            format!("{} {name}", t.name)
+        };
+        if let Ok(mut m) = current.lock() {
+            m.insert(key.clone(), name.to_string());
+        }
+        let runner = crate::runner::from_env();
+        let ctx = WorkerCtx {
+            repo: &repo,
+            runner: runner.as_ref(),
+            holder: format!("daemon:{}:{name}.{slot}", std::process::id()),
+        };
+        match tick(&ctx) {
+            Ok(p) => step.progress = p,
+            Err(e) => {
+                repo.hall.live(&format!("{name} error: {e}"));
+                step.error = Some(e.to_string());
+            }
+        }
+        if let Progress::Worked { what } = &step.progress {
+            repo.hall.live(&format!("{name}: {what}"));
+        }
+        if let Ok(mut m) = current.lock() {
+            m.remove(&key);
+        }
+    }
+    Outcome {
+        target: t.clone(),
+        hall: Some(repo.hall.clone()),
+        steps: vec![step],
+        skip: None,
+    }
 }
 
 /// One pass over one target; what each repo's own schedule runs.
