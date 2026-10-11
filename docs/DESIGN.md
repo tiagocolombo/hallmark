@@ -71,7 +71,7 @@ The docs and the terminal app describe Hallmark as a building.
 | Assay Office | The test bench (checks) and the principal engineer (review) | Checks, Review |
 | Repair Shop | The fixer | Fixing |
 | Stamping Room | The hallmark is struck | Hallmarked |
-| Dispatch Dock | Rebases onto the latest base; the ship command opens the PR; `update` updates an adopted or reopened one | Closed |
+| Dispatch Dock | Rebases onto the latest base; the ship command opens the PR; `update` updates an adopted or reopened one. If that PR already merged with the hallmarked work in it, the item closes with nothing pushed | Closed |
 | Delivery Office | Watches each shipped PR until it merges; a headless dev run rebases conflicting ones and addresses new review comments (ADR 0030) | Closed, Development (rebasing, addressing comments) |
 
 A **watchman** patrols the corridor. It flags any item with no new event for

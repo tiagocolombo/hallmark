@@ -140,6 +140,11 @@ fn ship(repo: &Repo, item: &Item, ctx_holder: &str) -> Result<Progress> {
         && !state.is_empty()
         && state != "OPEN"
     {
+        // Merged with this very work in it (someone merged the update by
+        // hand): it is delivered, and nothing is left for you.
+        if state == "MERGED" && in_base(&wt, &base, &head) {
+            return merged_already(repo, item, &head, url);
+        }
         return held(
             repo,
             id,
@@ -474,6 +479,57 @@ fn back(repo: &Repo, id: ItemId, bodies: Vec<Body>) -> Result<()> {
         ))
     })?;
     Ok(())
+}
+
+/// `head`'s work is already in the latest `base`: merging it would change
+/// nothing (`git merge-tree`), however the PR was merged (merge, squash or
+/// rebase).
+fn in_base(wt: &std::path::Path, base: &str, head: &str) -> bool {
+    let Some(target) = crate::delivery::base_ref(wt, base) else {
+        return false;
+    };
+    let Ok(tree) = git::run(
+        wt,
+        &[
+            "rev-parse",
+            "--verify",
+            &format!("{}^{{tree}}", target.git_ref),
+        ],
+    ) else {
+        return false;
+    };
+    git::run(wt, &["merge-tree", "--write-tree", &target.git_ref, head])
+        .is_ok_and(|out| out.lines().next().map(str::trim) == Some(tree.trim()))
+}
+
+/// The hallmarked update reached the base through its merged PR: record it
+/// as shipped (the item closes), with nothing pushed.
+fn merged_already(repo: &Repo, item: &Item, head: &str, url: &str) -> Result<Progress> {
+    let id = item.id;
+    let (_, shipped) = repo.hall.transact(id, |it, _| {
+        if it.state != State::Hallmarked {
+            return Ok((vec![], false));
+        }
+        Ok((
+            vec![Event::new(
+                ACTOR,
+                Some(id),
+                Body::Shipped {
+                    sha: head.to_string(),
+                    pr_url: None,
+                },
+            )],
+            true,
+        ))
+    })?;
+    repo.hall.unqueue(id)?;
+    if !shipped {
+        return Ok(Progress::Idle);
+    }
+    let _ = record::write_export(repo, id, None);
+    let what = format!("{id} closed: {url} merged with its hallmarked work already in it");
+    repo.hall.live(&what);
+    Ok(Progress::worked(what))
 }
 
 fn held(repo: &Repo, id: ItemId, reason: String) -> Result<Progress> {
