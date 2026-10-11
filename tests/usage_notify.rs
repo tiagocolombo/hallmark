@@ -247,6 +247,129 @@ fn budget_levels_through_run_metered() {
 }
 
 #[test]
+fn retry_grants_a_budget_hold_more_tokens() {
+    let env = Env::initialized();
+    let cfg = env.repo.join(".hallmark.toml");
+    let text = std::fs::read_to_string(&cfg)
+        .unwrap()
+        .replace("# per_item = \"800k\"", "per_item = \"5k\"");
+    std::fs::write(&cfg, &text).unwrap();
+    let (id, wt) = env.new_item("Usage page");
+    let script = env.script(json!([{"role": "reviewer"}, {"role": "reviewer"}]));
+    let repo = Repo::discover(&env.repo).unwrap();
+    let runner = FakeRunner::new(script);
+    let item: ItemId = id.parse().unwrap();
+    let req = RunRequest {
+        role: "reviewer".into(),
+        room: "assay".into(),
+        prompt: "Review".into(),
+        cwd: wt.clone(),
+        ..Default::default()
+    };
+    // The first run (5187 weighted tokens) crosses the 5k cap; the next one holds.
+    assert!(matches!(
+        run_metered(&repo, &runner, Some(item), &req).unwrap(),
+        Metered::Done(_)
+    ));
+    match run_metered(&repo, &runner, Some(item), &req).unwrap() {
+        Metered::Blocked(stop) => {
+            assert_eq!(stop.level, Level::Item);
+            assert!(
+                stop.reason.contains("`hall retry` grants it 5k more"),
+                "{}",
+                stop.reason
+            );
+        }
+        other => panic!("{other:?}"),
+    }
+
+    let bad = env.hall(
+        &env.repo,
+        &["retry", &id, "--reason", "x", "--tokens", "lots"],
+    );
+    assert_eq!(bad.code, 2, "{}", bad.stdout);
+    assert_eq!(bad.json["error"]["code"], "USAGE");
+    for v in ["inf", "1e19"] {
+        let r = env.hall(&env.repo, &["retry", &id, "--reason", "x", "--tokens", v]);
+        assert_eq!(r.json["error"]["code"], "USAGE", "{v}: {}", r.stdout);
+    }
+
+    // Retrying grants another per_item to this item; the config is untouched.
+    let r = env.hall(&env.repo, &["retry", &id, "--reason", "worth finishing"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let note = r.json["note"].as_str().unwrap();
+    assert!(note.contains("5k more tokens"), "{note}");
+    assert!(note.contains("budget is unchanged"), "{note}");
+    let journal = env.journal(&id);
+    let released = events(&journal, "released");
+    // 5k more from now: the 187 the first run overshot the cap by comes first.
+    assert_eq!(released[0]["granted_tokens"], 5187);
+    assert_eq!(std::fs::read_to_string(&cfg).unwrap(), text);
+    assert!(matches!(
+        run_metered(&repo, &runner, Some(item), &req).unwrap(),
+        Metered::Done(_)
+    ));
+    // 10374 spent of 10187 allowed: held again.
+    match run_metered(&repo, &runner, Some(item), &req).unwrap() {
+        Metered::Blocked(stop) => {
+            assert!(
+                stop.reason.contains("of 5k + 5k granted"),
+                "{}",
+                stop.reason
+            );
+        }
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(events(&env.journal(&id), "held").len(), 2);
+
+    // --tokens grants a chosen amount.
+    let r = env.hall(
+        &env.repo,
+        &["retry", &id, "--reason", "big one", "--tokens", "1M"],
+    );
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(
+        env.journal(&id).last().unwrap()["granted_tokens"],
+        1_000_187
+    );
+    assert_eq!(
+        hallmark::budget::check(&repo, Some(item), "reviewer"),
+        Ok(())
+    );
+    let b = env.hall(&env.repo, &["budget"]);
+    assert_eq!(b.json["top_items"][0]["granted"], 1_005_374, "{}", b.stdout);
+    assert_eq!(b.json["top_items"][0]["over_cap"], false);
+
+    // Other holds are released without a grant, and refuse --tokens.
+    let path = env
+        .repo
+        .join(".git/hallmark/items")
+        .join(&id)
+        .join("events.jsonl");
+    let held = json!({"v": 1, "t": "2026-10-09T12:00:00Z", "actor": "assayer",
+                      "item": id, "event": "held", "kind": "run_failed", "reason": "stopped"});
+    let mut f = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .unwrap();
+    writeln!(f, "{held}").unwrap();
+    let r = env.hall(
+        &env.repo,
+        &["retry", &id, "--reason", "x", "--tokens", "1M"],
+    );
+    assert_eq!(r.json["error"]["code"], "USAGE", "{}", r.stdout);
+    let r = env.hall(&env.repo, &["retry", &id, "--reason", "flaky"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert!(
+        env.journal(&id)
+            .last()
+            .unwrap()
+            .get("granted_tokens")
+            .is_none()
+    );
+}
+
+#[test]
 fn budget_shows_caps_and_today() {
     let env = Env::initialized();
     let (id, _) = env.new_item("Retry webhooks");

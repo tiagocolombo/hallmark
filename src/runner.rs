@@ -1002,7 +1002,10 @@ mod tests {
         assert_eq!(failures_in_a_row(&events, "fixer"), 0);
         events.push(fail());
         assert_eq!(failures_in_a_row(&events, "reviewer"), 2);
-        events.push(ev(Body::Released { reason: None }));
+        events.push(ev(Body::Released {
+            reason: None,
+            granted_tokens: None,
+        }));
         assert_eq!(failures_in_a_row(&events, "reviewer"), 0);
         events.push(fail());
         events.push(ev(Body::PulledBack { reason: None }));

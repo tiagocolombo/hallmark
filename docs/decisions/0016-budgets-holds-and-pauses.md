@@ -21,6 +21,12 @@ limit, and each stops something different.
 - **A hold** (`held` event, `Item.hold`) stops the loop for one item
   without changing its state, so its place in the machine is kept. `hall
   retry` releases it (`released`); any state change clears it too.
+- **Going on past a budget hold** doesn't change the budget. Released
+  as-is, the item would be held again on its next run, so `hall retry`
+  on a budget hold (or `g` in the terminal app) records
+  `granted_tokens` on the `released` event: another `per_item` by
+  default, or `--tokens <n>`. The item's cap is `per_item` plus its
+  grants; every other item, and the room and daily caps, are unchanged.
 - **A pause** (`paused`/`unpaused`, repo journal; daemon state file) stops
   the daemon, not your sessions.
 - `budget::check(repo, item, role)` is the single gate; `run_metered`
@@ -30,4 +36,6 @@ limit, and each stops something different.
 
 - Only the item that is over budget waits; the rest of the building
   carries on.
+- Letting one item finish never means raising `per_item` for all of
+  them, and each grant is in that item's journal.
 - Every stop is in the journal, so `hall log` explains why nothing moved.

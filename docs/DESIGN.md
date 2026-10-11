@@ -290,7 +290,7 @@ $ echo $?
 | `hall ready [<id>] [--note]` | Freezes HEAD and queues the item. A dirty worktree is refused. |
 | `hall pull-back [<id>] [--reason]` | Returns the item to development. |
 | `hall drop [<id>] --reason [--keep-worktree]` | Abandons the item. The branch and journal stay. |
-| `hall retry [<id>] --reason` | Allows an escalated item one more round, or releases a held item. |
+| `hall retry [<id>] --reason [--tokens <n>]` | Allows an escalated item one more round, or releases a held item. A budget hold also grants that item another `per_item` (or `--tokens`); the budget is unchanged. |
 | `hall propose-ready [<id>] --summary` | The agent says the work looks done. |
 | `hall ask <q> [--item] [--options] [--default] [--wait] [--session]` | Records a question. |
 | `hall answer <qid> <answer>` | Records the answer; the daemon resumes the asking session with it. |
@@ -501,7 +501,7 @@ Your Office holds the following, oldest first. It is derived from the journal.
 | escalated | the item is `escalated` | that item |
 | session waiting | a `Notification` hook, cleared by the next prompt in that session | that session |
 | ready? | the item is `awaiting_you` | nothing |
-| budget, run_failed, ship_failed | a hold: a per-item cap, two failed runs in a row, a failed ship | that item, until `hall retry` |
+| budget, run_failed, ship_failed | a hold: a per-item cap, two failed runs in a row, a failed ship | that item, until `hall retry` (which, for a budget hold, grants the item more tokens) |
 | stuck | the watchman | whatever was running |
 | daemon stopped | a daemon that should run has no heartbeat | the loop |
 | learnings | proposed learnings, sent as a digest | nothing |
