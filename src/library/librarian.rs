@@ -39,6 +39,11 @@ pub const ACTOR: &str = "librarian";
 /// `Library: …`. Any left over are not distilled.
 pub const KNOWLEDGE_PREFIX: &str = "Library:";
 
+/// Whether `item` is a knowledge item left by ADR 0021 (by its title).
+pub fn is_knowledge(item: &crate::item::Item) -> bool {
+    item.title.starts_with(KNOWLEDGE_PREFIX)
+}
+
 /// What the model returns (`plugin/schemas/learnings.json`), read leniently.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct Proposals {

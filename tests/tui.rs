@@ -829,3 +829,161 @@ fn reload_picks_up_new_events() {
     assert_eq!(app.selection.as_ref().unwrap().events.len(), before + 1);
     assert_eq!(app.item().unwrap().state, State::Hallmarked);
 }
+
+#[test]
+fn your_office_explains_each_entry_and_runs_its_actions() {
+    let env = building();
+    let hall = hall_of(&env);
+    let mut app = load(&env, &env.repo);
+
+    key(&mut app, KeyCode::Char('i'));
+    assert_eq!(app.view, View::Inbox);
+    assert_eq!(app.inbox().len(), 3);
+    assert_eq!(app.selected, Some(ItemId(2)), "follows the entry's item");
+    assert_snapshot!("inbox_ready", screen(&env, &app, W, H));
+
+    // The question: each option is an action.
+    key(&mut app, KeyCode::Down);
+    assert_eq!(app.inbox_entry().unwrap().kind, "question");
+    let actions = app.inbox_actions();
+    assert_eq!(actions[0].0, "hall answer Q-1 a");
+    assert_eq!(actions[1].0, "hall answer Q-1 b");
+    assert_snapshot!("inbox_question", screen(&env, &app, W, H));
+    assert_eq!(key(&mut app, KeyCode::Char('2')), Effect::None);
+    let st = app.status.clone().unwrap();
+    assert!(!st.error, "{}", st.text);
+    assert!(st.text.starts_with("hall answer Q-1 b"), "{}", st.text);
+    assert_eq!(app.inbox().len(), 2, "answered");
+    assert!(app.inbox().iter().all(|e| e.kind != "question"));
+
+    // No such action.
+    key(&mut app, KeyCode::Char('9'));
+    assert!(app.status.as_ref().unwrap().error);
+
+    // The escalation: a reader opens its reply in full…
+    key(&mut app, KeyCode::Down);
+    let e = app.inbox_entry().unwrap();
+    assert_eq!(e.kind, "escalated");
+    assert_eq!(app.selected, Some(ItemId(7)));
+    let actions = app.inbox_actions();
+    assert_eq!(actions[0].0, "hall findings H-0007");
+    key(&mut app, KeyCode::Char('1'));
+    assert_eq!(app.view, View::Output);
+    let d = app.diff.as_ref().unwrap();
+    assert_eq!(d.title, "hall findings H-0007");
+    assert!(
+        d.lines
+            .iter()
+            .any(|l| l.contains("Migration isn't reversible")),
+        "{:?}",
+        d.lines
+    );
+    key(&mut app, KeyCode::Esc);
+    assert_eq!(app.view, View::Inbox, "esc goes back to your office");
+
+    // …and an action with a placeholder asks for it first.
+    let at = actions
+        .iter()
+        .position(|(c, _)| c.starts_with("hall retry"))
+        .unwrap();
+    key(&mut app, KeyCode::Char((b'1' + at as u8) as char));
+    assert!(
+        matches!(app.input, Some(Input::Fill { .. })),
+        "{:?}",
+        app.input
+    );
+    chars(&mut app, "the reviewer misread the migration");
+    assert_snapshot!("inbox_fill", screen(&env, &app, W, H));
+    key(&mut app, KeyCode::Enter);
+    let st = app.status.clone().unwrap();
+    assert!(!st.error, "{}", st.text);
+    let item = hall.load_item(ItemId(7)).unwrap();
+    assert_ne!(item.state, State::Escalated);
+    assert_eq!(app.inbox().len(), 1, "only the ready? entry is left");
+
+    // Esc on the placeholder runs nothing.
+    key(&mut app, KeyCode::Up);
+    let at = app
+        .inbox_actions()
+        .iter()
+        .position(|(c, _)| c.contains("<why>"))
+        .unwrap();
+    key(&mut app, KeyCode::Char((b'1' + at as u8) as char));
+    key(&mut app, KeyCode::Esc);
+    assert_eq!(app.input, None);
+    assert_eq!(hall.load_item(ItemId(2)).unwrap().state, State::AwaitingYou);
+
+    // Enter opens the entry's item; esc returns to the board.
+    key(&mut app, KeyCode::Enter);
+    assert_eq!(app.view, View::Journal);
+    assert_eq!(app.selected, Some(ItemId(2)));
+    key(&mut app, KeyCode::Esc);
+    assert_eq!(app.view, View::Board);
+}
+
+#[test]
+fn whats_waiting_reads_in_full() {
+    let env = building();
+    let summary = "CSV and JSON export of tenant usage, billed by the hour, with 14 tests; \
+                   the endpoint streams rows so large tenants don't time out, and the docs \
+                   page lists every column with its unit";
+    let (_, wt) = env.new_item("Long summary");
+    let r = env.hall(&wt, &["propose-ready", "--summary", summary]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let mut app = load(&env, &env.repo);
+    select(&mut app, 8);
+    // On the board, the item shows what waits for you, wrapped, not cut.
+    let s = screen(&env, &app, 80, H);
+    let flat = s
+        .lines()
+        .map(|l| l.trim_matches(|c| c == '│' || c == ' '))
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(flat.contains("its unit"), "{s}");
+    assert!(!flat.contains("its unit…"), "{s}");
+    // So does your office.
+    key(&mut app, KeyCode::Char('i'));
+    while app.inbox_entry().unwrap().item != Some(ItemId(8)) {
+        key(&mut app, KeyCode::Down);
+    }
+    assert_snapshot!("inbox_long", screen(&env, &app, 80, H));
+}
+
+#[test]
+fn actions_that_need_the_terminal_hand_it_over() {
+    let env = building();
+    let mut app = load(&env, &env.repo);
+    select(&mut app, 2);
+    match app.run_command("claude --resume 8dc2096f") {
+        Effect::Run { program, args, cwd } => {
+            assert_eq!(program, "claude");
+            assert_eq!(args, ["--resume", "8dc2096f"]);
+            assert!(cwd.ends_with("app-H-0002"), "{}", cwd.display());
+        }
+        e => panic!("{e:?}"),
+    }
+    // Following live and doing it by hand are shown, not run.
+    assert_eq!(app.run_command("hall watch H-0002"), Effect::None);
+    assert!(
+        app.status
+            .as_ref()
+            .unwrap()
+            .text
+            .contains("run it in a terminal")
+    );
+    assert_eq!(
+        app.run_command("open the waiting Claude Code session"),
+        Effect::None
+    );
+    assert!(
+        app.status
+            .as_ref()
+            .unwrap()
+            .text
+            .starts_with("Do this yourself")
+    );
+    // Commands that don't belong in the app are refused.
+    assert_eq!(app.run_command("hall daemon run --once"), Effect::None);
+    let st = app.status.clone().unwrap();
+    assert!(st.error && st.text.contains("USAGE"), "{}", st.text);
+}

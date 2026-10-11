@@ -630,6 +630,51 @@ pub fn run() -> i32 {
     }
 }
 
+/// Runs `hall <args>` in this process for the terminal app, which shows the
+/// reply. Only commands that return at once and never take the terminal
+/// are allowed: the item flow, answers, the readers and the daemon's
+/// start, stop and status. Anything else is `USAGE`.
+pub fn run_in_app(args: &[String], cwd: &std::path::Path) -> Result<Response> {
+    let cli = Cli::try_parse_from(std::iter::once("hall".to_string()).chain(args.iter().cloned()))
+        .map_err(|e| {
+            let msg = e.to_string();
+            HallError::usage(
+                msg.lines()
+                    .next()
+                    .unwrap_or("bad arguments")
+                    .trim_start_matches("error: ")
+                    .to_string(),
+            )
+        })?;
+    let allowed = match &cli.cmd {
+        Some(
+            Cmd::Ready(_)
+            | Cmd::PullBack(_)
+            | Cmd::Drop(_)
+            | Cmd::Retry(_)
+            | Cmd::Answer(_)
+            | Cmd::Merge(_)
+            | Cmd::Status(_)
+            | Cmd::Log(_)
+            | Cmd::Inbox(_)
+            | Cmd::Findings(_)
+            | Cmd::History(_)
+            | Cmd::Export(_)
+            | Cmd::Usage(_),
+        ) => true,
+        Some(Cmd::New(a)) => a.follow_up.is_some() && !a.open,
+        Some(Cmd::Daemon(a)) => !matches!(a.action, DaemonAction::Run { .. }),
+        _ => false,
+    };
+    if !allowed {
+        return Err(HallError::usage(format!(
+            "`hall {}` doesn't run inside the terminal app; run it in a terminal",
+            args.join(" ")
+        )));
+    }
+    dispatch(cli.cmd, cwd, Mode::Json)
+}
+
 fn dispatch(cmd: Option<Cmd>, cwd: &std::path::Path, mode: Mode) -> Result<Response> {
     use commands::*;
     match cmd {

@@ -10,6 +10,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use super::data::{self, RepoSlot, RepoStatus};
 use crate::cli::{DropArgs, PullBackArgs, ReadyArgs, RetryArgs};
 use crate::commands::flow;
+use crate::commands::status::{InboxDetail, explain};
 use crate::daemon::state::DaemonState;
 use crate::error::Result;
 use crate::event::{self, Body, Event};
@@ -18,6 +19,7 @@ use crate::git;
 use crate::index::InboxEntry;
 use crate::item::{Item, ItemId, State};
 use crate::output::Response;
+use crate::repo::Repo;
 
 /// The board's columns, left to right, and the states each one holds.
 pub const COLUMNS: [(&str, &[State]); 4] = [
@@ -54,6 +56,11 @@ pub enum View {
     Repos,
     /// `git diff <base>...<sha>` at the selected round.
     Diff,
+    /// Your office: every inbox entry, one explained in full, with its
+    /// actions.
+    Inbox,
+    /// The reply of a command run from the app (`hall log`, …).
+    Output,
 }
 
 impl View {
@@ -67,6 +74,8 @@ impl View {
             View::Usage => "usage",
             View::Repos => "repos",
             View::Diff => "diff",
+            View::Inbox => "your office",
+            View::Output => "output",
         }
     }
 }
@@ -97,6 +106,10 @@ pub enum Input {
     Filter,
     /// `x`: the reason an item is dropped.
     DropReason(ItemId),
+    /// An action with a placeholder (`"<why>"`, `"<answer>"`): the text
+    /// that replaces `args[at]` before `args` runs.
+    Fill { args: Vec<String>, at: usize },
+    /// `g`: the reason a held or escalated item goes on.
     RetryReason(ItemId),
 }
 
@@ -117,6 +130,13 @@ pub enum Effect {
         target: String,
         fallback: String,
     },
+    /// Hand the terminal to a program until it exits (`claude --resume`),
+    /// then come back.
+    Run {
+        program: String,
+        args: Vec<String>,
+        cwd: PathBuf,
+    },
 }
 
 /// The selected item's journal, folded now and at the replay cursor.
@@ -129,6 +149,7 @@ pub struct Selection {
     pub at: Option<(Item, Ledger)>,
 }
 
+/// A scrollable page of text: a diff, or a command's reply.
 #[derive(Debug, Clone)]
 pub struct Diff {
     pub title: String,
@@ -174,6 +195,13 @@ pub struct App {
     pub diff: Option<Diff>,
     /// Lines scrolled up from the bottom of the Live view.
     pub live_scroll: usize,
+    /// The selected inbox entry in your office.
+    pub inbox_sel: usize,
+    /// The selected entry explained (`hall inbox <n>`); `None` until it is
+    /// read, or when it can't be.
+    pub inbox_detail: Option<InboxDetail>,
+    /// Lines scrolled down in the explained entry.
+    pub inbox_scroll: usize,
     pub status: Option<Status>,
     pub daemon: Option<DaemonState>,
     pub now: DateTime<Utc>,
@@ -210,6 +238,9 @@ impl App {
             usage_by: UsageGroup::Room,
             diff: None,
             live_scroll: 0,
+            inbox_sel: 0,
+            inbox_detail: None,
+            inbox_scroll: 0,
             status: None,
             daemon: None,
             now,
@@ -397,6 +428,9 @@ impl App {
         if i == self.active {
             self.fix_selection();
             self.reload_selection();
+            if self.view == View::Inbox {
+                self.load_inbox_detail();
+            }
         }
     }
 
@@ -505,9 +539,12 @@ impl App {
 
     fn escape(&mut self) {
         match self.view {
-            View::Diff => {
+            View::Diff | View::Output => {
                 self.diff = None;
                 self.view = self.back;
+                if self.view == View::Inbox {
+                    self.load_inbox_detail();
+                }
             }
             View::Board if self.cursor.is_some() => {
                 self.cursor = None;
@@ -529,7 +566,23 @@ impl App {
             (View::Usage, KeyCode::Char('m')) => self.usage_by = UsageGroup::Model,
             (View::Usage, KeyCode::Char('d')) => self.usage_by = UsageGroup::Day,
 
-            (View::Diff, k) => self.diff_key(k),
+            (View::Diff | View::Output, k) => self.diff_key(k),
+            (View::Inbox, KeyCode::Up) => self.move_inbox(-1),
+            (View::Inbox, KeyCode::Down) => self.move_inbox(1),
+            (View::Inbox, KeyCode::PageDown) => self.inbox_scroll += 5,
+            (View::Inbox, KeyCode::PageUp) => {
+                self.inbox_scroll = self.inbox_scroll.saturating_sub(5)
+            }
+            (View::Inbox, KeyCode::Enter) => match self.inbox_entry().and_then(|e| e.item) {
+                Some(id) if self.repo().is_some_and(|r| r.data.item(id).is_some()) => {
+                    self.select(Some(id));
+                    self.view = View::Journal;
+                }
+                _ => self.err("This entry isn't about an item."),
+            },
+            (View::Inbox, KeyCode::Char(c @ '1'..='9')) => {
+                return self.run_action(c as usize - '1' as usize);
+            }
             (View::Repos, KeyCode::Up) => self.repo_sel = self.repo_sel.saturating_sub(1),
             (View::Repos, KeyCode::Down) => {
                 self.repo_sel = (self.repo_sel + 1).min(self.repos.len().saturating_sub(1))
@@ -584,6 +637,7 @@ impl App {
                 self.view = View::History;
                 self.history_sel = 0;
             }
+            (_, KeyCode::Char('i')) => self.open_inbox(),
             (_, KeyCode::Char('u')) => self.view = View::Usage,
             (_, KeyCode::Char('l')) => {
                 self.view = View::Live;
@@ -638,11 +692,14 @@ impl App {
         };
         match key.code {
             KeyCode::Esc => {
-                if input == Input::Filter {
-                    self.filter.clear();
-                    self.fix_board_selection();
-                } else {
-                    self.info("Cancelled.");
+                match input {
+                    Input::Filter => {
+                        self.filter.clear();
+                        self.fix_board_selection();
+                    }
+                    Input::DropReason(_) => self.info("Drop cancelled."),
+                    Input::RetryReason(_) => self.info("Cancelled."),
+                    Input::Fill { .. } => self.info("Not run."),
                 }
                 self.input = None;
                 self.buffer.clear();
@@ -656,6 +713,14 @@ impl App {
                         self.fix_board_selection();
                     }
                     Input::DropReason(id) => self.drop_item(id, text.trim()),
+                    Input::Fill { mut args, at } => {
+                        if text.trim().is_empty() {
+                            self.err("Not run: the text is required.");
+                        } else {
+                            args[at] = text.trim().to_string();
+                            self.exec(args);
+                        }
+                    }
                     Input::RetryReason(id) => self.retry(id, text.trim()),
                 }
             }
@@ -800,15 +865,7 @@ impl App {
 
     fn report(&mut self, id: ItemId, r: Result<Response>) {
         match r {
-            Ok(resp) => {
-                let note = resp
-                    .value
-                    .get("note")
-                    .and_then(|n| n.as_str())
-                    .map(str::to_string)
-                    .unwrap_or_else(|| resp.text.lines().next().unwrap_or("Done.").to_string());
-                self.info(&format!("{id}: {note}"));
-            }
+            Ok(resp) => self.info(&format!("{id}: {}", note(&resp))),
             Err(e) => self.err(&format!("{id}: {} ({})", e.message, e.code.as_str())),
         }
         self.reload_active();
@@ -982,6 +1039,193 @@ impl App {
         self.info(fallback);
     }
 
+    // --- your office ---------------------------------------------------------
+
+    /// `i`: your office, on the entry last selected.
+    fn open_inbox(&mut self) {
+        self.view = View::Inbox;
+        self.inbox_scroll = 0;
+        self.load_inbox_detail();
+        self.follow_entry();
+    }
+
+    fn move_inbox(&mut self, by: i32) {
+        let n = self.inbox().len();
+        if n == 0 {
+            return;
+        }
+        self.inbox_sel = if by < 0 {
+            self.inbox_sel.saturating_sub(1)
+        } else {
+            (self.inbox_sel + 1).min(n - 1)
+        };
+        self.inbox_scroll = 0;
+        self.load_inbox_detail();
+        self.follow_entry();
+    }
+
+    /// Selects the entry's item, so the item keys (`r`, `p`, `d`, …) and
+    /// `enter` act on it.
+    fn follow_entry(&mut self) {
+        if let Some(id) = self.inbox_entry().and_then(|e| e.item)
+            && self.repo().is_some_and(|r| r.data.item(id).is_some())
+        {
+            self.select(Some(id));
+        }
+    }
+
+    /// The selected inbox entry.
+    pub fn inbox_entry(&self) -> Option<InboxEntry> {
+        self.inbox().get(self.inbox_sel).cloned()
+    }
+
+    /// Explains the selected entry, as `hall inbox <n>` does.
+    pub fn load_inbox_detail(&mut self) {
+        let n = self.inbox().len();
+        self.inbox_sel = self.inbox_sel.min(n.saturating_sub(1));
+        let number = self.inbox_sel + 1;
+        self.inbox_detail = self.inbox_entry().and_then(|e| {
+            let repo = Repo::discover(&self.repo()?.path).ok()?;
+            let ix = repo.index().ok()?;
+            explain(&repo, &ix, e, number).ok()
+        });
+    }
+
+    /// The selected entry's actions: the command, and what it does.
+    pub fn inbox_actions(&self) -> Vec<(String, String)> {
+        match (&self.inbox_detail, self.inbox_entry()) {
+            (Some(d), Some(e)) if d.entry.kind == e.kind && d.entry.item == e.item => d
+                .actions
+                .iter()
+                .map(|a| (a.command.clone(), a.does.clone()))
+                .collect(),
+            (_, Some(e)) => e
+                .answer_with
+                .iter()
+                .map(|c| (c.clone(), String::new()))
+                .collect(),
+            _ => vec![],
+        }
+    }
+
+    /// `1`–`9`: runs the selected entry's action.
+    fn run_action(&mut self, n: usize) -> Effect {
+        match self.inbox_actions().get(n) {
+            Some((cmd, _)) => {
+                let cmd = cmd.clone();
+                self.run_command(&cmd)
+            }
+            None => {
+                self.err(&format!("There is no action {}.", n + 1));
+                Effect::None
+            }
+        }
+    }
+
+    /// Runs an action's command: `hall …` in-process (asking first for any
+    /// `<placeholder>`), `claude …` with the terminal handed over, and
+    /// anything else is shown for you to do.
+    pub fn run_command(&mut self, cmd: &str) -> Effect {
+        let Some(args) = shlex::split(cmd).filter(|a| !a.is_empty()) else {
+            self.err(&format!("Can't read the command: {cmd}"));
+            return Effect::None;
+        };
+        match args[0].as_str() {
+            "hall" if args.get(1).is_some_and(|a| a == "watch") => {
+                self.info(&format!(
+                    "`{cmd}` follows the item live: run it in a terminal."
+                ));
+            }
+            "hall" => match args.iter().position(|a| placeholder(a).is_some()) {
+                Some(at) => {
+                    self.input = Some(Input::Fill { args, at });
+                    self.buffer.clear();
+                }
+                None => self.exec(args),
+            },
+            "claude" => return self.hand_over(args),
+            _ => self.info(&format!("Do this yourself: {cmd}")),
+        }
+        Effect::None
+    }
+
+    /// Runs `hall <args>` in-process. Readers (`hall log`, …) open their
+    /// reply in the Output view; the rest show their note.
+    fn exec(&mut self, args: Vec<String>) {
+        let Some(repo) = self.repo() else {
+            self.err("No repository.");
+            return;
+        };
+        if repo.data.status != RepoStatus::Ready {
+            let name = repo.name.clone();
+            self.err(&format!(
+                "{name} doesn't use Hallmark yet: run `hall init` there."
+            ));
+            return;
+        }
+        let cwd = repo.path.clone();
+        let shown = shlex::try_join(args.iter().map(String::as_str)).unwrap_or(args.join(" "));
+        match crate::cli::run_in_app(&args[1..], &cwd) {
+            Ok(resp) if reads_only(&args[1..]) => {
+                let mut lines: Vec<String> = resp.text.lines().map(str::to_string).collect();
+                if lines.is_empty() {
+                    lines.push("(nothing)".into());
+                }
+                if !matches!(self.view, View::Diff | View::Output) {
+                    self.back = self.view;
+                }
+                self.diff = Some(Diff {
+                    title: shown,
+                    lines,
+                    scroll: 0,
+                });
+                self.view = View::Output;
+                self.status = None;
+            }
+            Ok(resp) => self.info(&format!("{shown}: {}", note(&resp))),
+            Err(e) => self.err(&format!("{shown}: {} ({})", e.message, e.code.as_str())),
+        }
+        self.reload_active();
+    }
+
+    /// `claude --resume <session>`: the runner hands it the terminal, in the
+    /// item's worktree (where the session started), and comes back after.
+    fn hand_over(&mut self, args: Vec<String>) -> Effect {
+        let cwd = self
+            .item()
+            .map(|i| PathBuf::from(&i.worktree))
+            .filter(|p| p.is_dir())
+            .or_else(|| self.repo().map(|r| r.path.clone()));
+        let Some(cwd) = cwd else {
+            self.err("No repository.");
+            return Effect::None;
+        };
+        Effect::Run {
+            program: args[0].clone(),
+            args: args[1..].to_vec(),
+            cwd,
+        }
+    }
+
+    /// Called by the runner when an [`Effect::Run`] is over.
+    pub fn ran(&mut self, program: &str, r: std::io::Result<std::process::ExitStatus>) {
+        match r {
+            Ok(_) => self.info(&format!("Back from {program}.")),
+            Err(e) => self.err(&format!("Could not run {program}: {e}")),
+        }
+        self.reload_active();
+    }
+
+    /// Text for display, with the redacted prefix replaced wherever it is.
+    pub fn show_text(&self, s: &str) -> String {
+        match &self.redact.root {
+            Some(root) => s
+                .replace(root.as_str(), "[root]")
+                .replace(&root.replace('/', "\\"), "[root]"),
+            None => s.to_string(),
+        }
+    }
+
     // --- formatting helpers shared with the views ---------------------------
 
     /// A path for display, with the redacted prefix replaced.
@@ -1050,6 +1294,31 @@ impl App {
     /// Rejected reviews today in the active repo (title bar).
     pub fn rejected_today(&self) -> u64 {
         self.repo().map(|r| r.data.rejected_today).unwrap_or(0)
+    }
+}
+
+/// A command's note, or the first line of its reply.
+fn note(resp: &Response) -> String {
+    resp.value
+        .get("note")
+        .and_then(|n| n.as_str())
+        .map(str::to_string)
+        .unwrap_or_else(|| resp.text.lines().next().unwrap_or("Done.").to_string())
+}
+
+/// `<why>` → `why`: a word in an action that you fill in.
+pub fn placeholder(arg: &str) -> Option<&str> {
+    arg.strip_prefix('<')
+        .and_then(|a| a.strip_suffix('>'))
+        .filter(|a| !a.is_empty())
+}
+
+/// Commands whose reply is the point: the app shows it in full.
+fn reads_only(args: &[String]) -> bool {
+    match args.first().map(String::as_str) {
+        Some("status" | "log" | "inbox" | "findings" | "history" | "export" | "usage") => true,
+        Some("daemon") => args.get(1).is_some_and(|a| a == "status"),
+        _ => false,
     }
 }
 
