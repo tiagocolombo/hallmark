@@ -33,7 +33,9 @@ cost a pull request.
   updates rather than duplicates (an `updates` ID, or a matching title), and
   the source item still gets `distilled { learnings }`, now without `into`.
   It creates no item, makes no commit and runs no `hall propose-ready`.
-  Items titled `Library: …` left by ADR 0021 are still not distilled.
+  Items titled `Library: …` left by ADR 0021 are still not distilled,
+  and the inbox leaves out every entry about one (a failed CI run, an
+  escalation, a hold): only what blocks development reaches you.
 - **Approval stays with you, locally.** `hall library review` lists the
   proposed learnings (`new` or `update`).
   - `--accept` makes a proposal `accepted`. A retired learning given to

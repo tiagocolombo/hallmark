@@ -4,9 +4,9 @@
 //! It only reads: the journal, the index, `live.log`, the registry and the
 //! daemon state. A file watcher on each repo's `<git-common-dir>/hallmark/`
 //! marks the repo stale, and the app re-reads it once the writes settle.
-//! The three actions it offers (`r`, `p`, `x`) call the same command
-//! functions as `hall ready`, `hall pull-back` and `hall drop`. Closing it
-//! never stops work.
+//! Its actions (`r`, `p`, `x`, and each inbox entry's actions in your
+//! office) run the same commands as the CLI, in-process. Closing it never
+//! stops work.
 //!
 //! [`App`] holds the state and handles keys; [`ui::draw`] renders it.
 //! Neither needs a terminal, so tests drive them with ratatui's
@@ -85,6 +85,18 @@ fn event_loop(
                             if open(&target).is_err() {
                                 app.open_failed(&fallback);
                             }
+                        }
+                        Effect::Run { program, args, cwd } => {
+                            ratatui::restore();
+                            let r = run_here(&program, &args, &cwd);
+                            *terminal = ratatui::try_init().map_err(|e| {
+                                HallError::internal(format!(
+                                    "could not reopen the terminal app: {e}"
+                                ))
+                            })?;
+                            terminal.clear()?;
+                            app.now = Utc::now();
+                            app.ran(&program, r);
                         }
                         Effect::None => {}
                     }
@@ -172,6 +184,23 @@ fn watch(app: &App, tx: std::sync::mpsc::Sender<PathBuf>) -> Option<::notify::Re
         }
     }
     any.then_some(w)
+}
+
+/// Runs a program on this terminal and waits for it (`claude --resume`).
+/// On Windows it goes through `cmd /C`, which finds `.cmd` shims.
+fn run_here(
+    program: &str,
+    args: &[String],
+    cwd: &Path,
+) -> std::io::Result<std::process::ExitStatus> {
+    let mut c = if cfg!(windows) {
+        let mut c = Command::new("cmd");
+        c.arg("/C").arg(program);
+        c
+    } else {
+        Command::new(program)
+    };
+    c.args(args).current_dir(cwd).status()
 }
 
 /// Opens a folder or URL with the system opener, without waiting for it.
