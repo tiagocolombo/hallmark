@@ -21,7 +21,7 @@ macOS, `xdg-open` on Linux, `start` on Windows).
 | Repair Shop | A fixer addresses failing checks and findings | the fixer |
 | Stamping Room | The approved commit gets its hallmark, a git note | the assayer |
 | Dispatch Dock | Rebases onto the latest base, then the ship command opens the PR (or `update` updates an adopted one), and the item closes | the shipper |
-| Delivery Office | Watches each PR until it merges. A conflict or new review comments send it back to development, where a headless dev run rebases it or addresses them and sends it to review | the delivery worker, the CI watch |
+| Delivery Office | Watches each PR until it merges. A conflict or new review comments send it back to development, where a headless dev run rebases it or addresses them and sends it to review | the delivery and delivery-watch workers, the CI watch |
 
 ## An item's states
 
