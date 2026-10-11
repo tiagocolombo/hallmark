@@ -591,6 +591,8 @@ pub fn tools(commands: &[String], wt: &Path) -> Vec<String> {
         "rm",
         "checkout --ours",
         "checkout --theirs",
+        "checkout --",
+        "restore",
         "rebase --continue",
         "commit",
     ];
@@ -1214,6 +1216,7 @@ mod tests {
         assert!(t.contains(&"Bash(GIT_EDITOR=true git rebase --continue:*)".to_string()));
         assert!(t.contains(&"Bash(git checkout --theirs:*)".to_string()));
         assert!(t.contains(&"Bash(git -C /w/app-H-0001 status:*)".to_string()));
+        assert!(t.contains(&"Bash(git restore:*)".to_string()));
         assert!(t.contains(&"Bash(cargo test:*)".to_string()));
         assert!(!t.iter().any(|x| x.contains("push") || x.contains("abort")));
     }

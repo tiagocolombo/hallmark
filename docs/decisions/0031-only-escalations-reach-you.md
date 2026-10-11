@@ -87,8 +87,8 @@ next was refused: `git checkout --theirs`, a narrower `cargo test --test tui`,
 `git -C <worktree> status`. Its rebase was aborted, and a second attempt would
 have failed the same way and held the PR. So:
 
-- The office's dev runs may also run `git checkout --ours`/`--theirs` and
-  `git rm`. Every git command is also allowed as `git -C <its worktree> …`.
+- The office's dev runs may also run `git checkout --ours`/`--theirs`,
+  `git checkout -- <file>`, `git restore` and `git rm`. Every git command is also allowed as `git -C <its worktree> …`.
   They still can't push or abort.
 - **`dev_commands`** in `.hallmark.toml` lists commands, as prefixes, that the
   fixer and the office's dev runs may run besides the gates. The default is
