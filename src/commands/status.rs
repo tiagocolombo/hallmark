@@ -340,10 +340,15 @@ pub fn dismiss(repo: &Repo, entries: Vec<InboxEntry>) -> Result<Response> {
 /// The entry `which` names: its number, a question ID or an item ID.
 fn find_entry(entries: &[InboxEntry], which: &str) -> Result<usize> {
     let w = which.trim();
-    w.parse::<usize>()
-        .ok()
-        .and_then(|n| n.checked_sub(1))
-        .filter(|n| *n < entries.len())
+    entries
+        .iter()
+        .position(|e| e.key() == w)
+        .or_else(|| {
+            w.parse::<usize>()
+                .ok()
+                .and_then(|n| n.checked_sub(1))
+                .filter(|n| *n < entries.len())
+        })
         .or_else(|| {
             entries
                 .iter()
@@ -542,11 +547,8 @@ pub fn explain(repo: &Repo, ix: &Index, entry: InboxEntry, number: usize) -> Res
     // Always last, so the numbered actions above keep their places.
     let mut actions = actions;
     // By ID where one names it, since numbers shift as entries come and go.
-    let target = entry
-        .qid
-        .clone()
-        .or_else(|| entry.item.map(|i| i.to_string()))
-        .unwrap_or_else(|| number.to_string());
+    // The entry's own key: an item or question ID can match several entries.
+    let target = entry.key();
     actions.push(act(
         &format!("hall inbox {target} --dismiss"),
         "dismiss it: hidden until it changes; nothing is answered or retried",

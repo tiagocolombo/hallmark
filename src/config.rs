@@ -141,10 +141,26 @@ impl Default for Capture {
 }
 
 impl Capture {
-    /// Whether `rel` (a path relative to the repo root, `/`-separated) needs
-    /// no item.
-    pub fn is_free(&self, rel: &str) -> bool {
+    /// Whether `rel` (a path relative to the repo root, `/`-separated) matches
+    /// `free`. Use [`Config::is_free`], which also protects review inputs.
+    pub fn matches_free(&self, rel: &str) -> bool {
         crate::assayer::base::globset(&self.free).is_match(rel)
+    }
+}
+
+impl Config {
+    /// Whether `rel` (a path relative to the repo root, `/`-separated) needs
+    /// no item. Review inputs never do: this file, `.hallmark/` and the rules
+    /// files steer the reviewer, so changing them is development work.
+    pub fn is_free(&self, rel: &str) -> bool {
+        let rel = rel.trim_start_matches("./");
+        if rel == FILE_NAME
+            || rel.starts_with(".hallmark/")
+            || self.rules.iter().any(|r| r.trim_start_matches("./") == rel)
+        {
+            return false;
+        }
+        self.capture.matches_free(rel)
     }
 }
 

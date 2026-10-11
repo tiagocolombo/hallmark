@@ -566,7 +566,7 @@ impl Ctx {
         if self
             .repo
             .relative(p)
-            .is_some_and(|r| self.repo.config.capture.is_free(&r))
+            .is_some_and(|r| self.repo.config.is_free(&r))
         {
             return Ok(None);
         }
@@ -961,6 +961,8 @@ fn only_free_changes(repo: &Repo, dir: &Path) -> bool {
     for args in [
         &["diff", "--cached", "--name-only"][..],
         &["diff", "--name-only"][..],
+        // A `git add -A && git commit` also takes untracked files.
+        &["ls-files", "--others", "--exclude-standard", "--full-name"][..],
     ] {
         match git::run(dir, args) {
             Ok(out) => files.extend(out.lines().map(str::to_string)),
@@ -968,7 +970,7 @@ fn only_free_changes(repo: &Repo, dir: &Path) -> bool {
         }
     }
     files.retain(|f| !f.trim().is_empty());
-    !files.is_empty() && files.iter().all(|f| repo.config.capture.is_free(f))
+    !files.is_empty() && files.iter().all(|f| repo.config.is_free(f))
 }
 
 fn repo_context(repo: &Repo, items: &[Item], inbox: usize) -> String {

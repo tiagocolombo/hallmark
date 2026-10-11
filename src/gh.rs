@@ -147,6 +147,10 @@ pub struct GhComment {
     pub author: Option<GhAuthor>,
     #[serde(default)]
     pub body: String,
+    /// The author's standing on the repo: OWNER, MEMBER, COLLABORATOR,
+    /// CONTRIBUTOR, NONE…
+    #[serde(default, alias = "authorAssociation")]
+    pub author_association: Option<String>,
     /// Reviews: APPROVED, CHANGES_REQUESTED, COMMENTED.
     #[serde(default)]
     pub state: Option<String>,

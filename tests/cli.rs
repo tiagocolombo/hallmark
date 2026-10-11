@@ -731,3 +731,15 @@ fn something_left_to_confirm_waits_for_you() {
     let r = env.hall(&wt, &["propose-ready", "--summary", "done"]);
     assert_eq!(r.json["state"], "awaiting_you", "{}", r.stdout);
 }
+
+#[test]
+fn proposing_ready_twice_is_a_no_op() {
+    let env = Env::initialized();
+    let (_, wt) = env.new_item("Twice");
+    commit_file(&wt, "twice.rs", "fn twice() {}\n");
+    let first = env.hall(&wt, &["propose-ready", "--summary", "done"]);
+    assert_eq!(first.json["state"], "checks", "{}", first.stdout);
+    let again = env.hall(&wt, &["propose-ready", "--summary", "done"]);
+    assert_eq!(again.code, 0, "{}", again.stdout);
+    assert_eq!(again.json["changed"], false, "{}", again.stdout);
+}

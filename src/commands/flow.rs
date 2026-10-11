@@ -449,6 +449,15 @@ pub fn propose_ready(cwd: &Path, a: ProposeReadyArgs) -> Result<Response> {
     let repo = Repo::discover(cwd)?;
     let item = repo.resolve(a.id.as_deref())?;
     let actor = actor();
+    // A repeat (a lost reply, a retry) after it went straight to review is a
+    // no-op, as `hall ready` is.
+    if matches!(item.state, State::Checks | State::Review | State::Fixing)
+        && item.frozen_sha.is_some()
+        && item.frozen_sha.as_deref() == git::head(Path::new(&item.worktree)).ok().as_deref()
+    {
+        let note = format!("{} is already in review at that commit.", item.id);
+        return Ok(reply(&item, false, Some(note)));
+    }
     // Nothing left to confirm: straight to review (`auto_ready`).
     let wait_for = if a.ask {
         Some("you asked for the human's call".to_string())
