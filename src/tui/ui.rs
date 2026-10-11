@@ -259,6 +259,23 @@ fn status_line(f: &mut Frame, area: Rect, app: &App) {
             Span::styled("▏", fg(BRASS)),
             Span::styled("  enter drop · esc cancel", fg(DIM)),
         ]),
+        Some(Input::DropAll(ids)) => Line::from(vec![
+            Span::styled(
+                format!(
+                    "Drop all {} item{} in your office ({}), reason: ",
+                    ids.len(),
+                    if ids.len() == 1 { "" } else { "s" },
+                    ids.iter()
+                        .map(|id| id.to_string())
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                ),
+                bold().fg(STOP),
+            ),
+            Span::raw(app.buffer.clone()),
+            Span::styled("▏", fg(BRASS)),
+            Span::styled("  enter drop all · esc cancel", fg(DIM)),
+        ]),
         Some(Input::RetryReason(id)) => Line::from(vec![
             Span::styled(format!("Retry {id}, reason: "), bold().fg(BRASS)),
             Span::raw(app.buffer.clone()),
@@ -346,6 +363,8 @@ fn key_bar(f: &mut Frame, area: Rect, app: &App) {
             ("D C", "dismiss·all"),
             ("enter", "journal"),
             ("pgup pgdn", "scroll"),
+            ("x", "drop"),
+            ("X", "drop all"),
             ("d", "diff"),
             ("w", "worktree"),
             ("o", "PR"),
@@ -402,7 +421,8 @@ fn help(f: &mut Frame, area: Rect) {
         ("r", "send to review (hall ready)"),
         ("p", "pull back to development"),
         ("g", "go on: lift a hold, or retry (hall retry)"),
-        ("x", "drop, with a reason"),
+        ("x", "drop, with a reason (in your office: its item)"),
+        ("X", "your office: drop every item, one reason"),
         ("w", "open the item's worktree"),
         ("o", "open the PR"),
         ("b", "board"),

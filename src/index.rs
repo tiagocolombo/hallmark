@@ -403,9 +403,12 @@ impl Index {
     /// Every inbox entry, dismissed ones included.
     pub fn inbox_all(&self) -> Result<Vec<InboxEntry>> {
         let mut out = Vec::new();
+        // A question about a closed or dropped item waits for nobody.
         let mut stmt = self.conn.prepare(
             "SELECT qid, item, text, options, dflt, wait, deadline, asked_at, session, answer, answered_at
-             FROM questions WHERE answer IS NULL",
+             FROM questions q WHERE answer IS NULL
+               AND NOT EXISTS (SELECT 1 FROM items i
+                               WHERE i.id = q.item AND i.state IN ('closed', 'dropped'))",
         )?;
         for q in stmt.query_map([], question_row)? {
             let q = q?;

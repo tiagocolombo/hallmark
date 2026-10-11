@@ -1,7 +1,8 @@
 # 0022. The terminal app is a reader
 
 Status: Accepted, 2026-10-09. Amended 2026-10-10: your office shows each
-inbox entry in full and runs its actions.
+inbox entry in full and runs its actions. Amended 2026-10-11: your office
+drops the entry's item, or every item waiting.
 
 ## Context
 
@@ -60,6 +61,13 @@ Windows.
   - `claude --resume <session>` gets the terminal: the app restores it,
     runs Claude Code in the item's worktree, and comes back when it exits.
   - Anything else ("open the waiting session") is shown for you to do.
+  - `x` drops the selected entry's item, never the board's selection; an
+    entry that isn't about an item says so. `X` drops every item waiting
+    in your office with one reason: each goes through `flow::drop`,
+    parallel parts before their parent (a part is always newer), and one
+    that can't be dropped is reported while the rest go on.
+  - A question about a closed or dropped item leaves the inbox, in the
+    app and in `hall inbox`: nobody waits for its answer.
 - The item's journal pane starts with what waits for you about it, in
   full. Nothing else writes.
 - **Opening is never blocking.** `w` opens the worktree and `o` the PR
