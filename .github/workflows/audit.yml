@@ -2,7 +2,8 @@ name: Security audit
 
 # Checks Cargo.lock against the RustSec advisory database: on every push to
 # main, on pull requests that change dependencies, and daily for advisories
-# published since.
+# published since. A failed scheduled run is the alert; Dependabot alerts
+# cover the same advisories.
 on:
   push:
     branches: [main]
@@ -18,12 +19,11 @@ permissions:
 jobs:
   audit:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      checks: write
-      issues: write
     steps:
-      - uses: actions/checkout@v7
-      - uses: rustsec/audit-check@v2.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          persist-credentials: false
+      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        with:
+          tool: cargo-audit
+      - run: cargo audit

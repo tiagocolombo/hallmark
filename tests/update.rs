@@ -281,11 +281,14 @@ fn skips_and_says_so_when_already_the_latest() {
     };
     let bare = env.root.join("built.git");
     git(&env.root, &["init", "-q", "--bare", &p(&bare)]);
+    // CI checks out one commit (a shallow clone), so `built` is a shallow
+    // root: without --update-shallow git skips the ref and still exits 0.
     git(
         &bare,
         &[
             "fetch",
             "-q",
+            "--update-shallow",
             env!("CARGO_MANIFEST_DIR"),
             &format!("{built}:refs/heads/main"),
         ],
