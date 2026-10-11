@@ -7,13 +7,13 @@ installs for you. You need `git` and [Claude Code](https://claude.com/claude-cod
 1. [Install `hall`](#1-install-hall), using one of the methods below.
 2. [Set it up](#2-set-up) once per machine, then once per repo.
 
-> **The repository is private.** Release downloads and `cargo install --git`
-> need GitHub access to `tiagocolombo/hallmark`. Each method below says how.
-> See [ADR 0023](decisions/0023-packaging-and-releases.md).
-
 ## 1. Install `hall`
 
 ### From a release
+
+> No release has been published yet, so these URLs return 404 until the first
+> tag is cut. Until then, [build from source](#from-source). Homebrew
+> publishing is off (ADR 0023), so there is no `brew` formula.
 
 Each release has archives for macOS (Apple silicon and Intel), Linux (x86_64
 and arm64, glibc; x86_64 musl) and Windows (x86_64), each with a `.sha256`
@@ -32,66 +32,39 @@ curl --proto '=https' --tlsv1.2 -LsSf \
 powershell -ExecutionPolicy Bypass -c "irm https://github.com/tiagocolombo/hallmark/releases/latest/download/hallmark-installer.ps1 | iex"
 ```
 
-**Homebrew:**
-
-```sh
-brew install tiagocolombo/tap/hall
-```
-
 The installers put `hall` in `~/.cargo/bin` (`%USERPROFILE%\.cargo\bin` on
 Windows) and add that directory to your PATH. Set `HALLMARK_NO_MODIFY_PATH=1`
 to leave PATH alone.
 
-**While the repository is private,** the URLs above return 404 unless you're
-signed in. The Homebrew tap isn't published yet. Download through `gh`
-instead, which uses your login:
-
-```sh
-mkdir hall-release && cd hall-release
-gh release download --repo tiagocolombo/hallmark \
-  --pattern 'hallmark-installer.sh' --pattern 'hallmark-*.tar.xz*'
-HALLMARK_DOWNLOAD_URL="file://$PWD" sh hallmark-installer.sh
-```
-
-Alternatively, download your platform's archive
-(`gh release download --repo tiagocolombo/hallmark --pattern 'hallmark-aarch64-apple-darwin.tar.xz'`),
-check it against its `.sha256`, unpack it and put `hall` on your PATH.
+To install by hand, download your platform's archive from the
+[releases page](https://github.com/tiagocolombo/hallmark/releases), check it
+against its `.sha256`, unpack it and put `hall` on your PATH.
 
 ### From source
 
 With Rust 1.88 or newer, and a C compiler for the bundled SQLite:
 
 ```sh
-# Clone, then build (uses your existing git access):
-git clone git@github.com:tiagocolombo/hallmark.git
+# Straight from git:
+cargo install --git https://github.com/tiagocolombo/hallmark --locked
+
+# Or from a clone:
+git clone https://github.com/tiagocolombo/hallmark.git
 cargo install --path hallmark --locked
-
-# Or straight from git, over SSH:
-CARGO_NET_GIT_FETCH_WITH_CLI=true \
-  cargo install --git ssh://git@github.com/tiagocolombo/hallmark.git --locked
 ```
-
-`CARGO_NET_GIT_FETCH_WITH_CLI=true` makes cargo use your `git` and SSH key. If
-you use HTTPS, use a token instead:
-`cargo install --git https://<token>@github.com/tiagocolombo/hallmark.git --locked`,
-with a fine-grained token that has read access to the repository's contents.
 
 ### With Nix
 
-```sh
-nix profile install git+ssh://git@github.com/tiagocolombo/hallmark   # installs hall
-nix run git+ssh://git@github.com/tiagocolombo/hallmark -- --version  # runs it once
-nix build .#hall                                                     # from a clone: ./result/bin/hall
-```
-
-The flake depends on a private input (`tiagocolombo/rig`, for the dev shell),
-so evaluating it needs SSH access to that repo too. Without that access, build
-from a clone with only nixpkgs:
+From a clone, with only nixpkgs:
 
 ```sh
 nix-build nix                     # ./result/bin/hall
 nix profile install --file nix
 ```
+
+The flake (`nix build .#hall`) also builds `hall`, but it takes the dev shell
+from a private input (`tiagocolombo/rig`), so evaluating it needs access to that
+repository. Use the `nix` directory above instead.
 
 Overlay users can use `overlays.default`, which adds `pkgs.hallmark`.
 
@@ -159,8 +132,8 @@ Restart Claude Code afterwards.
 It needs `cargo` (or `HALL_CARGO`) and git access to the repository: git and
 cargo both use your git credentials, and never prompt for them. `--source`
 (or `HALL_UPDATE_SOURCE`) installs from another repository, such as a fork or
-an SSH URL (`ssh://git@github.com/tiagocolombo/hallmark.git`), and `--branch`
-from another branch. A `hall` installed with Nix or Homebrew, or run from a
+an SSH URL, and `--branch`
+from another branch. A `hall` installed with Nix, or run from a
 build directory, is left to the tool that installed it. A `hall` built
 without git (a crate tarball, the Nix package) doesn't know its commit, so
 `hall update` always installs.
@@ -168,7 +141,7 @@ without git (a crate tarball, the Nix package) doesn't know its commit, so
 ### By hand
 
 Upgrade the binary the same way you installed it: rerun the installer, use
-`brew upgrade hall`, `cargo install … --locked --force`, `nix profile upgrade`,
+`cargo install … --locked --force`, `nix profile upgrade`,
 or `rig install` in Hallmark's repo. Then **rerun `hall setup`**. The plugin is
 embedded in the binary, so this refreshes the skills, agents and hooks to
 match, re-points the hooks and the status line if `hall` moved, and restarts
