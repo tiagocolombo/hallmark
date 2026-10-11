@@ -18,11 +18,12 @@ hall · app (1 of 3 repos)   daemon ● running   ⚑ 3 waiting   rejected today
 │hh:mm  you       created · │  d         diff at the selected round                        │                           │
 │hh:mm  you       ready · ro│  r         send to review (hall ready)                       │                           │
 │hh:mm  assayer   checks pas│  p         pull back to development                          │                           │
-│hh:mm  assayer   usage · op│  x         drop, with a reason                               │                           │
-│hh:mm  assayer   review · c│  w         open the item's worktree                          │                           │
-│hh:mm  fixer     fix submit│  o         open the PR                                       │                           │
-│hh:mm  fixer     usage · so│  b         board                                             │                           │
-│hh:mm  assayer   checks pas│  h         history: closed and dropped                       │                           │
+│hh:mm  assayer   usage · op│  g         go on: lift a hold, or retry (hall retry)         │                           │
+│hh:mm  assayer   review · c│  x         drop, with a reason                               │                           │
+│hh:mm  fixer     fix submit│  w         open the item's worktree                          │                           │
+│hh:mm  fixer     usage · so│  o         open the PR                                       │                           │
+│hh:mm  assayer   checks pas│  b         board                                             │                           │
+│                           │  h         history: closed and dropped                       │                           │
 │                           │  u         usage (then b i m d to group)                     │                           │
 │                           │  l         live: what the daemon is doing                    │                           │
 │                           │  R         repositories                                      │                           │
@@ -30,11 +31,10 @@ hall · app (1 of 3 repos)   daemon ● running   ⚑ 3 waiting   rejected today
 │                           │  /         filter by ID, title or state                      │                           │
 │                           │  esc       back · stop replaying · clear filter              │                           │
 │                           │  q         quit (work carries on)                            │                           │
-│                           │                                                              │                           │
-└───────────────────────────└ any key closes ──────────────────────────────────────────────┘───────────────────────────┘
-┌ Findings ────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+└───────────────────────────│                                                              │───────────────────────────┘
+┌ Findings ─────────────────└ any key closes ──────────────────────────────────────────────┘───────────────────────────┐
 │F1   major   correctness      Retries can deliver twice              src/webhooks.rs:42     open · fix claimed #######│
 │F2   minor   evidence         No test for the backoff cap            src/webhooks.rs:42     open                      │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 
-↑↓ item enter journal i your office ←→ step f findings d diff r ready p pull back x drop / filter ? help q quit
+↑↓ item enter journal i your office ←→ step f findings d diff r ready p pull back g go x drop / filter ? help q quit

@@ -36,13 +36,13 @@ Windows.
   app's own index sync doesn't wake it. A 2 s tick refreshes the clock and
   the daemon state, and, if the watcher couldn't start, re-reads every
   repo instead. The bell rings when the inbox grows.
-- **Actions go through the commands.** `r`, `p` and `x` call
-  `commands::flow::{ready, pull_back, drop}` in-process with the same
-  argument structs as the CLI, so they take the same journal lock, check
-  the same states and write the same events as `hall ready`,
-  `hall pull-back` and `hall drop`. The reply's note, or the error code and
-  message, shows in the status bar. `x` asks for the reason in the app;
-  `esc` cancels.
+- **Actions go through the commands.** `r`, `p`, `g` and `x` call
+  `commands::flow::{ready, pull_back, retry, drop}` in-process with the
+  same argument structs as the CLI, so they take the same journal lock,
+  check the same states and write the same events as `hall ready`,
+  `hall pull-back`, `hall retry` and `hall drop`. The reply's note, or
+  the error code and message, shows in the status bar. `x` asks for the
+  reason in the app; `esc` cancels.
 - **Your office runs each entry's actions** (`i`). It lists the inbox and
   explains the selected entry with `commands::status::explain`, the same
   text as `hall inbox <n>`: the full text, why it waits, the evidence and

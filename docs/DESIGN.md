@@ -67,7 +67,7 @@ The docs and the terminal app describe Hallmark as a building.
 | Your Office | The inbox: questions, "ready?", escalations, budget stops, stuck items | Awaiting you, Escalated |
 | Post Room | Every handoff passes here; a copy goes to Records | (all transitions) |
 | Records | The journal | Dropped, Closed (history) |
-| Library | Learnings distilled from closed items | — |
+| Library | Learnings distilled from closed items, kept next to the journal | — |
 | Assay Office | The test bench (checks) and the principal engineer (review) | Checks, Review |
 | Repair Shop | The fixer | Fixing |
 | Stamping Room | The hallmark is struck | Hallmarked |
@@ -290,7 +290,7 @@ $ echo $?
 | `hall ready [<id>] [--note]` | Freezes HEAD and queues the item. A dirty worktree is refused. |
 | `hall pull-back [<id>] [--reason]` | Returns the item to development. |
 | `hall drop [<id>] --reason [--keep-worktree]` | Abandons the item. The branch and journal stay. |
-| `hall retry [<id>] --reason` | Allows an escalated item one more round, or releases a held item. |
+| `hall retry [<id>] --reason [--tokens <n>]` | Allows an escalated item one more round, or releases a held item. A budget hold also grants that item another `per_item` (or `--tokens`); the budget is unchanged. |
 | `hall propose-ready [<id>] --summary` | The agent says the work looks done. |
 | `hall ask <q> [--item] [--options] [--default] [--wait] [--session]` | Records a question. |
 | `hall answer <qid> <answer>` | Records the answer; the daemon resumes the asking session with it. |
@@ -315,7 +315,7 @@ $ echo $?
 | `hall budget [--set k=v] [--grant [<tokens>]]` | you | The caps and today's spend. `--grant` lets the loop go past the daily cap for today (default: another `daily`) and lifts the budget pause; the cap is unchanged. |
 | `hall notify test` | you | A test notification on every channel. |
 | `hall statusline` | Claude Code | One line for the status line. |
-| `hall library search\|review\|retire\|distill` | you, agents | The Library. |
+| `hall library search\|review\|retire\|distill\|import\|export` | you, agents | The Library. |
 
 ## Configuration
 
@@ -501,7 +501,7 @@ Your Office holds the following, oldest first. It is derived from the journal.
 | escalated | the item is `escalated` | that item |
 | session waiting | a `Notification` hook, cleared by the next prompt in that session | that session |
 | ready? | the item is `awaiting_you` | nothing |
-| budget, run_failed, ship_failed | a hold: a per-item cap, two failed runs in a row, a failed ship | that item, until `hall retry` |
+| budget, run_failed, ship_failed | a hold: a per-item cap, two failed runs in a row, a failed ship | that item, until `hall retry` (which, for a budget hold, grants the item more tokens) |
 | stuck | the watchman | whatever was running |
 | daemon stopped | a daemon that should run has no heartbeat | the loop |
 | learnings | proposed learnings, sent as a digest | nothing |
@@ -532,8 +532,10 @@ then resumes the asking agent's session with
 
 ## The Library (Stage 2)
 
-**What a learning is.** Learnings are Markdown files in `.hallmark/knowledge/`.
-They are committed, and approved like code. There are four kinds:
+**What a learning is.** Learnings are Markdown files in the local store,
+`<git-common-dir>/hallmark/library/learnings/`, next to the journal (ADR 0027).
+They are never committed: every worktree shares them, and no branch can change
+what its review is told. There are four kinds:
 
 - **rule**: comes from a finding that turned out right.
 - **false-positive**: what not to flag, and why.
@@ -546,7 +548,13 @@ They are committed, and approved like code. There are four kinds:
 2. Each review receives a briefing within a token cap. The briefing combines
    learnings scoped to the changed paths with a search of the rest.
 3. Each verdict says which learnings it used. Unused or contradicted learnings
-   are proposed for retirement.
+   are retired; `history/` keeps every earlier version.
+
+**Approval is yours, locally.** Learnings of kinds outside `auto_accept` wait
+as `proposed`, one entry in the inbox. `hall library review --accept` or
+`--reject` settles them at once; rejecting an update restores what it replaced.
+`hall library import` brings in learnings committed under `.hallmark/knowledge/`
+by earlier versions, and `hall library export` writes the store to one file.
 
 **Search.** Built-in search uses SQLite FTS5. tobi/qmd is an optional backend,
 with one collection per repo.

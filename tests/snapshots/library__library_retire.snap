@@ -5,12 +5,10 @@ expression: "scrub(&env, &r.json)"
 {
   "action": "retire",
   "changed": true,
-  "commit": "[sha]",
   "id": "L-0003",
-  "item": "H-0001",
   "next": [
-    "hall status H-0001",
-    "hall library review"
+    "hall library review --accept L-0003",
+    "hall library search \"<words>\""
   ],
-  "path": ".hallmark/knowledge/L-0003-billing-map.md"
+  "path": "[root]/app/.git/hallmark/library/learnings/L-0003-billing-map.md"
 }

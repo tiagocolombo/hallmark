@@ -52,13 +52,15 @@ CREATE TABLE IF NOT EXISTS findings (
 
 pub struct Index {
     conn: Connection,
+    /// The hallmark dir, for what lives beside the index (the Library).
+    root: std::path::PathBuf,
 }
 
 /// Something waiting for you.
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct InboxEntry {
     /// question, escalated, ready, session_waiting, budget, run_failed,
-    /// ship_failed, stuck, daemon_stopped
+    /// ship_failed, stuck, daemon_stopped, learnings
     pub kind: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub item: Option<ItemId>,
@@ -219,7 +221,10 @@ impl Index {
         };
         conn.execute_batch(SCHEMA)?;
         conn.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;
-        Ok(Index { conn })
+        Ok(Index {
+            conn,
+            root: hall.root.clone(),
+        })
     }
 
     /// Opens the index and catches up with the journal.
@@ -527,6 +532,25 @@ impl Index {
                 answer_with: vec![format!("hall new --follow-up {url}")],
             });
         }
+        // Proposed learnings in the local Library (ADR 0027): one entry.
+        let (n, since) = crate::library::store::Store::at(&self.root).proposed();
+        if n > 0 {
+            out.push(InboxEntry {
+                kind: "learnings".into(),
+                item: None,
+                qid: None,
+                text: if n == 1 {
+                    "1 proposed learning to review".into()
+                } else {
+                    format!("{n} proposed learnings to review")
+                },
+                options: vec![],
+                default: None,
+                session: None,
+                since: since.unwrap_or_else(Utc::now),
+                answer_with: vec!["hall library review".into()],
+            });
+        }
         let now = Utc::now();
         if let Some(st) = crate::daemon::state::load()
             && let Some(since) = st.stopped_unexpectedly(now)
@@ -543,11 +567,11 @@ impl Index {
                 answer_with: vec!["hall daemon start".into(), "hall daemon status".into()],
             });
         }
-        // Knowledge items never wait for you: the Library sends them to
-        // review, and only what blocks development lands here.
+        // Knowledge items left by ADR 0021 never wait for you: only what
+        // blocks development lands here.
         let knowledge: Vec<ItemId> = all
             .iter()
-            .filter(|i| crate::library::store::is_knowledge(i))
+            .filter(|i| crate::library::librarian::is_knowledge(i))
             .map(|i| i.id)
             .collect();
         out.retain(|e| e.item.is_none_or(|id| !knowledge.contains(&id)));

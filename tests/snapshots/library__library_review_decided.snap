@@ -7,18 +7,12 @@ expression: "scrub(&env, &r.json)"
     "L-0001"
   ],
   "action": "review",
-  "commits": [
-    "[sha]"
-  ],
-  "items": [
-    "H-0002"
-  ],
   "next": [
-    "hall status H-0002"
+    "hall library search \"<words>\"",
+    "hall inbox"
   ],
   "proposed": [],
   "rejected": [
     "L-0002"
-  ],
-  "retiring": []
+  ]
 }

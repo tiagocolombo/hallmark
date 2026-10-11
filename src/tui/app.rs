@@ -8,7 +8,7 @@ use chrono::{DateTime, Local, Utc};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use super::data::{self, RepoSlot, RepoStatus};
-use crate::cli::{DropArgs, PullBackArgs, ReadyArgs};
+use crate::cli::{DropArgs, PullBackArgs, ReadyArgs, RetryArgs};
 use crate::commands::flow;
 use crate::commands::status::{InboxDetail, explain};
 use crate::daemon::state::DaemonState;
@@ -109,6 +109,8 @@ pub enum Input {
     /// An action with a placeholder (`"<why>"`, `"<answer>"`): the text
     /// that replaces `args[at]` before `args` runs.
     Fill { args: Vec<String>, at: usize },
+    /// `g`: the reason a held or escalated item goes on.
+    RetryReason(ItemId),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -649,6 +651,13 @@ impl App {
             (_, KeyCode::Char('d')) => self.open_diff(),
             (_, KeyCode::Char('r')) => self.ready(),
             (_, KeyCode::Char('p')) => self.pull_back(),
+            (_, KeyCode::Char('g')) => match self.selected {
+                Some(id) => {
+                    self.input = Some(Input::RetryReason(id));
+                    self.buffer.clear();
+                }
+                None => self.err("No item selected."),
+            },
             (_, KeyCode::Char('x')) => match self.selected {
                 Some(id) => {
                     self.input = Some(Input::DropReason(id));
@@ -689,6 +698,7 @@ impl App {
                         self.fix_board_selection();
                     }
                     Input::DropReason(_) => self.info("Drop cancelled."),
+                    Input::RetryReason(_) => self.info("Cancelled."),
                     Input::Fill { .. } => self.info("Not run."),
                 }
                 self.input = None;
@@ -711,6 +721,7 @@ impl App {
                             self.exec(args);
                         }
                     }
+                    Input::RetryReason(id) => self.retry(id, text.trim()),
                 }
             }
             KeyCode::Backspace => {
@@ -882,6 +893,27 @@ impl App {
                 PullBackArgs {
                     id: Some(id.to_string()),
                     reason: Some("pulled back from the terminal app".into()),
+                },
+            );
+            self.report(id, r);
+        }
+    }
+
+    /// `g`: go on (`hall retry`): one more fix round for an escalated item,
+    /// or lift a hold. A budget hold also grants the item another
+    /// `per_item`; the budget itself is unchanged.
+    pub fn retry(&mut self, id: ItemId, reason: &str) {
+        if reason.is_empty() {
+            self.err("Not retried: a reason is required.");
+            return;
+        }
+        if let Some((_, cwd)) = self.target() {
+            let r = flow::retry(
+                &cwd,
+                RetryArgs {
+                    id: Some(id.to_string()),
+                    reason: reason.into(),
+                    tokens: None,
                 },
             );
             self.report(id, r);

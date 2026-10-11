@@ -106,6 +106,7 @@ fn kind_label(kind: &str) -> (&str, Color) {
     match kind {
         "ready" => ("ready?", BRASS),
         "session_waiting" => ("session", INFO),
+        "learnings" => ("learnings", INFO),
         "daemon_stopped" => ("daemon", STOP),
         "ci_failed" => ("CI failed", STOP),
         k => (k, STOP),
@@ -244,6 +245,12 @@ fn status_line(f: &mut Frame, area: Rect, app: &App) {
             Span::styled("▏", fg(BRASS)),
             Span::styled("  enter drop · esc cancel", fg(DIM)),
         ]),
+        Some(Input::RetryReason(id)) => Line::from(vec![
+            Span::styled(format!("Retry {id}, reason: "), bold().fg(BRASS)),
+            Span::raw(app.buffer.clone()),
+            Span::styled("▏", fg(BRASS)),
+            Span::styled("  enter go on · esc cancel", fg(DIM)),
+        ]),
         None => match &app.status {
             Some(s) if s.error => Line::from(Span::styled(s.text.clone(), fg(STOP))),
             Some(s) => Line::from(Span::styled(s.text.clone(), fg(INFO))),
@@ -268,6 +275,7 @@ fn key_bar(f: &mut Frame, area: Rect, app: &App) {
             ("d", "diff"),
             ("r", "ready"),
             ("p", "pull back"),
+            ("g", "go"),
             ("x", "drop"),
             ("/", "filter"),
             ("w", "worktree"),
@@ -377,6 +385,7 @@ fn help(f: &mut Frame, area: Rect) {
         ("d", "diff at the selected round"),
         ("r", "send to review (hall ready)"),
         ("p", "pull back to development"),
+        ("g", "go on: lift a hold, or retry (hall retry)"),
         ("x", "drop, with a reason"),
         ("w", "open the item's worktree"),
         ("o", "open the PR"),
@@ -1512,7 +1521,16 @@ fn item_rows(app: &App, rows: &[UsageRow], cap: Option<Cap>, n: usize) -> Vec<Ro
                 {
                     Line::from(Span::styled("over item cap · with you", fg(STOP)))
                 }
-                (Some(it), Some(c)) if !it.state.is_terminal() => bar(row_spent(r), c),
+                (Some(it), Some(c)) if !it.state.is_terminal() => {
+                    // A grant raises a token cap only.
+                    let c = match c {
+                        Cap::Tokens(t) => Cap::Tokens(t.saturating_add(
+                            repo.data.usage.granted.get(&r.key).copied().unwrap_or(0),
+                        )),
+                        usd => usd,
+                    };
+                    bar(row_spent(r), c)
+                }
                 (Some(it), _) => {
                     let (t, c) = tag(it);
                     let label = if t.is_empty() {
