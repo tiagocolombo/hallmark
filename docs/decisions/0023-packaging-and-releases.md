@@ -6,6 +6,13 @@ Status: Accepted, 2026-10-09
 > `tiagocolombo/rig` (the input is `rig`, the spec is `rig.toml`). The decision
 > below is unchanged; read `dev` as `rig` wherever it names the input.
 
+> **Note, 2026-10-11:** the repository is now public. The actions in
+> `release.yml` are pinned by commit through `github-action-commits` in
+> `dist-workspace.toml`, and Dependabot skips the file (`exclude-paths`):
+> its edits put the workflow out of step with the config, and `dist plan`
+> then fails the release. Bump those pins in the config and run `dist
+> generate`. The workflow is still never edited by hand.
+
 ## Context
 
 ADR 0001 promised a single cargo-dist pipeline for all three operating

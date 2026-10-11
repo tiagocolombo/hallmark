@@ -28,3 +28,7 @@ tap = "tiagocolombo/homebrew-tap"
 formula = "hall"
 # Release only on version tags: never run the release workflow on pull requests.
 pr-run-mode = "skip"
+# The actions the generated workflow uses, pinned by commit. Dependabot skips
+# release.yml (it would put the file out of step with this config), so bump
+# these here, then `dist generate`.
+github-action-commits = { "actions/checkout" = "3d3c42e5aac5ba805825da76410c181273ba90b1", "actions/upload-artifact" = "cf430e030ddbb5b0abf93d22962f4752f3646cd9", "actions/download-artifact" = "9000827ccba6bdab643e8b6fd33ac0654aef8333" }
