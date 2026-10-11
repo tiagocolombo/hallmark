@@ -521,3 +521,76 @@ fn handled_comments_dont_come_back() {
     assert_eq!(pass(&env, &gh, "delivery", json!([]))["progress"], "idle");
     assert_eq!(state(&env, &id), "closed");
 }
+
+// --- A hallmarked update whose PR merged with it --------------------------
+
+/// A shipped item reopened on its PR, changed, and hallmarked again.
+fn hallmarked_update(env: &Env, gh: &Path) -> (String, PathBuf, String) {
+    let (id, wt, sha) = hallmarked_item(env, "Retry webhooks");
+    pass(env, gh, "shipper", json!([]));
+    assert_eq!(state(env, &id), "closed");
+    append(
+        env,
+        &id,
+        "agent",
+        hallmark::event::Body::Reopened {
+            pr_url: URL.into(),
+            pr_head: sha,
+            base: "main".into(),
+            worktree: p(&wt),
+        },
+    );
+    let head = commit_file(&wt, "retry.rs", "fn retry() {\n    deliver_twice();\n}\n");
+    append(
+        env,
+        &id,
+        "agent",
+        hallmark::event::Body::Ready {
+            sha: head.clone(),
+            round: 2,
+            note: None,
+        },
+    );
+    approve(env, &id, &wt, 2, vec![], counts(0, 0, 0, 0));
+    assert_eq!(state(env, &id), "hallmarked");
+    (id, wt, head)
+}
+
+#[test]
+fn an_update_whose_pr_merged_with_it_closes_without_waiting_for_you() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    remote_with_main(&env);
+    let (id, wt, _) = hallmarked_update(&env, &gh);
+    // Someone squash-merged the PR with the update in it.
+    let branch = git(&wt, &["rev-parse", "--abbrev-ref", "HEAD"]);
+    git(&env.repo, &["merge", "-q", "--squash", &branch]);
+    git(&env.repo, &["commit", "-q", "-m", "Retry webhooks (#1)"]);
+    git(&env.repo, &["push", "-q", "origin", "main"]);
+    pr(&gh, "MERGED", "UNKNOWN", "");
+
+    let step = pass(&env, &gh, "shipper", json!([]));
+    assert!(
+        step["what"]
+            .as_str()
+            .unwrap()
+            .contains("merged with its hallmarked work"),
+        "{step}"
+    );
+    assert_eq!(state(&env, &id), "closed");
+    assert!(events(&env, &id, "held").is_empty());
+    let inbox = env.hall(&env.repo, &["inbox"]);
+    assert_eq!(inbox.json["entries"], json!([]), "{}", inbox.stdout);
+}
+
+#[test]
+fn an_update_whose_pr_merged_without_it_waits_for_you() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    remote_with_main(&env);
+    let (id, _, _) = hallmarked_update(&env, &gh);
+    pr(&gh, "MERGED", "UNKNOWN", "");
+    let step = pass(&env, &gh, "shipper", json!([]));
+    assert!(step["what"].as_str().unwrap().contains("held"), "{step}");
+    assert_eq!(events(&env, &id, "held")[0]["kind"], "ship_failed");
+}
