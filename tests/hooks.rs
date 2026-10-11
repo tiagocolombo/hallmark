@@ -478,3 +478,51 @@ fn sessions_that_accept_edits_may_edit_their_item_worktree() {
     let r = env.hook("pre-tool-use", &v);
     assert_eq!(r.json["hookSpecificOutput"]["permissionDecision"], "deny");
 }
+
+#[test]
+fn docs_and_markdown_need_no_item() {
+    let env = Env::initialized();
+    // Documents, designs and requirements are not development work.
+    for rel in [
+        "docs/architecture.md",
+        "docs/diagram.svg",
+        "NOTES.md",
+        "app/README.md",
+    ] {
+        let r = env.hook("pre-tool-use", &write(&env.repo, &env.repo.join(rel)));
+        assert_eq!((r.code, r.stdout.as_str()), (0, ""), "{rel}");
+    }
+    let r = env.hook(
+        "pre-tool-use",
+        &write(&env.repo, &env.repo.join("src/lib.rs")),
+    );
+    assert_eq!(decision(&r.json).0, "deny");
+
+    // A commit of docs only needs no item either; one with code does.
+    let commit = |env: &Env| {
+        env.hook(
+            "pre-tool-use",
+            &bash("pre-tool-use", &env.repo, "git commit -m docs", "s1"),
+        )
+    };
+    std::fs::create_dir_all(env.repo.join("docs")).unwrap();
+    std::fs::write(env.repo.join("docs/plan.md"), "# Plan\n").unwrap();
+    git(&env.repo, &["add", "docs/plan.md"]);
+    assert_eq!(commit(&env).stdout, "");
+    std::fs::create_dir_all(env.repo.join("src")).unwrap();
+    std::fs::write(env.repo.join("src/lib.rs"), "pub fn x() {}\n").unwrap();
+    git(&env.repo, &["add", "src/lib.rs"]);
+    assert_eq!(decision(&commit(&env).json).0, "deny");
+
+    // `[capture] free = []` gates everything again.
+    std::fs::write(
+        env.repo.join(".hallmark.toml"),
+        "[capture]\nmode = \"gate\"\nfree = []\n",
+    )
+    .unwrap();
+    let r = env.hook(
+        "pre-tool-use",
+        &write(&env.repo, &env.repo.join("docs/architecture.md")),
+    );
+    assert_eq!(decision(&r.json).0, "deny");
+}

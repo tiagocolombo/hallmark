@@ -115,10 +115,32 @@ impl CaptureMode {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(default)]
 pub struct Capture {
     pub mode: CaptureMode,
+    /// Paths that need no item: edits and commits that touch only these are
+    /// never gated. Globs relative to the repo root. By default, docs and
+    /// Markdown: questions, documents, architecture and requirements aren't
+    /// development work, so they don't become items.
+    pub free: Vec<String>,
+}
+
+impl Default for Capture {
+    fn default() -> Self {
+        Capture {
+            mode: CaptureMode::default(),
+            free: vec!["docs/".into(), "*.md".into()],
+        }
+    }
+}
+
+impl Capture {
+    /// Whether `rel` (a path relative to the repo root, `/`-separated) needs
+    /// no item.
+    pub fn is_free(&self, rel: &str) -> bool {
+        crate::assayer::base::globset(&self.free).is_match(rel)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -581,6 +603,7 @@ rules = ["CLAUDE.md", "AGENTS.md"]
 
 [capture]
 mode = {capture}   # gate: edits need an item · ask: Claude asks you · off
+free = ["docs/", "*.md"]   # questions, docs, designs and plans need no item
 
 [budget]           # no caps unless you set them
 review_model = "opus"

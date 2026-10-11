@@ -1,6 +1,6 @@
 ---
 name: hallmark
-description: Track changes in this repo with Hallmark (the `hall` CLI). Use when starting work on a change ("/hallmark <request>", "fix the flaky login test", "pick up issue #212"), adopting an existing branch, saying the work is done or "send it to review" / "ready", "pull it back", "drop it", asking "what's in review?", "what needs me?" or "why was H-0042 rejected?", answering an agent's question, checking usage, or when an edit or push was denied by the Hallmark gate.
+description: Track changes in this repo with Hallmark (the `hall` CLI). Use when starting work on a clear requirement to build or change the app ("/hallmark <request>", "fix the flaky login test", "pick up issue #212"), adopting an existing branch, saying the work is done or "send it to review" / "ready", "pull it back", "drop it", asking "what's in review?", "what needs me?" or "why was H-0042 rejected?", answering an agent's question, checking usage, or when an edit or push was denied by the Hallmark gate.
 ---
 
 # Hallmark
@@ -10,6 +10,20 @@ worktree and journal. You build it with the human; an independent reviewer
 approves it later. Only a commit with a hallmark (an approval bound to that
 SHA) may be pushed, so **never push** and never open PRs yourself. The gate
 denies `git push`, `gh pr create` and the repo's ship command without one.
+
+## What becomes an item
+
+Only a **clear, concise requirement to develop something in the app**: a
+feature, a fix, a refactor, a test, an issue to pick up. Everything else is
+not an item, so don't run `hall new` for it:
+
+- questions, explanations, investigations ("why does X…?", "how would we…?");
+- writing or updating documents, READMEs, ADRs, architecture or designs;
+- drafting requirements, specs, plans or estimates.
+
+Answer those directly. Edits under `[capture] free` (by default `docs/` and
+Markdown files) need no item. When a request is vague, clarify it first; it
+becomes an item once it is a clear requirement.
 
 ## Talking to `hall`
 
@@ -33,7 +47,7 @@ denies `git push`, `gh pr create` and the repo's ship command without one.
 
 ## Flows
 
-**Start work** (`/hallmark <request>` or any request to change code):
+**Start work** (`/hallmark <request>` or a clear requirement to change the app's code):
 
 ```
 hall new "<request>"            # or: hall new --title "<short title>"
