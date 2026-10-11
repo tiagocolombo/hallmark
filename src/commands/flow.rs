@@ -449,28 +449,118 @@ pub fn propose_ready(cwd: &Path, a: ProposeReadyArgs) -> Result<Response> {
     let repo = Repo::discover(cwd)?;
     let item = repo.resolve(a.id.as_deref())?;
     let actor = actor();
-    let (item, changed) = repo.hall.transact(item.id, |item, _| match item.state {
-        State::Development => Ok((
-            vec![ev(
+    // A repeat (a lost reply, a retry) after it went straight to review is a
+    // no-op, as `hall ready` is.
+    if matches!(item.state, State::Checks | State::Review | State::Fixing)
+        && item.frozen_sha.is_some()
+        && item.frozen_sha.as_deref() == git::head(Path::new(&item.worktree)).ok().as_deref()
+    {
+        let note = format!("{} is already in review at that commit.", item.id);
+        return Ok(reply(&item, false, Some(note)));
+    }
+    // Nothing left to confirm: straight to review (`auto_ready`).
+    let wait_for = if a.ask {
+        Some("you asked for the human's call".to_string())
+    } else {
+        left_to_confirm(&repo, &item)?
+    };
+    let head = (wait_for.is_none())
+        .then(|| git::head(Path::new(&item.worktree)).ok())
+        .flatten();
+    let (item, (changed, sent)) = repo.hall.transact(item.id, |item, _| match item.state {
+        State::Development => {
+            let mut events = vec![ev(
                 &actor,
                 Some(item.id),
                 Body::ProposedReady {
                     summary: a.summary.clone(),
                 },
-            )],
-            true,
-        )),
-        State::AwaitingYou => Ok((vec![], false)),
+            )];
+            if let Some(sha) = &head {
+                events.push(ev(
+                    &actor,
+                    Some(item.id),
+                    Body::Ready {
+                        sha: sha.clone(),
+                        round: item.round + 1,
+                        note: Some("nothing left to confirm".into()),
+                    },
+                ));
+            }
+            Ok((events, (true, head.is_some())))
+        }
+        State::AwaitingYou => Ok((vec![], (false, false))),
         _ => Err(wrong_state(
             item,
             "only items in development can be proposed",
         )),
     })?;
-    let note = format!(
-        "{} is waiting for your call. Ask the human: send it to review (`hall ready`) or keep going?",
-        item.id
-    );
+    if sent && let Some(sha) = &head {
+        repo.hall.queue(&Ticket {
+            id: item.id,
+            sha: sha.clone(),
+            round: item.round,
+            queued_at: Utc::now(),
+        })?;
+        let note = format!(
+            "Nothing left to confirm, so {} went straight to review: round {} queued at {}. \
+             Tell the human; `hall pull-back {}` if they want changes.",
+            item.id,
+            item.round,
+            short(sha),
+            item.id
+        );
+        return Ok(reply(&item, true, Some(note)));
+    }
+    let note = match wait_for {
+        Some(why) if changed => format!(
+            "{} is waiting for your call ({why}). Ask the human: send it to review \
+             (`hall ready`) or keep going?",
+            item.id
+        ),
+        _ => format!(
+            "{} is waiting for your call. Ask the human: send it to review (`hall ready`) or keep going?",
+            item.id
+        ),
+    };
     Ok(reply(&item, changed, Some(note)))
+}
+
+/// Why a finished item still needs the human before review, if it does:
+/// `auto_ready` is off, a question is open, the worktree has uncommitted
+/// changes, or parts are still open. A part never goes to review alone.
+fn left_to_confirm(repo: &Repo, item: &Item) -> Result<Option<String>> {
+    if !repo.config.auto_ready {
+        return Ok(Some("auto_ready is off".into()));
+    }
+    if item.parent.is_some() {
+        return Ok(Some("a part merges into its parent".into()));
+    }
+    if item.state != State::Development {
+        return Ok(Some(format!("it is {}", item.state)));
+    }
+    let open_q: Vec<String> = repo
+        .index()?
+        .inbox_all()?
+        .into_iter()
+        .filter(|e| e.kind == "question" && e.item == Some(item.id))
+        .filter_map(|e| e.qid)
+        .collect();
+    if !open_q.is_empty() {
+        return Ok(Some(format!("open question {}", open_q.join(", "))));
+    }
+    let wt = Path::new(&item.worktree);
+    if !wt.is_dir() {
+        return Ok(Some("its worktree is missing".into()));
+    }
+    let dirty = git::dirty_files(wt)?;
+    if !dirty.is_empty() {
+        return Ok(Some(format!("uncommitted changes in {}", dirty.join(", "))));
+    }
+    if !super::merge::open_children(repo, item.id)?.is_empty() {
+        return Ok(Some("parts are still open".into()));
+    }
+    Ok(None)
 }
 
 /// `hall continue`: move an item on from wherever it waits.

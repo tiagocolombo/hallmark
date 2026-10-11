@@ -90,7 +90,7 @@ fn acquire() -> Result<std::fs::File> {
         if let Some(f) = state::try_instance_lock()? {
             return Ok(f);
         }
-        std::thread::sleep(Duration::from_millis(200));
+        crate::daemon::nap(Duration::from_millis(200));
     }
     let pid = state::load().map(|s| s.pid).unwrap_or(0);
     Err(HallError::new(
@@ -352,7 +352,7 @@ pub fn run_loop(opts: &Options) -> Result<DaemonState> {
                 .join(" · ")
         });
         ctl.tick(now_doing);
-        std::thread::sleep(Duration::from_millis(200));
+        crate::daemon::nap(Duration::from_millis(200));
     }
     let stopped = Utc::now();
     let st = state::update(|s| {

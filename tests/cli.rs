@@ -3,7 +3,7 @@
 mod common;
 
 use common::{Env, commit_file, git};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 fn codes(v: &Value) -> &str {
     v["error"]["code"].as_str().unwrap_or("")
@@ -175,6 +175,7 @@ fn the_whole_development_lifecycle() {
         &wt,
         &[
             "propose-ready",
+            "--ask",
             "--summary",
             "retries with jitter, 14 tests",
         ],
@@ -184,7 +185,8 @@ fn the_whole_development_lifecycle() {
         (0, "awaiting_you")
     );
     assert_eq!(
-        env.hall(&wt, &["propose-ready", "--summary", "again"]).json["changed"],
+        env.hall(&wt, &["propose-ready", "--ask", "--summary", "again"])
+            .json["changed"],
         false
     );
     let inbox = env.hall(&env.repo, &["inbox"]);
@@ -441,7 +443,7 @@ fn questions_land_in_the_inbox_and_get_answered() {
 fn reindex_rebuilds_the_same_view() {
     let env = Env::initialized();
     let (id, wt) = env.new_item("One");
-    env.hall(&wt, &["propose-ready", "--summary", "done"]);
+    env.hall(&wt, &["propose-ready", "--ask", "--summary", "done"]);
     env.new_item("Two");
     let before = env.hall(&env.repo, &["status"]).json;
     std::fs::remove_file(env.repo.join(".git/hallmark/index.sqlite")).unwrap();
@@ -659,4 +661,85 @@ fn new_from_a_github_issue() {
             .unwrap()
             .contains("After a plan change.")
     );
+}
+
+#[test]
+fn done_with_nothing_to_confirm_goes_straight_to_review() {
+    let env = Env::initialized();
+    let (id, wt) = env.new_item("Webhook retries");
+    let sha = commit_file(&wt, "retry.rs", "fn retry() {}\n");
+    let r = env.hall(&wt, &["propose-ready", "--summary", "retries, 14 tests"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(r.json["state"], "checks", "{}", r.stdout);
+    assert!(
+        r.json["note"]
+            .as_str()
+            .unwrap()
+            .contains("straight to review")
+    );
+    let ready = env
+        .journal(&id)
+        .into_iter()
+        .find(|e| e["event"] == "ready")
+        .unwrap();
+    assert_eq!(ready["sha"], sha.as_str());
+    assert_eq!(ready["note"], "nothing left to confirm");
+    // Queued for the assayer, and nothing waits in the inbox.
+    assert!(
+        env.repo
+            .join(".git/hallmark/queue")
+            .join(format!("{id}.json"))
+            .is_file()
+    );
+    assert_eq!(env.hall(&env.repo, &["inbox"]).json["entries"], json!([]));
+}
+
+#[test]
+fn something_left_to_confirm_waits_for_you() {
+    let env = Env::initialized();
+    // An open question.
+    let (_, wt) = env.new_item("Usage page");
+    commit_file(&wt, "usage.rs", "fn usage() {}\n");
+    env.hall(&wt, &["ask", "billed or raw?", "--options", "billed,raw"]);
+    let r = env.hall(&wt, &["propose-ready", "--summary", "done"]);
+    assert_eq!(r.json["state"], "awaiting_you", "{}", r.stdout);
+    assert!(
+        r.json["note"]
+            .as_str()
+            .unwrap()
+            .contains("open question Q-1")
+    );
+    // Uncommitted changes.
+    let (_, wt) = env.new_item("Dirty");
+    std::fs::write(wt.join("README.md"), "changed\n").unwrap();
+    let r = env.hall(&wt, &["propose-ready", "--summary", "done"]);
+    assert_eq!(r.json["state"], "awaiting_you", "{}", r.stdout);
+    // The agent asks for the human's call.
+    let (_, wt) = env.new_item("Asked");
+    let r = env.hall(&wt, &["propose-ready", "--summary", "done", "--ask"]);
+    assert_eq!(r.json["state"], "awaiting_you", "{}", r.stdout);
+    // auto_ready = false: always.
+    let cfg = env.repo.join(".hallmark.toml");
+    let text = std::fs::read_to_string(&cfg).unwrap();
+    std::fs::write(
+        &cfg,
+        text.replace("auto_ready  = true", "auto_ready  = false"),
+    )
+    .unwrap();
+    let (_, wt) = env.new_item("Off");
+    commit_file(&wt, "off.rs", "fn off() {}\n");
+    let r = env.hall(&wt, &["propose-ready", "--summary", "done"]);
+    assert_eq!(r.json["state"], "awaiting_you", "{}", r.stdout);
+}
+
+#[test]
+fn proposing_ready_twice_is_a_no_op() {
+    let env = Env::initialized();
+    let (_, wt) = env.new_item("Twice");
+    commit_file(&wt, "twice.rs", "fn twice() {}\n");
+    let first = env.hall(&wt, &["propose-ready", "--summary", "done"]);
+    assert_eq!(first.json["state"], "checks", "{}", first.stdout);
+    let again = env.hall(&wt, &["propose-ready", "--summary", "done"]);
+    assert_eq!(again.code, 0, "{}", again.stdout);
+    assert_eq!(again.json["changed"], false, "{}", again.stdout);
 }

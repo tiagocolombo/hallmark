@@ -1,6 +1,5 @@
 ---
 source: tests/snapshots.rs
-assertion_line: 120
 expression: "scrub(&env, &json!(lines))"
 ---
 [
@@ -24,7 +23,7 @@ expression: "scrub(&env, &json!(lines))"
       "actions": [
         {
           "command": "hall propose-ready H-0001 --summary \"<what was done>\"",
-          "does": "say it looks done; the human decides"
+          "does": "say it's done: straight to review when nothing is left to confirm"
         },
         {
           "command": "hall ready H-0001",

@@ -1,0 +1,3 @@
+disallowed-methods = [
+  { path = "std::thread::sleep", reason = "panics on macOS when nanosleep fails with EAGAIN; use hallmark::daemon::nap (ADR 0030)" },
+]

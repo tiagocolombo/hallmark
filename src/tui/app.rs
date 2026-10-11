@@ -347,6 +347,29 @@ impl App {
                 (group, r.child, r.item.id.0)
             });
         }
+        // Closed today: newest first, each part still under its parent.
+        let closed = &mut cols[COLUMNS.len() - 1];
+        let when: std::collections::HashMap<ItemId, chrono::DateTime<chrono::Utc>> = closed
+            .iter()
+            .map(|r| (r.item.id, r.item.state_since))
+            .collect();
+        closed.sort_by_key(|r| {
+            let group = match (r.child, r.item.parent) {
+                (true, Some(p)) => when.get(&p).copied().unwrap_or(r.item.state_since),
+                _ => r.item.state_since,
+            };
+            let parent = if r.child {
+                r.item.parent
+            } else {
+                Some(r.item.id)
+            };
+            (
+                std::cmp::Reverse(group),
+                parent.map(|p| p.0),
+                r.child,
+                std::cmp::Reverse(r.item.state_since),
+            )
+        });
         cols
     }
 
@@ -582,6 +605,22 @@ impl App {
             },
             (View::Inbox, KeyCode::Char(c @ '1'..='9')) => {
                 return self.run_action(c as usize - '1' as usize);
+            }
+            // Dismiss the entry, or clear the whole inbox: hidden until
+            // each one changes.
+            (View::Inbox, KeyCode::Char('D')) => match self.inbox_actions().last() {
+                Some((cmd, _)) if cmd.ends_with("--dismiss") => {
+                    let cmd = cmd.clone();
+                    return self.run_command(&cmd);
+                }
+                _ => self.err("This entry can't be dismissed."),
+            },
+            (View::Inbox, KeyCode::Char('C')) => {
+                if self.inbox().is_empty() {
+                    self.info("Nothing needs you.");
+                } else {
+                    return self.run_command("hall inbox --clear");
+                }
             }
             (View::Repos, KeyCode::Up) => self.repo_sel = self.repo_sel.saturating_sub(1),
             (View::Repos, KeyCode::Down) => {

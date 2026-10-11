@@ -39,6 +39,10 @@ pub struct Config {
     pub claude_args: Vec<String>,
     /// Rejected reviews before the item is escalated to you.
     pub max_rejects: u32,
+    /// `hall propose-ready` sends the item straight to review when nothing
+    /// is left to confirm (no open question, a clean worktree, no open
+    /// parts). `false`: it always waits for your call.
+    pub auto_ready: bool,
     /// The watchman flags items with no event for this long.
     pub stuck_after: String,
     /// "all", or a list of lens names.
@@ -71,6 +75,7 @@ impl Default for Config {
             fixer: "claude -p".into(),
             claude_args: Vec::new(),
             max_rejects: 3,
+            auto_ready: true,
             stuck_after: "30m".into(),
             lenses: Lenses::All("all".into()),
             rules: vec!["CLAUDE.md".into(), "AGENTS.md".into()],
@@ -115,10 +120,51 @@ impl CaptureMode {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(default)]
 pub struct Capture {
     pub mode: CaptureMode,
+    /// Paths that need no item: edits and commits that touch only these are
+    /// never gated. Globs relative to the repo root. By default, docs and
+    /// Markdown: questions, documents, architecture and requirements aren't
+    /// development work, so they don't become items.
+    pub free: Vec<String>,
+}
+
+impl Default for Capture {
+    fn default() -> Self {
+        Capture {
+            mode: CaptureMode::default(),
+            free: vec!["docs/".into(), "*.md".into()],
+        }
+    }
+}
+
+impl Capture {
+    /// Whether `rel` (a path relative to the repo root, `/`-separated) matches
+    /// `free`. Use [`Config::is_free`], which also protects review inputs.
+    pub fn matches_free(&self, rel: &str) -> bool {
+        crate::assayer::base::globset(&self.free).is_match(rel)
+    }
+}
+
+impl Config {
+    /// Whether `rel` (a path relative to the repo root, `/`-separated) needs
+    /// no item. Review inputs never do: this file, `.hallmark/` and the rules
+    /// files steer the reviewer, so changing them is development work.
+    pub fn is_free(&self, rel: &str) -> bool {
+        let rel = rel.trim_start_matches("./");
+        if rel == FILE_NAME
+            || rel.starts_with(".hallmark/")
+            || self.rules.iter().any(|r| {
+                let r = r.split('#').next().unwrap_or(r);
+                r.trim_start_matches("./") == rel
+            })
+        {
+            return false;
+        }
+        self.capture.matches_free(rel)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -376,7 +422,7 @@ impl Route {
             "question" => &self.question,
             "escalated" => &self.escalated,
             "stuck" | "daemon_stopped" => &self.stuck,
-            "ci_failed" => &self.escalated,
+            "ci_failed" | "conflict" | "feedback" => &self.escalated,
             "ready" => &self.ready,
             "budget" | "run_failed" | "ship_failed" | "held" => &self.budget,
             "session_waiting" => &self.session_waiting,
@@ -577,10 +623,12 @@ ship     = {ship}
 update   = {update}
 {gates_toml}
 max_rejects = 3
+auto_ready  = true   # done, with nothing left to confirm: straight to review
 rules = ["CLAUDE.md", "AGENTS.md"]
 
 [capture]
 mode = {capture}   # gate: edits need an item · ask: Claude asks you · off
+free = ["docs/", "*.md"]   # questions, docs, designs and plans need no item
 
 [budget]           # no caps unless you set them
 review_model = "opus"

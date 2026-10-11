@@ -610,7 +610,7 @@ fn a_default_is_used_after_the_wait() {
         &["daemon", "run", "--once", "--only", "resume"],
     );
     assert_eq!(r.json["steps"][0]["progress"], "idle", "{}", r.stdout);
-    std::thread::sleep(std::time::Duration::from_millis(1500));
+    hallmark::daemon::nap(std::time::Duration::from_millis(1500));
     let r = env.hall_fake(
         &env.repo,
         &script,

@@ -141,6 +141,26 @@ impl Repo {
             .map(|ws| ws.iter().any(|w| paths::is_within(p, &w.path)))
             .unwrap_or(false)
     }
+
+    /// `p` relative to the checkout (main, or a worktree) that holds it,
+    /// with `/` separators, for matching repo-relative globs.
+    pub fn relative(&self, p: &Path) -> Option<String> {
+        let mut roots = vec![self.toplevel.clone(), self.main_root.clone()];
+        if let Ok(ws) = git::worktrees(&self.main_root) {
+            roots.extend(ws.into_iter().map(|w| w.path));
+        }
+        // The deepest root wins: worktrees can sit inside the main checkout.
+        roots.sort_by_key(|r| std::cmp::Reverse(r.components().count()));
+        let p = paths::normalize(p);
+        roots.iter().find_map(|r| {
+            let rel = p.strip_prefix(paths::normalize(r)).ok()?;
+            let parts: Vec<String> = rel
+                .components()
+                .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                .collect();
+            (!parts.is_empty()).then(|| parts.join("/"))
+        })
+    }
 }
 
 /// Who is acting: `you` on a terminal, `agent` inside Claude Code.

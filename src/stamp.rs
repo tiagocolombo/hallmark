@@ -28,6 +28,10 @@ pub struct Note {
     /// Findings still open (minors and nits) when it was approved.
     pub findings: Counts,
     pub t: DateTime<Utc>,
+    /// Set when the approval was carried across a clean rebase with an
+    /// identical patch (ADR 0030): the commit the review approved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rebased_from: Option<String>,
 }
 
 /// Writes the note on `sha` and records `hallmarked`. Safe to repeat: the
@@ -48,6 +52,7 @@ pub fn strike(
         reviewer,
         findings,
         t: Utc::now(),
+        rebased_from: None,
     };
     let body = serde_json::to_string(&note)?;
     // Concurrent strikes would each write a notes commit on the same parent
@@ -76,6 +81,41 @@ pub fn strike(
             ),
         )?;
     }
+    Ok(note)
+}
+
+/// Carries the hallmark on `from` to `to`, its clean rebase with the same
+/// patch whose gates passed (ADR 0030): writes the note on `to`, naming
+/// `from`, and records `hallmarked` at `to` as `actor`. Only the Dispatch
+/// Dock calls it, after checking all of that.
+pub fn carry(repo: &Repo, item: ItemId, from: &str, to: &str, actor: &str) -> Result<Note> {
+    let old = read(&repo.main_root, from).ok_or_else(|| {
+        crate::error::HallError::internal(format!("{from} has no hallmark to carry"))
+    })?;
+    let note = Note {
+        sha: to.to_string(),
+        t: Utc::now(),
+        rebased_from: Some(from.to_string()),
+        ..old
+    };
+    let body = serde_json::to_string(&note)?;
+    repo.hall.with_repo_lock(|| {
+        git::run(
+            &repo.main_root,
+            &["notes", "--ref", NOTES_REF, "add", "-f", "-m", &body, to],
+        )
+    })?;
+    repo.hall.append_item(
+        item,
+        &Event::new(
+            actor,
+            Some(item),
+            Body::Hallmarked {
+                sha: to.to_string(),
+                round: note.round,
+            },
+        ),
+    )?;
     Ok(note)
 }
 

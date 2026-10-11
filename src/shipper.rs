@@ -33,7 +33,7 @@ pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
     let Some((item, _)) = lease::claim_next(repo, "shipper", &ctx.holder, ttl, None)? else {
         return Ok(Progress::Idle);
     };
-    let r = ship(repo, &item);
+    let r = ship(repo, &item, &ctx.holder);
     let _ = lease::release(&repo.hall, item.id, &ctx.holder);
     r
 }
@@ -43,7 +43,7 @@ pub fn body_path(repo: &Repo, id: ItemId) -> PathBuf {
     repo.hall.item_dir(id).join("pr-body.md")
 }
 
-fn ship(repo: &Repo, item: &Item) -> Result<Progress> {
+fn ship(repo: &Repo, item: &Item, ctx_holder: &str) -> Result<Progress> {
     let id = item.id;
     if item.state != State::Hallmarked {
         return Ok(Progress::Idle);
@@ -59,7 +59,7 @@ fn ship(repo: &Repo, item: &Item) -> Result<Progress> {
             ),
         );
     }
-    let head = git::head(&wt)?;
+    let mut head = git::head(&wt)?;
     let Some(hallmark) = item.hallmark_sha.clone() else {
         return held(repo, id, "the item has no hallmarked commit".into());
     };
@@ -150,6 +150,12 @@ fn ship(repo: &Repo, item: &Item) -> Result<Progress> {
             ),
         );
     }
+    // Always on the latest base before the PR opens or moves (ADR 0030).
+    match freshen(ctx_holder, repo, item, &base, &wt, &head)? {
+        Fresh::Ship(at) => head = at,
+        Fresh::Done(p) => return Ok(p),
+    }
+    let item = &repo.hall.load_item(id)?;
     let events = repo.hall.read_item(id)?;
     let body = pr_body(repo, item, &events);
     let body_file = body_path(repo, id);
@@ -260,6 +266,216 @@ fn ship(repo: &Repo, item: &Item) -> Result<Progress> {
     )))
 }
 
+/// What the rebase before shipping decided.
+enum Fresh {
+    /// Ship this commit: the hallmarked one, or its rebase carrying the
+    /// hallmark.
+    Ship(String),
+    /// Not now: the item went back through the loop, or was held.
+    Done(Progress),
+}
+
+/// Rebases a hallmarked branch onto the latest `base` before it ships.
+///
+/// - Already on top of it: ship as is.
+/// - A clean rebase with the same patch (`git patch-id --stable`) whose
+///   gates pass at the new commit: the hallmark is carried to it, and it
+///   ships. No review is spent on a change the reviewer already approved.
+/// - A clean rebase whose patch changed, or whose gates fail: the rebased
+///   commit goes back through the loop (`pulled_back`, then `ready`).
+/// - Conflicts: the rebase is undone and the item goes back to
+///   development with a rebase request; the Delivery office resolves it
+///   with a headless dev run and sends it to review.
+fn freshen(
+    holder: &str,
+    repo: &Repo,
+    item: &Item,
+    base: &str,
+    wt: &std::path::Path,
+    head: &str,
+) -> Result<Fresh> {
+    let id = item.id;
+    let Some(target) = crate::delivery::base_ref(wt, base) else {
+        // No base to rebase onto here; the ship command finds out.
+        return Ok(Fresh::Ship(head.to_string()));
+    };
+    // A stack whose lower PR merged ships into the configured base: replay
+    // only this item's commits, the ones since the old base branch.
+    let upstream =
+        if base != item.base && git::rev(wt, &format!("refs/heads/{}", item.base)).is_some() {
+            format!("refs/heads/{}", item.base)
+        } else {
+            target.git_ref.clone()
+        };
+    let rebased = crate::delivery::rebase(wt, &target.git_ref, &upstream)?;
+    let (from, to, old_base) = match rebased {
+        crate::delivery::Rebased::UpToDate => return Ok(Fresh::Ship(head.to_string())),
+        crate::delivery::Rebased::Failed(why) => {
+            return held(
+                repo,
+                id,
+                format!("the rebase onto {} failed: {why}", target.name),
+            )
+            .map(Fresh::Done);
+        }
+        crate::delivery::Rebased::Conflict { files } => {
+            let _ = git::run(wt, &["rebase", "--abort"]);
+            let reason = format!(
+                "{} conflicts with {} in {}",
+                item.branch,
+                target.name,
+                if files.is_empty() {
+                    "some files".to_string()
+                } else {
+                    files.join(", ")
+                }
+            );
+            back(
+                repo,
+                id,
+                vec![
+                    Body::PulledBack {
+                        reason: Some(reason.clone()),
+                    },
+                    Body::RebaseRequested {
+                        onto: base.to_string(),
+                        reason: reason.clone(),
+                        files,
+                    },
+                ],
+            )?;
+            let what = format!("{id} not shipped: {reason}; the Delivery office rebases it");
+            repo.hall.live(&what);
+            return Ok(Fresh::Done(Progress::worked(what)));
+        }
+        crate::delivery::Rebased::Clean { from, to, old_base } => (from, to, old_base),
+    };
+    let same = match (
+        git::patch_id(wt, &old_base, &from),
+        git::patch_id(wt, &target.git_ref, &to),
+    ) {
+        (Some(a), Some(b)) => a == b,
+        _ => false,
+    };
+    repo.hall.live(&format!(
+        "{id} rebased onto {}: {} → {}{}",
+        target.name,
+        short(&from),
+        short(&to),
+        if same {
+            ", same patch; running the gates"
+        } else {
+            ", the patch changed"
+        }
+    ));
+    let mut checks = Vec::new();
+    if same {
+        let renew = || {
+            let _ = lease::claim(
+                &repo.hall,
+                id,
+                "shipper",
+                holder,
+                chrono::Duration::seconds(SHIP_TIMEOUT_SECS as i64 + 900),
+            );
+        };
+        match crate::assayer::checks::gates_at(
+            repo,
+            id,
+            &to,
+            &format!("rebase-{}", short(&to)),
+            &renew,
+        ) {
+            Ok(runs) => checks = runs,
+            Err(e) if e.code == crate::error::ErrorCode::Claimed => {
+                // Every check slot is busy: put the branch back and try on
+                // a later pass.
+                let _ = git::run(wt, &["reset", "--hard", &from]);
+                return Ok(Fresh::Done(Progress::Idle));
+            }
+            Err(e) => {
+                let _ = git::run(wt, &["reset", "--hard", &from]);
+                return Err(e);
+            }
+        }
+    }
+    let passed = checks.iter().all(|r| r.exit_code == 0);
+    let carried = same && passed;
+    let reason = (!carried).then(|| {
+        if same {
+            let failed: Vec<&str> = checks
+                .iter()
+                .filter(|r| r.exit_code != 0)
+                .map(|r| r.command.as_str())
+                .collect();
+            format!("the gates failed after the rebase: {}", failed.join(", "))
+        } else {
+            "the patch changed in the rebase, so it is reviewed again".to_string()
+        }
+    });
+    let rebased_ev = Body::Rebased {
+        from: from.clone(),
+        to: to.clone(),
+        onto: target.name.clone(),
+        carried,
+        checks,
+        reason: reason.clone(),
+    };
+    if carried {
+        repo.hall
+            .append_item(id, &Event::new(ACTOR, Some(id), rebased_ev))?;
+        crate::stamp::carry(repo, id, &from, &to, ACTOR)?;
+        return Ok(Fresh::Ship(to));
+    }
+    let round = item.round + 1;
+    back(
+        repo,
+        id,
+        vec![
+            rebased_ev,
+            Body::PulledBack {
+                reason: reason.clone(),
+            },
+            Body::Ready {
+                sha: to.clone(),
+                round,
+                note: Some(format!("rebased onto {}", target.name)),
+            },
+        ],
+    )?;
+    repo.hall.queue(&crate::journal::Ticket {
+        id,
+        sha: to.clone(),
+        round,
+        queued_at: chrono::Utc::now(),
+    })?;
+    let what = format!(
+        "{id} not shipped: rebased onto {} at {}; {}; back to review",
+        target.name,
+        short(&to),
+        reason.unwrap_or_default()
+    );
+    repo.hall.live(&what);
+    Ok(Fresh::Done(Progress::worked(what)))
+}
+
+/// Appends `bodies` while the item is still hallmarked.
+fn back(repo: &Repo, id: ItemId, bodies: Vec<Body>) -> Result<()> {
+    repo.hall.transact(id, |it, _| {
+        if it.state != State::Hallmarked {
+            return Ok((vec![], ()));
+        }
+        Ok((
+            bodies
+                .into_iter()
+                .map(|b| Event::new(ACTOR, Some(id), b))
+                .collect(),
+            (),
+        ))
+    })?;
+    Ok(())
+}
+
 fn held(repo: &Repo, id: ItemId, reason: String) -> Result<Progress> {
     repo.hall.append_item(
         id,
@@ -335,6 +551,26 @@ pub fn pr_body(_repo: &Repo, item: &Item, events: &[Event]) -> String {
         None => {
             let _ = writeln!(s, "Hallmarked after {} rounds.", item.round);
         }
+    }
+    // The approval carried across a rebase onto the latest base.
+    if let Some((from, onto)) = events.iter().rev().find_map(|e| match &e.body {
+        Body::Rebased {
+            from,
+            onto,
+            carried: true,
+            to,
+            ..
+        } if item.hallmark_sha.as_deref() == Some(to.as_str()) => {
+            Some((from.clone(), onto.clone()))
+        }
+        _ => None,
+    }) {
+        let _ = writeln!(
+            s,
+            "Rebased onto `{onto}` before shipping: the patch is identical to the approved `{}` \
+             and the gates passed again.",
+            short(&from)
+        );
     }
     let ledger = Ledger::from_events(events);
     let settled: Vec<String> = ledger

@@ -95,7 +95,7 @@ fn the_daemon_runs_checks_side_by_side() {
     };
     let deadline = started + std::time::Duration::from_secs(12);
     while (state(&a) == "checks" || state(&b) == "checks") && std::time::Instant::now() < deadline {
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        hallmark::daemon::nap(std::time::Duration::from_millis(100));
     }
     let took = started.elapsed();
     let _ = env.cmd(&env.root).args(["daemon", "stop"]).output();

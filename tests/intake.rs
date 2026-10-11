@@ -434,7 +434,7 @@ fn the_parent_goes_to_review_only_when_every_child_is_in() {
     // But it can say it looks done, and its hints point at merging.
     let pr = env.hall(
         &wt(&r, 0),
-        &["propose-ready", "--summary", "retries in place"],
+        &["propose-ready", "--ask", "--summary", "retries in place"],
     );
     assert_eq!(pr.code, 0, "{}", pr.stdout);
     assert_eq!(pr.json["state"], "awaiting_you");
@@ -501,7 +501,10 @@ fn a_part_can_be_added_by_hand() {
     assert_eq!(r.json["error"]["code"], "WRONG_STATE", "{}", r.stdout);
     let (other, other_wt) = env.new_item("Other");
     commit_file(&other_wt, "x.txt", "x");
-    env.hall(&env.repo, &["propose-ready", &other, "--summary", "done"]);
+    env.hall(
+        &env.repo,
+        &["propose-ready", "--ask", &other, "--summary", "done"],
+    );
     let r = env.hall(&env.repo, &["new", "--title", "Late", "--parent", &other]);
     assert_eq!(r.json["error"]["code"], "WRONG_STATE", "{}", r.stdout);
 }

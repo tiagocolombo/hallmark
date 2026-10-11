@@ -115,7 +115,12 @@ fn an_inbox_entry_explains_itself() {
     );
     env.hall(
         &wt,
-        &["propose-ready", "--summary", "usage page with tests"],
+        &[
+            "propose-ready",
+            "--ask",
+            "--summary",
+            "usage page with tests",
+        ],
     );
 
     let list = env.hall(&env.repo, &["inbox"]);
@@ -221,7 +226,7 @@ fn context(r: &common::Reply) -> String {
 fn claude_is_told_what_waits_once() {
     let env = Env::initialized();
     let (id, wt) = env.new_item("Usage page");
-    env.hall(&wt, &["propose-ready", "--summary", "done"]);
+    env.hall(&wt, &["propose-ready", "--ask", "--summary", "done"]);
 
     let start = env.hook(
         "session-start",
@@ -262,7 +267,7 @@ fn claude_is_told_what_waits_once() {
 fn an_entry_that_leaves_and_returns_is_announced_again() {
     let env = Env::initialized();
     let (id, wt) = env.new_item("Usage page");
-    env.hall(&wt, &["propose-ready", "--summary", "done"]);
+    env.hall(&wt, &["propose-ready", "--ask", "--summary", "done"]);
     let start = env.hook(
         "session-start",
         &hook_input("session_start", &env.repo, "w2"),
@@ -278,12 +283,67 @@ fn an_entry_that_leaves_and_returns_is_announced_again() {
     assert!(!context(&prompt).contains("waiting for the human"));
 
     // ...then comes back: it is a new occurrence.
-    std::thread::sleep(std::time::Duration::from_millis(20));
-    env.hall(&wt, &["propose-ready", "--summary", "done again"]);
+    hallmark::daemon::nap(std::time::Duration::from_millis(20));
+    env.hall(&wt, &["propose-ready", "--ask", "--summary", "done again"]);
     let prompt = env.hook(
         "user-prompt-submit",
         &hook_input("user_prompt_submit", &env.repo, "w2"),
     );
     let text = context(&prompt);
     assert!(text.contains("new entries are waiting"), "{text}");
+}
+
+#[test]
+fn the_inbox_clears_and_entries_return_when_they_change() {
+    let env = Env::initialized();
+    let (id, wt) = env.new_item("Usage page");
+    env.hall(&wt, &["ask", "billed or raw?", "--options", "billed,raw"]);
+    env.hall(&wt, &["propose-ready", "--ask", "--summary", "first pass"]);
+    let count = |all: bool| {
+        let args: &[&str] = if all { &["inbox", "--all"] } else { &["inbox"] };
+        env.hall(&env.repo, args).json["entries"]
+            .as_array()
+            .unwrap()
+            .len()
+    };
+    assert_eq!(count(false), 2);
+
+    // One entry, from its explanation: the last action dismisses it.
+    let detail = env.hall(&env.repo, &["inbox", "Q-1"]);
+    let actions = detail.json["actions"].as_array().unwrap();
+    let dismiss = actions.last().unwrap()["command"].as_str().unwrap();
+    let key = dismiss
+        .strip_prefix("hall inbox ")
+        .and_then(|s| s.strip_suffix(" --dismiss"))
+        .unwrap()
+        .to_string();
+    assert!(key.starts_with("question:Q-1:"), "{dismiss}");
+    let r = env.hall(&env.repo, &["inbox", &key, "--dismiss"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(r.json["dismissed"][0]["qid"], "Q-1");
+    assert_eq!(r.json["remaining"], 1);
+    assert_eq!(count(false), 1);
+    assert_eq!(count(true), 2, "--all still shows it");
+    // Nothing was answered.
+    let q = env.hall(&env.repo, &["inbox", "--all"]);
+    assert_eq!(q.json["entries"][0]["kind"], "question");
+
+    // Everything at once; repeating it changes nothing.
+    let r = env.hall(&env.repo, &["inbox", "--clear"]);
+    assert_eq!(r.json["dismissed"].as_array().unwrap().len(), 1);
+    assert_eq!(r.json["remaining"], 0);
+    assert_eq!(count(false), 0);
+    let again = env.hall(&env.repo, &["inbox", "--clear"]);
+    assert_eq!(again.json["dismissed"].as_array().unwrap().len(), 0);
+
+    // The item changes (a new "looks done"): it comes back.
+    env.hall(&wt, &["pull-back"]);
+    env.hall(&wt, &["propose-ready", "--ask", "--summary", "second pass"]);
+    let inbox = env.hall(&env.repo, &["inbox"]);
+    assert_eq!(inbox.json["entries"][0]["item"], id.as_str());
+    assert_eq!(inbox.json["entries"][0]["kind"], "ready");
+
+    // --dismiss needs an entry; --clear takes none.
+    assert_eq!(env.hall(&env.repo, &["inbox", "--dismiss"]).code, 2);
+    assert_eq!(env.hall(&env.repo, &["inbox", "1", "--clear"]).code, 2);
 }

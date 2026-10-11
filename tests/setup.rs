@@ -414,7 +414,7 @@ fn setup_puts_hall_on_path_through_local_bin() {
             match r {
                 Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy && tries < 50 => {
                     tries += 1;
-                    std::thread::sleep(std::time::Duration::from_millis(20));
+                    hallmark::daemon::nap(std::time::Duration::from_millis(20));
                 }
                 r => break r.unwrap(),
             }

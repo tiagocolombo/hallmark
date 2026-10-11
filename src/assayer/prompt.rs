@@ -57,8 +57,23 @@ pub fn prepare(
 ) -> Result<Review> {
     let dir = &repo.main_root;
     let base = Base::resolve(repo, &item.base)?;
-    let merge_base =
+    let mut merge_base =
         git::run(dir, &["merge-base", &base.sha, sha]).unwrap_or_else(|_| base.sha.clone());
+    // A branch rebased onto `origin/<base>` (the Delivery office, `freshen`)
+    // while local `<base>` is behind: diff from the newer fork point, so
+    // other merged PRs aren't part of this item's review.
+    if let Ok(remote) = git::run(
+        dir,
+        &[
+            "merge-base",
+            &format!("refs/remotes/origin/{}", item.base),
+            sha,
+        ],
+    ) && remote != merge_base
+        && git::ok(dir, &["merge-base", "--is-ancestor", &merge_base, &remote])
+    {
+        merge_base = remote;
+    }
     // Incremental from round 2, unless the branch was rewritten since.
     let reviewed = item.reviewed_sha.clone().filter(|s| s != sha);
     let since = reviewed

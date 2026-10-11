@@ -45,7 +45,8 @@ pub enum Cmd {
     Status(StatusArgs),
     /// An item's journal.
     Log(LogArgs),
-    /// Everything waiting for you, oldest first; `hall inbox <n>` explains one.
+    /// Everything waiting for you, oldest first; `hall inbox <n>` explains
+    /// one, `--dismiss` hides it and `--clear` hides them all.
     Inbox(InboxArgs),
     /// Follow an item live until it leaves the loop or needs you.
     Watch(WatchArgs),
@@ -192,6 +193,16 @@ pub struct InboxArgs {
     /// One entry to explain: its number in the list, a question ID (Q-3)
     /// or an item ID.
     pub entry: Option<String>,
+    /// Dismiss that entry: it stays hidden until it changes. Nothing is
+    /// answered, retried or dropped.
+    #[arg(long, requires = "entry", conflicts_with = "clear")]
+    pub dismiss: bool,
+    /// Dismiss every entry shown now.
+    #[arg(long, conflicts_with = "entry")]
+    pub clear: bool,
+    /// Show dismissed entries too.
+    #[arg(long)]
+    pub all: bool,
 }
 
 #[derive(Debug, Args)]
@@ -253,6 +264,10 @@ pub struct ProposeReadyArgs {
     /// What was done, for the human deciding.
     #[arg(long)]
     pub summary: String,
+    /// Something needs the human's confirmation: wait for their call
+    /// instead of going straight to review.
+    #[arg(long)]
+    pub ask: bool,
 }
 
 #[derive(Debug, Args)]

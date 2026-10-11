@@ -55,6 +55,15 @@ pub struct ItemView {
     pub summary: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub drop_reason: Option<String>,
+    /// Waiting for the Delivery office to rebase it onto its base.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rebase: Option<crate::item::RebaseRequest>,
+    /// New PR comments waiting for the Delivery office's dev run.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub feedback: Option<crate::item::FeedbackRequest>,
+    /// How the shipped PR ended: merged or closed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delivered: Option<String>,
     pub created_at: DateTime<Utc>,
     pub state_since: DateTime<Utc>,
 }
@@ -77,6 +86,9 @@ impl From<&Item> for ItemView {
             pr_url: i.pr_url.clone(),
             summary: i.summary.clone(),
             drop_reason: i.drop_reason.clone(),
+            rebase: i.rebase.clone(),
+            feedback: i.feedback.clone(),
+            delivered: i.delivered.clone(),
             created_at: i.created_at,
             state_since: i.state_since,
         }

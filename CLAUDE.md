@@ -108,9 +108,12 @@ docs/            design, ADRs, spikes
 
 <!-- hallmark:start -->
 ## Hallmark
-Changes in this repo are tracked with Hallmark.
-Start each change with `hall new`, or `hall adopt`
-for an existing branch. Never push: work reaches
-GitHub only through review. `hall help --json`
-lists every command.
+Changes to this repo's code are tracked with Hallmark.
+Only a clear, concise requirement to build or change
+something in the app becomes an item: start it with
+`hall new`, or `hall adopt` for an existing branch.
+Questions, documents, architecture, requirements and
+plans are not items: answer or write them directly.
+Never push: work reaches GitHub only through review.
+`hall help --json` lists every command.
 <!-- hallmark:end -->

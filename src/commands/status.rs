@@ -244,8 +244,24 @@ pub fn inbox(cwd: &Path, a: crate::cli::InboxArgs) -> Result<Response> {
     let repo = Repo::discover(cwd)?;
     repo.require_init()?;
     let ix = repo.index()?;
-    let entries = ix.inbox()?;
+    let entries = if a.all { ix.inbox_all()? } else { ix.inbox()? };
+    if a.clear {
+        return dismiss(&repo, entries);
+    }
     if let Some(which) = &a.entry {
+        if a.dismiss {
+            return match find_entry(&entries, which) {
+                Ok(pos) => dismiss(&repo, vec![entries[pos].clone()]),
+                Err(e) => {
+                    // Repeating a dismissal: the key is already hidden.
+                    let all = ix.inbox_all()?;
+                    match all.iter().find(|x| x.key() == which.trim()) {
+                        Some(x) => dismiss(&repo, vec![x.clone()]),
+                        None => Err(e),
+                    }
+                }
+            };
+        }
         return inbox_detail(&repo, &ix, entries, which);
     }
     let mut next: Vec<String> = Vec::new();
@@ -258,7 +274,106 @@ pub fn inbox(cwd: &Path, a: crate::cli::InboxArgs) -> Result<Response> {
             .flat_map(|e| e.answer_with.first().cloned())
             .take(5),
     );
+    if !entries.is_empty() {
+        next.push("hall inbox --clear".into());
+    }
     Ok(Response::new(InboxOut { entries }, next))
+}
+
+/// What `hall inbox --dismiss` and `--clear` did.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct DismissOut {
+    /// The entries hidden by this run. Each comes back when it changes.
+    pub dismissed: Vec<InboxEntry>,
+    /// Entries still waiting.
+    pub remaining: usize,
+}
+
+impl Render for DismissOut {
+    fn render(&self) -> String {
+        let mut s = match self.dismissed.len() {
+            0 => "Nothing to dismiss.\n".to_string(),
+            1 => "Dismissed 1 entry; it comes back if it changes.\n".to_string(),
+            n => format!("Dismissed {n} entries; each comes back if it changes.\n"),
+        };
+        for e in &self.dismissed {
+            let who = e.item.map(|i| format!(" {i}")).unwrap_or_default();
+            s.push_str(&format!("  {}{who}  {}\n", e.kind, clip(&e.text, 60)));
+        }
+        s.push_str(&match self.remaining {
+            0 => "Nothing else needs you.\n".to_string(),
+            n => format!("{n} still waiting.\n"),
+        });
+        s
+    }
+}
+
+/// Hides `entries` until they change. Nothing is answered, retried or
+/// dropped, and repeating it changes nothing.
+pub fn dismiss(repo: &Repo, entries: Vec<InboxEntry>) -> Result<Response> {
+    let done = crate::journal::dismissed(&repo.hall.root);
+    let keys: Vec<String> = entries
+        .iter()
+        .map(|e| e.key())
+        .filter(|k| !done.contains(k))
+        .collect();
+    if !keys.is_empty() {
+        repo.hall.append(
+            &repo.hall.dismissed_events(),
+            &crate::event::Event::new(
+                crate::repo::actor(),
+                None,
+                crate::event::Body::InboxDismissed { keys: keys.clone() },
+            ),
+        )?;
+    }
+    let dismissed: Vec<InboxEntry> = entries
+        .into_iter()
+        .filter(|e| keys.contains(&e.key()))
+        .collect();
+    let remaining = repo.index()?.inbox()?.len();
+    let next = if remaining > 0 {
+        vec!["hall inbox".to_string(), "hall inbox --all".into()]
+    } else {
+        vec!["hall inbox --all".to_string()]
+    };
+    Ok(Response::new(
+        DismissOut {
+            dismissed,
+            remaining,
+        },
+        next,
+    ))
+}
+
+/// The entry `which` names: its number, a question ID or an item ID.
+fn find_entry(entries: &[InboxEntry], which: &str) -> Result<usize> {
+    let w = which.trim();
+    entries
+        .iter()
+        .position(|e| e.key() == w)
+        .or_else(|| {
+            w.parse::<usize>()
+                .ok()
+                .and_then(|n| n.checked_sub(1))
+                .filter(|n| *n < entries.len())
+        })
+        .or_else(|| {
+            entries
+                .iter()
+                .position(|e| e.qid.as_deref().is_some_and(|q| q.eq_ignore_ascii_case(w)))
+        })
+        .or_else(|| {
+            let id: crate::item::ItemId = w.parse().ok()?;
+            entries.iter().position(|e| e.item == Some(id))
+        })
+        .ok_or_else(|| {
+            HallError::new(
+                ErrorCode::ItemNotFound,
+                format!("nothing in the inbox matches {w}"),
+            )
+            .next(["hall inbox"])
+        })
 }
 
 /// One inbox entry, explained.
@@ -315,28 +430,7 @@ fn inbox_detail(
     entries: Vec<InboxEntry>,
     which: &str,
 ) -> Result<Response> {
-    let w = which.trim();
-    let pos = w
-        .parse::<usize>()
-        .ok()
-        .and_then(|n| n.checked_sub(1))
-        .filter(|n| *n < entries.len())
-        .or_else(|| {
-            entries
-                .iter()
-                .position(|e| e.qid.as_deref().is_some_and(|q| q.eq_ignore_ascii_case(w)))
-        })
-        .or_else(|| {
-            let id: crate::item::ItemId = w.parse().ok()?;
-            entries.iter().position(|e| e.item == Some(id))
-        })
-        .ok_or_else(|| {
-            HallError::new(
-                ErrorCode::ItemNotFound,
-                format!("nothing in the inbox matches {w}"),
-            )
-            .next(["hall inbox"])
-        })?;
+    let pos = find_entry(&entries, which)?;
     let out = explain(repo, ix, entries[pos].clone(), pos + 1)?;
     let actions = out.actions.clone();
     let next = actions.into_iter().map(|a| a.command).collect();
@@ -430,6 +524,16 @@ pub fn explain(repo: &Repo, ix: &Index, entry: InboxEntry, number: usize) -> Res
                     "A model run failed twice in a row, so the loop stopped working on it."
                 }
                 "ship_failed" => "The ship command failed, so it hasn't been pushed.",
+                "feedback" => {
+                    "Its PR has new comments, and the Delivery office's dev run didn't change \
+                     anything for them (questions, or it disagrees). Reply on the PR, or address \
+                     them in a session and `hall ready`; `hall retry` lets the office try again."
+                }
+                "conflict" => {
+                    "Its branch conflicts with its base, and the Delivery office's headless rebase \
+                     couldn't resolve it. Resolve it in a session (rebase in its worktree), then \
+                     `hall ready`; or `hall retry` to let the Delivery office try again."
+                }
                 "stuck" => "Nothing has happened to it for longer than `stuck_after`.",
                 "ci_failed" => "The shipped PR's CI failed after the review approved it.",
                 _ => "It needs your decision.",
@@ -449,6 +553,15 @@ pub fn explain(repo: &Repo, ix: &Index, entry: InboxEntry, number: usize) -> Res
         evidence.push(format!("now: {}", n.doing));
         evidence.extend(n.detail.iter().cloned());
     }
+    // Always last, so the numbered actions above keep their places.
+    let mut actions = actions;
+    // By ID where one names it, since numbers shift as entries come and go.
+    // The entry's own key: an item or question ID can match several entries.
+    let target = entry.key();
+    actions.push(act(
+        &format!("hall inbox {target} --dismiss"),
+        "dismiss it: hidden until it changes; nothing is answered or retried",
+    ));
     Ok(InboxDetail {
         number,
         entry,

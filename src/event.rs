@@ -362,6 +362,54 @@ pub enum Body {
         child: ItemId,
         sha: String,
     },
+    /// The Dispatch Dock rebased a hallmarked branch onto the latest base
+    /// before shipping (ADR 0030). `carried`: the patch was identical and
+    /// the gates passed at `to`, so the approval moved to `to` (a
+    /// `hallmarked` event follows). Otherwise the item went back through
+    /// the loop at `to`.
+    Rebased {
+        from: String,
+        to: String,
+        /// The base ref it was rebased onto (`origin/main`).
+        onto: String,
+        carried: bool,
+        /// The gates run at `to`, when the patch was identical.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        checks: Vec<CheckRun>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+    },
+    /// The branch conflicts with its base: a headless dev run (the Delivery
+    /// office) rebases it in development and sends it to review.
+    RebaseRequested {
+        /// The base branch to rebase onto.
+        onto: String,
+        reason: String,
+        /// Files that conflicted, when known.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        files: Vec<String>,
+    },
+    /// New review comments on the shipped PR: a headless dev run (the
+    /// Delivery office) addresses them in development and sends the item to
+    /// review; the shipper then updates the same PR.
+    FeedbackRequested {
+        pr_url: String,
+        comments: Vec<PrComment>,
+        /// The newest comment's time: later comments are new next time.
+        until: DateTime<Utc>,
+    },
+    /// The shipped PR left the open state: `merged` or `closed`. The
+    /// Delivery office stops watching it.
+    Delivered {
+        pr_url: String,
+        outcome: String,
+    },
+    /// You dismissed inbox entries (`hall inbox --dismiss`, `--clear`):
+    /// each stays hidden until it changes. Kept in its own journal file.
+    InboxDismissed {
+        /// `InboxEntry::key` of each entry.
+        keys: Vec<String>,
+    },
     /// The shipped PR's CI finished (the daemon watches it after shipping).
     PrChecks {
         pr_url: String,
@@ -374,6 +422,19 @@ pub enum Body {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         ended: Option<String>,
     },
+}
+
+/// A comment or review on a shipped PR.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct PrComment {
+    pub author: String,
+    pub body: String,
+    /// The file and line, for a comment on the diff.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<u64>,
+    pub at: DateTime<Utc>,
 }
 
 /// A CI check that failed on a shipped PR.
@@ -425,6 +486,11 @@ impl Body {
             Body::Reopened { .. } => "reopened",
             Body::ChildMerged { .. } => "child_merged",
             Body::PrChecks { .. } => "pr_checks",
+            Body::InboxDismissed { .. } => "inbox_dismissed",
+            Body::Rebased { .. } => "rebased",
+            Body::RebaseRequested { .. } => "rebase_requested",
+            Body::Delivered { .. } => "delivered",
+            Body::FeedbackRequested { .. } => "feedback_requested",
         }
     }
 
@@ -454,9 +520,24 @@ impl Body {
         })
     }
 
-    /// One line for humans.
+    /// One line for humans, with long text clipped.
     pub fn summary(&self) -> String {
-        use crate::output::clip;
+        self.summary_at(false)
+    }
+
+    /// The same line with nothing clipped, for views that wrap it.
+    pub fn summary_full(&self) -> String {
+        self.summary_at(true)
+    }
+
+    fn summary_at(&self, full: bool) -> String {
+        let c = |s: &str, n: usize| {
+            if full {
+                s.split_whitespace().collect::<Vec<_>>().join(" ")
+            } else {
+                crate::output::clip(s, n)
+            }
+        };
         match self {
             Body::Created {
                 title,
@@ -466,18 +547,18 @@ impl Body {
             } => {
                 let how = if *adopted { "adopted" } else { "created" };
                 match issue {
-                    Some(i) => format!("{how} from #{} · \"{}\"", i.number, clip(title, 60)),
-                    None => format!("{how} · \"{}\"", clip(title, 60)),
+                    Some(i) => format!("{how} from #{} · \"{}\"", i.number, c(title, 60)),
+                    None => format!("{how} · \"{}\"", c(title, 60)),
                 }
             }
-            Body::Prompt { text } => format!("prompt · \"{}\"", clip(text, 70)),
-            Body::Turn { summary } => format!("turn · {}", clip(summary, 70)),
+            Body::Prompt { text } => format!("prompt · \"{}\"", c(text, 70)),
+            Body::Turn { summary } => format!("turn · {}", c(summary, 70)),
             Body::Commit {
                 sha,
                 subject,
                 fixes,
             } if fixes.is_empty() => {
-                format!("commit {} · {}", short(sha), clip(subject, 60))
+                format!("commit {} · {}", short(sha), c(subject, 60))
             }
             Body::Commit {
                 sha,
@@ -488,26 +569,22 @@ impl Body {
                     "commit {} · fixes {} · {}",
                     short(sha),
                     fixes.join(", "),
-                    clip(subject, 50)
+                    c(subject, 50)
                 )
             }
             Body::ProposedReady { summary } => {
-                format!("proposes ready · \"{}\"", clip(summary, 60))
+                format!("proposes ready · \"{}\"", c(summary, 60))
             }
             Body::Ready { sha, round, note } => match note {
-                Some(n) => format!(
-                    "ready · round {round} · {} · \"{}\"",
-                    short(sha),
-                    clip(n, 40)
-                ),
+                Some(n) => format!("ready · round {round} · {} · \"{}\"", short(sha), c(n, 40)),
                 None => format!("ready · round {round} · {}", short(sha)),
             },
             Body::PulledBack { reason } => match reason {
-                Some(r) => format!("pulled back · \"{}\"", clip(r, 60)),
+                Some(r) => format!("pulled back · \"{}\"", c(r, 60)),
                 None => "pulled back".into(),
             },
-            Body::Dropped { reason, .. } => format!("dropped · \"{}\"", clip(reason, 60)),
-            Body::Retried { reason } => format!("another round allowed · \"{}\"", clip(reason, 50)),
+            Body::Dropped { reason, .. } => format!("dropped · \"{}\"", c(reason, 60)),
+            Body::Retried { reason } => format!("another round allowed · \"{}\"", c(reason, 50)),
             Body::Checks { passed, round, .. } => {
                 format!(
                     "checks {} · round {round}",
@@ -536,7 +613,7 @@ impl Body {
                     pr_url.clone().unwrap_or_else(|| "pushed".into())
                 )
             }
-            Body::Question { qid, text, .. } => format!("question {qid} · \"{}\"", clip(text, 60)),
+            Body::Question { qid, text, .. } => format!("question {qid} · \"{}\"", c(text, 60)),
             Body::Answer {
                 qid,
                 answer,
@@ -547,11 +624,11 @@ impl Body {
                 } else {
                     ""
                 };
-                format!("answer {qid}{how} · \"{}\"", clip(answer, 60))
+                format!("answer {qid}{how} · \"{}\"", c(answer, 60))
             }
             Body::QuestionSession { qid } => format!("question {qid} linked to its session"),
             Body::Notification { message, .. } => {
-                format!("session waiting · {}", clip(message, 60))
+                format!("session waiting · {}", c(message, 60))
             }
             Body::Usage(u) => format!(
                 "usage · {} · {} tok · {}",
@@ -569,7 +646,7 @@ impl Body {
             Body::GateDenied { tool, code, .. } => format!("gate denied {tool} · {code}"),
             Body::AnswerDelivered { qid } => format!("answer {qid} sent to the asking session"),
             Body::Held { kind, reason } => {
-                format!("held ({}) · {}", kind.as_str(), clip(reason, 60))
+                format!("held ({}) · {}", kind.as_str(), c(reason, 60))
             }
             Body::Released {
                 reason,
@@ -580,7 +657,7 @@ impl Body {
                     s.push_str(&format!(" · +{} tokens", crate::usage::fmt_tokens(*n)));
                 }
                 if let Some(r) = reason {
-                    s.push_str(&format!(" · \"{}\"", clip(r, 60)));
+                    s.push_str(&format!(" · \"{}\"", c(r, 60)));
                 }
                 s
             }
@@ -589,17 +666,14 @@ impl Body {
                 role,
                 reason,
                 attempt,
-            } => format!(
-                "{role} run failed (attempt {attempt}) · {}",
-                clip(reason, 50)
-            ),
+            } => format!("{role} run failed (attempt {attempt}) · {}", c(reason, 50)),
             Body::Paused { reason, until } => match until {
                 Some(u) => format!(
                     "daemon paused until {} · {}",
                     u.format("%H:%M"),
-                    clip(reason, 40)
+                    c(reason, 40)
                 ),
-                None => format!("daemon paused · {}", clip(reason, 50)),
+                None => format!("daemon paused · {}", c(reason, 50)),
             },
             Body::Unpaused {} => "daemon resumed".into(),
             Body::BudgetGranted {
@@ -613,7 +687,7 @@ impl Body {
                     crate::usage::fmt_tokens(*tokens)
                 );
                 if let Some(r) = reason {
-                    s.push_str(&format!(" · \"{}\"", clip(r, 50)));
+                    s.push_str(&format!(" · \"{}\"", c(r, 50)));
                 }
                 s
             }
@@ -643,6 +717,43 @@ impl Body {
                 format!("reopened from {pr_url} · base {base}")
             }
             Body::ChildMerged { child, sha } => format!("{child} merged · {}", short(sha)),
+            Body::Rebased {
+                from,
+                to,
+                onto,
+                carried,
+                ..
+            } => format!(
+                "rebased {} → {} onto {onto}{}",
+                short(from),
+                short(to),
+                if *carried {
+                    " · approval carried"
+                } else {
+                    " · back to review"
+                }
+            ),
+            Body::RebaseRequested { onto, files, .. } => {
+                if files.is_empty() {
+                    format!("conflicts with {onto} · rebase requested")
+                } else {
+                    format!(
+                        "conflicts with {onto} in {} · rebase requested",
+                        c(&files.join(", "), 50)
+                    )
+                }
+            }
+            Body::Delivered { pr_url, outcome } => format!("PR {outcome} · {pr_url}"),
+            Body::FeedbackRequested { comments, .. } => format!(
+                "{} new PR comment{} to address",
+                comments.len(),
+                if comments.len() == 1 { "" } else { "s" }
+            ),
+            Body::InboxDismissed { keys } => format!(
+                "{} inbox entr{} dismissed",
+                keys.len(),
+                if keys.len() == 1 { "y" } else { "ies" }
+            ),
             Body::PrChecks {
                 passed, failing, ..
             } => {
@@ -713,6 +824,9 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
         reviewed_sha: None,
         findings: Counts::default(),
         ci: None,
+        rebase: None,
+        feedback: None,
+        delivered: None,
     };
     let mut ledger = Ledger::default();
     for e in it {
@@ -728,6 +842,9 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
                 item.state = to;
                 // Any move settles a hold: the item is somewhere new.
                 item.hold = None;
+                // And a rebase or feedback request: asked for again if needed.
+                item.rebase = None;
+                item.feedback = None;
             } else {
                 continue;
             }
@@ -800,6 +917,25 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
                 item.rejects = 0;
             }
             Body::Dropped { reason, .. } => item.drop_reason = Some(reason.clone()),
+            Body::RebaseRequested {
+                onto,
+                reason,
+                files,
+            } => {
+                item.rebase = Some(crate::item::RebaseRequest {
+                    onto: onto.clone(),
+                    reason: reason.clone(),
+                    files: files.clone(),
+                    since: e.t,
+                })
+            }
+            Body::Delivered { outcome, .. } => item.delivered = Some(outcome.clone()),
+            Body::FeedbackRequested { comments, .. } => {
+                item.feedback = Some(crate::item::FeedbackRequest {
+                    comments: comments.clone(),
+                    since: e.t,
+                })
+            }
             _ => {}
         }
     }

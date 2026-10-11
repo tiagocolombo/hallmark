@@ -562,6 +562,14 @@ impl Ctx {
         if git::is_ignored(&self.repo.toplevel, p) {
             return Ok(None);
         }
+        // Docs, designs and plans aren't development work (`[capture] free`).
+        if self
+            .repo
+            .relative(p)
+            .is_some_and(|r| self.repo.config.is_free(&r))
+        {
+            return Ok(None);
+        }
         Ok(self.capture_denial(&format!("edit {}", paths::display(p))))
     }
 
@@ -571,6 +579,10 @@ impl Ctx {
             return Ok(None);
         }
         if self.repo.item_at(&self.items, &dir).is_some() {
+            return Ok(None);
+        }
+        // A commit of free paths only (docs, Markdown) needs no item.
+        if only_free_changes(&self.repo, &dir) {
             return Ok(None);
         }
         Ok(self.capture_denial(&format!("commit in {}", paths::display(&dir))))
@@ -867,9 +879,9 @@ fn item_context(i: &Item, inbox: usize) -> String {
         }
         State::Development => {
             "Edit files only inside that worktree, with the Edit and Write tools, and run git \
-             there with `git -C <worktree>`. When the work looks done, run \
-             `hall propose-ready --summary \"<what was done>\"` and ask the human; when they say \
-             ready, commit and run `hall ready`. "
+             there with `git -C <worktree>`. When the work looks done, commit and run \
+             `hall propose-ready --summary \"<what was done>\"`: with nothing left to confirm it \
+             goes straight to review; add `--ask` when the human must decide something. "
         }
         State::AwaitingYou => "It is waiting for the human's call: `hall ready` or `hall pull-back`. ",
         s if s.in_loop() => "It is in the review loop; don't edit it. Offer `hall pull-back` if the human wants changes. ",
@@ -926,7 +938,8 @@ fn family_context(i: &Item, children: &[Item]) -> String {
     if open.is_empty() {
         s.push_str(&format!(
             "Every part is merged or dropped: run the gates in {}'s worktree, summarise, \
-             `hall propose-ready {}` and ask the human, then `hall ready {}`.",
+             `hall propose-ready {}`: it goes to review on its own unless something is left \
+             to confirm (then `--ask`, and `hall ready {}` when the human says so).",
             i.id, i.id, i.id
         ));
     } else {
@@ -941,6 +954,31 @@ fn family_context(i: &Item, children: &[Item]) -> String {
     s
 }
 
+/// Every change a commit in `dir` could take (staged, and tracked files a
+/// `commit -a` would add) is under `[capture] free`, and there is one.
+fn only_free_changes(repo: &Repo, dir: &Path) -> bool {
+    let mut files: Vec<String> = Vec::new();
+    for args in [
+        &["diff", "--cached", "--name-only"][..],
+        &["diff", "--name-only"][..],
+        // A `git add -A && git commit` also takes untracked files.
+        &[
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "--full-name",
+            ":/",
+        ][..],
+    ] {
+        match git::run(dir, args) {
+            Ok(out) => files.extend(out.lines().map(str::to_string)),
+            Err(_) => return false,
+        }
+    }
+    files.retain(|f| !f.trim().is_empty());
+    !files.is_empty() && files.iter().all(|f| repo.config.is_free(f))
+}
+
 fn repo_context(repo: &Repo, items: &[Item], inbox: usize) -> String {
     let mut s = format!(
         "Hallmark tracks changes in {} (capture mode: {}). ",
@@ -949,7 +987,7 @@ fn repo_context(repo: &Repo, items: &[Item], inbox: usize) -> String {
     );
     s.push_str(match repo.config.capture.mode {
         CaptureMode::Gate | CaptureMode::Ask => {
-            "Before editing files, start an item with `hall new --title \"<short title>\"` (or \
+            "Before changing the app's code, start an item with `hall new --title \"<short title>\"` (or \
              `hall adopt` for an existing branch), then work in the worktree it returns: \
              edit there with the Edit and Write tools and run git with `git -C <worktree>`. \
              The worktree may be outside this session's directory; if Claude Code asks, the \
@@ -957,6 +995,17 @@ fn repo_context(repo: &Repo, items: &[Item], inbox: usize) -> String {
         }
         CaptureMode::Off => "Items start with /hallmark or `hall new`. ",
     });
+    s.push_str(
+        "Only a clear, concise requirement to build or change something in the app becomes an \
+         item. Questions, documents, architecture, requirements and plans don't: answer or \
+         write them directly. ",
+    );
+    if !repo.config.capture.free.is_empty() {
+        s.push_str(&format!(
+            "Edits under {} need no item. ",
+            repo.config.capture.free.join(", ")
+        ));
+    }
     s.push_str("Never push or open PRs: only hallmarked commits leave. ");
     if !items.is_empty() {
         let list: Vec<String> = items

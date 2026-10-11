@@ -189,7 +189,12 @@ fn building() -> Env {
     let (_, wt2) = env.new_item("Export tenant usage");
     let r = env.hall(
         &wt2,
-        &["propose-ready", "--summary", "CSV export with 14 tests"],
+        &[
+            "propose-ready",
+            "--ask",
+            "--summary",
+            "CSV export with 14 tests",
+        ],
     );
     assert_eq!(r.code, 0, "{}", r.stdout);
     let r = env.hall(
@@ -397,7 +402,32 @@ fn screen(env: &Env, app: &App, w: u16, h: u16) -> String {
     for sha in git(&env.repo, &["rev-list", "--all"]).lines() {
         s = s.replace(&sha[..7], "#######");
     }
-    s
+    // Inbox entry keys (`kind:who:<ms>:<hash>`) carry a time and a hash;
+    // blank them at the same width so the layout stays.
+    let marker = "hall inbox ";
+    let mut out = String::new();
+    let mut rest = s.as_str();
+    while let Some(i) = rest.find(marker) {
+        let (head, tail) = rest.split_at(i + marker.len());
+        out.push_str(head);
+        let end = tail.find([' ', '"', '│']).unwrap_or(tail.len());
+        let (token, after) = tail.split_at(end);
+        let parts: Vec<&str> = token.split(':').collect();
+        if parts.len() == 4 {
+            out.push_str(&format!(
+                "{}:{}:{}:{}",
+                parts[0],
+                parts[1],
+                "#".repeat(parts[2].len()),
+                "#".repeat(parts[3].len())
+            ));
+        } else {
+            out.push_str(token);
+        }
+        rest = after;
+    }
+    out.push_str(rest);
+    out
 }
 
 fn key(app: &mut App, code: KeyCode) -> Effect {
@@ -535,11 +565,12 @@ fn selection_walks_the_board_with_children_under_parents() {
     let mut app = load(&env, &env.repo);
     let order = app.board_order();
     let ids: Vec<String> = order.iter().map(|i| i.to_string()).collect();
-    // Development (parent, child), Awaiting you, Review loop, Closed today.
+    // Development (parent, child), Awaiting you, Review loop, Closed today
+    // (newest first).
     assert_eq!(
         ids,
         [
-            "H-0003", "H-0004", "H-0002", "H-0007", "H-0001", "H-0005", "H-0006"
+            "H-0003", "H-0004", "H-0002", "H-0007", "H-0001", "H-0006", "H-0005"
         ]
     );
     assert_eq!(app.selected, Some(ItemId(3)));
@@ -548,7 +579,7 @@ fn selection_walks_the_board_with_children_under_parents() {
     for _ in 0..20 {
         key(&mut app, KeyCode::Down);
     }
-    assert_eq!(app.selected, Some(ItemId(6)), "stays at the bottom");
+    assert_eq!(app.selected, Some(ItemId(5)), "stays at the bottom");
     let cols = app.board();
     assert!(cols[0][1].child, "H-0004 is drawn under H-0003");
 }
@@ -930,7 +961,7 @@ fn whats_waiting_reads_in_full() {
                    the endpoint streams rows so large tenants don't time out, and the docs \
                    page lists every column with its unit";
     let (_, wt) = env.new_item("Long summary");
-    let r = env.hall(&wt, &["propose-ready", "--summary", summary]);
+    let r = env.hall(&wt, &["propose-ready", "--ask", "--summary", summary]);
     assert_eq!(r.code, 0, "{}", r.stdout);
     let mut app = load(&env, &env.repo);
     select(&mut app, 8);
@@ -988,4 +1019,39 @@ fn actions_that_need_the_terminal_hand_it_over() {
     assert_eq!(app.run_command("hall daemon run --once"), Effect::None);
     let st = app.status.clone().unwrap();
     assert!(st.error && st.text.contains("USAGE"), "{}", st.text);
+}
+
+#[test]
+fn long_journal_lines_wrap_to_two_lines_then_clip() {
+    let env = Env::initialized();
+    let hall = hall_of(&env);
+    env.new_item("Wrap the timeline");
+    let short = "Cap retries at six attempts with jitter between them";
+    add(&hall, 1, "you", Body::Prompt { text: short.into() });
+    let long = "word ".repeat(80) + "THE-END";
+    add(&hall, 1, "you", Body::Prompt { text: long });
+    let mut app = load(&env, &env.repo);
+    key(&mut app, KeyCode::Enter); // the journal view
+    let s = render(&app, 80, 30);
+    // Nothing is cut at a fixed length: the short prompt wraps, whole.
+    let words: String = s
+        .lines()
+        .map(|l| l.trim_matches(['│', ' ']))
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(words.contains(short), "{s}");
+    // The long one takes two lines, and the second ends clipped.
+    let i = s
+        .lines()
+        .position(|l| l.contains("prompt · \"word word"))
+        .expect(&s);
+    let next = s.lines().nth(i + 1).unwrap();
+    assert!(
+        next.trim_start_matches(['│', ' ']).starts_with("word"),
+        "{s}"
+    );
+    assert!(next.contains('…'), "{s}");
+    assert!(!s.contains("THE-END"), "{s}");
+    let after = s.lines().nth(i + 2).unwrap_or_default();
+    assert!(!after.contains("word word"), "only two lines: {s}");
 }

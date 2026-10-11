@@ -170,7 +170,7 @@ fn the_watchman_flags_a_silent_item_once() {
     let r = env.hall_fake(&env.repo, &script, &watchman);
     assert_eq!(r.json["steps"][0]["progress"], "idle", "{}", r.stdout);
 
-    std::thread::sleep(Duration::from_millis(1500));
+    hallmark::daemon::nap(Duration::from_millis(1500));
     let r = env.hall_fake(&env.repo, &script, &watchman);
     assert_eq!(r.json["steps"][0]["progress"], "worked", "{}", r.stdout);
     assert!(
@@ -185,7 +185,7 @@ fn the_watchman_flags_a_silent_item_once() {
     assert_eq!(last["state"], "checks");
 
     // Flagged once: the next patrol leaves it alone.
-    std::thread::sleep(Duration::from_millis(1100));
+    hallmark::daemon::nap(Duration::from_millis(1100));
     let r = env.hall_fake(&env.repo, &script, &watchman);
     assert_eq!(r.json["steps"][0]["progress"], "idle", "{}", r.stdout);
     assert_eq!(
@@ -373,7 +373,7 @@ fn start_status_stop_in_the_background() {
         if s.json["repos"][0]["last_pass"].is_object() || Instant::now() > deadline {
             break s;
         }
-        std::thread::sleep(Duration::from_millis(100));
+        hallmark::daemon::nap(Duration::from_millis(100));
     };
     assert_eq!(status.json["running"], true, "{}", status.stdout);
     assert_eq!(status.json["at_login"], true);
@@ -475,7 +475,7 @@ fn a_slow_repo_does_not_hold_the_others() {
     };
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(6);
     while !reviewed(&api, &fast) && std::time::Instant::now() < deadline {
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        hallmark::daemon::nap(std::time::Duration::from_millis(100));
     }
     assert!(reviewed(&api, &fast), "api waited for app's slow gate");
     assert_eq!(

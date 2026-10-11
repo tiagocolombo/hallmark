@@ -147,6 +147,10 @@ pub struct GhComment {
     pub author: Option<GhAuthor>,
     #[serde(default)]
     pub body: String,
+    /// The author's standing on the repo: OWNER, MEMBER, COLLABORATOR,
+    /// CONTRIBUTOR, NONE…
+    #[serde(default, alias = "authorAssociation")]
+    pub author_association: Option<String>,
     /// Reviews: APPROVED, CHANGES_REQUESTED, COMMENTED.
     #[serde(default)]
     pub state: Option<String>,
@@ -155,6 +159,15 @@ pub struct GhComment {
     pub path: Option<String>,
     #[serde(default, alias = "original_line")]
     pub line: Option<u64>,
+    /// When it was written: `createdAt` (comments), `submittedAt`
+    /// (reviews), `created_at` (line comments).
+    #[serde(
+        default,
+        rename = "createdAt",
+        alias = "submittedAt",
+        alias = "created_at"
+    )]
+    pub created_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 /// A pull request and the feedback on it (for follow-up items).
@@ -287,6 +300,43 @@ pub fn pr_state(dir: &Path, pr: &str) -> Result<String> {
         .next(["gh auth status", "hall doctor"]));
     }
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+/// Where an open PR stands for merging.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct GhMerge {
+    /// OPEN, CLOSED or MERGED.
+    #[serde(default)]
+    pub state: String,
+    /// MERGEABLE, CONFLICTING or UNKNOWN (GitHub is still computing it).
+    #[serde(default)]
+    pub mergeable: String,
+    #[serde(default, rename = "headRefOid")]
+    pub head_oid: String,
+}
+
+/// `gh pr view <pr> --json state,mergeable,headRefOid`.
+pub fn pr_merge(dir: &Path, pr: &str) -> Result<GhMerge> {
+    let out = Command::new(gh()?)
+        .current_dir(dir)
+        .args(["pr", "view", pr, "--json", "state,mergeable,headRefOid"])
+        .output()?;
+    if !out.status.success() {
+        return Err(HallError::new(
+            ErrorCode::GhUnavailable,
+            format!(
+                "gh pr view {pr} failed: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            ),
+        )
+        .next(["gh auth status", "hall doctor"]));
+    }
+    serde_json::from_slice(&out.stdout).map_err(|e| {
+        HallError::new(
+            ErrorCode::GhUnavailable,
+            format!("unreadable gh output: {e}"),
+        )
+    })
 }
 
 /// The run and job IDs in a check's link

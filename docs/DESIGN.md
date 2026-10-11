@@ -71,7 +71,8 @@ The docs and the terminal app describe Hallmark as a building.
 | Assay Office | The test bench (checks) and the principal engineer (review) | Checks, Review |
 | Repair Shop | The fixer | Fixing |
 | Stamping Room | The hallmark is struck | Hallmarked |
-| Dispatch Dock | The ship command opens the PR; `update` updates an adopted or reopened one | Closed |
+| Dispatch Dock | Rebases onto the latest base; the ship command opens the PR; `update` updates an adopted or reopened one | Closed |
+| Delivery Office | Watches each shipped PR until it merges; a headless dev run rebases conflicting ones and addresses new review comments (ADR 0030) | Closed, Development (rebasing, addressing comments) |
 
 A **watchman** patrols the corridor. It flags any item with no new event for
 `stuck_after` (30 minutes by default), and a daemon that has stopped.
@@ -100,7 +101,8 @@ Transitions:
 
 | From | Action | To |
 | --- | --- | --- |
-| development | `propose-ready` (agent thinks it's done) | awaiting_you |
+| development | `propose-ready` (agent thinks it's done), nothing left to confirm (`auto_ready`) | checks (`proposed_ready`, then `ready`) |
+| development | `propose-ready --ask`, or something left to confirm | awaiting_you |
 | development, awaiting_you | `ready` (freeze SHA, queue) | checks |
 | awaiting_you | `pull-back` ("not yet") | development |
 | checks | checks pass | review |
@@ -112,6 +114,8 @@ Transitions:
 | escalated | `retry` (allow one more round) | fixing |
 | awaiting_you, checks, review, fixing, escalated, hallmarked | `pull-back` | development |
 | hallmarked | shipped (PR opened) | closed |
+| hallmarked | the rebase onto the base conflicts, or changes the patch (`pulled_back`) | development |
+| closed | the PR conflicts, or has new review comments (the Delivery office reopens it) | development |
 | any non-terminal | `drop --reason` | dropped |
 
 Rules:
@@ -195,6 +199,10 @@ creates the item and carries on. Files outside the repo are never gated.
 - `gate` (default): deny.
 - `ask`: return `permissionDecision: "ask"`, so you decide.
 - `off`: only `/hallmark` starts items.
+
+`[capture] free` (default `["docs/", "*.md"]`) lists paths that need no
+item: questions, documents, architecture and requirements aren't development
+work (ADR 0030). Edits there, and commits of only those paths, aren't gated.
 
 ## How Claude knows to use Hallmark
 
@@ -286,12 +294,12 @@ $ echo $?
 | `hall adopt [--title] [--pr] [--base]` | Turns the current branch and worktree, or an open PR (`--pr`, Hallmark's or not), into an item that updates that PR. On the branch of a shipped item whose PR is still open, reopens the item (`closed → development`). `--base` stacks it on another branch (ADR 0029). |
 | `hall status [<id>] [--all]` | Lists items by state, or shows one item in detail. |
 | `hall log [<id>] [--kind] [--limit]` | Prints the item's journal. |
-| `hall inbox` | Lists everything waiting for you, oldest first. |
+| `hall inbox` | Lists everything waiting for you, oldest first. `<n> --dismiss` hides one entry and `--clear` hides them all, until each changes; `--all` shows them. |
 | `hall ready [<id>] [--note]` | Freezes HEAD and queues the item. A dirty worktree is refused. |
 | `hall pull-back [<id>] [--reason]` | Returns the item to development. |
 | `hall drop [<id>] --reason [--keep-worktree]` | Abandons the item. The branch and journal stay. |
 | `hall retry [<id>] --reason [--tokens <n>]` | Allows an escalated item one more round, or releases a held item. A budget hold also grants that item another `per_item` (or `--tokens`); the budget is unchanged. |
-| `hall propose-ready [<id>] --summary` | The agent says the work looks done. |
+| `hall propose-ready [<id>] --summary [--ask]` | The agent says the work is done: straight to review when nothing is left to confirm, else (or with `--ask`) it waits for you. |
 | `hall ask <q> [--item] [--options] [--default] [--wait] [--session]` | Records a question. |
 | `hall answer <qid> <answer>` | Records the answer; the daemon resumes the asking session with it. |
 | `hall usage [--by item\|room\|role\|model\|day] [--since] [--item]` | Shows tokens and list-price cost. |
@@ -339,6 +347,7 @@ rules       = ["CLAUDE.md", "AGENTS.md"]
 
 [capture]
 mode = "gate"                   # gate | ask | off
+free = ["docs/", "*.md"]        # paths that need no item
 
 [intake]
 split     = "auto"              # the Front Desk splits requests when it can; or "off"
@@ -494,6 +503,8 @@ system prompt.
 ## The inbox
 
 Your Office holds the following, oldest first. It is derived from the journal.
+A dismissed entry (`hall inbox <n> --dismiss`, `--clear`) stays hidden until it
+changes (ADR 0030).
 
 | Kind | Comes from | What waits |
 | --- | --- | --- |
@@ -501,7 +512,8 @@ Your Office holds the following, oldest first. It is derived from the journal.
 | escalated | the item is `escalated` | that item |
 | session waiting | a `Notification` hook, cleared by the next prompt in that session | that session |
 | ready? | the item is `awaiting_you` | nothing |
-| budget, run_failed, ship_failed | a hold: a per-item cap, two failed runs in a row, a failed ship | that item, until `hall retry` (which, for a budget hold, grants the item more tokens) |
+| budget, run_failed, ship_failed, conflict, feedback | a hold: a per-item cap, two failed runs in a row, a failed ship, a rebase the Delivery office couldn't finish, PR comments its dev run didn't act on | that item, until `hall retry` (which, for a budget hold, grants the item more tokens) |
+| ci_failed | the shipped PR's CI failed | a follow-up item |
 | stuck | the watchman | whatever was running |
 | daemon stopped | a daemon that should run has no heartbeat | the loop |
 | learnings | proposed learnings, sent as a digest | nothing |
@@ -584,7 +596,8 @@ doubt makes one item.
 
 One process (`hall daemon start`, optionally at login) runs passes over every
 registered repo; every repo, worker and slot is scheduled on its own (ADR
-0026): watchman, resume, assayer, fixer, shipper, librarian, notify. Leases
+0026): watchman, resume, assayer, fixer, shipper, delivery, ci, librarian,
+notify. Leases
 keep one worker per item and count per phase against `[parallel]` (checks,
 review, fix, ship), not one assayer per repo. A rate limit or the daily budget
 pauses the model workers until the reset, recorded as `paused`. Stopping is a

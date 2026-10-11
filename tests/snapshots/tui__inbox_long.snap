@@ -30,11 +30,11 @@ hall · app (1 of 1 repo)   daemon ● running   ⚑ 4 waiting   ryour office ·
 │    abandon it                                                                │
 │ 4  hall log H-0008                                                           │
 │    read its whole journal                                                    │
-│                                                                              │
-│                                                                              │
+│ 5  hall inbox ready:H-0008:#############:################ --dismiss          │
+│    dismiss it: hidden until it changes; nothing is answered or retried       │
 │                                                                              │
 │                                                                              │
 │                                                                              │
 └──────────────────── 1-9 runs an action; one with <…> asks for the text first ┘
 
-↑↓ entry 1-9 run action enter journal pgup pgdn scroll d diff ? help q quit
+↑↓ entry 1-9 run action D C dismiss·all enter journal ? help q quit

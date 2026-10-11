@@ -238,6 +238,36 @@ pub struct Item {
     /// The shipped PR's CI, once it finished.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ci: Option<Ci>,
+    /// Set while the branch waits for the Delivery office to rebase it
+    /// onto its base (conflicts); cleared when the item moves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rebase: Option<RebaseRequest>,
+    /// Set while new PR comments wait for the Delivery office's dev run;
+    /// cleared when the item moves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feedback: Option<FeedbackRequest>,
+    /// How the shipped PR ended: `merged` or `closed`. Until then the
+    /// Delivery office watches it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivered: Option<String>,
+}
+
+/// PR comments the Delivery office's dev run should address.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct FeedbackRequest {
+    pub comments: Vec<crate::event::PrComment>,
+    pub since: DateTime<Utc>,
+}
+
+/// Why and onto what the Delivery office should rebase an item.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RebaseRequest {
+    /// The base branch.
+    pub onto: String,
+    pub reason: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<String>,
+    pub since: DateTime<Utc>,
 }
 
 /// How the shipped PR's CI ended.
@@ -263,6 +293,12 @@ pub enum HoldKind {
     RunFailed,
     /// The ship command failed.
     ShipFailed,
+    /// The branch conflicts with its base and the headless rebase couldn't
+    /// resolve it.
+    Conflict,
+    /// New PR comments the Delivery office's dev run didn't act on: they
+    /// need you.
+    Feedback,
     /// Anything else that needs a person.
     Other,
 }
@@ -273,6 +309,8 @@ impl HoldKind {
             HoldKind::Budget => "budget",
             HoldKind::RunFailed => "run_failed",
             HoldKind::ShipFailed => "ship_failed",
+            HoldKind::Conflict => "conflict",
+            HoldKind::Feedback => "feedback",
             HoldKind::Other => "other",
         }
     }

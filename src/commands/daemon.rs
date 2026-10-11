@@ -371,7 +371,7 @@ fn start(at_login: bool) -> Result<Response> {
     if state::instance_running() && !state::load().is_some_and(|s| s.wanted) {
         let deadline = Instant::now() + STOP_WAIT;
         while state::instance_running() && Instant::now() < deadline {
-            std::thread::sleep(Duration::from_millis(100));
+            crate::daemon::nap(Duration::from_millis(100));
         }
         if state::instance_running() {
             return Err(HallError::new(
@@ -445,7 +445,7 @@ fn launch_and_wait() -> Result<()> {
             )
             .next(["hall daemon status", "hall daemon stop"]));
         }
-        std::thread::sleep(Duration::from_millis(50));
+        crate::daemon::nap(Duration::from_millis(50));
     }
 }
 
@@ -455,7 +455,7 @@ fn stop(at_login: bool) -> Result<Response> {
     let deadline = Instant::now() + STOP_WAIT;
     let mut running = was_running;
     while running && Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(100));
+        crate::daemon::nap(Duration::from_millis(100));
         running = state::instance_running();
     }
     let mut out = DaemonOut::new("stop", running);
