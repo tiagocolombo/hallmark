@@ -13,6 +13,17 @@ Status: Accepted, 2026-10-09
 > then fails the release. Bump those pins in the config and run `dist
 > generate`. The workflow is still never edited by hand.
 
+> **Note, 2026-10-11 (later):** superseded in part. dist hardcodes
+> `contents: write` for the whole release workflow, which zeroes the OpenSSF
+> Scorecard Token-Permissions check. `release.yml` is now edited by hand after
+> generation: `contents: read` at the top, `contents: write` only on the
+> `host` job, which creates the GitHub Release. `allow-dirty = ["ci"]` stops
+> dist from failing on, or rewriting, the edited file. Dependabot bumps its
+> pinned actions like any other workflow, and `github-action-commits` is
+> gone. To regenerate it (a dist upgrade, new targets or installers): drop
+> `allow-dirty`, run `dist generate`, then pin the actions by commit and
+> reapply the permissions edit marked in the file.
+
 ## Context
 
 ADR 0001 promised a single cargo-dist pipeline for all three operating
@@ -158,7 +169,8 @@ ADR 0009's flow stays: extract, `marketplace add`, `install`. The changes:
     wanted, with the tap repository created first;
   - `homepage` in `[package]`, which dist warns about for the formula.
 - **Changing targets or installers** means editing `dist-workspace.toml`, then
-  running `dist generate` and `dist plan`. dist isn't in the dev shell. Run it
+  regenerating the workflow as the 2026-10-11 note says, and running `dist
+  plan`. dist isn't in the dev shell. Run it
   with `nix shell nixpkgs#cargo-dist` inside `nix develop`.
 - **Nix users** rebuild `hall` from source. There's no binary cache.
 - **Adding a plugin file** needs no change to setup. `plugin::FILES` drives
