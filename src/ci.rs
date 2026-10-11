@@ -166,6 +166,17 @@ pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
         {
             return record(ctx, item.id, &url, false, f, None);
         }
+        // A recorded outage whose re-run now fails for real: record the real
+        // failure so the Delivery office can fix it.
+        if item
+            .ci
+            .as_ref()
+            .is_some_and(|c| c.not_started.is_some() && c.ended.is_none())
+            && let Outcome::Failed(f) = conclude(&checks)
+            && not_started(&repo.main_root, &f).is_none()
+        {
+            return record(ctx, item.id, &url, false, f, None);
+        }
         return match conclude(&checks) {
             Outcome::Passed => record(ctx, item.id, &url, true, vec![], None),
             _ => {

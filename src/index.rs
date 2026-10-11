@@ -654,16 +654,15 @@ impl Index {
                 .any(|f| f.follow_up.as_deref() == Some(url.as_str()) && f.state != State::Dropped);
             // A PR closed unmerged has nothing left to fix; one merged with
             // red checks is a failure on the base branch.
-            if ci.passed || followed || ci.ended.as_deref() == Some("closed") {
-                continue;
-            }
-            // Ended (merged or closed) before the CI watch saw the end: the
-            // red record is stale, and nothing will clear it.
-            if item.delivered.is_some() && ci.ended.is_none() {
+            // The delivery watch may see the end before the CI watch does.
+            let ended = ci.ended.is_some() || item.delivered.is_some();
+            let closed = ci.ended.as_deref() == Some("closed")
+                || (ci.ended.is_none() && item.delivered.as_deref() == Some("closed"));
+            if ci.passed || followed || closed {
                 continue;
             }
             if let Some(why) = &ci.not_started {
-                if ci.ended.is_none() {
+                if !ended {
                     down.push((item, why));
                 }
                 continue;
@@ -675,7 +674,7 @@ impl Index {
                     failing.push(f);
                 }
             }
-            let open = ci.ended.is_none() && item.state == State::Closed;
+            let open = !ended && item.state == State::Closed;
             let declined = open.then_some(item.ci_declined.as_deref()).flatten();
             let gave_up =
                 open && (item.ci_fixes >= crate::delivery::CI_FIXES || declined.is_some());

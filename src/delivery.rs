@@ -900,6 +900,7 @@ fn watch_next(ctx: &WorkerCtx) -> Result<Progress> {
                         short(&pr.head_oid)
                     ),
                 );
+                decline_ci(repo, &item, &url, &mut note_once)?;
                 return Ok(Progress::Idle);
             }
             if !wt.is_dir() || !git::dirty_files(&wt).map(|d| d.is_empty()).unwrap_or(false) {
@@ -911,6 +912,7 @@ fn watch_next(ctx: &WorkerCtx) -> Result<Progress> {
                         item.base, item.worktree
                     ),
                 );
+                decline_ci(repo, &item, &url, &mut note_once)?;
                 return Ok(Progress::Idle);
             }
             reopen(
@@ -957,6 +959,7 @@ fn watch_next(ctx: &WorkerCtx) -> Result<Progress> {
                         item.worktree
                     ),
                 );
+                decline_ci(repo, &item, &url, &mut note_once)?;
                 return Ok(Progress::Idle);
             }
             let n = comments.len();
@@ -981,6 +984,46 @@ fn watch_next(ctx: &WorkerCtx) -> Result<Progress> {
     }
 }
 
+/// Record that the office can't fix this item's red CI (someone else pushed,
+/// or the worktree is missing or dirty), so it escalates. A no-op unless the
+/// item's CI record is a red code failure with fixes left.
+fn decline_ci(
+    repo: &Repo,
+    item: &Item,
+    url: &str,
+    note_once: &mut impl FnMut(String, String),
+) -> Result<()> {
+    let id = item.id;
+    let Some(ci) = &item.ci else {
+        return Ok(());
+    };
+    if ci.passed || ci.ended.is_some() || ci.not_started.is_some() || item.ci_fixes >= CI_FIXES {
+        return Ok(());
+    }
+    let why = format!(
+        "someone else pushed to {url} or its worktree {} is missing or dirty",
+        item.worktree
+    );
+    if item.ci_declined.as_deref() != Some(why.as_str()) {
+        append(
+            repo,
+            id,
+            Body::CiFixDeclined {
+                pr_url: url.to_string(),
+                reason: why.clone(),
+            },
+        )?;
+        note_once(
+            format!("ci-{id}-{}", ci.t.timestamp()),
+            format!(
+                "{id} delivery: CI failed on {url}, but {why}; `hall adopt --pr {url}` to \
+                 fix it by hand"
+            ),
+        );
+    }
+    Ok(())
+}
+
 /// A red PR (the CI watch recorded the failure) goes back to development
 /// with the failing checks, while it has fixes left. Jobs that never
 /// started aren't code to fix, and neither is a PR someone else pushed to.
@@ -1003,27 +1046,7 @@ fn ci_next(
         || !wt.is_dir()
         || !git::dirty_files(&wt).map(|d| d.is_empty()).unwrap_or(false)
     {
-        let why = format!(
-            "someone else pushed to {url} or its worktree {} is missing or dirty",
-            item.worktree
-        );
-        if item.ci_declined.as_deref() != Some(why.as_str()) {
-            append(
-                repo,
-                id,
-                Body::CiFixDeclined {
-                    pr_url: url.to_string(),
-                    reason: why.clone(),
-                },
-            )?;
-            note_once(
-                format!("ci-{id}-{}", ci.t.timestamp()),
-                format!(
-                    "{id} delivery: CI failed on {url}, but {why}; `hall adopt --pr {url}` to \
-                     fix it by hand"
-                ),
-            );
-        }
+        decline_ci(repo, item, url, note_once)?;
         return Ok(Progress::Idle);
     }
     // The failing checks, with their links for the logs.
@@ -1031,12 +1054,27 @@ fn ci_next(
         Ok(checks) => match crate::ci::conclude(&checks) {
             // Records from before `not_started` existed: jobs that never
             // started are an outage, not code to fix.
-            crate::ci::Outcome::Failed(f)
-                if crate::ci::not_started(&repo.main_root, &f).is_some() =>
-            {
-                return Ok(Progress::Idle);
+            // Record it so it joins `ci_down` and the CI watch keeps it.
+            crate::ci::Outcome::Failed(f) => {
+                if let Some(why) = crate::ci::not_started(&repo.main_root, &f) {
+                    repo.hall.append_item(
+                        id,
+                        &Event::new(
+                            "ci",
+                            Some(id),
+                            Body::PrChecks {
+                                pr_url: url.to_string(),
+                                passed: false,
+                                failing: f,
+                                ended: None,
+                                not_started: Some(why),
+                            },
+                        ),
+                    )?;
+                    return Ok(Progress::Idle);
+                }
+                f
             }
-            crate::ci::Outcome::Failed(f) => f,
             // Green, or re-running: the CI watch records it.
             _ => return Ok(Progress::Idle),
         },
