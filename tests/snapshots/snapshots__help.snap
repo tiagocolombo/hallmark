@@ -1,5 +1,6 @@
 ---
 source: tests/snapshots.rs
+assertion_line: 96
 expression: v
 ---
 {
@@ -286,7 +287,7 @@ expression: v
       "usage": "hall drop [OPTIONS] --reason <REASON> [ID]"
     },
     {
-      "about": "Allow another fix round for an escalated item",
+      "about": "Allow another fix round for an escalated item, or release a held one. A budget hold also grants the item more tokens; the budget itself is unchanged",
       "args": [
         {
           "name": "id",
@@ -298,6 +299,13 @@ expression: v
           "name": "reason",
           "required": true,
           "syntax": "--reason <reason>",
+          "takes_value": true
+        },
+        {
+          "help": "For a budget hold: how many more tokens this item may spend, such as 2M or 800k. Defaults to another `per_item`",
+          "name": "tokens",
+          "required": false,
+          "syntax": "--tokens <tokens>",
           "takes_value": true
         }
       ],

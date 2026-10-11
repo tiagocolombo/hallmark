@@ -137,6 +137,8 @@ pub struct UsageData {
     /// What the review loop (every room but the Workshop) spent today:
     /// weighted tokens and dollars.
     pub loop_today: crate::budget::Spent,
+    /// Tokens `hall retry` granted each item on top of `per_item`.
+    pub granted: BTreeMap<String, u64>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -297,7 +299,15 @@ impl UsageData {
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
+        let mut granted = BTreeMap::new();
+        for it in ix.items(true)? {
+            let g = crate::budget::item_granted(ix, it.id);
+            if g > 0 {
+                granted.insert(it.id.to_string(), g);
+            }
+        }
         Ok(UsageData {
+            granted,
             by_model: ix.usage(UsageBy::Model, Some(today), None)?,
             by_item: ix.usage(UsageBy::Item, None, None)?,
             by_room,

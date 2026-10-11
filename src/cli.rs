@@ -53,7 +53,9 @@ pub enum Cmd {
     PullBack(PullBackArgs),
     /// Abandon an item, keeping its journal and branch.
     Drop(DropArgs),
-    /// Allow another fix round for an escalated item.
+    /// Allow another fix round for an escalated item, or release a held
+    /// one. A budget hold also grants the item more tokens; the budget
+    /// itself is unchanged.
     Retry(RetryArgs),
     /// Move an item on from wherever it waits: release a hold, retry an
     /// escalation, send it to review, or reopen its Claude session.
@@ -220,6 +222,10 @@ pub struct RetryArgs {
     pub id: Option<String>,
     #[arg(long)]
     pub reason: String,
+    /// For a budget hold: how many more tokens this item may spend, such as
+    /// 2M or 800k. Defaults to another `per_item`.
+    #[arg(long)]
+    pub tokens: Option<String>,
 }
 
 #[derive(Debug, Args)]

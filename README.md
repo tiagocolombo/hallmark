@@ -254,7 +254,7 @@ Agents are the main users of `hall`, so every command follows these rules:
 | `hall ready [<id>]` | Freezes the commit and queues the item for review. |
 | `hall pull-back [<id>]` | Returns the item to development. |
 | `hall drop [<id>] --reason <r>` | Abandons the item. The branch and journal stay. `--keep-worktree` |
-| `hall retry [<id>] --reason <r>` | Allows an escalated item one more round, or releases a held item. |
+| `hall retry [<id>] --reason <r> [--tokens <n>]` | Allows an escalated item one more round, or releases a held item. A budget hold also grants that item another `per_item` (or `--tokens`); the budget is unchanged. |
 | `hall continue [<id>]` | Moves an item on from wherever it waits: releases a hold, retries an escalation, sends "ready?" to review, or reopens its Claude session. |
 | `hall propose-ready [<id>] --summary <s>` | The agent says the work looks done. |
 | `hall ask <question>` | Asks you a question. `--options a,b`, `--default`, `--wait 4h`, `--item`, `--session` |
