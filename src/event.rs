@@ -520,9 +520,24 @@ impl Body {
         })
     }
 
-    /// One line for humans.
+    /// One line for humans, with long text clipped.
     pub fn summary(&self) -> String {
-        use crate::output::clip;
+        self.summary_at(false)
+    }
+
+    /// The same line with nothing clipped, for views that wrap it.
+    pub fn summary_full(&self) -> String {
+        self.summary_at(true)
+    }
+
+    fn summary_at(&self, full: bool) -> String {
+        let c = |s: &str, n: usize| {
+            if full {
+                s.split_whitespace().collect::<Vec<_>>().join(" ")
+            } else {
+                crate::output::clip(s, n)
+            }
+        };
         match self {
             Body::Created {
                 title,
@@ -532,18 +547,18 @@ impl Body {
             } => {
                 let how = if *adopted { "adopted" } else { "created" };
                 match issue {
-                    Some(i) => format!("{how} from #{} · \"{}\"", i.number, clip(title, 60)),
-                    None => format!("{how} · \"{}\"", clip(title, 60)),
+                    Some(i) => format!("{how} from #{} · \"{}\"", i.number, c(title, 60)),
+                    None => format!("{how} · \"{}\"", c(title, 60)),
                 }
             }
-            Body::Prompt { text } => format!("prompt · \"{}\"", clip(text, 70)),
-            Body::Turn { summary } => format!("turn · {}", clip(summary, 70)),
+            Body::Prompt { text } => format!("prompt · \"{}\"", c(text, 70)),
+            Body::Turn { summary } => format!("turn · {}", c(summary, 70)),
             Body::Commit {
                 sha,
                 subject,
                 fixes,
             } if fixes.is_empty() => {
-                format!("commit {} · {}", short(sha), clip(subject, 60))
+                format!("commit {} · {}", short(sha), c(subject, 60))
             }
             Body::Commit {
                 sha,
@@ -554,26 +569,22 @@ impl Body {
                     "commit {} · fixes {} · {}",
                     short(sha),
                     fixes.join(", "),
-                    clip(subject, 50)
+                    c(subject, 50)
                 )
             }
             Body::ProposedReady { summary } => {
-                format!("proposes ready · \"{}\"", clip(summary, 60))
+                format!("proposes ready · \"{}\"", c(summary, 60))
             }
             Body::Ready { sha, round, note } => match note {
-                Some(n) => format!(
-                    "ready · round {round} · {} · \"{}\"",
-                    short(sha),
-                    clip(n, 40)
-                ),
+                Some(n) => format!("ready · round {round} · {} · \"{}\"", short(sha), c(n, 40)),
                 None => format!("ready · round {round} · {}", short(sha)),
             },
             Body::PulledBack { reason } => match reason {
-                Some(r) => format!("pulled back · \"{}\"", clip(r, 60)),
+                Some(r) => format!("pulled back · \"{}\"", c(r, 60)),
                 None => "pulled back".into(),
             },
-            Body::Dropped { reason, .. } => format!("dropped · \"{}\"", clip(reason, 60)),
-            Body::Retried { reason } => format!("another round allowed · \"{}\"", clip(reason, 50)),
+            Body::Dropped { reason, .. } => format!("dropped · \"{}\"", c(reason, 60)),
+            Body::Retried { reason } => format!("another round allowed · \"{}\"", c(reason, 50)),
             Body::Checks { passed, round, .. } => {
                 format!(
                     "checks {} · round {round}",
@@ -602,7 +613,7 @@ impl Body {
                     pr_url.clone().unwrap_or_else(|| "pushed".into())
                 )
             }
-            Body::Question { qid, text, .. } => format!("question {qid} · \"{}\"", clip(text, 60)),
+            Body::Question { qid, text, .. } => format!("question {qid} · \"{}\"", c(text, 60)),
             Body::Answer {
                 qid,
                 answer,
@@ -613,11 +624,11 @@ impl Body {
                 } else {
                     ""
                 };
-                format!("answer {qid}{how} · \"{}\"", clip(answer, 60))
+                format!("answer {qid}{how} · \"{}\"", c(answer, 60))
             }
             Body::QuestionSession { qid } => format!("question {qid} linked to its session"),
             Body::Notification { message, .. } => {
-                format!("session waiting · {}", clip(message, 60))
+                format!("session waiting · {}", c(message, 60))
             }
             Body::Usage(u) => format!(
                 "usage · {} · {} tok · {}",
@@ -635,7 +646,7 @@ impl Body {
             Body::GateDenied { tool, code, .. } => format!("gate denied {tool} · {code}"),
             Body::AnswerDelivered { qid } => format!("answer {qid} sent to the asking session"),
             Body::Held { kind, reason } => {
-                format!("held ({}) · {}", kind.as_str(), clip(reason, 60))
+                format!("held ({}) · {}", kind.as_str(), c(reason, 60))
             }
             Body::Released {
                 reason,
@@ -646,7 +657,7 @@ impl Body {
                     s.push_str(&format!(" · +{} tokens", crate::usage::fmt_tokens(*n)));
                 }
                 if let Some(r) = reason {
-                    s.push_str(&format!(" · \"{}\"", clip(r, 60)));
+                    s.push_str(&format!(" · \"{}\"", c(r, 60)));
                 }
                 s
             }
@@ -655,17 +666,14 @@ impl Body {
                 role,
                 reason,
                 attempt,
-            } => format!(
-                "{role} run failed (attempt {attempt}) · {}",
-                clip(reason, 50)
-            ),
+            } => format!("{role} run failed (attempt {attempt}) · {}", c(reason, 50)),
             Body::Paused { reason, until } => match until {
                 Some(u) => format!(
                     "daemon paused until {} · {}",
                     u.format("%H:%M"),
-                    clip(reason, 40)
+                    c(reason, 40)
                 ),
-                None => format!("daemon paused · {}", clip(reason, 50)),
+                None => format!("daemon paused · {}", c(reason, 50)),
             },
             Body::Unpaused {} => "daemon resumed".into(),
             Body::BudgetGranted {
@@ -679,7 +687,7 @@ impl Body {
                     crate::usage::fmt_tokens(*tokens)
                 );
                 if let Some(r) = reason {
-                    s.push_str(&format!(" · \"{}\"", clip(r, 50)));
+                    s.push_str(&format!(" · \"{}\"", c(r, 50)));
                 }
                 s
             }
@@ -731,7 +739,7 @@ impl Body {
                 } else {
                     format!(
                         "conflicts with {onto} in {} · rebase requested",
-                        clip(&files.join(", "), 50)
+                        c(&files.join(", "), 50)
                     )
                 }
             }

@@ -990,3 +990,38 @@ fn actions_that_need_the_terminal_hand_it_over() {
     let st = app.status.clone().unwrap();
     assert!(st.error && st.text.contains("USAGE"), "{}", st.text);
 }
+
+#[test]
+fn long_journal_lines_wrap_to_two_lines_then_clip() {
+    let env = Env::initialized();
+    let hall = hall_of(&env);
+    env.new_item("Wrap the timeline");
+    let short = "Cap retries at six attempts with jitter between them";
+    add(&hall, 1, "you", Body::Prompt { text: short.into() });
+    let long = "word ".repeat(80) + "THE-END";
+    add(&hall, 1, "you", Body::Prompt { text: long });
+    let mut app = load(&env, &env.repo);
+    key(&mut app, KeyCode::Enter); // the journal view
+    let s = render(&app, 80, 30);
+    // Nothing is cut at a fixed length: the short prompt wraps, whole.
+    let words: String = s
+        .lines()
+        .map(|l| l.trim_matches(['│', ' ']))
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(words.contains(short), "{s}");
+    // The long one takes two lines, and the second ends clipped.
+    let i = s
+        .lines()
+        .position(|l| l.contains("prompt · \"word word"))
+        .expect(&s);
+    let next = s.lines().nth(i + 1).unwrap();
+    assert!(
+        next.trim_start_matches(['│', ' ']).starts_with("word"),
+        "{s}"
+    );
+    assert!(next.contains('…'), "{s}");
+    assert!(!s.contains("THE-END"), "{s}");
+    let after = s.lines().nth(i + 2).unwrap_or_default();
+    assert!(!after.contains("word word"), "only two lines: {s}");
+}

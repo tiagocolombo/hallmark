@@ -101,6 +101,20 @@ fn wrap_lines(
         .collect()
 }
 
+/// `s` wrapped to `width`, at most `max` lines; what doesn't fit is
+/// clipped on the last one, ending in `…`.
+fn event_lines(s: &str, width: usize, max: usize) -> Vec<String> {
+    let width = width.max(8);
+    let flat = s.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut out = wrap(&flat, width);
+    if out.len() > max {
+        let rest = out[max - 1..].join(" ");
+        out.truncate(max - 1);
+        out.push(clip(&rest, width));
+    }
+    out
+}
+
 /// How an inbox entry's kind is labelled, and its colour.
 fn kind_label(kind: &str) -> (&str, Color) {
     match kind {
@@ -800,17 +814,21 @@ fn journal_pane(f: &mut Frame, area: Rect, app: &App, full: bool) {
     if app.cursor.is_none()
         && let Some((doing, since)) = app.repo().and_then(|r| r.data.now.get(&item.id))
     {
-        lines.push(Line::from(vec![
-            Span::styled("now ", fg(DIM)),
-            Span::styled(
-                format!(
-                    "{} ({})",
-                    doing.replace(&item.worktree, &app.show_path(&item.worktree)),
-                    app.age(*since)
-                ),
-                fg(INFO),
-            ),
-        ]));
+        let text = format!(
+            "{} ({})",
+            doing.replace(&item.worktree, &app.show_path(&item.worktree)),
+            app.age(*since)
+        );
+        for (k, t) in event_lines(&text, (inner.width as usize).saturating_sub(4), 2)
+            .into_iter()
+            .enumerate()
+        {
+            let lead = if k == 0 { "now " } else { "    " };
+            lines.push(Line::from(vec![
+                Span::styled(lead, fg(DIM)),
+                Span::styled(t, fg(INFO)),
+            ]));
+        }
     }
     // What waits for you about this item, in full.
     if app.cursor.is_none() {
@@ -859,36 +877,67 @@ fn journal_pane(f: &mut Frame, area: Rect, app: &App, full: bool) {
         lines.push(Line::default());
     }
     let (events, cursor) = app.shown_events();
+    let width = inner.width as usize;
+    // Each event wraps to the pane's width, up to two lines; the rest is
+    // clipped on the second.
+    let groups: Vec<Vec<Line>> = events
+        .iter()
+        .enumerate()
+        .map(|(i, e)| {
+            let c = match tone(&e.body) {
+                Tone::Good => OK,
+                Tone::Bad => STOP,
+                Tone::Decision => BRASS,
+                Tone::Dim => DIM,
+                Tone::Plain => Color::Reset,
+            };
+            let clock = format!("{}  ", app.clock(e.t));
+            let actor = format!("{:<9} ", clip(&e.actor, 9));
+            let lead = clock.chars().count() + actor.chars().count();
+            let text = event_lines(&e.body.summary_full(), width.saturating_sub(lead), 2);
+            let mut out: Vec<Line> = text
+                .into_iter()
+                .enumerate()
+                .map(|(k, t)| {
+                    let mut l = if k == 0 {
+                        Line::from(vec![
+                            Span::styled(clock.clone(), fg(DIM)),
+                            Span::styled(actor.clone(), fg(INFO)),
+                            Span::styled(t, fg(c)),
+                        ])
+                    } else {
+                        Line::from(vec![Span::raw(" ".repeat(lead)), Span::styled(t, fg(c))])
+                    };
+                    if cursor == Some(i) {
+                        l = l.style(selected());
+                    }
+                    l
+                })
+                .collect();
+            if out.is_empty() {
+                out.push(Line::default());
+            }
+            out
+        })
+        .collect();
+    // The newest events that fit, with a note for the ones above.
     let room = (inner.height as usize).saturating_sub(lines.len());
-    let hidden = events.len().saturating_sub(room);
-    let (skip, more) = if hidden > 0 {
-        (hidden + 1, true)
-    } else {
-        (0, false)
-    };
-    if more {
+    let total: usize = groups.iter().map(Vec::len).sum();
+    let mut first = 0;
+    if total > room {
+        let mut used = 1; // the "… earlier events" line
+        first = groups.len();
+        while first > 0 && used + groups[first - 1].len() <= room {
+            used += groups[first - 1].len();
+            first -= 1;
+        }
         lines.push(Line::from(Span::styled(
-            format!("… {} earlier events", skip),
+            format!("… {} earlier events", first),
             fg(DIM),
         )));
     }
-    for (i, e) in events.iter().enumerate().skip(skip) {
-        let c = match tone(&e.body) {
-            Tone::Good => OK,
-            Tone::Bad => STOP,
-            Tone::Decision => BRASS,
-            Tone::Dim => DIM,
-            Tone::Plain => Color::Reset,
-        };
-        let mut line = Line::from(vec![
-            Span::styled(format!("{}  ", app.clock(e.t)), fg(DIM)),
-            Span::styled(format!("{:<9} ", clip(&e.actor, 9)), fg(INFO)),
-            Span::styled(e.body.summary(), fg(c)),
-        ]);
-        if cursor == Some(i) {
-            line = line.style(selected());
-        }
-        lines.push(line);
+    for g in groups.into_iter().skip(first) {
+        lines.extend(g);
     }
     if events.is_empty() {
         lines.push(Line::from(Span::styled("(empty journal)", fg(DIM))));
