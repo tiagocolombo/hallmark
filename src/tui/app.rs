@@ -358,7 +358,11 @@ impl App {
                 (true, Some(p)) => when.get(&p).copied().unwrap_or(r.item.state_since),
                 _ => r.item.state_since,
             };
-            let parent = if r.child { r.item.parent } else { Some(r.item.id) };
+            let parent = if r.child {
+                r.item.parent
+            } else {
+                Some(r.item.id)
+            };
             (
                 std::cmp::Reverse(group),
                 parent.map(|p| p.0),
