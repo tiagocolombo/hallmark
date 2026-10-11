@@ -35,16 +35,18 @@ fn installed(env: &Env) -> PathBuf {
 fn fake_cargo(env: &Env, exe: &Path, exit: i32) -> PathBuf {
     let log = env.root.join("cargo.log");
     let real = env!("CARGO_BIN_EXE_hall");
+    // The staging root `hall update` builds in, beside the installed bin.
+    let staged = exe.parent().unwrap().parent().unwrap().join(".hall-update");
+    let staged_exe = staged.join("bin").join(exe.file_name().unwrap());
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         let fake = env.root.join("cargo");
         let install = if exit == 0 {
-            // A new file, renamed into place, as cargo does: a running
-            // program can't be written to.
             format!(
-                "cp '{real}' '{e}.new' && mv '{e}.new' '{e}'\n",
-                e = exe.display()
+                "mkdir -p '{d}' && cp '{real}' '{e}'\n",
+                d = staged_exe.parent().unwrap().display(),
+                e = staged_exe.display()
             )
         } else {
             String::new()
@@ -67,7 +69,11 @@ fn fake_cargo(env: &Env, exe: &Path, exit: i32) -> PathBuf {
     {
         let fake = env.root.join("cargo.cmd");
         let install = if exit == 0 {
-            format!("@copy /y \"{real}\" \"{}\" > nul\r\n", exe.display())
+            format!(
+                "@mkdir \"{}\" 2> nul\r\n@copy /y \"{real}\" \"{}\" > nul\r\n",
+                staged_exe.parent().unwrap().display(),
+                staged_exe.display()
+            )
         } else {
             String::new()
         };
@@ -152,7 +158,7 @@ fn installs_the_latest_main_over_the_running_copy() {
     assert_eq!(r.json["latest"], sha.as_str());
 
     let log = cargo_log(&env).expect("cargo ran");
-    let root = p(&env.root.join("inst"));
+    let root = p(&env.root.join("inst").join(".hall-update"));
     assert!(
         log.contains(&format!(
             "install --locked --force --git {src} --rev {sha} --root {root}"
@@ -180,6 +186,57 @@ fn installs_the_latest_main_over_the_running_copy() {
     assert_eq!(steps[1], ("hall setup claude", "skipped"));
     assert_eq!(steps[2], ("restart the daemon", "skipped"));
     assert!(exe.is_file());
+    assert!(
+        !env.root.join("inst/.hall-update").exists(),
+        "staging is cleaned"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn restarts_a_running_daemon_on_the_new_hall() {
+    let env = Env::initialized();
+    let (src, _) = source(&env);
+    let exe = installed(&env);
+    let cargo = fake_cargo(&env, &exe, 0);
+    let script = env.script(serde_json::json!([]));
+    let run = |args: &[&str]| {
+        reply(
+            env.cmd_exe(&exe, &env.root)
+                .env("HALL_CARGO", &cargo)
+                .env("HALL_RUNNER", format!("fake:{}", script.display()))
+                .env("HALL_DAEMON_POLL", "200ms")
+                .env("HALL_DAEMON_SERVICE_DRY", "1")
+                .env_remove("HALL_UPDATE_SOURCE")
+                .args(args)
+                .output()
+                .unwrap(),
+        )
+    };
+    let started = run(&["daemon", "start"]);
+    let _stop = StopOnDrop(&run);
+    assert_eq!(started.json["running"], true, "{}", started.stdout);
+    let before = started.json["state"]["pid"].as_u64().unwrap();
+
+    let r = run(&["update", "--source", &src]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(r.json["steps"][2]["command"], "restart the daemon");
+    assert_eq!(r.json["steps"][2]["status"], "done", "{}", r.stdout);
+
+    let after = run(&["daemon", "status"]);
+    assert_eq!(after.json["running"], true, "{}", after.stdout);
+    assert_ne!(after.json["state"]["pid"].as_u64().unwrap(), before);
+}
+
+/// Stops the daemon when the test ends, even if an assertion fails.
+#[cfg(unix)]
+struct StopOnDrop<'a, F: Fn(&[&str]) -> Reply>(&'a F);
+
+#[cfg(unix)]
+impl<F: Fn(&[&str]) -> Reply> Drop for StopOnDrop<'_, F> {
+    fn drop(&mut self) {
+        (self.0)(&["daemon", "stop"]);
+    }
 }
 
 #[test]

@@ -32,7 +32,14 @@ fn head() -> Option<String> {
     let common = dir.join(common);
     let mut watch = vec![Path::new(&git_dir).join("HEAD"), common.join("packed-refs")];
     if let Some(branch) = git(dir, &["symbolic-ref", "-q", "HEAD"]) {
-        watch.push(common.join(branch));
+        let loose = common.join(branch);
+        // Packed now, loose after the next commit: watch the directory
+        // (cargo scans it) so that new file is noticed.
+        if loose.exists() {
+            watch.push(loose);
+        } else {
+            watch.extend(loose.parent().map(Path::to_path_buf));
+        }
     }
     // A path that doesn't exist would rerun this script on every build.
     for p in watch.iter().filter(|p| p.exists()) {

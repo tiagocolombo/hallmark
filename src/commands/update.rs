@@ -90,33 +90,14 @@ pub fn update(cwd: &Path, a: UpdateArgs) -> Result<Response> {
 
     let root = install_root(&exe)?;
     let cargo = std::env::var("HALL_CARGO").unwrap_or_else(|_| "cargo".into());
-    let aside = set_aside(&exe);
-    let installed = cargo_install(&cargo, cwd, &a, &out.latest, &root).and_then(|()| {
-        if exe.exists() {
-            return Ok(());
-        }
-        Err(HallError::new(
-            ErrorCode::CommandFailed,
-            format!(
-                "cargo install succeeded but didn't write {}; does {} build a `hall` binary?",
-                paths::display(&exe),
-                a.source
-            ),
-        )
-        .next(["hall update"]))
-    });
-    if let Err(e) = installed {
-        if let Some(old) = &aside
-            && !exe.exists()
-        {
-            let _ = std::fs::rename(old, &exe);
-        }
-        return Err(e);
-    }
-    if let Some(old) = &aside {
-        // Windows keeps a running program's file; the next update removes it.
-        let _ = std::fs::remove_file(old);
-    }
+    // Build into a staging root, so the installed hall is only out of place
+    // for the renames in `swap_in`, not for the whole build.
+    let staging = root.join(".hall-update");
+    let _ = std::fs::remove_dir_all(&staging);
+    let installed = cargo_install(&cargo, cwd, &a, &out.latest, &staging)
+        .and_then(|()| swap_in(&staging, &exe, &a.source));
+    let _ = std::fs::remove_dir_all(&staging);
+    installed?;
     out.status = "updated".into();
     out.steps.push(step(
         format!(
@@ -282,8 +263,40 @@ fn cargo_install(cargo: &str, cwd: &Path, a: &UpdateArgs, rev: &str, root: &Path
     .next([again(a), "hall doctor".into()]))
 }
 
-/// Windows can't replace a running program, but it can rename one: move
-/// this hall aside so cargo can write the new one in its place.
+/// Moves the freshly built hall from `staging` over `exe`. Windows can't
+/// replace a running program but can rename one, so this hall goes aside
+/// first and comes back if the move fails.
+fn swap_in(staging: &Path, exe: &Path, source: &str) -> Result<()> {
+    let name = exe.file_name().unwrap_or_default();
+    let built = staging.join("bin").join(name);
+    if !built.is_file() {
+        return Err(HallError::new(
+            ErrorCode::CommandFailed,
+            format!(
+                "cargo install succeeded but didn't build {}; does {source} build a `hall` binary?",
+                name.to_string_lossy()
+            ),
+        )
+        .next(["hall update"]));
+    }
+    let aside = set_aside(exe);
+    if let Err(e) = std::fs::rename(&built, exe) {
+        if let Some(old) = &aside {
+            let _ = std::fs::rename(old, exe);
+        }
+        return Err(HallError::new(
+            ErrorCode::CommandFailed,
+            format!("could not install over {}: {e}", paths::display(exe)),
+        )
+        .next(["hall update"]));
+    }
+    if let Some(old) = &aside {
+        // Windows keeps a running program's file; the next update removes it.
+        let _ = std::fs::remove_file(old);
+    }
+    Ok(())
+}
+
 #[cfg(windows)]
 fn set_aside(exe: &Path) -> Option<PathBuf> {
     let old = exe.with_extension("exe.old");
