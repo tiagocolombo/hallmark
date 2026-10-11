@@ -64,7 +64,7 @@ The docs and the terminal app describe Hallmark as a building.
 | --- | --- | --- |
 | Front Desk | Intake: `hall new`, `hall new --issue`, `hall adopt` | (creation) |
 | Workshop | Development; each bench is a worktree | Development |
-| Your Office | The inbox: questions, "ready?", escalations, budget stops, stuck items | Awaiting you, Escalated |
+| Your Office | The inbox, escalations only: questions, "ready?", escalations, holds, CI that never ran | Awaiting you, Escalated |
 | Post Room | Every handoff passes here; a copy goes to Records | (all transitions) |
 | Records | The journal | Dropped, Closed (history) |
 | Library | Learnings distilled from closed items, kept next to the journal | — |
@@ -235,7 +235,7 @@ Each hook runs `hall hook <event>`, never a shell script, so Windows works.
 | `PreToolUse` | Runs the edit gate and the push gate. |
 | `PostToolUse` | Records commits. It binds the session to the item when `hall new`, `hall adopt` or `hall ask` run, by reading their JSON output. |
 | `Stop` | Records the turn summary (`last_assistant_message`). It reads new transcript usage from the stored offset, deduplicated by `requestId`. |
-| `Notification` | Files "session waiting" in the inbox, under the session's item. |
+| `Notification` | Files "session waiting" as a notice, under the session's item. |
 
 ## The agent contract
 
@@ -294,7 +294,7 @@ $ echo $?
 | `hall adopt [--title] [--pr] [--base]` | Turns the current branch and worktree, or an open PR (`--pr`, Hallmark's or not), into an item that updates that PR. On the branch of a shipped item whose PR is still open, reopens the item (`closed → development`). `--base` stacks it on another branch (ADR 0029). |
 | `hall status [<id>] [--all]` | Lists items by state, or shows one item in detail. |
 | `hall log [<id>] [--kind] [--limit]` | Prints the item's journal. |
-| `hall inbox` | Lists everything waiting for you, oldest first. `<n> --dismiss` hides one entry and `--clear` hides them all, until each changes; `--all` shows them. |
+| `hall inbox` | Lists the escalations waiting for you, oldest first. `<n> --dismiss` hides one entry and `--clear` hides them all, until each changes; `--all` shows them. `--notices` lists what the loop handles on its own. |
 | `hall ready [<id>] [--note]` | Freezes HEAD and queues the item. A dirty worktree is refused. |
 | `hall pull-back [<id>] [--reason]` | Returns the item to development. |
 | `hall drop [<id>] --reason [--keep-worktree]` | Abandons the item. The branch and journal stay. |
@@ -502,21 +502,31 @@ system prompt.
 
 ## The inbox
 
-Your Office holds the following, oldest first. It is derived from the journal.
-A dismissed entry (`hall inbox <n> --dismiss`, `--clear`) stays hidden until it
+Your Office holds only escalations, oldest first: what the loop gave up on, or
+what only a person can decide (ADR 0031). It is derived from the journal. A
+dismissed entry (`hall inbox <n> --dismiss`, `--clear`) stays hidden until it
 changes (ADR 0030).
 
 | Kind | Comes from | What waits |
 | --- | --- | --- |
 | question | `hall ask` without an answer | that item |
 | escalated | the item is `escalated` | that item |
-| session waiting | a `Notification` hook, cleared by the next prompt in that session | that session |
 | ready? | the item is `awaiting_you` | nothing |
-| budget, run_failed, ship_failed, conflict, feedback | a hold: a per-item cap, two failed runs in a row, a failed ship, a rebase the Delivery office couldn't finish, PR comments its dev run didn't act on | that item, until `hall retry` (which, for a budget hold, grants the item more tokens) |
-| ci_failed | the shipped PR's CI failed | a follow-up item |
-| stuck | the watchman | whatever was running |
+| budget, run_failed, ship_failed, conflict, feedback, ci_failed | a hold: a per-item cap, two failed runs in a row, a failed ship, a rebase the Delivery office couldn't finish, PR comments or failing CI its dev run didn't act on | that item, until `hall retry` (which, for a budget hold, grants the item more tokens) |
+| ci_failed | an open PR's CI still fails after the Delivery office's fixes | a follow-up item |
+| ci_down | CI jobs that never started (an Actions billing limit, no runners): one entry for every PR | GitHub |
+| session waiting | an answer the loop couldn't deliver to the asking session | that session |
 | daemon stopped | a daemon that should run has no heartbeat | the loop |
-| learnings | proposed learnings, sent as a digest | nothing |
+
+**Notices** (`hall inbox --notices`) are what the loop handles on its own, or
+news. They never reach your office and are never notified:
+
+| Kind | Comes from |
+| --- | --- |
+| ci_failed | an open PR's red CI, while the Delivery office fixes it; a PR merged with red CI |
+| stuck | the watchman |
+| session waiting | a `Notification` hook, cleared by the next prompt in that session |
+| learnings | proposed learnings in the Library |
 
 **Asking a question.** An agent runs:
 
@@ -563,7 +573,7 @@ what its review is told. There are four kinds:
    are retired; `history/` keeps every earlier version.
 
 **Approval is yours, locally.** Learnings of kinds outside `auto_accept` wait
-as `proposed`, one entry in the inbox. `hall library review --accept` or
+as `proposed`, one notice (`hall inbox --notices`). `hall library review --accept` or
 `--reject` settles them at once; rejecting an update restores what it replaced.
 `hall library import` brings in learnings committed under `.hallmark/knowledge/`
 by earlier versions, and `hall library export` writes the store to one file.

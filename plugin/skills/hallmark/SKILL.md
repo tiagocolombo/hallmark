@@ -145,7 +145,7 @@ After that, stop editing the item. If the human wants changes:
 ```
 hall status                     # items by state, or one item in detail
 hall log H-0042 --kind verdict  # the journal, filtered by event
-hall inbox                      # everything waiting for the human
+hall inbox                      # escalations: what only the human can settle
 hall usage --by item            # tokens and cost
 ```
 
