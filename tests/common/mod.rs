@@ -52,7 +52,12 @@ impl Env {
     }
 
     pub fn cmd(&self, dir: &Path) -> Command {
-        let mut c = Command::new(env!("CARGO_BIN_EXE_hall"));
+        self.cmd_exe(Path::new(env!("CARGO_BIN_EXE_hall")), dir)
+    }
+
+    /// [`Env::cmd`] for another copy of `hall`, such as an installed one.
+    pub fn cmd_exe(&self, exe: &Path, dir: &Path) -> Command {
+        let mut c = Command::new(exe);
         c.current_dir(dir)
             .env("HALL_HOME", &self.home)
             .env("HALL_ACTOR", "you")
@@ -150,7 +155,7 @@ impl Env {
     }
 }
 
-fn reply(out: std::process::Output) -> Reply {
+pub fn reply(out: std::process::Output) -> Reply {
     let stdout = String::from_utf8_lossy(&out.stdout).to_string();
     let json = serde_json::from_str(stdout.trim()).unwrap_or(Value::Null);
     Reply {

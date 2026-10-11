@@ -21,6 +21,7 @@ use super::record::{ExportOut, HistoryOut};
 use super::review::{FindingsOut, VerdictOut};
 use super::setup::SetupOut;
 use super::status::{InboxOut, LogOut, ReindexOut, StatusItem, StatusList, UsageOut};
+use super::update::UpdateOut;
 use crate::cli::{Cli, HelpArgs, SchemaArgs};
 use crate::config::Config;
 use crate::error::{EXIT_CODES, ErrorCode, ErrorEnvelope, HallError, Result};
@@ -268,6 +269,7 @@ pub const SCHEMA_NAMES: &[&str] = &[
     "schema",
     "hook",
     "setup",
+    "update",
     "daemon",
     "next",
     "findings",
@@ -311,6 +313,7 @@ pub fn schema_value(name: &str) -> Option<serde_json::Value> {
         "help" => schema_for!(Out<HelpOut>),
         "schema" => schema_for!(Out<SchemaOut>),
         "setup" => schema_for!(Out<SetupOut>),
+        "update" => schema_for!(Out<UpdateOut>),
         "hook" => schema_for!(HookOutput),
         "daemon" => schema_for!(Out<DaemonOut>),
         "next" => schema_for!(Out<NextOut>),

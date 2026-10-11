@@ -282,3 +282,45 @@ fn a_pr_closed_with_red_checks_leaves_the_inbox_without_passing() {
     assert_eq!(recorded[1]["ended"], "closed");
     assert_eq!(ci_entries(&env), 0);
 }
+
+#[test]
+fn a_check_that_failed_twice_is_named_once() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    shipped(&env);
+    pr(&gh, "OPEN", "x", "");
+    // The same workflow ran for the push and for the pull request.
+    checks(
+        &gh,
+        json!([{"name": "fmt", "bucket": "fail"}, {"name": "clippy", "bucket": "fail"},
+               {"name": "fmt", "bucket": "fail"}, {"name": "clippy", "bucket": "fail"}]),
+    );
+    assert_eq!(ci_pass(&env, &gh)["steps"][0]["progress"], "worked");
+    let inbox = env.hall(&env.repo, &["inbox"]);
+    let text = inbox.json["entries"][0]["text"].as_str().unwrap();
+    assert!(
+        text.ends_with(&format!("CI failed on {URL}: fmt, clippy")),
+        "{text}"
+    );
+}
+
+#[test]
+fn a_knowledge_items_red_checks_never_wait_for_you() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    let (id, _wt, sha) = hallmarked_item(&env, "Library: learnings from H-0009");
+    append(
+        &env,
+        &id,
+        "shipper",
+        Body::Shipped {
+            sha,
+            pr_url: Some(URL.into()),
+        },
+    );
+    pr(&gh, "OPEN", "x", "");
+    checks(&gh, json!([{"name": "test", "bucket": "fail"}]));
+    assert_eq!(ci_pass(&env, &gh)["steps"][0]["progress"], "worked");
+    assert_eq!(events(&env, &id, "pr_checks").len(), 1, "still recorded");
+    assert_eq!(ci_entries(&env), 0);
+}
