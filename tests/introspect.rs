@@ -115,7 +115,12 @@ fn an_inbox_entry_explains_itself() {
     );
     env.hall(
         &wt,
-        &["propose-ready", "--summary", "usage page with tests"],
+        &[
+            "propose-ready",
+            "--ask",
+            "--summary",
+            "usage page with tests",
+        ],
     );
 
     let list = env.hall(&env.repo, &["inbox"]);
@@ -221,7 +226,7 @@ fn context(r: &common::Reply) -> String {
 fn claude_is_told_what_waits_once() {
     let env = Env::initialized();
     let (id, wt) = env.new_item("Usage page");
-    env.hall(&wt, &["propose-ready", "--summary", "done"]);
+    env.hall(&wt, &["propose-ready", "--ask", "--summary", "done"]);
 
     let start = env.hook(
         "session-start",
@@ -262,7 +267,7 @@ fn claude_is_told_what_waits_once() {
 fn an_entry_that_leaves_and_returns_is_announced_again() {
     let env = Env::initialized();
     let (id, wt) = env.new_item("Usage page");
-    env.hall(&wt, &["propose-ready", "--summary", "done"]);
+    env.hall(&wt, &["propose-ready", "--ask", "--summary", "done"]);
     let start = env.hook(
         "session-start",
         &hook_input("session_start", &env.repo, "w2"),
@@ -279,7 +284,7 @@ fn an_entry_that_leaves_and_returns_is_announced_again() {
 
     // ...then comes back: it is a new occurrence.
     hallmark::daemon::nap(std::time::Duration::from_millis(20));
-    env.hall(&wt, &["propose-ready", "--summary", "done again"]);
+    env.hall(&wt, &["propose-ready", "--ask", "--summary", "done again"]);
     let prompt = env.hook(
         "user-prompt-submit",
         &hook_input("user_prompt_submit", &env.repo, "w2"),
@@ -293,7 +298,7 @@ fn the_inbox_clears_and_entries_return_when_they_change() {
     let env = Env::initialized();
     let (id, wt) = env.new_item("Usage page");
     env.hall(&wt, &["ask", "billed or raw?", "--options", "billed,raw"]);
-    env.hall(&wt, &["propose-ready", "--summary", "first pass"]);
+    env.hall(&wt, &["propose-ready", "--ask", "--summary", "first pass"]);
     let count = |all: bool| {
         let args: &[&str] = if all { &["inbox", "--all"] } else { &["inbox"] };
         env.hall(&env.repo, args).json["entries"]
@@ -330,7 +335,7 @@ fn the_inbox_clears_and_entries_return_when_they_change() {
 
     // The item changes (a new "looks done"): it comes back.
     env.hall(&wt, &["pull-back"]);
-    env.hall(&wt, &["propose-ready", "--summary", "second pass"]);
+    env.hall(&wt, &["propose-ready", "--ask", "--summary", "second pass"]);
     let inbox = env.hall(&env.repo, &["inbox"]);
     assert_eq!(inbox.json["entries"][0]["item"], id.as_str());
     assert_eq!(inbox.json["entries"][0]["kind"], "ready");

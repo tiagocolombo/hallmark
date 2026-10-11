@@ -264,6 +264,10 @@ pub struct ProposeReadyArgs {
     /// What was done, for the human deciding.
     #[arg(long)]
     pub summary: String,
+    /// Something needs the human's confirmation: wait for their call
+    /// instead of going straight to review.
+    #[arg(long)]
+    pub ask: bool,
 }
 
 #[derive(Debug, Args)]

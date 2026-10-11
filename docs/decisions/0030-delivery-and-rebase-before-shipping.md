@@ -1,4 +1,4 @@
-# 0030. The Delivery office, rebasing before shipping, what becomes an item, a clean inbox, and a daemon that doesn't die in its sleep
+# 0030. The Delivery office, rebasing before shipping, what becomes an item, a clean inbox, auto-ready, and a daemon that doesn't die in its sleep
 
 Status: Accepted, 2026-10-11
 
@@ -127,6 +127,31 @@ The CI watch (ADR 0025) stays its own worker and belongs to the same office.
   file, `inbox-dismissed.jsonl`. The index isn't involved, so an older daemon
   sharing the index can't lose them. Hooks, notifications and the terminal app
   all read the filtered inbox.
+
+### Done with nothing to confirm goes straight to review
+
+`hall propose-ready` used to always wait for your call (`awaiting_you`), even
+when there was nothing to decide. Now it records `proposed_ready` and then
+`ready` at HEAD (note "nothing left to confirm"), and queues the item, when all
+of these hold:
+
+- `auto_ready` is on (the default; a top-level key in `.hallmark.toml`);
+- the agent didn't pass `--ask`, which means "something needs the human's
+  decision";
+- no question on the item is unanswered;
+- the worktree has no uncommitted changes;
+- the item isn't a part, and none of its parts is still open.
+
+Otherwise it waits for you as before, and the reply says why. The review is
+still the gate: nothing reaches GitHub without a hallmark, and
+`hall pull-back` takes it back.
+
+### The timeline wraps
+
+The terminal app's journal pane used to clip each event at a fixed length and
+cut it off at the pane's edge. Now it wraps each event, and the "now" line, to
+the window's width, up to two lines, and clips only what still doesn't fit.
+`Body::summary_full` is the summary with nothing clipped.
 
 ### The daemon never sleeps through `std::thread::sleep`
 

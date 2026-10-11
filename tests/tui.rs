@@ -189,7 +189,12 @@ fn building() -> Env {
     let (_, wt2) = env.new_item("Export tenant usage");
     let r = env.hall(
         &wt2,
-        &["propose-ready", "--summary", "CSV export with 14 tests"],
+        &[
+            "propose-ready",
+            "--ask",
+            "--summary",
+            "CSV export with 14 tests",
+        ],
     );
     assert_eq!(r.code, 0, "{}", r.stdout);
     let r = env.hall(
@@ -931,7 +936,7 @@ fn whats_waiting_reads_in_full() {
                    the endpoint streams rows so large tenants don't time out, and the docs \
                    page lists every column with its unit";
     let (_, wt) = env.new_item("Long summary");
-    let r = env.hall(&wt, &["propose-ready", "--summary", summary]);
+    let r = env.hall(&wt, &["propose-ready", "--ask", "--summary", summary]);
     assert_eq!(r.code, 0, "{}", r.stdout);
     let mut app = load(&env, &env.repo);
     select(&mut app, 8);

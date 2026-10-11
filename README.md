@@ -72,7 +72,8 @@ An item's states:
 stateDiagram-v2
     direction LR
     [*] --> development: hall new / adopt
-    development --> awaiting_you: agent - hall propose-ready
+    development --> checks: agent - hall propose-ready, nothing to confirm
+    development --> awaiting_you: agent - hall propose-ready --ask
     awaiting_you --> development: not yet (hall pull-back)
     development --> checks: hall ready
     awaiting_you --> checks: hall ready
@@ -107,8 +108,10 @@ One item's life, from the replay in the design page:
    `hall new`, which creates H-0042 with its own branch and worktree.
 2. **09:14–09:50** You and the agent iterate. Hooks record each prompt, turn
    and commit.
-3. **09:51** The agent thinks it's done and runs `hall propose-ready`. You say
-   "not yet: cap it at 6 attempts".
+3. **09:51** The agent thinks it's done, but the retry cap is a judgement
+   call, so it runs `hall propose-ready --ask`. You say "not yet: cap it at 6
+   attempts". (With nothing to confirm, `propose-ready` sends it straight to
+   review.)
 4. **10:04** You say ready. `hall ready` freezes the commit and queues it.
 5. **10:09** The checks fail, so no review tokens are spent. The fixer adds tests.
 6. **10:24** The principal engineer finds a blocker and a major. The fixer
@@ -263,7 +266,7 @@ Agents are the main users of `hall`, so every command follows these rules:
 | `hall drop [<id>] --reason <r>` | Abandons the item. The branch and journal stay. `--keep-worktree` |
 | `hall retry [<id>] --reason <r> [--tokens <n>]` | Allows an escalated item one more round, or releases a held item. A budget hold also grants that item another `per_item` (or `--tokens`); the budget is unchanged. |
 | `hall continue [<id>]` | Moves an item on from wherever it waits: releases a hold, retries an escalation, sends "ready?" to review, or reopens its Claude session. |
-| `hall propose-ready [<id>] --summary <s>` | The agent says the work looks done. |
+| `hall propose-ready [<id>] --summary <s> [--ask]` | The agent says the work is done. With nothing left to confirm (no open question, a clean worktree, no open parts) it goes straight to review; `--ask` (or `auto_ready = false`) waits for your call. |
 | `hall ask <question>` | Asks you a question. `--options a,b`, `--default`, `--wait 4h`, `--item`, `--session` |
 | `hall answer <qid> <answer>` | Answers; the daemon resumes the asking session with it. |
 | `hall history` | Closed and dropped items, and why things were rejected. `--rejected`, `--lens`, `--since`, `--all` |

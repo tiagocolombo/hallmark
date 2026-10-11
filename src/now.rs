@@ -284,7 +284,7 @@ fn now_with(
                 vec![
                     act(
                         format!("hall propose-ready {id} --summary \"<what was done>\""),
-                        "say it looks done; the human decides",
+                        "say it's done: straight to review when nothing is left to confirm",
                     ),
                     act(
                         format!("hall ready {id}"),

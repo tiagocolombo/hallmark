@@ -104,8 +104,9 @@ every part is in.
 3. **When every part is merged or dropped**, run the gates in the parent's
    worktree on the merged whole and fix anything that broke there (commit in
    the parent's worktree). Summarise, run
-   `hall propose-ready <parent> --summary "..."` and ask the human; when they
-   say ready, `hall ready <parent>`.
+   `hall propose-ready <parent> --summary "..."`. With nothing left to confirm
+   it goes to review on its own; with `--ask` it waits, and when the human
+   says ready, `hall ready <parent>`.
 
 `hall ready` on a parent with open parts fails with `CHILDREN_OPEN`; on a part
 it fails with `WRONG_STATE` (parts merge, they aren't reviewed alone). To add
@@ -115,11 +116,17 @@ a part by hand: `hall new "<request>" --parent <parent>`.
 the command in the denial's `next`, move into the worktree, and carry on. Don't
 try to work around the gate.
 
-**Looks done.** Summarise and ask the human; don't send it yourself:
+**Looks done.** Commit everything, run the gates, then:
 
 ```
 hall propose-ready --summary "retries with jitter, 14 new tests"
 ```
+
+When nothing is left to confirm (no open question, a clean worktree, no open
+parts), it goes **straight to review** on its own: the reply's `state` is
+`checks`. Tell the human what you did and that it's in review. When something
+does need their decision (a trade-off, a scope question, a risky change), add
+`--ask`: it waits for their call (`awaiting_you`), and you ask them.
 
 **Human says ready.** Commit everything first (`ready` refuses a dirty
 worktree), then:

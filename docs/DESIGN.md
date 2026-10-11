@@ -101,7 +101,8 @@ Transitions:
 
 | From | Action | To |
 | --- | --- | --- |
-| development | `propose-ready` (agent thinks it's done) | awaiting_you |
+| development | `propose-ready` (agent thinks it's done), nothing left to confirm (`auto_ready`) | checks (`proposed_ready`, then `ready`) |
+| development | `propose-ready --ask`, or something left to confirm | awaiting_you |
 | development, awaiting_you | `ready` (freeze SHA, queue) | checks |
 | awaiting_you | `pull-back` ("not yet") | development |
 | checks | checks pass | review |
@@ -298,7 +299,7 @@ $ echo $?
 | `hall pull-back [<id>] [--reason]` | Returns the item to development. |
 | `hall drop [<id>] --reason [--keep-worktree]` | Abandons the item. The branch and journal stay. |
 | `hall retry [<id>] --reason [--tokens <n>]` | Allows an escalated item one more round, or releases a held item. A budget hold also grants that item another `per_item` (or `--tokens`); the budget is unchanged. |
-| `hall propose-ready [<id>] --summary` | The agent says the work looks done. |
+| `hall propose-ready [<id>] --summary [--ask]` | The agent says the work is done: straight to review when nothing is left to confirm, else (or with `--ask`) it waits for you. |
 | `hall ask <q> [--item] [--options] [--default] [--wait] [--session]` | Records a question. |
 | `hall answer <qid> <answer>` | Records the answer; the daemon resumes the asking session with it. |
 | `hall usage [--by item\|room\|role\|model\|day] [--since] [--item]` | Shows tokens and list-price cost. |

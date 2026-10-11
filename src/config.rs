@@ -39,6 +39,10 @@ pub struct Config {
     pub claude_args: Vec<String>,
     /// Rejected reviews before the item is escalated to you.
     pub max_rejects: u32,
+    /// `hall propose-ready` sends the item straight to review when nothing
+    /// is left to confirm (no open question, a clean worktree, no open
+    /// parts). `false`: it always waits for your call.
+    pub auto_ready: bool,
     /// The watchman flags items with no event for this long.
     pub stuck_after: String,
     /// "all", or a list of lens names.
@@ -71,6 +75,7 @@ impl Default for Config {
             fixer: "claude -p".into(),
             claude_args: Vec::new(),
             max_rejects: 3,
+            auto_ready: true,
             stuck_after: "30m".into(),
             lenses: Lenses::All("all".into()),
             rules: vec!["CLAUDE.md".into(), "AGENTS.md".into()],
@@ -599,6 +604,7 @@ ship     = {ship}
 update   = {update}
 {gates_toml}
 max_rejects = 3
+auto_ready  = true   # done, with nothing left to confirm: straight to review
 rules = ["CLAUDE.md", "AGENTS.md"]
 
 [capture]

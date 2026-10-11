@@ -386,6 +386,14 @@ expression: v
           "required": true,
           "syntax": "--summary <summary>",
           "takes_value": true
+        },
+        {
+          "default": "false",
+          "help": "Something needs the human's confirmation: wait for their call instead of going straight to review",
+          "name": "ask",
+          "required": false,
+          "syntax": "--ask",
+          "takes_value": false
         }
       ],
       "name": "propose-ready",

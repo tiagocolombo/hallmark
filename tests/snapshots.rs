@@ -83,7 +83,7 @@ fn status_and_inbox() {
 fn introspection_replies() {
     let env = Env::initialized();
     let (id, wt) = env.new_item("Usage page");
-    env.hall(&wt, &["propose-ready", "--summary", "done"]);
+    env.hall(&wt, &["propose-ready", "--ask", "--summary", "done"]);
     macro_rules! introspect {
         ($name:expr, $value:expr) => {
             assert_json_snapshot!($name, $value, {

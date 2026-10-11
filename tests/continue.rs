@@ -11,7 +11,7 @@ fn continue_does_what_the_item_needs() {
     commit_file(&wt, "usage.rs", "fn usage() {}");
 
     // Waiting for your call: continue sends it to review.
-    env.hall(&wt, &["propose-ready", "--summary", "done"]);
+    env.hall(&wt, &["propose-ready", "--ask", "--summary", "done"]);
     let r = env.hall(&env.repo, &["continue", &id]);
     assert_eq!(r.code, 0, "{}", r.stdout);
     assert_eq!(r.json["state"], "checks");
