@@ -294,6 +294,18 @@ pub enum Body {
     },
     /// The daemon resumed after a pause. Repo-level.
     Unpaused {},
+    /// You let the loop go past the daily budget for one UTC day
+    /// (`hall budget --grant`), without changing the cap: that day's cap is
+    /// `daily` plus `tokens`. The latest grant for a day is the one that
+    /// counts (ADR 0028).
+    BudgetGranted {
+        /// The UTC date, such as 2026-10-10.
+        day: String,
+        /// Tokens on top of `daily` for that day.
+        tokens: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+    },
     /// A notification went out (key: what it was about).
     Notified {
         key: String,
@@ -380,6 +392,7 @@ impl Body {
             Body::RunFailed { .. } => "run_failed",
             Body::Paused { .. } => "paused",
             Body::Unpaused {} => "unpaused",
+            Body::BudgetGranted { .. } => "budget_granted",
             Body::Notified { .. } => "notified",
             Body::Distilled { .. } => "distilled",
             Body::Planned { .. } => "planned",
@@ -553,6 +566,21 @@ impl Body {
                 None => format!("daemon paused · {}", clip(reason, 50)),
             },
             Body::Unpaused {} => "daemon resumed".into(),
+            Body::BudgetGranted {
+                day,
+                tokens,
+                reason,
+                ..
+            } => {
+                let mut s = format!(
+                    "daily budget +{} for {day}",
+                    crate::usage::fmt_tokens(*tokens)
+                );
+                if let Some(r) = reason {
+                    s.push_str(&format!(" · \"{}\"", clip(r, 50)));
+                }
+                s
+            }
             Body::Notified { kind, channels, .. } => {
                 format!("notified ({kind}) via {}", channels.join(", "))
             }
