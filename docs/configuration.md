@@ -121,6 +121,11 @@ gates = [
 ]
 ```
 
+`hall setup --interactive` preselects a wrapper only when its program is on
+PATH, and never preselects direnv: direnv refuses an `.envrc` that wasn't
+allowed at the path it runs in, so `direnv allow` it in the main checkout and
+in every worktree path (or use direnv's whitelist prefix) before using it.
+
 ## Your tools
 
 Hallmark runs `claude`, `gh`, and optionally `qmd` and `cargo`. It finds them

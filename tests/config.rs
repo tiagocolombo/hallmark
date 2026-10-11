@@ -164,6 +164,74 @@ fn user_keys_go_to_the_user_config_and_env_wins() {
 }
 
 #[test]
+fn notify_keys_stay_in_the_user_config_and_a_lone_lens_is_a_list() {
+    let env = Env::initialized();
+    let r = env.hall(&env.repo, &["config", "set", "notify.desktop", "false"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(entry(&r)["scope"], "user");
+    let repo = std::fs::read_to_string(env.repo.join(".hallmark.toml")).unwrap();
+    assert!(!repo.contains("[notify]"), "{repo}");
+    assert!(
+        std::fs::read_to_string(env.home.join("config.toml"))
+            .unwrap()
+            .contains("desktop = false")
+    );
+
+    // Once the repo has its own [notify], keys go there, and unset removes
+    // the table when it is left empty.
+    std::fs::write(
+        env.repo.join(".hallmark.toml"),
+        format!("{repo}\n[notify]\ndesktop = true\n"),
+    )
+    .unwrap();
+    let r = env.hall(&env.repo, &["config", "get", "notify.desktop"]);
+    assert_eq!(entry(&r)["scope"], "repo");
+    env.hall(&env.repo, &["config", "unset", "notify.desktop"]);
+    let after = std::fs::read_to_string(env.repo.join(".hallmark.toml")).unwrap();
+    assert!(!after.contains("[notify]"), "{after}");
+
+    let r = env.hall(&env.repo, &["config", "set", "lenses", "correctness"]);
+    assert_eq!(entry(&r)["value"], serde_json::json!(["correctness"]));
+    let r = env.hall(&env.repo, &["config", "set", "lenses", "all"]);
+    assert_eq!(entry(&r)["value"], "all");
+}
+
+/// `[tools]` reaches the programs Hallmark runs, and `HALL_*` still wins.
+#[cfg(unix)]
+#[test]
+fn tools_in_the_user_config_reach_doctor_and_env_overrides() {
+    use std::os::unix::fs::PermissionsExt;
+    let env = Env::new();
+    let script = |name: &str| {
+        let p = env.root.join(name);
+        std::fs::write(&p, "#!/bin/sh\necho fake 1.0\n").unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        p.to_string_lossy().to_string()
+    };
+    let (gh, claude, other) = (script("my-gh"), script("my-claude"), script("other-gh"));
+    env.hall(&env.root, &["config", "set", "tools.gh", &gh]);
+    env.hall(&env.root, &["config", "set", "tools.claude", &claude]);
+
+    let doctor = |gh_env: Option<&str>| {
+        let mut c = env.cmd(&env.root);
+        c.env_remove("HALL_GH").env_remove("HALL_CLAUDE");
+        if let Some(v) = gh_env {
+            c.env("HALL_GH", v);
+        }
+        common::reply(c.arg("doctor").output().unwrap()).stdout
+    };
+    // No variable: the file's path is used.
+    let out = doctor(None);
+    assert!(out.contains(&gh), "{out}");
+    assert!(out.contains("fake 1.0"), "{out}");
+    // An empty variable falls through to the file.
+    assert!(doctor(Some("")).contains(&gh));
+    // A set variable wins.
+    let out = doctor(Some(&other));
+    assert!(out.contains(&other) && !out.contains(&gh), "{out}");
+}
+
+#[test]
 fn a_repo_must_be_initialized_to_be_written() {
     let env = Env::new();
     let r = env.hall(&env.repo, &["config", "set", "base", "trunk"]);

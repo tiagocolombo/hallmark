@@ -45,7 +45,10 @@ are happy with.
    - `nix develop --command <gate>`
    - `devbox run -- <gate>`
    - `mise exec -- <gate>`
-   - `direnv exec . <gate>`
+   - `direnv exec . <gate>` (only if the `.envrc` is allowed at every
+     worktree path, which direnv requires)
+
+   Offer a wrapper only if its program is installed (`command -v`).
 
    The person may name another wrapper of their own.
 4. **Capture** (`capture.mode`): what happens when you edit code outside an

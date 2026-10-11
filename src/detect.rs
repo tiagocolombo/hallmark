@@ -114,7 +114,17 @@ pub fn env_wrapper(root: &Path) -> Option<(&'static str, &'static str)> {
     } else {
         return None;
     };
-    WRAPPERS.iter().copied().find(|(n, _)| *n == name)
+    // Only a wrapper that works here: its program must be installed, and
+    // direnv refuses an `.envrc` that was never allowed at the gate's path,
+    // so it is offered but never preselected.
+    if name == "direnv" {
+        return None;
+    }
+    WRAPPERS
+        .iter()
+        .copied()
+        .find(|(n, _)| *n == name)
+        .filter(|(n, _)| crate::gh::which(n).is_some())
 }
 
 /// The repo-rules files that exist.
@@ -130,6 +140,21 @@ pub fn rules(root: &Path) -> Vec<String> {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn wrapper_needs_its_file_and_program() {
+        let d = tempfile::tempdir().unwrap();
+        assert!(env_wrapper(d.path()).is_none());
+        fs::write(d.path().join(".envrc"), "use flake").unwrap();
+        assert!(env_wrapper(d.path()).is_none());
+        let d = tempfile::tempdir().unwrap();
+        fs::write(d.path().join(".tool-versions"), "rust 1.80").unwrap();
+        // Preselected only when mise is installed here.
+        assert_eq!(
+            env_wrapper(d.path()).is_some(),
+            crate::gh::which("mise").is_some()
+        );
+    }
 
     #[test]
     fn detects_common_stacks() {
@@ -165,12 +190,11 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         assert_eq!(env_wrapper(d.path()), None);
         fs::write(d.path().join(".envrc"), "use flake\n").unwrap();
-        assert_eq!(env_wrapper(d.path()).map(|w| w.0), Some("direnv"));
+        // direnv is offered, never preselected.
+        assert_eq!(env_wrapper(d.path()), None);
         fs::write(d.path().join("flake.nix"), "{}").unwrap();
-        assert_eq!(
-            env_wrapper(d.path()),
-            Some(("nix", "nix develop --command"))
-        );
+        let want = crate::gh::which("nix").map(|_| ("nix", "nix develop --command"));
+        assert_eq!(env_wrapper(d.path()), want);
     }
 
     #[test]

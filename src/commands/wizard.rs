@@ -427,10 +427,21 @@ impl<R: BufRead, W: Write> Wizard<'_, R, W> {
         let first = self.line(
             "Enter keeps them, '-' resets them; or type new ones, one per line, and an empty line to end: ",
         )?;
-        match first.as_str() {
-            "" => return Ok(None),
-            "-" => return Ok(Some(None)),
-            _ => {}
+        let mut first = first;
+        loop {
+            match first.as_str() {
+                "" => return Ok(None),
+                "-" => return Ok(Some(None)),
+                "?" => {
+                    let help = settings::find(Scope::Repo, key)
+                        .or_else(|| settings::find(Scope::User, key))
+                        .and_then(|k| k.help)
+                        .unwrap_or_else(|| "No description.".into());
+                    self.say(&format!("  {help}"))?;
+                    first = self.line("  ")?;
+                }
+                _ => break,
+            }
         }
         if first.starts_with('[') {
             return Ok(Some(Some(vec![first])));

@@ -162,6 +162,23 @@ pub fn resolve_key(name: &str, user: bool) -> Result<(Scope, Key)> {
     ]))
 }
 
+/// [`resolve_key`], except that `notify.*` goes to the user config unless the
+/// repo's file already has a [notify] table: a repo's [notify] replaces the
+/// user's as a whole (`Config::notify`), and channels are private.
+fn route(cwd: &Path, name: &str, user: bool) -> Result<(Scope, Key)> {
+    let (scope, key) = resolve_key(name, user)?;
+    if scope == Scope::Repo && key.key.starts_with("notify.") {
+        let repo_has = Files::load(cwd)
+            .repo_file
+            .and_then(|p| std::fs::read_to_string(p).ok())
+            .is_some_and(|t| settings::lookup(&t, "notify").is_some());
+        if !repo_has && let Some(k) = settings::find(Scope::User, &key.key) {
+            return Ok((Scope::User, k));
+        }
+    }
+    Ok((scope, key))
+}
+
 /// Where a scope's file is, and whether it must exist to be written.
 struct Files {
     repo: Option<Repo>,
@@ -332,7 +349,7 @@ fn list(cwd: &Path, prefix: Option<&str>, user: bool) -> Result<Response> {
 }
 
 fn get(cwd: &Path, name: &str, user: bool) -> Result<Response> {
-    let (scope, key) = resolve_key(name, user)?;
+    let (scope, key) = route(cwd, name, user)?;
     let f = Files::load(cwd);
     if scope == Scope::Repo && f.repo.is_none() {
         Repo::discover(cwd)?;
@@ -360,7 +377,7 @@ fn set(cwd: &Path, name: &str, value: Option<&[String]>, user: bool) -> Result<R
         )
         .next(["hall config list"]));
     }
-    let (scope, key) = resolve_key(name, user)?;
+    let (scope, key) = route(cwd, name, user)?;
     let parsed = value
         .map(|v| settings::parse(&key, v))
         .transpose()

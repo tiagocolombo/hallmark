@@ -214,6 +214,14 @@ pub fn parse(key: &Key, input: &[String]) -> Result<toml_edit::Value, String> {
         }
         Kind::List => list()?,
         Kind::StringOrList => match input {
+            // A lone lens is a one-item list: the string form means "all".
+            [v] if key.key == "lenses" && !v.trim_start().starts_with('[') => {
+                if v.trim() == "all" {
+                    "all".into()
+                } else {
+                    toml_edit::Value::Array([v.trim()].into_iter().collect())
+                }
+            }
             [v] if !v.trim_start().starts_with('[') => v.trim().into(),
             _ => list()?,
         },
@@ -281,11 +289,23 @@ pub fn edit(
             .and_then(|i| i.as_table_like_mut())
             .ok_or_else(|| format!("{} is not a table", tables[..=i].join(".")))?;
     }
+    let removing = value.is_none();
     match value {
         None => {
             target.remove(field);
         }
         Some(v) => crate::commands::budget::set_value(target, field, v),
+    }
+    // An empty [notify] still replaces the user's channels as a whole.
+    if removing
+        && scope == Scope::Repo
+        && tables == ["notify"]
+        && doc
+            .get("notify")
+            .and_then(|i| i.as_table_like())
+            .is_some_and(|t| t.is_empty())
+    {
+        doc.remove("notify");
     }
     let out = doc.to_string();
     let parsed = match scope {
