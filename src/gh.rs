@@ -353,10 +353,24 @@ pub fn run_and_job(link: &str) -> Option<(String, String)> {
         .then_some((run, job))
 }
 
-/// Why a failed job never started (an Actions billing or spending limit, no
-/// runner), or None when it ran or gh can't tell. A job that never started
-/// has no steps and no runner; GitHub gives the reason in an annotation.
-pub fn never_started(dir: &Path, link: &str) -> Option<String> {
+/// Whether a failed job ran.
+#[derive(Debug, Clone, PartialEq)]
+pub enum JobStart {
+    Ran,
+    /// Never started; the reason GitHub gives (empty when not asked for).
+    Never(String),
+    /// GitHub didn't say (an API error, a rate limit, an odd shape).
+    Unknown,
+}
+
+/// Reads whether a failed job ran. A job that never started has no steps and
+/// no runner; GitHub gives the reason in an annotation (read only when
+/// `reason` is set, to spare the API on re-checks).
+pub fn job_start(dir: &Path, link: &str, reason: bool) -> JobStart {
+    job_start_inner(dir, link, reason).unwrap_or(JobStart::Unknown)
+}
+
+fn job_start_inner(dir: &Path, link: &str, reason: bool) -> Option<JobStart> {
     #[derive(Deserialize)]
     struct Annotation {
         #[serde(default)]
@@ -385,7 +399,10 @@ pub fn never_started(dir: &Path, link: &str) -> Option<String> {
             .and_then(|r| r.as_str())
             .is_some_and(|r| !r.is_empty());
     if ran {
-        return None;
+        return Some(JobStart::Ran);
+    }
+    if !reason {
+        return Some(JobStart::Never(String::new()));
     }
     let reason = api(format!(
         "repos/{{owner}}/{{repo}}/check-runs/{job}/annotations"
@@ -396,7 +413,9 @@ pub fn never_started(dir: &Path, link: &str) -> Option<String> {
             .find(|a| a.annotation_level == "failure" && !a.message.trim().is_empty())
             .map(|a| a.message.trim().to_string())
     });
-    Some(reason.unwrap_or_else(|| "the job never started".into()))
+    Some(JobStart::Never(
+        reason.unwrap_or_else(|| "the job never started".into()),
+    ))
 }
 
 /// The tail of a failed job's log (`gh run view --job --log-failed`),

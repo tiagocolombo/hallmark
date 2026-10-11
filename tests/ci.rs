@@ -445,3 +445,69 @@ fn an_old_red_record_of_an_outage_joins_ci_down() {
         inbox.stdout
     );
 }
+
+fn outage_files(gh: &Path) {
+    let dir = gh.parent().unwrap();
+    std::fs::write(
+        dir.join("job.json"),
+        json!({"steps": [], "runner_name": "", "conclusion": "failure"}).to_string(),
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("annotations.json"),
+        json!([{"annotation_level": "failure", "message": "spending limit"}]).to_string(),
+    )
+    .unwrap();
+}
+
+fn forget_reads(env: &Env) {
+    std::fs::remove_file(env.repo.join(".git/hallmark/ci-watch.json")).unwrap();
+}
+
+#[test]
+fn an_outage_that_reruns_and_fails_for_real_is_recorded_as_a_failure() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    let (id, _) = shipped(&env);
+    pr(&gh, "OPEN", "x", "");
+    let job = "https://github.com/acme/app/actions/runs/7/job/9";
+    outage_files(&gh);
+    checks(&gh, json!([{"name": "fmt", "bucket": "fail", "link": job}]));
+    ci_pass(&env, &gh);
+    assert!(events(&env, &id, "pr_checks")[0]["not_started"].is_string());
+    // The re-run starts and fails: GitHub says the job ran.
+    std::fs::write(
+        gh.parent().unwrap().join("job.json"),
+        json!({"steps": [{"name": "fmt"}], "runner_name": "r1"}).to_string(),
+    )
+    .unwrap();
+    forget_reads(&env);
+    ci_pass(&env, &gh);
+    let recorded = events(&env, &id, "pr_checks");
+    assert_eq!(recorded.len(), 2, "{recorded:?}");
+    assert!(recorded[1]["not_started"].is_null(), "{recorded:?}");
+    assert_eq!(recorded[1]["passed"], false);
+}
+
+#[test]
+fn an_api_error_while_rechecking_an_outage_keeps_it_as_ci_down() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    let (id, _) = shipped(&env);
+    pr(&gh, "OPEN", "x", "");
+    let job = "https://github.com/acme/app/actions/runs/7/job/9";
+    outage_files(&gh);
+    checks(&gh, json!([{"name": "fmt", "bucket": "fail", "link": job}]));
+    ci_pass(&env, &gh);
+    // GitHub's API now answers with something that isn't a job.
+    std::fs::write(gh.parent().unwrap().join("job.json"), "HTTP 403").unwrap();
+    forget_reads(&env);
+    ci_pass(&env, &gh);
+    assert_eq!(events(&env, &id, "pr_checks").len(), 1, "outage kept");
+    let inbox = env.hall(&env.repo, &["inbox"]);
+    assert_eq!(
+        inbox.json["entries"][0]["kind"], "ci_down",
+        "{}",
+        inbox.stdout
+    );
+}

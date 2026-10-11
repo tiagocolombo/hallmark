@@ -72,7 +72,7 @@ The docs and the terminal app describe Hallmark as a building.
 | Repair Shop | The fixer | Fixing |
 | Stamping Room | The hallmark is struck | Hallmarked |
 | Dispatch Dock | Rebases onto the latest base; the ship command opens the PR; `update` updates an adopted or reopened one. If that PR already merged with the hallmarked work in it, the item closes with nothing pushed | Closed |
-| Delivery Office | Watches each shipped PR until it merges; a headless dev run rebases conflicting ones and addresses new review comments (ADR 0030) | Closed, Development (rebasing, addressing comments) |
+| Delivery Office | Watches each shipped PR until it merges; a headless dev run rebases conflicting ones, addresses new review comments (ADR 0030) and fixes red CI (ADR 0031) | Closed, Development (rebasing, addressing comments) |
 
 A **watchman** patrols the corridor. It flags any item with no new event for
 `stuck_after` (30 minutes by default), and a daemon that has stopped.

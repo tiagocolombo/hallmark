@@ -80,7 +80,9 @@ pub fn watched(items: &[Item], now: DateTime<Utc>) -> Vec<Item> {
                     Some(c) => {
                         !c.passed
                             && c.ended.is_none()
-                            && i.delivered.is_none()
+                            // A merged PR whose last record is red is read once
+                            // more: it either went green or its end is recorded.
+                            && (i.delivered.is_none() || c.not_started.is_none())
                             && (c.not_started.is_some()
                                 || i.ci_fixes >= crate::delivery::CI_FIXES
                                 || i.ci_declined.is_some()
@@ -173,7 +175,7 @@ pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
             .as_ref()
             .is_some_and(|c| c.not_started.is_some() && c.ended.is_none())
             && let Outcome::Failed(f) = conclude(&checks)
-            && not_started(&repo.main_root, &f).is_none()
+            && some_ran(&repo.main_root, &f)
         {
             return record(ctx, item.id, &url, false, f, None);
         }
@@ -225,9 +227,21 @@ pub fn not_started(dir: &std::path::Path, failing: &[FailingCheck]) -> Option<St
     }
     let mut why = None;
     for l in links {
-        why = Some(crate::gh::never_started(dir, l)?);
+        match crate::gh::job_start(dir, l, true) {
+            crate::gh::JobStart::Never(w) => why = Some(w),
+            _ => return None,
+        }
     }
     why
+}
+
+/// True only when GitHub positively says one of the failing jobs ran. An API
+/// error or rate limit ("can't tell") is not proof: a recorded outage stays.
+pub fn some_ran(dir: &std::path::Path, failing: &[FailingCheck]) -> bool {
+    failing
+        .iter()
+        .filter_map(|f| f.link.as_deref())
+        .any(|l| crate::gh::job_start(dir, l, false) == crate::gh::JobStart::Ran)
 }
 
 /// `merged` or `closed` for a PR that left the open state.
