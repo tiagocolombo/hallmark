@@ -982,7 +982,7 @@ expression: v
         },
         {
           "default": "false",
-          "help": "Include proposed learnings (open knowledge items, and the base)",
+          "help": "Include proposed learnings, not only accepted ones",
           "name": "proposed",
           "required": false,
           "syntax": "--proposed",
@@ -997,14 +997,14 @@ expression: v
       "about": "List proposed learnings, or accept and reject them",
       "args": [
         {
-          "help": "Learnings to accept (L-0001 …)",
+          "help": "Learnings to accept (L-0001 …); a retired one is reinstated",
           "name": "accept",
           "required": false,
           "syntax": "--accept <accept>",
           "takes_value": true
         },
         {
-          "help": "Learnings to reject",
+          "help": "Learnings to reject; an update gives back the version it replaced",
           "name": "reject",
           "required": false,
           "syntax": "--reject <reject>",
@@ -1054,6 +1054,36 @@ expression: v
       "name": "library distill",
       "schema": "hall schema library",
       "usage": "hall library distill [OPTIONS] <ID>"
+    },
+    {
+      "about": "Add learnings to the local Library: committed ones, a directory or an export",
+      "args": [
+        {
+          "help": "A directory of learning files or an export file. Default: `[library] dir` (.hallmark/knowledge) on the base branch",
+          "name": "source",
+          "required": false,
+          "syntax": "<source>",
+          "takes_value": true
+        }
+      ],
+      "name": "library import",
+      "schema": "hall schema library",
+      "usage": "hall library import [OPTIONS] [SOURCE]"
+    },
+    {
+      "about": "Write every learning in the local Library to one JSON file",
+      "args": [
+        {
+          "help": "The file to write. Without it, the reply carries the learnings",
+          "name": "out",
+          "required": false,
+          "syntax": "--out <out>",
+          "takes_value": true
+        }
+      ],
+      "name": "library export",
+      "schema": "hall schema library",
+      "usage": "hall library export [OPTIONS]"
     },
     {
       "about": "Everything the Claude Code heads-up display shows, in one call",

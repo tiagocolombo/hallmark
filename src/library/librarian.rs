@@ -9,20 +9,20 @@
 //!   learnings, and returns `plugin/schemas/learnings.json`. It may only
 //!   update or add; Hallmark numbers new learnings, keeps one file per ID,
 //!   and treats a "new" learning with an existing title as an update.
-//! - Results go into a knowledge item (see `knowledge.rs`). Kinds listed in
-//!   `[library] auto_accept` are written `accepted`; the rest `proposed`.
+//! - Results go straight into the local store (ADR 0027). Kinds listed in
+//!   `[library] auto_accept` are written `accepted`; the rest `proposed`,
+//!   and wait for `hall library review`.
 //! - Retirement: accepted learnings contradicted by a later verdict
 //!   (`held: false` after the file last changed), or unused for
-//!   `retire_after`, are written `retired` in the knowledge item.
+//!   `retire_after`, are written `retired` in the store.
 
 use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::knowledge::{self, Knowledge};
 use super::learning::{self, Kind, Learning, Status};
-use super::store::{self, KNOWLEDGE_PREFIX, Library, UseStats};
+use super::store::{self, Located, Store, UseStats};
 use crate::config::Role;
 use crate::error::{ErrorCode, HallError, Result};
 use crate::event::{Body, Event};
@@ -34,6 +34,10 @@ use crate::runner::{self, Failure, Metered, Runner};
 use crate::worker::{Progress, WorkerCtx};
 
 pub const ACTOR: &str = "librarian";
+
+/// Knowledge items (ADR 0021, before ADR 0027) were items titled
+/// `Library: …`. Any left over are not distilled.
+pub const KNOWLEDGE_PREFIX: &str = "Library:";
 
 /// What the model returns (`plugin/schemas/learnings.json`), read leniently.
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -61,18 +65,15 @@ pub struct Proposal {
     pub body: String,
 }
 
-/// What a distillation (or a retirement pass) changed.
+/// What a distillation (or a retirement pass) changed in the store.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, schemars::JsonSchema)]
 pub struct Applied {
-    /// The knowledge item that carries the changes.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub knowledge: Option<ItemId>,
     /// Learnings added or updated.
     pub learnings: Vec<String>,
-    /// Learnings proposed for retirement.
+    /// Of those, the ones waiting for your approval (`hall library review`).
+    pub proposed: Vec<String>,
+    /// Learnings retired.
     pub retired: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub commit: Option<String>,
 }
 
 /// The result of [`distill`].
@@ -116,11 +117,19 @@ pub fn already_distilled(events: &[Event]) -> Option<&Event> {
     (Some(last) > last_move).then(|| &events[last])
 }
 
-fn earlier(e: &Event) -> Applied {
+fn earlier(e: &Event, store: &Store) -> Applied {
     match &e.body {
-        Body::Distilled { into, learnings } => Applied {
-            knowledge: *into,
+        Body::Distilled { learnings, .. } => Applied {
             learnings: learnings.clone(),
+            proposed: learnings
+                .iter()
+                .filter(|id| {
+                    store
+                        .get(id)
+                        .is_some_and(|l| l.learning.status == Status::Proposed)
+                })
+                .cloned()
+                .collect(),
             ..Default::default()
         },
         _ => Applied::default(),
@@ -321,8 +330,7 @@ fn clip_block(s: &str, max: usize) -> String {
 }
 
 /// The existing learnings, one line each, for the prompt.
-pub fn existing_lines(lib: &Library) -> String {
-    let all = lib.effective();
+pub fn existing_lines(all: &[Located]) -> String {
     if all.is_empty() {
         return "(none yet)\n".into();
     }
@@ -346,7 +354,7 @@ pub fn existing_lines(lib: &Library) -> String {
     s
 }
 
-pub fn prompt(repo: &Repo, item: &Item, digest: &str, lib: &Library) -> String {
+pub fn prompt(repo: &Repo, item: &Item, digest: &str, existing: &[Located]) -> String {
     format!(
         "Distil Hallmark item {id} of repository `{repo}` into learnings for its Library.\n\n\
 Return the structured output:\n\
@@ -360,12 +368,12 @@ Kinds: `rule` (a finding that turned out right), `false-positive` (a finding tha
 withdrawn or a dispute the reviewer accepted: what not to flag, and why), `map` (what a \
 module does, so reviewers stop re-exploring it), `decision` (the human's ruling on an \
 escalation, with the reason). `source` names where it came from: `{id}/F1` for a finding, \
-`{id}` for the item. The learnings live in `{dir}/` if you need to read one.\n\n\
+`{id}` for the item. The learnings are files in `{dir}/` if you need to read one.\n\n\
 ## Existing learnings\n\n{existing}\n## The item\n\n{digest}",
         id = item.id,
         repo = repo.name,
-        dir = store::dir(repo),
-        existing = existing_lines(lib),
+        dir = crate::paths::display(&Store::of(repo).dir()),
+        existing = existing_lines(existing),
     )
 }
 
@@ -376,9 +384,9 @@ pub fn distill(repo: &Repo, runner: &dyn Runner, id: ItemId) -> Result<Distill> 
     if item.title.starts_with(KNOWLEDGE_PREFIX) {
         return Err(HallError::new(
             ErrorCode::WrongState,
-            format!("{id} is a knowledge item; its learnings are already in the Library"),
+            format!("{id} is a knowledge item from an earlier Hallmark; it is not distilled"),
         )
-        .next(["hall library review"]));
+        .next(["hall library review", "hall library import"]));
     }
     if !eligible(&item, &events) {
         return Err(HallError::new(
@@ -392,13 +400,14 @@ pub fn distill(repo: &Repo, runner: &dyn Runner, id: ItemId) -> Result<Distill> 
     }
     if let Some(e) = already_distilled(&events) {
         return Ok(Distill::Done {
-            applied: earlier(e),
+            applied: earlier(e, &Store::of(repo)),
             fresh: false,
         });
     }
-    let lib = Library::load(repo, &repo.config.base)?;
+    let store = Store::of(repo);
+    let existing = store.read();
     let changed = changed_paths(repo, &item);
-    let text = prompt(repo, &item, &digest(&item, &events, &changed), &lib);
+    let text = prompt(repo, &item, &digest(&item, &events, &changed), &existing);
     let mut req = runner::request(
         repo,
         Role::Librarian,
@@ -442,26 +451,21 @@ pub fn distill(repo: &Repo, runner: &dyn Runner, id: ItemId) -> Result<Distill> 
         .structured()
         .and_then(|v| serde_json::from_value(v.clone()).ok())
         .unwrap_or_default();
-    let applied = knowledge::with_lock(repo, || {
-        apply(repo, Some(&item), &proposals, ACTOR, Utc::now())
-    })?;
+    let applied = store.with_lock(|| apply(repo, Some(&item), &proposals, Utc::now()))?;
     let e = Event::new(
         ACTOR,
         Some(id),
         Body::Distilled {
-            into: applied.knowledge,
+            into: None,
             learnings: applied.learnings.clone(),
         },
     );
     repo.hall.append_item(id, &e)?;
     repo.hall.live(&format!(
-        "{id} distilled: {} learnings, {} retirements{}",
+        "{id} distilled: {} learnings ({} proposed), {} retired",
         applied.learnings.len(),
+        applied.proposed.len(),
         applied.retired.len(),
-        applied
-            .knowledge
-            .map(|k| format!(" in {k}"))
-            .unwrap_or_default()
     ));
     Ok(Distill::Done {
         applied,
@@ -504,33 +508,26 @@ fn norm_title(t: &str) -> String {
         .join(" ")
 }
 
-/// Accepted learnings on the base that should go: contradicted by a verdict
-/// after the file last changed, or unused for `retire_after`. Learnings
-/// already being changed in an open knowledge item, or proposed for
-/// retirement recently, are left alone.
+/// Accepted learnings that should go: contradicted by a verdict after the
+/// file last changed, or unused for `retire_after` (counted from the later
+/// of its last use and its last change).
 pub fn retirement_candidates(
     repo: &Repo,
-    lib: &Library,
+    learnings: &[Located],
     stats: &HashMap<String, UseStats>,
     now: DateTime<Utc>,
 ) -> Vec<(String, String)> {
     let after =
         crate::config::parse_duration(&repo.config.library.retire_after).unwrap_or(90 * 86_400);
-    let dates = store::file_dates(repo, &repo.config.base);
-    let recent = Retirements::load(repo);
     let mut out = Vec::new();
-    for l in &lib.base {
+    for l in learnings {
         let x = &l.learning;
-        if x.status != Status::Accepted
-            || lib.pending_get(&x.id).is_some()
-            || recent.blocks(repo, &x.id, now, after)
-        {
+        if x.status != Status::Accepted {
             continue;
         }
         let s = stats.get(&x.id).cloned().unwrap_or_default();
-        let d = dates.get(&l.path);
         if let Some(c) = s.last_contradicted
-            && d.is_none_or(|d| c > d.modified)
+            && l.modified.is_none_or(|m| c > m)
         {
             let why = s.notes.last().cloned().unwrap_or_else(|| "no note".into());
             out.push((
@@ -543,7 +540,7 @@ pub fn retirement_candidates(
             .last_used
             .and_then(|d| d.and_hms_opt(0, 0, 0))
             .map(|t| t.and_utc());
-        let reference = [s.last_used, file_last_used, d.map(|d| d.created)]
+        let reference = [s.last_used, file_last_used, l.modified]
             .into_iter()
             .flatten()
             .max();
@@ -562,79 +559,21 @@ pub fn retirement_candidates(
     out
 }
 
-/// Retirements the librarian proposed, so it doesn't propose the same one
-/// again while its knowledge item is on its way to the base.
-#[derive(Debug, Default, Serialize, Deserialize)]
-struct Retirements {
-    #[serde(default)]
-    proposed: HashMap<String, (ItemId, DateTime<Utc>)>,
-}
-
-impl Retirements {
-    fn path(repo: &Repo) -> std::path::PathBuf {
-        repo.hall.root.join("library").join("retirements.json")
-    }
-
-    fn load(repo: &Repo) -> Retirements {
-        std::fs::read_to_string(Self::path(repo))
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default()
-    }
-
-    fn save(&self, repo: &Repo) -> Result<()> {
-        let p = Self::path(repo);
-        if let Some(d) = p.parent() {
-            std::fs::create_dir_all(d)?;
-        }
-        std::fs::write(p, serde_json::to_string_pretty(self)?)?;
-        Ok(())
-    }
-
-    /// A proposal within `after` whose knowledge item wasn't dropped.
-    fn blocks(&self, repo: &Repo, id: &str, now: DateTime<Utc>, after: i64) -> bool {
-        let Some((item, t)) = self.proposed.get(id) else {
-            return false;
-        };
-        if (now - *t).num_seconds() > after {
-            return false;
-        }
-        repo.hall
-            .load_item(*item)
-            .map(|i| i.state != State::Dropped)
-            .unwrap_or(false)
-    }
-}
-
-/// Remembers that `ids` were proposed for retirement in `item`, so the
-/// librarian doesn't propose them again while that item is on its way.
-pub fn note_retired(repo: &Repo, ids: &[String], item: ItemId, now: DateTime<Utc>) -> Result<()> {
-    if ids.is_empty() {
-        return Ok(());
-    }
-    let mut r = Retirements::load(repo);
-    for id in ids {
-        r.proposed.insert(id.clone(), (item, now));
-    }
-    r.save(repo)
-}
-
-/// Writes proposals and retirements into a knowledge item, commits, and
-/// proposes it ready. Call under [`knowledge::with_lock`]. `source` is the
-/// item being distilled (none for a retirement-only pass).
+/// Writes proposals and retirements into the local store. Call under
+/// [`Store::with_lock`]. `source` is the item being distilled (none for a
+/// retirement-only pass).
 pub fn apply(
     repo: &Repo,
     source: Option<&Item>,
     props: &Proposals,
-    actor: &str,
     now: DateTime<Utc>,
 ) -> Result<Applied> {
-    let lib = Library::load(repo, &repo.config.base)?;
+    let store = Store::of(repo);
+    let current = store.read();
+    let get = |id: &str| current.iter().find(|l| l.learning.id == id);
     let stats = store::usage(repo)?;
-    let mut next = store::next_id(repo, &lib)?;
-    // (learning, the path the base keeps it at)
-    let mut changes: Vec<(Learning, Option<String>)> = Vec::new();
-    let mut lines: Vec<String> = Vec::new();
+    let mut next = store.next_id();
+    let mut changes: Vec<Learning> = Vec::new();
 
     for p in &props.learnings {
         let (Some(kind), title) = (Kind::parse(&p.kind), p.title.trim()) else {
@@ -645,16 +584,16 @@ pub fn apply(
         }
         let nt = norm_title(title);
         let target_id = learning::normalize_id(&p.updates)
-            .filter(|id| lib.get(id).is_some() || changes.iter().any(|(l, _)| &l.id == id))
+            .filter(|id| get(id).is_some() || changes.iter().any(|l| &l.id == id))
             .or_else(|| {
                 changes
                     .iter()
-                    .find(|(l, _)| norm_title(&l.title) == nt)
-                    .map(|(l, _)| l.id.clone())
+                    .find(|l| norm_title(&l.title) == nt)
+                    .map(|l| l.id.clone())
             })
             .or_else(|| {
-                lib.effective()
-                    .into_iter()
+                current
+                    .iter()
                     .find(|l| {
                         l.learning.status != Status::Retired && norm_title(&l.learning.title) == nt
                     })
@@ -681,20 +620,12 @@ pub fn apply(
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .collect();
-        let (mut l, base_path, verb) = match target_id {
+        let (mut l, new) = match target_id {
             Some(id) => {
-                let pos = changes.iter().position(|(l, _)| l.id == id);
-                let (prev, base_path) = match pos {
+                let mut l = match changes.iter().position(|l| l.id == id) {
                     Some(i) => changes.remove(i),
-                    None => {
-                        let found = lib.get(&id).expect("target exists");
-                        (
-                            found.learning.clone(),
-                            lib.base_get(&id).map(|b| b.path.clone()),
-                        )
-                    }
+                    None => get(&id).expect("target exists").learning.clone(),
                 };
-                let mut l = prev;
                 for s in sources {
                     let covered = l
                         .source
@@ -704,7 +635,7 @@ pub fn apply(
                         l.source.push(s);
                     }
                 }
-                (l, base_path, "updated")
+                (l, false)
             }
             None => {
                 let id = learning::format_id(next);
@@ -723,13 +654,12 @@ pub fn apply(
                         body: String::new(),
                         extra: Vec::new(),
                     },
-                    None,
-                    "new",
+                    true,
                 )
             }
         };
         l.kind = kind;
-        if !scope.is_empty() || verb == "new" {
+        if !scope.is_empty() || new {
             l.scope = scope;
         }
         if lens.is_some() {
@@ -741,13 +671,7 @@ pub fn apply(
         }
         l.status = status_for(repo, kind);
         refresh_usage(&mut l, &stats);
-        lines.push(format!(
-            "- {} {verb} {}: {}",
-            l.id,
-            l.kind,
-            clip(&l.title, 80)
-        ));
-        changes.push((l, base_path));
+        changes.push(l);
     }
 
     // Retirements: the model's, then Hallmark's own.
@@ -757,74 +681,52 @@ pub fn apply(
             retire.push((id, "the librarian found it wrong or obsolete".into()));
         }
     }
-    retire.extend(retirement_candidates(repo, &lib, &stats, now));
-    let mut retired_ids = Vec::new();
+    retire.extend(retirement_candidates(repo, &current, &stats, now));
+    let mut retired = Vec::new();
     let mut seen = HashSet::new();
+    let mut retirements = Vec::new();
     for (id, why) in retire {
-        if changes.iter().any(|(l, _)| l.id == id) || !seen.insert(id.clone()) {
+        if changes.iter().any(|l| l.id == id) || !seen.insert(id.clone()) {
             continue;
         }
-        let Some(found) = lib.get(&id) else {
+        let Some(found) = get(&id) else {
             continue;
         };
         if found.learning.status == Status::Retired {
             continue;
         }
         let mut l = found.learning.clone();
-        l.status = Status::Retired;
-        l.body = format!(
-            "{}\n\nRetired {}: {why}.",
-            l.body.trim(),
-            now.format("%Y-%m-%d")
-        )
-        .trim()
-        .to_string();
+        retire_text(&mut l, &why, now);
         refresh_usage(&mut l, &stats);
-        lines.push(format!("- {id} retired: {why}"));
-        retired_ids.push(id.clone());
-        changes.push((l, lib.base_get(&id).map(|b| b.path.clone())));
+        retired.push(id.clone());
+        retirements.push(l);
     }
 
-    if changes.is_empty() {
-        return Ok(Applied::default());
+    for l in changes.iter().chain(retirements.iter()) {
+        store.write(l)?;
     }
-    let what = match source {
-        Some(s) => format!("learnings from {}", s.id),
-        None => "retire unused learnings".to_string(),
-    };
-    let k = knowledge::get_or_create(repo, actor, &what)?;
-    write_all(repo, &k, &changes)?;
-    let subject = match source {
-        Some(s) => format!("docs(library): learnings from {}", s.id),
-        None => "docs(library): propose retiring learnings".into(),
-    };
-    let message = format!("{subject}\n\n{}", lines.join("\n"));
-    let commit = knowledge::commit(repo, &k, actor, &message)?;
-    let learnings: Vec<String> = changes
-        .iter()
-        .filter(|(l, _)| !retired_ids.contains(&l.id))
-        .map(|(l, _)| l.id.clone())
-        .collect();
-    let summary = format!(
-        "Library: {} learning(s) added or updated, {} proposed for retirement. Review them with `hall library review`.",
-        learnings.len(),
-        retired_ids.len()
-    );
-    knowledge::propose_ready(repo, &k, actor, &summary)?;
-    note_retired(repo, &retired_ids, k.item.id, now)?;
     Ok(Applied {
-        knowledge: Some(k.item.id),
-        learnings,
-        retired: retired_ids,
-        commit,
+        learnings: changes.iter().map(|l| l.id.clone()).collect(),
+        proposed: changes
+            .iter()
+            .filter(|l| l.status == Status::Proposed)
+            .map(|l| l.id.clone())
+            .collect(),
+        retired,
     })
 }
 
-fn write_all(repo: &Repo, k: &Knowledge, changes: &[(Learning, Option<String>)]) -> Result<()> {
-    for (l, base_path) in changes {
-        knowledge::write(repo, k, l, base_path.as_deref())?;
-    }
-    Ok(())
+/// Marks `l` retired, saying when and why in its body.
+pub fn retire_text(l: &mut Learning, why: &str, now: DateTime<Utc>) {
+    l.status = Status::Retired;
+    let why = why.trim().trim_end_matches('.');
+    l.body = format!(
+        "{}\n\nRetired {}: {why}.",
+        l.body.trim(),
+        now.format("%Y-%m-%d")
+    )
+    .trim()
+    .to_string();
 }
 
 /// How often a tick with nothing to distil checks for retirements.
@@ -863,8 +765,8 @@ pub fn next_candidate(repo: &Repo) -> Result<Option<Item>> {
     Ok(None)
 }
 
-/// The daemon's librarian: distil one item, else (at most daily) propose
-/// retirements.
+/// The daemon's librarian: distil one item, else (at most daily) retire
+/// learnings that no longer hold or that nothing uses.
 pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
     let repo = ctx.repo;
     if let Some(item) = next_candidate(repo)? {
@@ -875,15 +777,19 @@ pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
         let r = distill(repo, ctx.runner, item.id);
         let _ = crate::lease::release(&repo.hall, item.id, &ctx.holder);
         return Ok(match r? {
-            Distill::Done { applied, .. } => Progress::worked(match applied.knowledge {
-                Some(k) => format!(
-                    "distilled {} into {k}: {} learning(s), {} retirement(s)",
-                    item.id,
-                    applied.learnings.len(),
-                    applied.retired.len()
-                ),
-                None => format!("distilled {}: nothing worth keeping", item.id),
-            }),
+            Distill::Done { applied, .. } => {
+                if applied.learnings.is_empty() && applied.retired.is_empty() {
+                    Progress::worked(format!("distilled {}: nothing worth keeping", item.id))
+                } else {
+                    Progress::worked(format!(
+                        "distilled {}: {} learning(s), {} proposed, {} retired",
+                        item.id,
+                        applied.learnings.len(),
+                        applied.proposed.len(),
+                        applied.retired.len()
+                    ))
+                }
+            }
             Distill::Stopped { progress, .. } => progress,
         });
     }
@@ -899,21 +805,22 @@ pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
     {
         return Ok(Progress::Idle);
     }
-    let applied = knowledge::with_lock(repo, || {
-        apply(repo, None, &Proposals::default(), ACTOR, now)
-    })?;
+    let store = Store::of(repo);
+    let applied = store.with_lock(|| apply(repo, None, &Proposals::default(), now))?;
     st.last_retire_check = Some(now);
     if let Some(d) = path.parent() {
         std::fs::create_dir_all(d)?;
     }
     std::fs::write(&path, serde_json::to_string(&st)?)?;
-    Ok(match applied.knowledge {
-        Some(k) => Progress::worked(format!(
-            "proposed retiring {} in {k}",
-            applied.retired.join(", ")
-        )),
-        None => Progress::Idle,
-    })
+    if applied.retired.is_empty() {
+        return Ok(Progress::Idle);
+    }
+    repo.hall
+        .live(&format!("library: retired {}", applied.retired.join(", ")));
+    Ok(Progress::worked(format!(
+        "retired {}",
+        applied.retired.join(", ")
+    )))
 }
 
 #[cfg(test)]
