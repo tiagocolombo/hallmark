@@ -1,6 +1,7 @@
 # 0022. The terminal app is a reader
 
-Status: Accepted, 2026-10-09
+Status: Accepted, 2026-10-09. Amended 2026-10-10: your office shows each
+inbox entry in full and runs its actions.
 
 ## Context
 
@@ -41,7 +42,26 @@ Windows.
   check the same states and write the same events as `hall ready`,
   `hall pull-back`, `hall retry` and `hall drop`. The reply's note, or
   the error code and message, shows in the status bar. `x` asks for the
-  reason in the app; `esc` cancels. Nothing else writes.
+  reason in the app; `esc` cancels.
+- **Your office runs each entry's actions** (`i`). It lists the inbox and
+  explains the selected entry with `commands::status::explain`, the same
+  text as `hall inbox <n>`: the full text, why it waits, the evidence and
+  the numbered actions. Nothing is clipped; long text wraps.
+  - `1`–`9` run an action. A `hall …` command is parsed by the CLI's own
+    parser and dispatched in-process (`cli::run_in_app`), so it behaves
+    exactly as typed. Only commands that return at once are allowed: the
+    item flow, `answer`, the readers, `new --follow-up` and `daemon`
+    start, stop and status. `hall watch` and `daemon run` are shown, not
+    run.
+  - A `<placeholder>` (`"<why>"`, `<answer>`) is asked for first; `esc`
+    runs nothing.
+  - Readers (`log`, `findings`, `status`, …) open their reply in a
+    scrollable page; the rest show their note in the status bar.
+  - `claude --resume <session>` gets the terminal: the app restores it,
+    runs Claude Code in the item's worktree, and comes back when it exits.
+  - Anything else ("open the waiting session") is shown for you to do.
+- The item's journal pane starts with what waits for you about it, in
+  full. Nothing else writes.
 - **Opening is never blocking.** `w` opens the worktree and `o` the PR
   with the system opener (`open`, `xdg-open`, `explorer`), spawned and
   reaped in the background; if the opener can't start, the status bar
@@ -49,7 +69,8 @@ Windows.
   <base>...<sha>` at the selected round, from the worktree, or from the
   main checkout when the worktree is gone.
 - **State and drawing are separate.** `tui::App` holds the state and
-  handles keys (`handle_key` returns an `Effect`: none, quit, or open);
+  handles keys (`handle_key` returns an `Effect`: none, quit, open, or run
+  a program on the terminal);
   `tui::ui::draw` renders an `&App`. Tests drive `App` without a terminal
   and snapshot ratatui's `TestBackend` buffer as text, with clock times,
   ages, the temp root and commit SHAs redacted.
@@ -66,5 +87,5 @@ Windows.
   that repo's place.
 - Anything the app can do, an agent can do with the CLI, and the journal
   records it the same way.
-- Answering questions, snoozing and editing budgets from the app are left
-  for later; `hall answer`, `hall inbox` and `hall budget` do them.
+- Questions are answered from your office. Snoozing and editing budgets
+  from the app are left for later; `hall budget` does them.

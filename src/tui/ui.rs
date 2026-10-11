@@ -7,12 +7,12 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Clear, Paragraph, Row, Table, TableState};
 
-use super::app::{App, COLUMNS, Input, Tone, UsageGroup, View, tone};
+use super::app::{App, COLUMNS, Input, Tone, UsageGroup, View, placeholder, tone};
 use super::data::{RepoStatus, room_label, room_role};
 use crate::budget::{Cap, Spent};
 use crate::event::short;
 use crate::findings::{Status as FStatus, Tracked};
-use crate::index::UsageRow;
+use crate::index::{InboxEntry, UsageRow};
 use crate::item::{Item, State};
 use crate::usage::fmt_tokens;
 
@@ -45,6 +45,89 @@ fn clip(s: &str, max: usize) -> String {
     crate::output::clip(s, max.max(1))
 }
 
+/// Word-wraps `s` to `width` columns, keeping its line breaks; a word
+/// longer than a line is cut.
+fn wrap(s: &str, width: usize) -> Vec<String> {
+    let width = width.max(1);
+    let mut out = Vec::new();
+    for para in s.lines() {
+        let mut line = String::new();
+        let mut n = 0;
+        for word in para.split_whitespace() {
+            let mut w: Vec<char> = word.chars().collect();
+            if n > 0 {
+                if n + 1 + w.len() <= width {
+                    line.push(' ');
+                    line.extend(&w);
+                    n += 1 + w.len();
+                    continue;
+                }
+                out.push(std::mem::take(&mut line));
+            }
+            while w.len() > width {
+                out.push(w.drain(..width).collect());
+            }
+            n = w.len();
+            line = w.into_iter().collect();
+        }
+        out.push(line);
+    }
+    if out.is_empty() {
+        out.push(String::new());
+    }
+    out
+}
+
+/// `s` wrapped to `width`, each line after `first` indented by `indent`.
+fn wrap_lines(
+    s: &str,
+    width: usize,
+    first: &str,
+    indent: usize,
+    style: Style,
+) -> Vec<Line<'static>> {
+    let pad = " ".repeat(indent);
+    wrap(s, width.saturating_sub(indent))
+        .into_iter()
+        .enumerate()
+        .map(|(i, l)| {
+            let lead = if i == 0 {
+                format!("{first:<indent$}")
+            } else {
+                pad.clone()
+            };
+            Line::from(vec![Span::styled(lead, fg(DIM)), Span::styled(l, style)])
+        })
+        .collect()
+}
+
+/// How an inbox entry's kind is labelled, and its colour.
+fn kind_label(kind: &str) -> (&str, Color) {
+    match kind {
+        "ready" => ("ready?", BRASS),
+        "session_waiting" => ("session", INFO),
+        "learnings" => ("learnings", INFO),
+        "daemon_stopped" => ("daemon", STOP),
+        "ci_failed" => ("CI failed", STOP),
+        k => (k, STOP),
+    }
+}
+
+/// An entry's text, with a question's options.
+fn entry_text(app: &App, e: &InboxEntry) -> String {
+    let mut text = app.show_text(&e.text);
+    if !e.options.is_empty() {
+        let opts: Vec<String> = e
+            .options
+            .iter()
+            .enumerate()
+            .map(|(i, o)| format!("[{}] {o}", (b'a' + i as u8) as char))
+            .collect();
+        text.push_str(&format!("  {}", opts.join("  ")));
+    }
+    text
+}
+
 pub fn draw(f: &mut Frame, app: &App) {
     let [title, body, status, keys] = Layout::vertical([
         Constraint::Length(1),
@@ -66,7 +149,8 @@ pub fn draw(f: &mut Frame, app: &App) {
         View::Findings => findings_view(f, body, app),
         View::History => history(f, body, app),
         View::Usage => usage(f, body, app),
-        View::Diff => diff(f, body, app),
+        View::Diff | View::Output => diff(f, body, app),
+        View::Inbox => inbox_view(f, body, app),
     }
     status_line(f, status, app);
     key_bar(f, keys, app);
@@ -142,6 +226,19 @@ fn status_line(f: &mut Frame, area: Rect, app: &App) {
             Span::styled("▏", fg(BRASS)),
             Span::styled("  enter keep · esc clear", fg(DIM)),
         ]),
+        Some(Input::Fill { args, at }) => Line::from(vec![
+            Span::styled(
+                format!(
+                    "{} · {}: ",
+                    args.join(" "),
+                    args.get(*at).and_then(|a| placeholder(a)).unwrap_or("text")
+                ),
+                bold().fg(BRASS),
+            ),
+            Span::raw(app.buffer.clone()),
+            Span::styled("▏", fg(BRASS)),
+            Span::styled("  enter run · esc cancel", fg(DIM)),
+        ]),
         Some(Input::DropReason(id)) => Line::from(vec![
             Span::styled(format!("Drop {id}, reason: "), bold().fg(STOP)),
             Span::raw(app.buffer.clone()),
@@ -172,6 +269,7 @@ fn key_bar(f: &mut Frame, area: Rect, app: &App) {
         View::Board | View::Journal => &[
             ("↑↓", "item"),
             ("enter", "journal"),
+            ("i", "your office"),
             ("←→", "step"),
             ("f", "findings"),
             ("d", "diff"),
@@ -228,7 +326,19 @@ fn key_bar(f: &mut Frame, area: Rect, app: &App) {
             ("esc", "board"),
             ("q", "quit"),
         ],
-        View::Diff => &[
+        View::Inbox => &[
+            ("↑↓", "entry"),
+            ("1-9", "run action"),
+            ("enter", "journal"),
+            ("pgup pgdn", "scroll"),
+            ("d", "diff"),
+            ("w", "worktree"),
+            ("o", "PR"),
+            ("esc", "board"),
+            ("?", "help"),
+            ("q", "quit"),
+        ],
+        View::Diff | View::Output => &[
             ("↑↓", "scroll"),
             ("pgup pgdn", "page"),
             ("esc", "back"),
@@ -268,6 +378,7 @@ fn help(f: &mut Frame, area: Rect) {
     let rows: &[(&str, &str)] = &[
         ("↑ ↓", "select an item (or a finding, a row, a repo)"),
         ("enter", "open the item's journal"),
+        ("i", "your office: read each entry, 1-9 runs actions"),
         ("← →", "step through the journal; the board follows"),
         ("home end", "first event · back to now"),
         ("f", "findings for this item"),
@@ -380,37 +491,16 @@ fn inbox_pane(f: &mut Frame, area: Rect, app: &App) {
     let mut rows: Vec<Row> = inbox
         .iter()
         .take(4)
-        .map(|e| {
-            let (label, c) = match e.kind.as_str() {
-                "ready" => ("ready?", BRASS),
-                "session_waiting" => ("session", INFO),
-                "learnings" => ("learnings", INFO),
-                "daemon_stopped" => ("daemon", STOP),
-                k => (k, STOP),
-            };
-            let mut text = e.text.clone();
-            if !e.options.is_empty() {
-                let opts: Vec<String> = e
-                    .options
-                    .iter()
-                    .enumerate()
-                    .map(|(i, o)| format!("[{}] {o}", (b'a' + i as u8) as char))
-                    .collect();
-                text.push_str(&format!("  {}", opts.join("  ")));
-            }
-            Row::new(vec![
-                Span::styled(label.to_string(), fg(c)),
-                Span::raw(e.item.map(|i| i.to_string()).unwrap_or_default()),
-                Span::raw(text),
-                Span::styled(app.age(e.since), fg(DIM)),
-            ])
-        })
+        .map(|e| inbox_row(app, e, None))
         .collect();
     if inbox.len() > 4 {
         rows.push(Row::new(vec![
             Span::raw(""),
             Span::raw(""),
-            Span::styled(format!("… {} more · hall inbox", inbox.len() - 4), fg(DIM)),
+            Span::styled(
+                format!("… {} more · i shows them all", inbox.len() - 4),
+                fg(DIM),
+            ),
         ]));
     }
     let t = Table::new(
@@ -428,9 +518,151 @@ fn inbox_pane(f: &mut Frame, area: Rect, app: &App) {
                 format!("⚑ {} waiting ", inbox.len()),
                 fg(STOP),
             ))
+            .title_bottom(
+                Line::from(Span::styled(" i read in full and act ", fg(BRASS))).right_aligned(),
+            )
             .border_style(fg(STOP)),
     );
     f.render_widget(t, area);
+}
+
+/// One inbox row: kind, item, text (the table clips it), age; numbered in
+/// your office.
+fn inbox_row(app: &App, e: &InboxEntry, number: Option<usize>) -> Row<'static> {
+    let (label, c) = kind_label(&e.kind);
+    let mut cells = Vec::new();
+    if let Some(n) = number {
+        cells.push(Span::styled(format!("{n}."), fg(DIM)));
+    }
+    cells.extend([
+        Span::styled(label.to_string(), fg(c)),
+        Span::raw(e.item.map(|i| i.to_string()).unwrap_or_default()),
+        Span::raw(entry_text(app, e)),
+        Span::styled(app.age(e.since), fg(DIM)),
+    ]);
+    Row::new(cells)
+}
+
+// --- your office -------------------------------------------------------------
+
+fn inbox_view(f: &mut Frame, area: Rect, app: &App) {
+    let inbox = app.inbox();
+    if inbox.is_empty() {
+        f.render_widget(
+            Paragraph::new(Span::styled("Nothing waits for you.", fg(DIM)))
+                .block(pane("Your office")),
+            area,
+        );
+        return;
+    }
+    let sel = app.inbox_sel.min(inbox.len() - 1);
+    let list_h = (inbox.len().min(6) as u16 + 2).min(area.height / 2).max(3);
+    let [a_list, a_detail] =
+        Layout::vertical([Constraint::Length(list_h), Constraint::Min(3)]).areas(area);
+    let rows: Vec<Row> = inbox
+        .iter()
+        .enumerate()
+        .map(|(i, e)| inbox_row(app, e, Some(i + 1)))
+        .collect();
+    let t = Table::new(
+        rows,
+        [
+            Constraint::Length(3),
+            Constraint::Length(10),
+            Constraint::Length(7),
+            Constraint::Min(10),
+            Constraint::Length(8),
+        ],
+    )
+    .row_highlight_style(selected())
+    .block(
+        pane("Your office")
+            .title(Span::styled(
+                format!("⚑ {} waiting ", inbox.len()),
+                fg(STOP),
+            ))
+            .border_style(fg(STOP)),
+    );
+    let mut state = TableState::default().with_selected(Some(sel));
+    f.render_stateful_widget(t, a_list, &mut state);
+    entry_detail(f, a_detail, app, &inbox[sel], sel + 1);
+}
+
+/// The selected entry in full: what, why, the evidence, and the numbered
+/// actions.
+fn entry_detail(f: &mut Frame, area: Rect, app: &App, e: &InboxEntry, number: usize) {
+    let (label, c) = kind_label(&e.kind);
+    let who = match e.item.and_then(|id| app.repo()?.data.item(id)) {
+        Some(it) => format!(" · {} · {}", it.id, it.title),
+        None => e.item.map(|i| format!(" · {i}")).unwrap_or_default(),
+    };
+    let block = pane(format!("{number}. {label}{who}"))
+        .border_style(fg(c))
+        .title(
+            Line::from(Span::styled(
+                format!(" waiting {} ", app.age(e.since)),
+                fg(DIM),
+            ))
+            .right_aligned(),
+        );
+    let inner = block.inner(area);
+    let w = inner.width as usize;
+    let detail = app
+        .inbox_detail
+        .as_ref()
+        .filter(|d| d.entry.kind == e.kind && d.entry.item == e.item);
+    let mut lines: Vec<Line> = wrap(&entry_text(app, e), w)
+        .into_iter()
+        .map(|l| Line::from(Span::styled(l, bold())))
+        .collect();
+    if let Some(d) = detail {
+        lines.push(Line::default());
+        lines.extend(wrap_lines(&d.why, w, "Why", 10, Style::new()));
+        for (i, ev) in d.evidence.iter().enumerate() {
+            let first = if i == 0 { "Evidence" } else { "" };
+            lines.extend(wrap_lines(&app.show_text(ev), w, first, 10, Style::new()));
+        }
+    }
+    lines.push(Line::default());
+    let actions = app.inbox_actions();
+    if actions.is_empty() {
+        lines.push(Line::from(Span::styled("Nothing to run here.", fg(DIM))));
+    } else {
+        lines.push(Line::from(Span::styled("What you can do", bold().fg(DIM))));
+    }
+    for (i, (cmd, does)) in actions.iter().enumerate() {
+        let key = if i < 9 {
+            format!(" {} ", i + 1)
+        } else {
+            "   ".into()
+        };
+        lines.push(Line::from(vec![
+            Span::styled(key, bold().fg(BRASS)),
+            Span::raw(" "),
+            Span::styled(app.show_text(cmd), bold()),
+        ]));
+        if !does.is_empty() {
+            lines.extend(wrap_lines(does, w, "", 4, fg(DIM)));
+        }
+    }
+    let h = inner.height as usize;
+    let max_scroll = lines.len().saturating_sub(h);
+    let scroll = app.inbox_scroll.min(max_scroll);
+    let mut hint = String::from(" 1-9 runs an action; one with <…> asks for the text first ");
+    if max_scroll > 0 {
+        hint = format!(
+            " pgdn more · {}/{} {hint}",
+            scroll + h.min(lines.len()),
+            lines.len()
+        );
+    }
+    let block = block.title_bottom(Line::from(Span::styled(hint, fg(DIM))).right_aligned());
+    f.render_widget(
+        Paragraph::new(lines)
+            .scroll((scroll as u16, 0))
+            .block(block),
+        area,
+    );
 }
 
 /// The short tag after an item on the board.
@@ -577,6 +809,30 @@ fn journal_pane(f: &mut Frame, area: Rect, app: &App, full: bool) {
                 fg(INFO),
             ),
         ]));
+    }
+    // What waits for you about this item, in full.
+    if app.cursor.is_none() {
+        let waiting: Vec<InboxEntry> = app
+            .inbox()
+            .into_iter()
+            .filter(|e| e.item == Some(item.id))
+            .collect();
+        for e in &waiting {
+            let (label, c) = kind_label(&e.kind);
+            lines.extend(wrap_lines(
+                &entry_text(app, e),
+                inner.width as usize,
+                &format!("⚑ {label}"),
+                11,
+                fg(c),
+            ));
+        }
+        if !waiting.is_empty() {
+            lines.push(Line::from(Span::styled(
+                "           i opens your office: why it waits, and what you can do",
+                fg(DIM),
+            )));
+        }
     }
     if full {
         lines.push(Line::from(vec![
@@ -1372,7 +1628,9 @@ fn diff(f: &mut Frame, area: Rect, app: &App) {
         .skip(d.scroll)
         .take(inner.height as usize)
         .map(|l| {
-            let style = if l.starts_with("+++") || l.starts_with("---") || l.starts_with("diff ") {
+            let style = if app.view == View::Output {
+                Style::new()
+            } else if l.starts_with("+++") || l.starts_with("---") || l.starts_with("diff ") {
                 bold()
             } else if l.starts_with('+') {
                 fg(OK)
