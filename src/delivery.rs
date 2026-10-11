@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::Role;
 use crate::error::Result;
-use crate::event::{Body, Event, short};
+use crate::event::{Body, Event, PrComment, short};
 use crate::git;
 use crate::item::{HoldKind, Item, ItemId, State};
 use crate::journal::Ticket;
@@ -155,9 +155,9 @@ fn rebase_next(ctx: &WorkerCtx) -> Result<Option<Progress>> {
 fn work(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
     let repo = ctx.repo;
     let id = item.id;
-    let Some(req) = item.rebase.clone() else {
+    if item.rebase.is_none() && item.feedback.is_none() {
         return Ok(Progress::Idle);
-    };
+    }
     let wt = PathBuf::from(&item.worktree);
     if !wt.is_dir() {
         return held(
@@ -192,6 +192,11 @@ fn work(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
             ),
         );
     }
+    // Conflicts first: comments are addressed on top of the current base.
+    let Some(req) = item.rebase.clone() else {
+        let fb = item.feedback.clone().expect("checked above");
+        return address(ctx, item, &wt, &fb.comments);
+    };
     let Some(target) = base_ref(&wt, &req.onto) else {
         return held(
             repo,
@@ -204,7 +209,9 @@ fn work(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
         item.branch, target.name
     ));
     match rebase(&wt, &target.git_ref, &target.git_ref)? {
-        Rebased::UpToDate | Rebased::Clean { .. } => send_to_review(repo, id, &wt, &target),
+        Rebased::UpToDate | Rebased::Clean { .. } => {
+            send_to_review(repo, id, &wt, &format!("rebased onto {}", target.name))
+        }
         Rebased::Failed(why) => held(repo, id, format!("the rebase couldn't start: {why}")),
         Rebased::Conflict { files } => resolve(ctx, item, &wt, &target, &files),
     }
@@ -289,7 +296,7 @@ fn settle(repo: &Repo, id: ItemId, wt: &Path, target: &Target) -> Result<Progres
         None
     };
     match why {
-        None => send_to_review(repo, id, wt, target),
+        None => send_to_review(repo, id, wt, &format!("rebased onto {}", target.name)),
         Some(why) => {
             // Back to where it was, so a retry (or you) starts clean. The
             // uncommitted case is kept for you.
@@ -307,12 +314,13 @@ fn abort(wt: &Path) {
     }
 }
 
-/// Sends the rebased item to review, as `hall ready` would.
-fn send_to_review(repo: &Repo, id: ItemId, wt: &Path, target: &Target) -> Result<Progress> {
+/// Sends the rebased item, or the one that addressed its PR comments, to
+/// review, as `hall ready` would.
+fn send_to_review(repo: &Repo, id: ItemId, wt: &Path, note: &str) -> Result<Progress> {
     let head = git::head(wt)?;
-    let note = format!("rebased onto {}", target.name);
+    let note = note.to_string();
     let (item, sent) = repo.hall.transact(id, |it, _| {
-        if it.state != State::Development || it.rebase.is_none() {
+        if it.state != State::Development || (it.rebase.is_none() && it.feedback.is_none()) {
             return Ok((vec![], false));
         }
         Ok((
@@ -375,16 +383,100 @@ fn failed(repo: &Repo, id: ItemId, reason: String) -> Result<Progress> {
 }
 
 fn held(repo: &Repo, id: ItemId, reason: String) -> Result<Progress> {
+    hold(repo, id, HoldKind::Conflict, reason)
+}
+
+fn hold(repo: &Repo, id: ItemId, kind: HoldKind, reason: String) -> Result<Progress> {
     append(
         repo,
         id,
         Body::Held {
-            kind: HoldKind::Conflict,
+            kind,
             reason: reason.clone(),
         },
     )?;
-    repo.hall.live(&format!("{id} held (conflict): {reason}"));
+    repo.hall
+        .live(&format!("{id} held ({}): {reason}", kind.as_str()));
     Ok(Progress::worked(format!("{id} held: {reason}")))
+}
+
+/// The headless dev run for PR comments: address them in commits. A script
+/// decides: new commits and a clean worktree go to review; no commits mean
+/// the comments need you (questions, or the run disagrees), with the run's
+/// last message as the reason.
+fn address(ctx: &WorkerCtx, item: &Item, wt: &Path, comments: &[PrComment]) -> Result<Progress> {
+    let repo = ctx.repo;
+    let id = item.id;
+    let before = git::head(wt)?;
+    repo.hall.live(&format!(
+        "{id} delivery: {} PR comment{}; a dev run addresses them",
+        comments.len(),
+        if comments.len() == 1 { "" } else { "s" }
+    ));
+    let events = repo.hall.read_item(id)?;
+    let mut req = runner::request(
+        repo,
+        Role::Fixer,
+        None,
+        feedback_prompt(repo, item, &events, comments),
+        wt,
+    )?;
+    req.permission_mode = Some("acceptEdits".into());
+    req.allowed_tools = tools(&repo.config.gates)
+        .into_iter()
+        .filter(|t| !t.contains("rebase"))
+        .collect();
+    for (k, v) in req.env.iter_mut() {
+        if k == "HALL_ACTOR" {
+            *v = ACTOR.into();
+        }
+    }
+    req.env.extend(crate::fixer::path_with_hall());
+    let said = match runner::run_metered(repo, ctx.runner, Some(id), &req)? {
+        Metered::Blocked(stop) => return Ok(stop.progress()),
+        Metered::Failed {
+            failure: Failure::RateLimited { until },
+            ..
+        } => {
+            return Ok(Progress::Pause {
+                reason: "Claude's plan limit".into(),
+                until,
+            });
+        }
+        Metered::Failed {
+            failure, held: h, ..
+        } => {
+            return Ok(Progress::worked(format!(
+                "{id} feedback run failed{}: {}",
+                if h { " (held)" } else { "" },
+                failure.describe()
+            )));
+        }
+        Metered::Done(outcome) => outcome
+            .result
+            .as_ref()
+            .and_then(|r| r.result.clone())
+            .unwrap_or_default(),
+    };
+    if !git::dirty_files(wt)?.is_empty() {
+        return failed(
+            repo,
+            id,
+            "the feedback run left uncommitted changes; they are kept for you".into(),
+        );
+    }
+    if git::head(wt)? == before {
+        let why = if said.trim().is_empty() {
+            "the dev run changed nothing for the PR's comments".to_string()
+        } else {
+            format!(
+                "the dev run changed nothing for the PR's comments: {}",
+                crate::output::clip(said.trim(), 400)
+            )
+        };
+        return hold(repo, id, HoldKind::Feedback, why);
+    }
+    send_to_review(repo, id, wt, "addresses the PR's comments")
 }
 
 fn append(repo: &Repo, id: ItemId, body: Body) -> Result<()> {
@@ -423,6 +515,50 @@ pub fn tools(gates: &[String]) -> Vec<String> {
         }
     }
     t
+}
+
+fn feedback_prompt(repo: &Repo, item: &Item, events: &[Event], comments: &[PrComment]) -> String {
+    let mut s = format!(
+        "You are Hallmark's development agent for {id} \"{title}\", in its worktree {wt}. \
+         Its PR {pr} has new review comments.\n\n",
+        id = item.id,
+        title = item.title,
+        wt = item.worktree,
+        pr = item.pr_url.as_deref().unwrap_or("(its PR)"),
+    );
+    if let Some(r) = crate::fixer::request(events) {
+        s.push_str(&format!("What the item does:\n\n{}\n\n", r.trim()));
+    }
+    s.push_str("The comments, oldest first:\n\n");
+    for c in comments {
+        let at = match (&c.path, c.line) {
+            (Some(p), Some(l)) => format!(" on `{p}:{l}`"),
+            (Some(p), None) => format!(" on `{p}`"),
+            _ => String::new(),
+        };
+        s.push_str(&format!("- **{}**{at}:\n", c.author));
+        for line in c.body.trim().lines() {
+            s.push_str(&format!("  > {line}\n"));
+        }
+    }
+    s.push_str(
+        "\nAddress each comment that asks for a change: edit the code here and commit, one \
+         commit per comment where that reads well, saying which comment it answers. For a \
+         question, or a request you think is wrong, change nothing and explain why in your \
+         final message; the human will answer on the PR.\n",
+    );
+    if !repo.config.gates.is_empty() {
+        s.push_str(&format!(
+            "Run the gates ({}) before you finish.\n",
+            repo.config.gates.join(", ")
+        ));
+    }
+    s.push_str(
+        "\nDon't push, don't comment on GitHub, and don't run `hall ready`. A script checks the \
+         result: new commits and a clean worktree go to review, and after approval the PR is \
+         updated. No commits sends the comments to the human, with your final message.",
+    );
+    s
 }
 
 fn prompt(repo: &Repo, item: &Item, events: &[Event], target: &Target, files: &[String]) -> String {
@@ -583,15 +719,137 @@ fn watch_next(ctx: &WorkerCtx) -> Result<Progress> {
                 );
                 return Ok(Progress::Idle);
             }
-            reopen(repo, &item, &url, &pr.head_oid)
+            reopen(
+                repo,
+                &item,
+                &url,
+                &pr.head_oid,
+                Body::RebaseRequested {
+                    onto: item.base.clone(),
+                    reason: format!("{url} conflicts with {}", item.base),
+                    files: vec![],
+                },
+                format!("conflicts with {}; rebasing it", item.base),
+            )
+        }
+        "OPEN" => {
+            // New review comments: the dev run addresses them.
+            let events = repo.hall.read_item(id)?;
+            let full = match crate::gh::pr(&repo.main_root, &url) {
+                Ok(p) => p,
+                Err(e) => {
+                    note_once(
+                        format!("error-{id}"),
+                        format!("{id} delivery: {}", e.message),
+                    );
+                    return Ok(Progress::Idle);
+                }
+            };
+            let (comments, until) = new_comments(&events, &full);
+            if comments.is_empty() {
+                return Ok(Progress::Idle);
+            }
+            let wt = PathBuf::from(&item.worktree);
+            if item.pr_head.as_deref() != Some(pr.head_oid.as_str())
+                || !wt.is_dir()
+                || !git::dirty_files(&wt).map(|d| d.is_empty()).unwrap_or(false)
+            {
+                note_once(
+                    format!("feedback-{id}-{}", until.timestamp()),
+                    format!(
+                        "{id} delivery: {url} has new comments, but someone else pushed to it or \
+                         its worktree {} is missing or dirty; `hall adopt --pr {url}` to address \
+                         them by hand",
+                        item.worktree
+                    ),
+                );
+                return Ok(Progress::Idle);
+            }
+            let n = comments.len();
+            reopen(
+                repo,
+                &item,
+                &url,
+                &pr.head_oid,
+                Body::FeedbackRequested {
+                    pr_url: url.clone(),
+                    comments,
+                    until,
+                },
+                format!(
+                    "{n} new comment{}; addressing {}",
+                    if n == 1 { "" } else { "s" },
+                    if n == 1 { "it" } else { "them" }
+                ),
+            )
         }
         _ => Ok(Progress::Idle),
     }
 }
 
-/// Back to development through the open PR, with a rebase request: the
-/// next tick rebases it.
-fn reopen(repo: &Repo, item: &Item, url: &str, head: &str) -> Result<Progress> {
+/// Hallmark's own update comment (the shipper posts the PR body): never
+/// feedback.
+fn is_ours(body: &str) -> bool {
+    body.contains("The full record stays local: `hall export")
+}
+
+/// Comments and reviews on the PR since the last ones handled (or since it
+/// first shipped), oldest first, with the newest one's time. Approvals,
+/// empty bodies, bots and Hallmark's own comments don't count.
+pub fn new_comments(events: &[Event], pr: &crate::gh::GhPr) -> (Vec<PrComment>, DateTime<Utc>) {
+    let handled = events
+        .iter()
+        .filter_map(|e| match &e.body {
+            Body::FeedbackRequested { until, .. } => Some(*until),
+            _ => None,
+        })
+        .max();
+    let shipped = events.iter().find_map(|e| match &e.body {
+        Body::Shipped { .. } => Some(e.t),
+        _ => None,
+    });
+    let Some(since) = handled.or(shipped) else {
+        return (vec![], Utc::now());
+    };
+    let mut out: Vec<PrComment> = pr
+        .reviews
+        .iter()
+        .filter(|r| r.state.as_deref() != Some("APPROVED"))
+        .chain(pr.comments.iter())
+        .chain(pr.line_comments.iter())
+        .filter_map(|c| {
+            let at = c.created_at?;
+            let author = c
+                .author
+                .as_ref()
+                .map(|a| a.login.clone())
+                .unwrap_or_default();
+            let body = c.body.trim();
+            let bot = author.ends_with("[bot]") || author == "github-actions";
+            (at > since && !body.is_empty() && !bot && !is_ours(body)).then(|| PrComment {
+                author,
+                body: body.to_string(),
+                path: c.path.clone(),
+                line: c.line,
+                at,
+            })
+        })
+        .collect();
+    out.sort_by_key(|c| c.at);
+    let until = out.last().map(|c| c.at).unwrap_or(since);
+    (out, until)
+}
+
+/// Back to development through the open PR, with what the next tick should
+/// do (`rebase_requested` or `feedback_requested`).
+fn reopen(
+    repo: &Repo,
+    item: &Item,
+    url: &str,
+    head: &str,
+    request: Body,
+    what: String,
+) -> Result<Progress> {
     let id = item.id;
     let base = item.base.clone();
     let (_, reopened) = repo.hall.transact(id, |it, _| {
@@ -610,15 +868,7 @@ fn reopen(repo: &Repo, item: &Item, url: &str, head: &str) -> Result<Progress> {
                         worktree: it.worktree.clone(),
                     },
                 ),
-                Event::new(
-                    ACTOR,
-                    Some(id),
-                    Body::RebaseRequested {
-                        onto: base.clone(),
-                        reason: format!("{url} conflicts with {base}"),
-                        files: vec![],
-                    },
-                ),
+                Event::new(ACTOR, Some(id), request.clone()),
             ],
             true,
         ))
@@ -626,7 +876,7 @@ fn reopen(repo: &Repo, item: &Item, url: &str, head: &str) -> Result<Progress> {
     if !reopened {
         return Ok(Progress::Idle);
     }
-    let what = format!("{id} reopened: {url} conflicts with {base}; rebasing it");
+    let what = format!("{id} reopened: {url} {what}");
     repo.hall.live(&what);
     Ok(Progress::worked(what))
 }

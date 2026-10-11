@@ -110,6 +110,7 @@ mod tests {
             follow_up: None,
             ci: None,
             rebase: None,
+            feedback: None,
             delivered: None,
             hold: None,
             stuck_since: None,

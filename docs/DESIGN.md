@@ -72,7 +72,7 @@ The docs and the terminal app describe Hallmark as a building.
 | Repair Shop | The fixer | Fixing |
 | Stamping Room | The hallmark is struck | Hallmarked |
 | Dispatch Dock | Rebases onto the latest base; the ship command opens the PR; `update` updates an adopted or reopened one | Closed |
-| Delivery Office | Watches each shipped PR until it merges; rebases conflicting ones with a headless dev run (ADR 0030) | Closed, Development (rebasing) |
+| Delivery Office | Watches each shipped PR until it merges; a headless dev run rebases conflicting ones and addresses new review comments (ADR 0030) | Closed, Development (rebasing, addressing comments) |
 
 A **watchman** patrols the corridor. It flags any item with no new event for
 `stuck_after` (30 minutes by default), and a daemon that has stopped.
@@ -114,7 +114,7 @@ Transitions:
 | awaiting_you, checks, review, fixing, escalated, hallmarked | `pull-back` | development |
 | hallmarked | shipped (PR opened) | closed |
 | hallmarked | the rebase onto the base conflicts, or changes the patch (`pulled_back`) | development |
-| closed | the PR conflicts (the Delivery office reopens it) | development |
+| closed | the PR conflicts, or has new review comments (the Delivery office reopens it) | development |
 | any non-terminal | `drop --reason` | dropped |
 
 Rules:
@@ -511,7 +511,7 @@ changes (ADR 0030).
 | escalated | the item is `escalated` | that item |
 | session waiting | a `Notification` hook, cleared by the next prompt in that session | that session |
 | ready? | the item is `awaiting_you` | nothing |
-| budget, run_failed, ship_failed, conflict | a hold: a per-item cap, two failed runs in a row, a failed ship, a rebase the Delivery office couldn't finish | that item, until `hall retry` (which, for a budget hold, grants the item more tokens) |
+| budget, run_failed, ship_failed, conflict, feedback | a hold: a per-item cap, two failed runs in a row, a failed ship, a rebase the Delivery office couldn't finish, PR comments its dev run didn't act on | that item, until `hall retry` (which, for a budget hold, grants the item more tokens) |
 | ci_failed | the shipped PR's CI failed | a follow-up item |
 | stuck | the watchman | whatever was running |
 | daemon stopped | a daemon that should run has no heartbeat | the loop |

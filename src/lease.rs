@@ -148,7 +148,9 @@ pub fn candidates(repo: &Repo, role: &str, holder: &str) -> Result<Vec<Item>> {
             "assayer" => matches!(i.state, State::Checks | State::Review),
             "fixer" => i.state == State::Fixing,
             "shipper" => i.state == State::Hallmarked,
-            "delivery" => i.state == State::Development && i.rebase.is_some(),
+            "delivery" => {
+                i.state == State::Development && (i.rebase.is_some() || i.feedback.is_some())
+            }
             _ => false,
         })
         .filter(|i| room(i.state))

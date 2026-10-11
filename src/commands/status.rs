@@ -510,6 +510,11 @@ pub fn explain(repo: &Repo, ix: &Index, entry: InboxEntry, number: usize) -> Res
                     "A model run failed twice in a row, so the loop stopped working on it."
                 }
                 "ship_failed" => "The ship command failed, so it hasn't been pushed.",
+                "feedback" => {
+                    "Its PR has new comments, and the Delivery office's dev run didn't change \
+                     anything for them (questions, or it disagrees). Reply on the PR, or address \
+                     them in a session and `hall ready`; `hall retry` lets the office try again."
+                }
                 "conflict" => {
                     "Its branch conflicts with its base, and the Delivery office's headless rebase \
                      couldn't resolve it. Resolve it in a session (rebase in its worktree), then \

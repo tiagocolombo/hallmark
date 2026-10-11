@@ -228,6 +228,39 @@ fn now_with(
                 ),
             ];
         }
+        // The Delivery office addresses the PR's new comments (ADR 0030).
+        State::Development if item.feedback.is_some() => {
+            let f = item.feedback.as_ref().expect("guarded");
+            n.since = f.since;
+            match &lease {
+                Some(l) => {
+                    n.status = "running".into();
+                    n.doing = "The Delivery office is addressing its PR's comments".into();
+                    n.since = l.acquired;
+                }
+                None => {
+                    n.status = "queued".into();
+                    n.doing = "Waiting for the Delivery office to address its PR's comments".into();
+                }
+            }
+            for c in &f.comments {
+                n.detail.push(format!(
+                    "{}: {}",
+                    c.author,
+                    crate::output::clip(c.body.lines().next().unwrap_or_default(), 80)
+                ));
+            }
+            n.actions = vec![
+                act(
+                    "hall daemon status",
+                    "see whether the daemon runs, and what it is doing",
+                ),
+                act(
+                    format!("hall ready {id}"),
+                    "addressed them yourself: send it to review",
+                ),
+            ];
+        }
         State::Development => {
             n.status = "working".into();
             n.doing = format!("In development in {}", item.worktree);

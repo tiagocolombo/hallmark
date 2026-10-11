@@ -1,4 +1,4 @@
-# 0030. The Delivery office, rebasing before shipping, what becomes an item, and a clean inbox
+# 0030. The Delivery office, rebasing before shipping, what becomes an item, a clean inbox, and a daemon that doesn't die in its sleep
 
 Status: Accepted, 2026-10-11
 
@@ -15,8 +15,17 @@ Status: Accepted, 2026-10-11
   outside an item. Asking Claude a question that led to a doc edit, updating
   an ADR, or writing an architecture or a requirement turned into `hall new`,
   review rounds and a PR.
+- **Review comments on an open PR waited for a person.** Each one needed
+  `hall new --follow-up` or `hall adopt` by hand.
 - **The inbox only emptied when each entry was settled.** There was no way to
   say "seen, not now".
+- **The daemon died several times a day.** Its log ended in `panicked at
+  library/std/src/sys/thread/unix.rs:581: assertion left == right failed,
+  left: 35, right: 4`. That line is in `std::thread::sleep`, which asserts that
+  `nanosleep` only fails with `EINTR` (4). On macOS it sometimes fails with
+  `EAGAIN` (35), and the main loop's 200 ms nap panicked. The login service
+  doesn't restart the daemon (on purpose), so the loop stayed down until
+  someone ran `hall daemon start`.
 
 ## Decision
 
@@ -69,9 +78,25 @@ A new worker, `delivery`, runs after the shipper. Each tick does one thing:
    - `OPEN` and `CONFLICTING`: the item is reopened (`reopened`, as in ADR
      0029, actor `delivery`) with a rebase request, so step 1 takes it next.
      After review the shipper updates the same PR with a leased force-push.
+   - `OPEN` with **new review comments**: comments, reviews and line comments
+     written after the last ones it handled (or after the PR first shipped),
+     leaving out approvals, empty bodies, bots (`*[bot]`, `github-actions`)
+     and Hallmark's own update comment. The item is reopened with
+     `feedback_requested {pr_url, comments, until}`. On the next tick a
+     headless dev run gets the comments and the item's request, and
+     addresses each requested change with commits. **A script decides:** new
+     commits and a clean worktree go to review (`ready`, note "addresses the
+     PR's comments"), and after approval the shipper updates the same PR. No
+     commits means the comments were questions, or the run disagrees: the
+     item is held (`feedback`) with the run's last message, and you answer on
+     the PR. `until` (the newest comment's time) keeps handled comments from
+     coming back.
    - If someone else pushed to the PR (its head isn't the one Hallmark
      shipped), or the worktree is missing or dirty, the office logs it once
      and leaves the PR for `hall adopt --pr`.
+
+   Conflicts are handled before comments, so comments are always addressed on
+   the current base.
 
 The CI watch (ADR 0025) stays its own worker and belongs to the same office.
 
@@ -103,6 +128,14 @@ The CI watch (ADR 0025) stays its own worker and belongs to the same office.
   sharing the index can't lose them. Hooks, notifications and the terminal app
   all read the filtered inbox.
 
+### The daemon never sleeps through `std::thread::sleep`
+
+`hall::daemon::nap` sleeps with `std::thread::park_timeout` in a loop until
+the time is up. A timed park has no assertion and may only wake early. Every
+sleep in the binary and the tests uses it. `clippy.toml` disallows
+`std::thread::sleep`, so `cargo clippy -D warnings` (and CI) rejects any new
+use.
+
 ## Consequences
 
 - PRs open on the latest base, and stay mergeable until they merge, without a
@@ -115,4 +148,9 @@ The CI watch (ADR 0025) stays its own worker and belongs to the same office.
   `gh` the watch logs once and does nothing.
 - Docs and Markdown edits no longer start items by default. In repos where
   Markdown is code (this one embeds its plugin's skills), set `free` to suit.
-- Item JSON gains `rebase` and `delivered`, and the item view shows both.
+- Item JSON gains `rebase`, `feedback` and `delivered`, and the item view
+  shows them. `hall status <id>` says what the Delivery office is doing.
+- Follow-ups (ADR 0025) are still how you address feedback on a merged or
+  closed PR. An open PR's comments go back through the same item.
+- The daemon no longer dies of a macOS `nanosleep` quirk. The fix is in the
+  binary, so `hall update` and a restart are needed to pick it up.

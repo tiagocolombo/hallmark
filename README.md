@@ -64,7 +64,7 @@ is an **item**, and it moves from room to room:
 | Repair Shop | A fixer addresses failing checks and findings | the fixer |
 | Stamping Room | The approved commit gets its hallmark, a git note | the assayer |
 | Dispatch Dock | Rebases onto the latest base, then the ship command opens the PR (or `update` updates an adopted one), and the item closes | the shipper |
-| Delivery Office | Watches each PR until it merges; a conflict sends it back to development, where a headless dev run rebases it and sends it to review | the delivery worker, the CI watch |
+| Delivery Office | Watches each PR until it merges. A conflict or new review comments send it back to development, where a headless dev run rebases it or addresses them and sends it to review | the delivery worker, the CI watch |
 
 An item's states:
 
@@ -87,7 +87,7 @@ stateDiagram-v2
     review --> hallmarked: approved
     hallmarked --> closed: rebase onto the base, ship command opens the PR
     hallmarked --> development: rebase conflicts
-    closed --> development: delivery - the PR conflicts
+    closed --> development: delivery - conflicts or new PR comments
     loop --> development: hall pull-back
     escalated --> development: hall pull-back
     development --> dropped: hall drop --reason

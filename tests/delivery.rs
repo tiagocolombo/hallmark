@@ -33,10 +33,28 @@ fn fake_gh(env: &Env) -> PathBuf {
 }
 
 fn pr(gh: &Path, state: &str, mergeable: &str, oid: &str) {
+    pr_with(gh, state, mergeable, oid, json!([]), json!([]));
+}
+
+/// The PR as `gh pr view` prints it, with its reviews and comments.
+fn pr_with(gh: &Path, state: &str, mergeable: &str, oid: &str, reviews: Value, comments: Value) {
     let dir = gh.parent().unwrap();
     std::fs::write(dir.join("state.txt"), state).unwrap();
-    let v = json!({"state": state, "mergeable": mergeable, "headRefOid": oid});
+    let v = json!({"state": state, "mergeable": mergeable, "headRefOid": oid, "number": 1,
+                   "url": URL, "title": "Retry webhooks", "body": "", "headRefName": "x",
+                   "baseRefName": "main", "isCrossRepository": false,
+                   "reviews": reviews, "comments": comments});
     std::fs::write(dir.join("pr.json"), v.to_string()).unwrap();
+}
+
+/// A time `mins` minutes from now, as GitHub writes it.
+fn at(mins: i64) -> String {
+    (chrono::Utc::now() + chrono::Duration::minutes(mins)).to_rfc3339()
+}
+
+/// Forgets when each PR was last read, so the next pass reads it again.
+fn forget(env: &Env) {
+    let _ = std::fs::remove_file(env.repo.join(".git/hallmark/delivery-watch.json"));
 }
 
 /// One pass of `worker`, with the fake `gh` and a fake runner script.
@@ -314,7 +332,7 @@ fn the_delivery_office_watches_a_pr_until_it_merges() {
     assert!(events(&env, &id, "delivered").is_empty());
 
     // Read at most every two minutes: forget the last read.
-    std::fs::remove_file(env.repo.join(".git/hallmark/delivery-watch.json")).unwrap();
+    forget(&env);
     pr(&gh, "MERGED", "UNKNOWN", &sha);
     let step = pass(&env, &gh, "delivery", json!([]));
     assert_eq!(
@@ -323,7 +341,7 @@ fn the_delivery_office_watches_a_pr_until_it_merges() {
         "{step}"
     );
     assert_eq!(events(&env, &id, "delivered")[0]["outcome"], "merged");
-    std::fs::remove_file(env.repo.join(".git/hallmark/delivery-watch.json")).unwrap();
+    forget(&env);
     assert_eq!(pass(&env, &gh, "delivery", json!([]))["progress"], "idle");
     let status = env.hall(&env.repo, &["status", &id]);
     assert_eq!(status.json["delivered"], "merged", "{}", status.stdout);
@@ -375,6 +393,130 @@ fn a_conflicting_pr_someone_else_pushed_to_is_left_for_you() {
         "CONFLICTING",
         "0123456789abcdef0123456789abcdef01234567",
     );
+    assert_eq!(pass(&env, &gh, "delivery", json!([]))["progress"], "idle");
+    assert_eq!(state(&env, &id), "closed");
+}
+
+#[test]
+fn new_pr_comments_are_addressed_and_reviewed_again() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    remote_with_main(&env);
+    let (id, wt, sha) = hallmarked_item(&env, "Retry webhooks");
+    pass(&env, &gh, "shipper", json!([]));
+    assert_eq!(state(&env, &id), "closed");
+
+    // Only the reviewer's request counts: not an approval, a bot, an old
+    // comment, or Hallmark's own update comment.
+    let reviews = json!([
+        {"author": {"login": "ana"}, "state": "CHANGES_REQUESTED", "body": "Cap retries at 6.",
+         "submittedAt": at(1)},
+        {"author": {"login": "ana"}, "state": "APPROVED", "body": "LGTM otherwise", "submittedAt": at(2)}
+    ]);
+    let comments = json!([
+        {"author": {"login": "codecov[bot]"}, "body": "Coverage 91%", "createdAt": at(1)},
+        {"author": {"login": "ana"}, "body": "Before it shipped", "createdAt": at(-60)},
+        {"author": {"login": "me"}, "body": "Review\n\nThe full record stays local: `hall export H-0001`.",
+         "createdAt": at(1)}
+    ]);
+    pr_with(
+        &gh,
+        "OPEN",
+        "MERGEABLE",
+        &sha,
+        reviews.clone(),
+        comments.clone(),
+    );
+    let step = pass(&env, &gh, "delivery", json!([]));
+    assert!(
+        step["what"].as_str().unwrap().contains("1 new comment"),
+        "{step}"
+    );
+    assert_eq!(state(&env, &id), "development");
+    let fb = events(&env, &id, "feedback_requested");
+    assert_eq!(fb.len(), 1);
+    assert_eq!(fb[0]["comments"].as_array().unwrap().len(), 1);
+    assert_eq!(fb[0]["comments"][0]["author"], "ana");
+    assert_eq!(fb[0]["comments"][0]["body"], "Cap retries at 6.");
+
+    // The dev run commits a change; the item goes to review.
+    let fixes = json!([{
+        "role": "fixer",
+        "files": {"retry.rs": "fn retry() {\n    deliver_at_most(6);\n}\n"},
+        "run": ["git commit -qam 'Cap retries at 6 (review)'"],
+        "result": "capped at 6"
+    }]);
+    let step = pass(&env, &gh, "delivery", fixes);
+    assert!(
+        step["what"].as_str().unwrap().contains("sent to review"),
+        "{step}"
+    );
+    assert_eq!(state(&env, &id), "checks");
+    let ready = events(&env, &id, "ready");
+    assert_eq!(ready.last().unwrap()["note"], "addresses the PR's comments");
+    assert_ne!(git(&wt, &["rev-parse", "HEAD"]), sha);
+    let call = env.fake_calls().last().unwrap().to_string();
+    assert!(call.contains("Cap retries at 6."), "{call}");
+    assert!(!call.contains("Coverage 91%"), "{call}");
+}
+
+#[test]
+fn comments_the_run_doesnt_act_on_wait_for_you() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    remote_with_main(&env);
+    let (id, _, sha) = hallmarked_item(&env, "Retry webhooks");
+    pass(&env, &gh, "shipper", json!([]));
+    let comments = json!([
+        {"author": {"login": "ana"}, "body": "Why 6 and not 5?", "createdAt": at(1)}
+    ]);
+    pr_with(&gh, "OPEN", "MERGEABLE", &sha, json!([]), comments.clone());
+    pass(&env, &gh, "delivery", json!([]));
+    assert_eq!(state(&env, &id), "development");
+
+    let answers =
+        json!([{"role": "fixer", "result": "A question: 6 matches the provider's limit."}]);
+    let step = pass(&env, &gh, "delivery", answers);
+    assert!(step["what"].as_str().unwrap().contains("held"), "{step}");
+    let held = events(&env, &id, "held");
+    assert_eq!(held.last().unwrap()["kind"], "feedback");
+    assert!(
+        held.last().unwrap()["reason"]
+            .as_str()
+            .unwrap()
+            .contains("provider's limit")
+    );
+    let inbox = env.hall(&env.repo, &["inbox"]);
+    assert_eq!(
+        inbox.json["entries"][0]["kind"], "feedback",
+        "{}",
+        inbox.stdout
+    );
+}
+
+#[test]
+fn handled_comments_dont_come_back() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    remote_with_main(&env);
+    let (id, wt, sha) = hallmarked_item(&env, "Retry webhooks");
+    pass(&env, &gh, "shipper", json!([]));
+    let comments = json!([{"author": {"login": "ana"}, "body": "Rename it", "createdAt": at(1)}]);
+    pr_with(&gh, "OPEN", "MERGEABLE", &sha, json!([]), comments.clone());
+    pass(&env, &gh, "delivery", json!([]));
+    // You handle it: back to closed through review and a new ship.
+    commit_file(&wt, "retry.rs", "fn retry_delivery() {}\n");
+    assert_eq!(env.hall(&wt, &["ready"]).code, 0);
+    let new = approve(&env, &id, &wt, 2, vec![], counts(0, 0, 0, 0));
+    pass(&env, &gh, "shipper", json!([]));
+    assert_eq!(
+        state(&env, &id),
+        "closed",
+        "{:?}",
+        events(&env, &id, "held")
+    );
+    forget(&env);
+    pr_with(&gh, "OPEN", "MERGEABLE", &new, json!([]), comments);
     assert_eq!(pass(&env, &gh, "delivery", json!([]))["progress"], "idle");
     assert_eq!(state(&env, &id), "closed");
 }

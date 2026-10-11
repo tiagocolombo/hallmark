@@ -242,10 +242,21 @@ pub struct Item {
     /// onto its base (conflicts); cleared when the item moves.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rebase: Option<RebaseRequest>,
+    /// Set while new PR comments wait for the Delivery office's dev run;
+    /// cleared when the item moves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feedback: Option<FeedbackRequest>,
     /// How the shipped PR ended: `merged` or `closed`. Until then the
     /// Delivery office watches it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub delivered: Option<String>,
+}
+
+/// PR comments the Delivery office's dev run should address.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct FeedbackRequest {
+    pub comments: Vec<crate::event::PrComment>,
+    pub since: DateTime<Utc>,
 }
 
 /// Why and onto what the Delivery office should rebase an item.
@@ -285,6 +296,9 @@ pub enum HoldKind {
     /// The branch conflicts with its base and the headless rebase couldn't
     /// resolve it.
     Conflict,
+    /// New PR comments the Delivery office's dev run didn't act on: they
+    /// need you.
+    Feedback,
     /// Anything else that needs a person.
     Other,
 }
@@ -296,6 +310,7 @@ impl HoldKind {
             HoldKind::RunFailed => "run_failed",
             HoldKind::ShipFailed => "ship_failed",
             HoldKind::Conflict => "conflict",
+            HoldKind::Feedback => "feedback",
             HoldKind::Other => "other",
         }
     }

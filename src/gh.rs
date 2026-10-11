@@ -155,6 +155,15 @@ pub struct GhComment {
     pub path: Option<String>,
     #[serde(default, alias = "original_line")]
     pub line: Option<u64>,
+    /// When it was written: `createdAt` (comments), `submittedAt`
+    /// (reviews), `created_at` (line comments).
+    #[serde(
+        default,
+        rename = "createdAt",
+        alias = "submittedAt",
+        alias = "created_at"
+    )]
+    pub created_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 /// A pull request and the feedback on it (for follow-up items).

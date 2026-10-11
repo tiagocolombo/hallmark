@@ -389,6 +389,15 @@ pub enum Body {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         files: Vec<String>,
     },
+    /// New review comments on the shipped PR: a headless dev run (the
+    /// Delivery office) addresses them in development and sends the item to
+    /// review; the shipper then updates the same PR.
+    FeedbackRequested {
+        pr_url: String,
+        comments: Vec<PrComment>,
+        /// The newest comment's time: later comments are new next time.
+        until: DateTime<Utc>,
+    },
     /// The shipped PR left the open state: `merged` or `closed`. The
     /// Delivery office stops watching it.
     Delivered {
@@ -413,6 +422,19 @@ pub enum Body {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         ended: Option<String>,
     },
+}
+
+/// A comment or review on a shipped PR.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct PrComment {
+    pub author: String,
+    pub body: String,
+    /// The file and line, for a comment on the diff.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<u64>,
+    pub at: DateTime<Utc>,
 }
 
 /// A CI check that failed on a shipped PR.
@@ -468,6 +490,7 @@ impl Body {
             Body::Rebased { .. } => "rebased",
             Body::RebaseRequested { .. } => "rebase_requested",
             Body::Delivered { .. } => "delivered",
+            Body::FeedbackRequested { .. } => "feedback_requested",
         }
     }
 
@@ -713,6 +736,11 @@ impl Body {
                 }
             }
             Body::Delivered { pr_url, outcome } => format!("PR {outcome} · {pr_url}"),
+            Body::FeedbackRequested { comments, .. } => format!(
+                "{} new PR comment{} to address",
+                comments.len(),
+                if comments.len() == 1 { "" } else { "s" }
+            ),
             Body::InboxDismissed { keys } => format!(
                 "{} inbox entr{} dismissed",
                 keys.len(),
@@ -789,6 +817,7 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
         findings: Counts::default(),
         ci: None,
         rebase: None,
+        feedback: None,
         delivered: None,
     };
     let mut ledger = Ledger::default();
@@ -805,8 +834,9 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
                 item.state = to;
                 // Any move settles a hold: the item is somewhere new.
                 item.hold = None;
-                // And a rebase request: it is asked for again if needed.
+                // And a rebase or feedback request: asked for again if needed.
                 item.rebase = None;
+                item.feedback = None;
             } else {
                 continue;
             }
@@ -892,6 +922,12 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
                 })
             }
             Body::Delivered { outcome, .. } => item.delivered = Some(outcome.clone()),
+            Body::FeedbackRequested { comments, .. } => {
+                item.feedback = Some(crate::item::FeedbackRequest {
+                    comments: comments.clone(),
+                    since: e.t,
+                })
+            }
             _ => {}
         }
     }
