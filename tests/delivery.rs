@@ -329,13 +329,16 @@ fn the_delivery_office_watches_a_pr_until_it_merges() {
     assert_eq!(state(&env, &id), "closed");
 
     pr(&gh, "OPEN", "MERGEABLE", &sha);
-    assert_eq!(pass(&env, &gh, "delivery", json!([]))["progress"], "idle");
+    assert_eq!(
+        pass(&env, &gh, "delivery-watch", json!([]))["progress"],
+        "idle"
+    );
     assert!(events(&env, &id, "delivered").is_empty());
 
     // Read at most every two minutes: forget the last read.
     forget(&env);
     pr(&gh, "MERGED", "UNKNOWN", &sha);
-    let step = pass(&env, &gh, "delivery", json!([]));
+    let step = pass(&env, &gh, "delivery-watch", json!([]));
     assert_eq!(
         step["what"],
         format!("{id} delivered: {URL} merged"),
@@ -343,9 +346,86 @@ fn the_delivery_office_watches_a_pr_until_it_merges() {
     );
     assert_eq!(events(&env, &id, "delivered")[0]["outcome"], "merged");
     forget(&env);
-    assert_eq!(pass(&env, &gh, "delivery", json!([]))["progress"], "idle");
+    assert_eq!(
+        pass(&env, &gh, "delivery-watch", json!([]))["progress"],
+        "idle"
+    );
     let status = env.hall(&env.repo, &["status", &id]);
     assert_eq!(status.json["delivered"], "merged", "{}", status.stdout);
+}
+
+/// Changes the watch's saved state, as time passing would.
+fn edit_watch(env: &Env, f: impl FnOnce(&mut Value)) {
+    let path = env.repo.join(".git/hallmark/delivery-watch.json");
+    let mut v: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    f(&mut v);
+    std::fs::write(&path, v.to_string()).unwrap();
+}
+
+/// The base check is due again (it runs at most every ten seconds).
+fn look_at_bases_again(env: &Env) {
+    edit_watch(env, |v| v["bases_at"] = Value::Null);
+}
+
+#[test]
+fn a_merge_is_seen_as_soon_as_its_base_moves() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    remote_with_main(&env);
+    let (id, _, sha) = hallmarked_item(&env, "Retry webhooks");
+    pass(&env, &gh, "shipper", json!([]));
+    pr(&gh, "OPEN", "MERGEABLE", &sha);
+    assert_eq!(
+        pass(&env, &gh, "delivery-watch", json!([]))["progress"],
+        "idle"
+    );
+
+    // Merged on GitHub, but its base hasn't moved yet: not read again.
+    pr(&gh, "MERGED", "UNKNOWN", &sha);
+    look_at_bases_again(&env);
+    assert_eq!(
+        pass(&env, &gh, "delivery-watch", json!([]))["progress"],
+        "idle"
+    );
+    assert!(events(&env, &id, "delivered").is_empty());
+
+    // The merge moves main on origin: the PR is read on the next pass,
+    // without waiting two minutes.
+    main_moves(&env, "merged.rs", "fn merged() {}\n");
+    look_at_bases_again(&env);
+    let step = pass(&env, &gh, "delivery-watch", json!([]));
+    assert_eq!(
+        step["what"],
+        format!("{id} delivered: {URL} merged"),
+        "{step}"
+    );
+    assert_eq!(events(&env, &id, "delivered").len(), 1);
+}
+
+#[test]
+fn a_pr_github_is_still_computing_is_read_again_soon() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    remote_with_main(&env);
+    let (id, _, sha) = hallmarked_item(&env, "Retry webhooks");
+    pass(&env, &gh, "shipper", json!([]));
+    pr(&gh, "OPEN", "UNKNOWN", &sha);
+    assert_eq!(
+        pass(&env, &gh, "delivery-watch", json!([]))["progress"],
+        "idle"
+    );
+
+    // Twenty seconds later, not two minutes, it is read again.
+    let ago = (chrono::Utc::now() - chrono::Duration::seconds(20)).to_rfc3339();
+    edit_watch(&env, |v| v["last"][&id] = json!(ago));
+    pr(&gh, "OPEN", "CONFLICTING", &sha);
+    conflicting_main(&env);
+    let step = pass(&env, &gh, "delivery-watch", json!([]));
+    assert!(
+        step["what"].as_str().unwrap().contains("reopened"),
+        "{step}"
+    );
+    assert_eq!(state(&env, &id), "development");
 }
 
 #[test]
@@ -359,7 +439,7 @@ fn a_pr_that_conflicts_is_reopened_rebased_and_reviewed_again() {
     conflicting_main(&env);
 
     pr(&gh, "OPEN", "CONFLICTING", &sha);
-    let step = pass(&env, &gh, "delivery", json!([]));
+    let step = pass(&env, &gh, "delivery-watch", json!([]));
     assert!(
         step["what"].as_str().unwrap().contains("reopened"),
         "{step}"
@@ -394,7 +474,10 @@ fn a_conflicting_pr_someone_else_pushed_to_is_left_for_you() {
         "CONFLICTING",
         "0123456789abcdef0123456789abcdef01234567",
     );
-    assert_eq!(pass(&env, &gh, "delivery", json!([]))["progress"], "idle");
+    assert_eq!(
+        pass(&env, &gh, "delivery-watch", json!([]))["progress"],
+        "idle"
+    );
     assert_eq!(state(&env, &id), "closed");
 }
 
@@ -429,7 +512,7 @@ fn new_pr_comments_are_addressed_and_reviewed_again() {
         reviews.clone(),
         comments.clone(),
     );
-    let step = pass(&env, &gh, "delivery", json!([]));
+    let step = pass(&env, &gh, "delivery-watch", json!([]));
     assert!(
         step["what"].as_str().unwrap().contains("1 new comment"),
         "{step}"
@@ -473,7 +556,7 @@ fn comments_the_run_doesnt_act_on_wait_for_you() {
         {"author": {"login": "ana"}, "authorAssociation": "OWNER", "body": "Why 6 and not 5?", "createdAt": at(1)}
     ]);
     pr_with(&gh, "OPEN", "MERGEABLE", &sha, json!([]), comments.clone());
-    pass(&env, &gh, "delivery", json!([]));
+    pass(&env, &gh, "delivery-watch", json!([]));
     assert_eq!(state(&env, &id), "development");
 
     let answers =
@@ -505,7 +588,7 @@ fn handled_comments_dont_come_back() {
     pass(&env, &gh, "shipper", json!([]));
     let comments = json!([{"author": {"login": "ana"}, "authorAssociation": "COLLABORATOR", "body": "Rename it", "createdAt": at(1)}]);
     pr_with(&gh, "OPEN", "MERGEABLE", &sha, json!([]), comments.clone());
-    pass(&env, &gh, "delivery", json!([]));
+    pass(&env, &gh, "delivery-watch", json!([]));
     // You handle it: back to closed through review and a new ship.
     commit_file(&wt, "retry.rs", "fn retry_delivery() {}\n");
     assert_eq!(env.hall(&wt, &["ready"]).code, 0);
@@ -519,7 +602,10 @@ fn handled_comments_dont_come_back() {
     );
     forget(&env);
     pr_with(&gh, "OPEN", "MERGEABLE", &new, json!([]), comments);
-    assert_eq!(pass(&env, &gh, "delivery", json!([]))["progress"], "idle");
+    assert_eq!(
+        pass(&env, &gh, "delivery-watch", json!([]))["progress"],
+        "idle"
+    );
     assert_eq!(state(&env, &id), "closed");
 }
 

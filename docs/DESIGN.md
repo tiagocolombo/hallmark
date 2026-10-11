@@ -607,8 +607,8 @@ doubt makes one item.
 
 One process (`hall daemon start`, optionally at login) runs passes over every
 registered repo; every repo, worker and slot is scheduled on its own (ADR
-0026): watchman, resume, assayer, fixer, shipper, delivery, ci, librarian,
-notify. Leases
+0026): watchman, resume, assayer, fixer, shipper, delivery, delivery-watch,
+ci, librarian, notify. Leases
 keep one worker per item and count per phase against `[parallel]` (checks,
 review, fix, ship), not one assayer per repo. A rate limit or the daily budget
 pauses the model workers until the reset, recorded as `paused`. Stopping is a

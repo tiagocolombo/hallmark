@@ -414,7 +414,7 @@ pub enum DaemonAction {
         #[arg(long)]
         once: bool,
         /// Only these workers (comma-separated): watchman, resume, assayer,
-        /// fixer, shipper, librarian, notify.
+        /// fixer, shipper, delivery, delivery-watch, ci, librarian, notify.
         #[arg(long, value_delimiter = ',')]
         only: Vec<String>,
         /// Only this repository (default: every registered repo; with

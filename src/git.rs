@@ -121,6 +121,26 @@ pub fn rev(dir: &Path, rev: &str) -> Option<String> {
     .filter(|s| !s.is_empty())
 }
 
+/// The commit `branch` is at on `remote`, by `git ls-remote`: one small
+/// request, no fetch, and never a prompt. `Some("")` when the remote has no
+/// such branch; None when the remote can't be asked.
+pub fn remote_head(dir: &Path, remote: &str, branch: &str) -> Option<String> {
+    let out = command(dir)
+        .args(["ls-remote", remote, &format!("refs/heads/{branch}")])
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    out.status.success().then(|| {
+        String::from_utf8_lossy(&out.stdout)
+            .split_whitespace()
+            .next()
+            .unwrap_or("")
+            .to_string()
+    })
+}
+
 /// Whether `a` is an ancestor of (or equal to) `b`.
 pub fn is_ancestor(dir: &Path, a: &str, b: &str) -> bool {
     ok(dir, &["merge-base", "--is-ancestor", a, b])

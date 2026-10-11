@@ -1,25 +1,30 @@
 //! The Delivery Office (ADR 0030): after the Dispatch Dock ships a PR, it
 //! watches the PR until it merges, and keeps it mergeable.
 //!
-//! One tick does at most one thing, in this order:
+//! Two workers share the office, so a rebase's dev run (minutes) never
+//! holds up the watch:
 //!
-//! 1. **Rebase.** An item in development with a rebase request (its PR
-//!    conflicts with its base, or the Dispatch Dock hit a conflict) is
-//!    rebased onto the latest base in its worktree. A clean rebase goes
-//!    straight to review. A conflict goes to a headless dev run
-//!    (`claude -p`), which resolves it and finishes the rebase. **A script
-//!    decides** whether it worked: the rebase finished, the worktree is
-//!    clean, and the base is an ancestor of HEAD. Then the item is sent to
-//!    review (`ready`), and once hallmarked the shipper updates the PR. A
-//!    failed run is retried once; the second failure holds the item
-//!    (`conflict`) for you.
-//! 2. **Watch.** A shipped item's PR is read at most every two minutes
-//!    (`gh pr view`). Merged or closed: `delivered`, and the watch ends.
-//!    Conflicting: the item is reopened to development with a rebase
-//!    request, so step 1 takes it on the next tick. New review comments, or
-//!    CI that failed (ADR 0031), reopen it the same way: a headless dev run
-//!    addresses them in commits and the item goes back to review. CI that
-//!    still fails after `CI_FIXES` fixes waits for you.
+//! 1. **Rebase** (`delivery`, one item per tick). An item in development
+//!    with a rebase request (its PR conflicts with its base, or the Dispatch
+//!    Dock hit a conflict) is rebased onto the latest base in its worktree.
+//!    A clean rebase goes straight to review. A conflict goes to a headless
+//!    dev run (`claude -p`), which resolves it and finishes the rebase.
+//!    **A script decides** whether it worked: the rebase finished, the
+//!    worktree is clean, and the base is an ancestor of HEAD. Then the item
+//!    is sent to review (`ready`), and once hallmarked the shipper updates
+//!    the PR. A failed run is retried once; the second failure holds the
+//!    item (`conflict`) for you.
+//! 2. **Watch** (`delivery-watch`). Every few seconds it asks `origin`
+//!    where each watched base is (`git ls-remote`, no GitHub API call). A
+//!    merge moves its base, so a base that moved makes every PR on it due at
+//!    once. Otherwise a PR is read every two minutes (`gh pr view`), or
+//!    sooner while GitHub is still working out whether it conflicts. Merged
+//!    or closed: `delivered`, once, and the watch ends. Conflicting: the
+//!    item is reopened to development with a rebase request, so step 1 takes
+//!    it on its next tick. New review comments, or CI that failed (ADR 0031),
+//!    reopen it the same way: a headless dev run addresses them in commits
+//!    and the item goes back to review. CI that still fails after `CI_FIXES`
+//!    fixes waits for you.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -40,8 +45,13 @@ use crate::worker::{Progress, WorkerCtx};
 
 pub const ACTOR: &str = "delivery";
 
-/// How often one PR is read.
+/// How often one PR is read when nothing says it changed.
 const EVERY: i64 = 120;
+/// How often each watched base is looked up on `origin`.
+const BASE_EVERY: i64 = 10;
+/// How soon a PR is read again while GitHub is still computing whether it
+/// conflicts (`mergeable` is `UNKNOWN` for a while after its base moves).
+const SOON: i64 = 15;
 
 /// How many times the office reopens an item to fix its PR's CI before the
 /// red PR waits for you.
@@ -139,11 +149,9 @@ pub fn rebase(wt: &Path, target: &str, upstream: &str) -> Result<Rebased> {
     }
 }
 
+/// The `delivery` worker: one rebase per tick.
 pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
-    if let Some(p) = rebase_next(ctx)? {
-        return Ok(p);
-    }
-    watch_next(ctx)
+    Ok(rebase_next(ctx)?.unwrap_or(Progress::Idle))
 }
 
 // --- 1. rebase ---------------------------------------------------------
@@ -802,13 +810,80 @@ fn prompt(repo: &Repo, item: &Item, events: &[Event], target: &Target, files: &[
 
 // --- 2. watch ----------------------------------------------------------
 
-/// When each PR was last read, and what was already logged.
+/// When each PR was last read, where each base was, and what was already
+/// logged.
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct Watch {
     #[serde(default)]
     last: BTreeMap<String, DateTime<Utc>>,
+    /// PRs whose mergeability GitHub was still computing: read again soon.
+    #[serde(default)]
+    soon: BTreeSet<String>,
+    /// Where each watched base was on `origin`, and when that was asked.
+    #[serde(default)]
+    bases: BTreeMap<String, String>,
+    #[serde(default)]
+    bases_at: Option<DateTime<Utc>>,
     #[serde(default)]
     noted: BTreeSet<String>,
+}
+
+impl Watch {
+    fn load(path: &Path) -> Watch {
+        std::fs::read_to_string(path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default()
+    }
+
+    fn save(&self, path: &Path) {
+        let _ = std::fs::write(path, serde_json::to_string(self).unwrap_or_default());
+    }
+
+    /// Says a thing once, not every two minutes.
+    fn note_once(&mut self, repo: &Repo, path: &Path, key: String, what: String) {
+        if self.noted.insert(key) {
+            repo.hall.live(&what);
+            self.save(path);
+        }
+    }
+
+    fn is_due(&self, id: ItemId, now: DateTime<Utc>) -> bool {
+        let key = id.to_string();
+        let every = if self.soon.contains(&key) {
+            SOON
+        } else {
+            EVERY
+        };
+        self.last
+            .get(&key)
+            .is_none_or(|t| now - *t >= Duration::seconds(every))
+    }
+
+    /// Asks `origin` where each base is, at most every [`BASE_EVERY`]
+    /// seconds. Every PR on a base that moved is due now: a merge moves its
+    /// base, and the PRs left on it may conflict.
+    fn look_at_bases(&mut self, repo: &Repo, items: &[Item], now: DateTime<Utc>) {
+        if self
+            .bases_at
+            .is_some_and(|t| now - t < Duration::seconds(BASE_EVERY))
+        {
+            return;
+        }
+        self.bases_at = Some(now);
+        let bases: BTreeSet<&str> = items.iter().map(|i| i.base.as_str()).collect();
+        for base in bases {
+            let Some(at) = git::remote_head(&repo.main_root, "origin", base) else {
+                continue;
+            };
+            let before = self.bases.insert(base.to_string(), at.clone());
+            if before.is_some_and(|b| b != at) {
+                for i in items.iter().filter(|i| i.base == base) {
+                    self.last.remove(&i.id.to_string());
+                }
+            }
+        }
+    }
 }
 
 /// A shipped item whose PR hasn't merged or closed yet: the office
@@ -825,7 +900,9 @@ pub fn watched(items: &[Item]) -> Vec<Item> {
     items.iter().filter(|i| is_watched(i)).cloned().collect()
 }
 
-fn watch_next(ctx: &WorkerCtx) -> Result<Progress> {
+/// The `delivery-watch` worker: reads every PR that is due, oldest read
+/// first.
+pub fn watch_tick(ctx: &WorkerCtx) -> Result<Progress> {
     let repo = ctx.repo;
     let now = Utc::now();
     let candidates = watched(&repo.index()?.items(true)?);
@@ -833,57 +910,78 @@ fn watch_next(ctx: &WorkerCtx) -> Result<Progress> {
         return Ok(Progress::Idle);
     }
     let path = repo.hall.root.join("delivery-watch.json");
-    let mut watch: Watch = std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default();
-    let due = candidates
-        .into_iter()
-        .filter(|i| {
-            watch
-                .last
-                .get(&i.id.to_string())
-                .is_none_or(|t| now - *t >= Duration::seconds(EVERY))
-        })
-        .min_by_key(|i| watch.last.get(&i.id.to_string()).copied());
-    let Some(item) = due else {
-        return Ok(Progress::Idle);
-    };
+    let mut watch = Watch::load(&path);
+    watch.look_at_bases(repo, &candidates, now);
+    watch.save(&path);
+    let mut due: Vec<&Item> = candidates
+        .iter()
+        .filter(|i| watch.is_due(i.id, now))
+        .collect();
+    due.sort_by_key(|i| watch.last.get(&i.id.to_string()).copied());
+    let mut done = Vec::new();
+    for item in due {
+        if let Progress::Worked { what } = read_pr(repo, item, &mut watch, &path, now)? {
+            done.push(what);
+        }
+    }
+    Ok(if done.is_empty() {
+        Progress::Idle
+    } else {
+        Progress::worked(done.join("; "))
+    })
+}
+
+/// Reads one PR and acts on what it says.
+fn read_pr(
+    repo: &Repo,
+    item: &Item,
+    watch: &mut Watch,
+    path: &Path,
+    now: DateTime<Utc>,
+) -> Result<Progress> {
     let id = item.id;
     let url = item.pr_url.clone().unwrap_or_default();
     watch.last.insert(id.to_string(), now);
-    let save = |w: &Watch| {
-        let _ = std::fs::write(&path, serde_json::to_string(w).unwrap_or_default());
-    };
-    save(&watch);
-    // Says a thing once, not every two minutes.
-    let mut note_once = |key: String, what: String| {
-        if watch.noted.insert(key) {
-            repo.hall.live(&what);
-            save(&watch);
-        }
-    };
+    watch.save(path);
     let pr = match crate::gh::pr_merge(&repo.main_root, &url) {
         Ok(pr) => pr,
         Err(e) => {
-            note_once(
+            watch.note_once(
+                repo,
+                path,
                 format!("error-{id}"),
                 format!("{id} delivery: {}", e.message),
             );
             return Ok(Progress::Idle);
         }
     };
+    let soon = pr.state == "OPEN" && pr.mergeable == "UNKNOWN";
+    let changed = if soon {
+        watch.soon.insert(id.to_string())
+    } else {
+        watch.soon.remove(&id.to_string())
+    };
+    if changed {
+        watch.save(path);
+    }
     match pr.state.as_str() {
         "MERGED" | "CLOSED" => {
             let outcome = pr.state.to_lowercase();
-            append(
-                repo,
-                id,
-                Body::Delivered {
+            // Under the journal's lock, and only once: the index may lag
+            // behind the journal.
+            let (_, recorded) = repo.hall.transact(id, |it, _| {
+                if it.delivered.is_some() {
+                    return Ok((vec![], false));
+                }
+                let body = Body::Delivered {
                     pr_url: url.clone(),
                     outcome: outcome.clone(),
-                },
-            )?;
+                };
+                Ok((vec![Event::new(ACTOR, Some(id), body)], true))
+            })?;
+            if !recorded {
+                return Ok(Progress::Idle);
+            }
             let what = format!("{id} delivered: {url} {outcome}");
             repo.hall.live(&what);
             Ok(Progress::worked(what))
@@ -891,7 +989,9 @@ fn watch_next(ctx: &WorkerCtx) -> Result<Progress> {
         "OPEN" if pr.mergeable == "CONFLICTING" => {
             let wt = PathBuf::from(&item.worktree);
             if item.pr_head.as_deref() != Some(pr.head_oid.as_str()) {
-                note_once(
+                watch.note_once(
+                    repo,
+                    path,
                     format!("pushed-{id}-{}", pr.head_oid),
                     format!(
                         "{id} delivery: {url} conflicts with {}, but someone else pushed to it \
@@ -904,7 +1004,9 @@ fn watch_next(ctx: &WorkerCtx) -> Result<Progress> {
                 return Ok(Progress::Idle);
             }
             if !wt.is_dir() || !git::dirty_files(&wt).map(|d| d.is_empty()).unwrap_or(false) {
-                note_once(
+                watch.note_once(
+                    repo,
+                    path,
                     format!("worktree-{id}"),
                     format!(
                         "{id} delivery: {url} conflicts with {}, but its worktree {} is missing \
@@ -917,7 +1019,7 @@ fn watch_next(ctx: &WorkerCtx) -> Result<Progress> {
             }
             reopen(
                 repo,
-                &item,
+                item,
                 &url,
                 &pr.head_oid,
                 Body::RebaseRequested {
@@ -934,7 +1036,9 @@ fn watch_next(ctx: &WorkerCtx) -> Result<Progress> {
             let full = match crate::gh::pr(&repo.main_root, &url) {
                 Ok(p) => p,
                 Err(e) => {
-                    note_once(
+                    watch.note_once(
+                        repo,
+                        path,
                         format!("error-{id}"),
                         format!("{id} delivery: {}", e.message),
                     );
@@ -950,7 +1054,9 @@ fn watch_next(ctx: &WorkerCtx) -> Result<Progress> {
                 || !wt.is_dir()
                 || !git::dirty_files(&wt).map(|d| d.is_empty()).unwrap_or(false)
             {
-                note_once(
+                watch.note_once(
+                    repo,
+                    path,
                     format!("feedback-{id}-{}", until.timestamp()),
                     format!(
                         "{id} delivery: {url} has new comments, but someone else pushed to it or \
@@ -965,7 +1071,7 @@ fn watch_next(ctx: &WorkerCtx) -> Result<Progress> {
             let n = comments.len();
             reopen(
                 repo,
-                &item,
+                item,
                 &url,
                 &pr.head_oid,
                 Body::FeedbackRequested {
