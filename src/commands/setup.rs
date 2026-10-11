@@ -90,7 +90,7 @@ fn claude_bin() -> String {
     std::env::var("HALL_CLAUDE").unwrap_or_else(|_| "claude".into())
 }
 
-fn step(command: String, status: &str, detail: Option<String>) -> Step {
+pub(super) fn step(command: String, status: &str, detail: Option<String>) -> Step {
     Step {
         command,
         status: status.into(),

@@ -242,6 +242,7 @@ Agents are the main users of `hall`, so every command follows these rules:
 | `hall init` | Sets up a repo. `--capture gate\|ask\|off`, `--base`, `--no-claude-md` |
 | `hall doctor` | Checks the install. |
 | `hall setup claude` | Installs the Claude Code plugin. `--statusline`, `--dry-run` |
+| `hall update` | Installs the latest `hall` from main, or says it's already current. `--check`, `--source`, `--branch`, `--no-setup` |
 | `hall new [<request>]` | Creates an item and its worktree; splits into parallel parts when it can. `--title`, `--issue <n>`, `--no-split`, `--parent <id>`, `--follow-up <pr>`, `--open`, `--branch` |
 | `hall adopt` | Turns the current branch and worktree into an item. |
 | `hall merge [<child>]` | Merges a parallel part into its parent's branch and closes it. |
