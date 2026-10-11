@@ -246,7 +246,23 @@ pub fn daemon(cwd: &Path, a: DaemonArgs) -> Result<Response> {
         DaemonAction::Start { at_login } => start(at_login),
         DaemonAction::Stop { at_login } => stop(at_login),
         DaemonAction::Status => status(),
+        DaemonAction::Resume => resume(),
     }
+}
+
+fn resume() -> Result<Response> {
+    let lifted = state::update(super::super::daemon::pause::lift)??;
+    let mut out = DaemonOut::new("resume", state::instance_running());
+    out.changed = Some(lifted.is_some());
+    out.note = Some(match &lifted {
+        Some(p) => format!("pause lifted: {}", p.reason),
+        None => "not paused".into(),
+    });
+    out.state = state::load().map(without_repos);
+    Ok(Response::new(
+        out,
+        vec!["hall daemon status".into(), "hall inbox".into()],
+    ))
 }
 
 fn check_only(only: &[String]) -> Result<()> {
