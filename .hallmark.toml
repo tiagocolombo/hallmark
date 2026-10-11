@@ -13,6 +13,14 @@ gates = [
   "nix develop --command cargo clippy --all-targets -- -D warnings",
   "nix develop --command cargo test --all-targets",
 ]
+# What the fixer and the Delivery office's dev runs may run besides the
+# gates: a narrower test run, formatting, and regenerating insta snapshots
+# after a conflict.
+dev_commands = [
+  "nix develop --command cargo test",
+  "nix develop --command cargo fmt",
+  "INSTA_UPDATE=always nix develop --command cargo test",
+]
 
 max_rejects = 3
 stuck_after = "45m"

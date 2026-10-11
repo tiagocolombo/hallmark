@@ -116,12 +116,17 @@ explicit to the one that can't be skipped:
 
 ## When Hallmark needs you
 
-Anything that needs a person lands in Your Office as an inbox entry: a
-question from an agent, an escalation after repeated rejections, "looks done?",
-a budget hold, a stuck item, or a Claude Code session waiting for permission.
-Hallmark tells you in Claude Code (a hook and the status line), in the terminal
-app, with a desktop notification, and on your phone through
-[ntfy](https://ntfy.sh), Telegram or Slack, plus an optional morning digest.
+Only escalations land in Your Office as inbox entries: a question from an
+agent, an escalation after repeated rejections, "looks done?", a budget hold,
+CI that still fails after the Delivery office's two fixes, or CI that never
+started (one `ci_down` entry). Hallmark tells you in Claude Code (a hook and
+the status line), in the terminal app, with a desktop notification, and on
+your phone through [ntfy](https://ntfy.sh), Telegram or Slack, plus an
+optional morning digest.
+
+Stuck items, Claude Code sessions waiting for permission, CI on merged PRs and
+proposed learnings are notices: `hall inbox --notices` lists them, and they are
+never notified.
 
 When an agent asks a question, its session ID is saved. When you answer
 (`hall answer`, the terminal app, or just telling Claude), the daemon resumes

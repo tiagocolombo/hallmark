@@ -242,6 +242,7 @@ mod tests {
             session: None,
             since: Utc::now(),
             answer_with: vec![],
+            notice: false,
         }
     }
 

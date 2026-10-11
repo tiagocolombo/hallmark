@@ -141,7 +141,7 @@ fn run_claude(
     )?;
     req.json_schema = Some(crate::plugin::file("schemas/fix.json").to_string());
     req.permission_mode = Some("acceptEdits".into());
-    req.allowed_tools = tools(&repo.config.gates);
+    req.allowed_tools = tools(&repo.config.run_commands());
     req.env.extend(path_with_hall());
     match runner::run_metered(repo, ctx.runner, Some(id), &req)? {
         Metered::Blocked(stop) => Ok(stop.progress()),
@@ -359,7 +359,7 @@ pub fn path_with_hall() -> Option<(String, String)> {
 }
 
 /// The tools the fixer may use: edit files, commit, read its findings,
-/// record the fix, and run the repo's gates.
+/// record the fix, and run the repo's gates and `dev_commands`.
 pub fn tools(gates: &[String]) -> Vec<String> {
     let mut t: Vec<String> = [
         "Read",

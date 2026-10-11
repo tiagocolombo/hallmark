@@ -177,8 +177,20 @@ fn items(env: &Env) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// Proposed learnings are a notice: the Library never waits for you, and
+/// never reaches your office.
 fn inbox_learnings(env: &Env) -> Option<Value> {
-    let r = env.hall(&env.repo, &["inbox"]);
+    let office = env.hall(&env.repo, &["inbox"]);
+    assert!(
+        !office.json["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["kind"] == "learnings"),
+        "{}",
+        office.stdout
+    );
+    let r = env.hall(&env.repo, &["inbox", "--notices"]);
     r.json["entries"]
         .as_array()
         .unwrap()
@@ -560,8 +572,8 @@ fn the_librarian_distils_a_closed_item_into_the_local_store() {
             .any(|e| e["event"] == "usage" && e["room"] == "library")
     );
 
-    // The inbox has one entry for what waits for you.
-    let e = inbox_learnings(&env).expect("a learnings entry");
+    // One notice for what waits in the Library.
+    let e = inbox_learnings(&env).expect("a learnings notice");
     assert_eq!(e["text"], "1 proposed learning to review");
     assert_eq!(e["answer_with"], json!(["hall library review"]));
 

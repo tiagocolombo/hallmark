@@ -165,7 +165,7 @@ hall adopt                   # turn the current branch into an item
 hall adopt --pr 7            # take over an open PR
 
 hall status                  # items by state, and what each one is doing now
-hall inbox                   # everything waiting for you
+hall inbox                   # what only you can settle
 hall log H-0042              # the item's journal
 hall export H-0042           # the whole record as Markdown
 

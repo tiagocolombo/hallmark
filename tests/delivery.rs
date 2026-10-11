@@ -595,3 +595,196 @@ fn an_update_whose_pr_merged_without_it_waits_for_you() {
     assert!(step["what"].as_str().unwrap().contains("held"), "{step}");
     assert_eq!(events(&env, &id, "held")[0]["kind"], "ship_failed");
 }
+
+// --- ADR 0031: red CI on an open PR, and new items on the latest base -----
+
+/// The CI watch recorded red checks on the shipped PR.
+fn ci_failed(env: &Env, id: &str) {
+    append(
+        env,
+        id,
+        "ci",
+        hallmark::event::Body::PrChecks {
+            pr_url: URL.into(),
+            passed: false,
+            failing: vec![hallmark::event::FailingCheck {
+                name: "test (windows-latest)".into(),
+                link: None,
+            }],
+            ended: None,
+            not_started: None,
+        },
+    );
+}
+
+#[test]
+fn red_ci_on_an_open_pr_is_fixed_and_reviewed_again() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    remote_with_main(&env);
+    let (id, wt, sha) = hallmarked_item(&env, "Retry webhooks");
+    pass(&env, &gh, "shipper", json!([]));
+    assert_eq!(state(&env, &id), "closed");
+    ci_failed(&env, &id);
+    // The Delivery office is on it: nothing waits for you.
+    let inbox = env.hall(&env.repo, &["inbox"]);
+    assert_eq!(inbox.json["entries"], json!([]), "{}", inbox.stdout);
+
+    pr(&gh, "OPEN", "MERGEABLE", &sha);
+    let step = pass(&env, &gh, "delivery", json!([]));
+    assert!(
+        step["what"].as_str().unwrap().contains("CI failed"),
+        "{step}"
+    );
+    assert_eq!(state(&env, &id), "development");
+    let req = events(&env, &id, "ci_fix_requested");
+    assert_eq!(req.len(), 1);
+    assert_eq!(req[0]["failing"][0]["name"], "test (windows-latest)");
+    let status = env.hall(&env.repo, &["status", &id]);
+    assert_eq!(
+        status.json["ci_fix"]["failing"][0]["name"], "test (windows-latest)",
+        "{}",
+        status.stdout
+    );
+
+    // The dev run commits a fix; the item goes to review.
+    let fixes = json!([{
+        "role": "fixer",
+        "files": {"retry.rs": "fn retry() {\n    deliver(); // portable\n}\n"},
+        "run": ["git commit -qam 'Fix the Windows test'"],
+        "result": "fixed"
+    }]);
+    let step = pass(&env, &gh, "delivery", fixes);
+    assert!(
+        step["what"].as_str().unwrap().contains("sent to review"),
+        "{step}"
+    );
+    assert_eq!(state(&env, &id), "checks");
+    let ready = events(&env, &id, "ready");
+    assert_eq!(ready.last().unwrap()["note"], "fixes the PR's failing CI");
+    assert_ne!(git(&wt, &["rev-parse", "HEAD"]), sha);
+    let call = env.fake_calls().last().unwrap().to_string();
+    assert!(call.contains("test (windows-latest)"), "{call}");
+}
+
+#[test]
+fn a_ci_failure_the_run_cant_fix_waits_for_you() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    remote_with_main(&env);
+    let (id, _, sha) = hallmarked_item(&env, "Retry webhooks");
+    pass(&env, &gh, "shipper", json!([]));
+    ci_failed(&env, &id);
+    pr(&gh, "OPEN", "MERGEABLE", &sha);
+    pass(&env, &gh, "delivery", json!([]));
+    let step = pass(
+        &env,
+        &gh,
+        "delivery",
+        json!([{"role": "fixer", "result": "The runner ran out of disk; nothing to fix here."}]),
+    );
+    assert!(step["what"].as_str().unwrap().contains("held"), "{step}");
+    let held = events(&env, &id, "held");
+    assert_eq!(held.last().unwrap()["kind"], "ci_failed");
+    let inbox = env.hall(&env.repo, &["inbox"]);
+    assert_eq!(
+        inbox.json["entries"][0]["kind"], "ci_failed",
+        "{}",
+        inbox.stdout
+    );
+}
+
+#[test]
+fn ci_still_red_after_the_fixes_waits_for_you() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    remote_with_main(&env);
+    let (id, _, sha) = hallmarked_item(&env, "Retry webhooks");
+    pass(&env, &gh, "shipper", json!([]));
+    for _ in 0..2 {
+        append(
+            &env,
+            &id,
+            "delivery",
+            hallmark::event::Body::CiFixRequested {
+                pr_url: URL.into(),
+                failing: vec![],
+            },
+        );
+    }
+    ci_failed(&env, &id);
+    pr(&gh, "OPEN", "MERGEABLE", &sha);
+    // No third try: it's yours.
+    assert_eq!(pass(&env, &gh, "delivery", json!([]))["progress"], "idle");
+    assert_eq!(state(&env, &id), "closed");
+    let inbox = env.hall(&env.repo, &["inbox"]);
+    let e = &inbox.json["entries"][0];
+    assert_eq!(e["kind"], "ci_failed", "{}", inbox.stdout);
+    assert!(e["text"].as_str().unwrap().contains("after 2 fixes"), "{e}");
+}
+
+#[test]
+fn a_red_pr_the_office_wont_touch_escalates() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    remote_with_main(&env);
+    let (id, _, _) = hallmarked_item(&env, "Retry webhooks");
+    pass(&env, &gh, "shipper", json!([]));
+    ci_failed(&env, &id);
+    // Someone pushed to the PR: its head is not the shipped one.
+    pr(
+        &gh,
+        "OPEN",
+        "MERGEABLE",
+        "feedfacefeedfacefeedfacefeedfacefeedface",
+    );
+    assert_eq!(pass(&env, &gh, "delivery", json!([]))["progress"], "idle");
+    assert_eq!(events(&env, &id, "ci_fix_declined").len(), 1);
+    let inbox = env.hall(&env.repo, &["inbox"]);
+    let e = &inbox.json["entries"][0];
+    assert_eq!(e["kind"], "ci_failed", "{}", inbox.stdout);
+    assert!(
+        e["answer_with"][0]
+            .as_str()
+            .unwrap()
+            .starts_with("hall adopt --pr"),
+        "{e}"
+    );
+    // Not repeated on the next tick.
+    pass(&env, &gh, "delivery", json!([]));
+    assert_eq!(events(&env, &id, "ci_fix_declined").len(), 1);
+}
+
+#[test]
+fn a_new_item_starts_from_the_latest_base_not_the_main_checkout() {
+    let env = Env::initialized();
+    remote_with_main(&env);
+    // main moves on the remote; the main checkout stays behind it.
+    let latest = main_moves(&env, "other.rs", "fn other() {}\n");
+    git(&env.repo, &["reset", "-q", "--hard", "HEAD~1"]);
+    git(
+        &env.repo,
+        &["update-ref", "refs/remotes/origin/main", "HEAD"],
+    );
+    assert_ne!(git(&env.repo, &["rev-parse", "HEAD"]), latest);
+
+    let r = env.hall(&env.repo, &["new", "--no-split", "Retry webhooks"]);
+    let wt = PathBuf::from(r.json["worktree"].as_str().unwrap());
+    assert_eq!(git(&wt, &["rev-parse", "HEAD"]), latest, "{}", r.stdout);
+    // The branch tracks nothing: the ship command sets its upstream.
+    assert!(
+        git_ok(&wt, &["rev-parse", "--abbrev-ref", "@{upstream}"]).is_none(),
+        "the new branch tracks a remote branch"
+    );
+}
+
+fn git_ok(dir: &Path, args: &[&str]) -> Option<String> {
+    let out = std::process::Command::new("git")
+        .current_dir(dir)
+        .args(args)
+        .output()
+        .unwrap();
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
+}

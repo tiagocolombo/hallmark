@@ -353,6 +353,71 @@ pub fn run_and_job(link: &str) -> Option<(String, String)> {
         .then_some((run, job))
 }
 
+/// Whether a failed job ran.
+#[derive(Debug, Clone, PartialEq)]
+pub enum JobStart {
+    Ran,
+    /// Never started; the reason GitHub gives (empty when not asked for).
+    Never(String),
+    /// GitHub didn't say (an API error, a rate limit, an odd shape).
+    Unknown,
+}
+
+/// Reads whether a failed job ran. A job that never started has no steps and
+/// no runner; GitHub gives the reason in an annotation (read only when
+/// `reason` is set, to spare the API on re-checks).
+pub fn job_start(dir: &Path, link: &str, reason: bool) -> JobStart {
+    job_start_inner(dir, link, reason).unwrap_or(JobStart::Unknown)
+}
+
+fn job_start_inner(dir: &Path, link: &str, reason: bool) -> Option<JobStart> {
+    #[derive(Deserialize)]
+    struct Annotation {
+        #[serde(default)]
+        annotation_level: String,
+        #[serde(default)]
+        message: String,
+    }
+    let (_, job) = run_and_job(link)?;
+    let api = |path: String| {
+        Command::new(gh().ok()?)
+            .current_dir(dir)
+            .args(["api", &path])
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| o.stdout)
+    };
+    // Only a job object with an empty `steps` list counts; anything else
+    // (an error, an unexpected shape) means "can't tell".
+    let j: serde_json::Value = serde_json::from_slice(&api(format!(
+        "repos/{{owner}}/{{repo}}/actions/jobs/{job}"
+    ))?)
+    .ok()?;
+    let ran = !j.get("steps")?.as_array()?.is_empty()
+        || j.get("runner_name")
+            .and_then(|r| r.as_str())
+            .is_some_and(|r| !r.is_empty());
+    if ran {
+        return Some(JobStart::Ran);
+    }
+    if !reason {
+        return Some(JobStart::Never(String::new()));
+    }
+    let reason = api(format!(
+        "repos/{{owner}}/{{repo}}/check-runs/{job}/annotations"
+    ))
+    .and_then(|b| serde_json::from_slice::<Vec<Annotation>>(&b).ok())
+    .and_then(|a| {
+        a.into_iter()
+            .find(|a| a.annotation_level == "failure" && !a.message.trim().is_empty())
+            .map(|a| a.message.trim().to_string())
+    });
+    Some(JobStart::Never(
+        reason.unwrap_or_else(|| "the job never started".into()),
+    ))
+}
+
 /// The tail of a failed job's log (`gh run view --job --log-failed`),
 /// focused on the lines that say what broke. None when gh can't read it.
 pub fn failed_log(dir: &Path, link: &str, max_lines: usize) -> Option<String> {

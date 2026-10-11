@@ -247,6 +247,14 @@ pub fn new(cwd: &Path, a: NewArgs, mode: Mode) -> Result<Response> {
     let raw = intake.as_ref().and_then(|o| o.raw.clone());
     let mut plan: Option<Plan> = intake.map(|o| o.plan);
 
+    // Everything else starts from the latest base, fetched now (before the
+    // lock: a slow network must not block it): never from a main checkout
+    // that is behind, or on another branch.
+    let fresh = match (&parent, &stack) {
+        (None, None) => fresh_start(&repo, &repo.config.base),
+        _ => None,
+    };
+
     // Hold the repo lock from ID allocation until every item exists, so IDs
     // stay sequential.
     let (item, children) = repo.hall.with_repo_lock(|| {
@@ -276,7 +284,8 @@ pub fn new(cwd: &Path, a: NewArgs, mode: Mode) -> Result<Response> {
                 start: parent
                     .as_ref()
                     .map(|p| p.branch.as_str())
-                    .or(stack.as_deref()),
+                    .or(stack.as_deref())
+                    .or(fresh.as_deref()),
                 base: stack.clone(),
                 adopted: false,
                 pr: None,
@@ -913,6 +922,50 @@ fn split_blocked(repo: &Repo, title: &str, branch: Option<&str>, parts: &[Part])
     None
 }
 
+/// The commit a new item starts from: `origin/<base>` fetched now, else the
+/// local `<base>`. A commit, not a ref, so the new branch tracks nothing.
+/// None when neither exists: the worktree command starts from HEAD.
+fn fresh_start(repo: &Repo, base: &str) -> Option<String> {
+    let dir = &repo.main_root;
+    if git::ok(dir, &["remote", "get-url", "origin"]) {
+        // Bounded and never prompting: a stalled network falls back to the
+        // local copy of the base.
+        let child = Command::new("git")
+            .current_dir(dir)
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .args([
+                "fetch",
+                "--quiet",
+                "origin",
+                &format!("+refs/heads/{base}:refs/remotes/origin/{base}"),
+            ])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
+        if let Ok(mut child) = child {
+            let start = std::time::Instant::now();
+            loop {
+                match child.try_wait() {
+                    Ok(Some(_)) => break,
+                    Ok(None) if start.elapsed() < std::time::Duration::from_secs(20) => {
+                        crate::daemon::nap(std::time::Duration::from_millis(50));
+                    }
+                    _ => {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        break;
+                    }
+                }
+            }
+        }
+        if let Some(sha) = git::rev(dir, &format!("refs/remotes/origin/{base}")) {
+            return Some(sha);
+        }
+    }
+    git::rev(dir, &format!("refs/heads/{base}"))
+}
+
 /// Creates one item: its branch and worktree, then its `created` event.
 /// Call under the repo lock.
 fn create(repo: &Repo, spec: Spec) -> Result<Item> {
@@ -995,8 +1048,9 @@ fn create(repo: &Repo, spec: Spec) -> Result<Item> {
     repo.hall.refresh_item_json(id)
 }
 
-/// The worktree command for a new item. `{start}` is the branch it starts
-/// from: a child's parent branch, else nothing (the main checkout's HEAD).
+/// The worktree command for a new item. `{start}` is where it starts: a
+/// child's parent branch, the PR it stacks on, or the latest base; nothing
+/// (the main checkout's HEAD) only when no base can be found.
 /// The default command gets the start point appended; a custom command
 /// without `{start}` is left as is, and `create` fast-forwards instead.
 pub fn worktree_command(template: &str, vars: &[(&str, &str)], start: Option<&str>) -> String {

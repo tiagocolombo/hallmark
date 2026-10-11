@@ -417,12 +417,15 @@ fn stop_records_workshop_usage_once_per_request() {
 }
 
 #[test]
-fn waiting_sessions_reach_the_inbox_until_you_reply() {
+fn waiting_sessions_are_notices_until_you_reply() {
     let env = Env::initialized();
     let (id, wt) = env.new_item("x");
     let r = env.hook("notification", &input("notification", &wt, "s9"));
     assert_eq!(r.stdout, "");
+    // Your own session tells you itself: never in your office.
     let inbox = env.hall(&env.repo, &["inbox"]);
+    assert_eq!(inbox.json["entries"], json!([]), "{}", inbox.stdout);
+    let inbox = env.hall(&env.repo, &["inbox", "--notices"]);
     let e = &inbox.json["entries"][0];
     assert_eq!(e["kind"], "session_waiting");
     assert_eq!(e["item"], id);
@@ -433,7 +436,7 @@ fn waiting_sessions_reach_the_inbox_until_you_reply() {
     v["prompt"] = json!("ok, carry on");
     env.hook("user-prompt-submit", &v);
     assert_eq!(
-        env.hall(&env.repo, &["inbox"]).json["entries"]
+        env.hall(&env.repo, &["inbox", "--notices"]).json["entries"]
             .as_array()
             .unwrap()
             .len(),

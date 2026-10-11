@@ -29,6 +29,10 @@ pub struct Config {
     pub update: String,
     /// The repo's checks, run in order at the frozen commit.
     pub gates: Vec<String>,
+    /// Commands the headless dev runs (the fixer, the Delivery office) may
+    /// run besides the gates, as prefixes: a narrower test run, or what
+    /// regenerates generated files (snapshots) after a conflict.
+    pub dev_commands: Vec<String>,
     /// The command that runs the reviewer.
     pub reviewer: String,
     /// The fix engine: `claude -p` (the fixer agent), or another command run
@@ -62,6 +66,20 @@ pub struct Config {
     pub library: Library,
 }
 
+impl Config {
+    /// What a headless dev run may run: the gates, then `dev_commands`.
+    pub fn run_commands(&self) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for c in self.gates.iter().chain(&self.dev_commands) {
+            let c = c.trim();
+            if !c.is_empty() && !out.iter().any(|o| o == c) {
+                out.push(c.to_string());
+            }
+        }
+        out
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Config {
@@ -71,6 +89,7 @@ impl Default for Config {
             ship: "git push -u origin {branch} && gh pr create --base {base} --head {branch} --title {title} --body-file {body_file}".into(),
             update: "git push --force-with-lease={branch}:{pr_head} origin {branch} && gh pr edit {pr} --base {base} && gh pr comment {pr} --body-file {body_file}".into(),
             gates: Vec::new(),
+            dev_commands: Vec::new(),
             reviewer: "claude -p".into(),
             fixer: "claude -p".into(),
             claude_args: Vec::new(),

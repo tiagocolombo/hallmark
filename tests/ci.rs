@@ -28,7 +28,7 @@ fn fake_gh(env: &Env) -> PathBuf {
     std::fs::write(
         &gh,
         format!(
-            "#!/bin/sh\ncase \"$1 $2\" in\n  'pr checks') cat '{d}/checks.json' ;;\n  'pr view') case \"$*\" in *--jq*) cat '{d}/state.txt' ;; *) cat '{d}/pr.json' ;; esac ;;\n  'run view') cat '{d}/log.txt' ;;\n  api*) echo '[]' ;;\n  *) exit 1 ;;\nesac\n"
+            "#!/bin/sh\ncase \"$1 $2\" in\n  'pr checks') cat '{d}/checks.json' ;;\n  'pr view') case \"$*\" in *--jq*) cat '{d}/state.txt' ;; *) cat '{d}/pr.json' ;; esac ;;\n  'run view') cat '{d}/log.txt' ;;\n  api*) case \"$2\" in *actions/jobs/*) cat '{d}/job.json' 2>/dev/null || echo '[]' ;; *annotations) cat '{d}/annotations.json' 2>/dev/null || echo '[]' ;; *) echo '[]' ;; esac ;;\n  *) exit 1 ;;\nesac\n"
         ),
     )
     .unwrap();
@@ -110,14 +110,17 @@ fn a_red_check_lands_in_the_inbox_until_a_follow_up_takes_it() {
     assert_eq!(ci_pass(&env, &gh)["steps"][0]["progress"], "idle");
     assert_eq!(events(&env, &id, "pr_checks").len(), 1);
 
-    let inbox = env.hall(&env.repo, &["inbox"]);
-    let entry = inbox.json["entries"]
+    // On an open PR it is the Delivery office's to fix: a notice, never in
+    // your office.
+    assert_eq!(ci_entries(&env), 0);
+    let notices = env.hall(&env.repo, &["inbox", "--notices"]);
+    let entry = notices.json["entries"]
         .as_array()
         .unwrap()
         .iter()
         .find(|e| e["kind"] == "ci_failed")
         .cloned()
-        .expect("a ci_failed entry");
+        .unwrap_or_else(|| panic!("a ci_failed notice: {}", notices.stdout));
     assert_eq!(entry["item"], id.as_str());
     assert_eq!(
         entry["answer_with"][0],
@@ -231,8 +234,18 @@ fn a_pr_whose_head_moved_is_not_stacked_on() {
     assert_eq!(j["base"], "main");
 }
 
+/// `ci_failed` entries in your office.
 fn ci_entries(env: &Env) -> usize {
-    env.hall(&env.repo, &["inbox"]).json["entries"]
+    ci_in(env, &["inbox"])
+}
+
+/// `ci_failed` notices: the loop is on it, or it's news.
+fn ci_notices(env: &Env) -> usize {
+    ci_in(env, &["inbox", "--notices"])
+}
+
+fn ci_in(env: &Env, args: &[&str]) -> usize {
+    env.hall(&env.repo, args).json["entries"]
         .as_array()
         .unwrap()
         .iter()
@@ -241,7 +254,7 @@ fn ci_entries(env: &Env) -> usize {
 }
 
 #[test]
-fn a_pr_merged_with_red_checks_keeps_its_ci_failed_entry() {
+fn a_pr_merged_with_red_checks_keeps_its_ci_failed_notice() {
     let env = Env::initialized();
     let gh = fake_gh(&env);
     let (id, _) = shipped(&env);
@@ -258,7 +271,9 @@ fn a_pr_merged_with_red_checks_keeps_its_ci_failed_entry() {
     assert_eq!(recorded.len(), 2);
     assert_eq!(recorded[1]["passed"], false);
     assert_eq!(recorded[1]["ended"], "merged");
-    assert_eq!(ci_entries(&env), 1);
+    // Merged: nothing left for the Delivery office, and news for you.
+    assert_eq!(ci_entries(&env), 0);
+    assert_eq!(ci_notices(&env), 1);
     // The watch stops there.
     std::fs::remove_file(env.repo.join(".git/hallmark/ci-watch.json")).unwrap();
     assert_eq!(ci_pass(&env, &gh)["steps"][0]["progress"], "idle");
@@ -273,7 +288,7 @@ fn a_pr_closed_with_red_checks_leaves_the_inbox_without_passing() {
     pr(&gh, "OPEN", "x", "");
     checks(&gh, json!([{"name": "test", "bucket": "fail"}]));
     assert_eq!(ci_pass(&env, &gh)["steps"][0]["progress"], "worked");
-    assert_eq!(ci_entries(&env), 1);
+    assert_eq!(ci_notices(&env), 1);
     pr(&gh, "CLOSED", "x", "");
     std::fs::remove_file(env.repo.join(".git/hallmark/ci-watch.json")).unwrap();
     assert_eq!(ci_pass(&env, &gh)["steps"][0]["progress"], "worked");
@@ -281,6 +296,7 @@ fn a_pr_closed_with_red_checks_leaves_the_inbox_without_passing() {
     assert_eq!(recorded[1]["passed"], false);
     assert_eq!(recorded[1]["ended"], "closed");
     assert_eq!(ci_entries(&env), 0);
+    assert_eq!(ci_notices(&env), 0);
 }
 
 #[test]
@@ -296,10 +312,12 @@ fn a_check_that_failed_twice_is_named_once() {
                {"name": "fmt", "bucket": "fail"}, {"name": "clippy", "bucket": "fail"}]),
     );
     assert_eq!(ci_pass(&env, &gh)["steps"][0]["progress"], "worked");
-    let inbox = env.hall(&env.repo, &["inbox"]);
-    let text = inbox.json["entries"][0]["text"].as_str().unwrap();
+    let notices = env.hall(&env.repo, &["inbox", "--notices"]);
+    let text = notices.json["entries"][0]["text"].as_str().unwrap();
     assert!(
-        text.ends_with(&format!("CI failed on {URL}: fmt, clippy")),
+        text.ends_with(&format!(
+            "CI failed on {URL}: fmt, clippy; the Delivery office fixes it"
+        )),
         "{text}"
     );
 }
@@ -323,4 +341,173 @@ fn a_knowledge_items_red_checks_never_wait_for_you() {
     assert_eq!(ci_pass(&env, &gh)["steps"][0]["progress"], "worked");
     assert_eq!(events(&env, &id, "pr_checks").len(), 1, "still recorded");
     assert_eq!(ci_entries(&env), 0);
+}
+
+#[test]
+fn ci_that_never_started_is_one_entry_and_nothing_to_fix() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    let (id, _) = shipped(&env);
+    pr(&gh, "OPEN", "x", "");
+    // GitHub never started the jobs: no steps, no runner, and a reason.
+    let dir = gh.parent().unwrap();
+    std::fs::write(
+        dir.join("job.json"),
+        json!({"steps": [], "runner_name": "", "conclusion": "failure"}).to_string(),
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("annotations.json"),
+        json!([{"annotation_level": "failure",
+                "message": "The job was not started because your spending limit needs to be increased."}])
+        .to_string(),
+    )
+    .unwrap();
+    checks(
+        &gh,
+        json!([{"name": "fmt", "bucket": "fail", "link": "https://github.com/acme/app/actions/runs/7/job/9"},
+               {"name": "test", "bucket": "fail", "link": "https://github.com/acme/app/actions/runs/7/job/10"}]),
+    );
+    let r = ci_pass(&env, &gh);
+    assert!(
+        r["steps"][0]["what"]
+            .as_str()
+            .unwrap()
+            .contains("CI never ran"),
+        "{r}"
+    );
+    let recorded = events(&env, &id, "pr_checks");
+    assert!(
+        recorded[0]["not_started"]
+            .as_str()
+            .unwrap()
+            .contains("spending limit")
+    );
+    // Not a code failure: no ci_failed anywhere, and one ci_down for you.
+    assert_eq!(ci_entries(&env), 0);
+    assert_eq!(ci_notices(&env), 0);
+    let inbox = env.hall(&env.repo, &["inbox"]);
+    let entries = inbox.json["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 1, "{}", inbox.stdout);
+    assert_eq!(entries[0]["kind"], "ci_down");
+    let text = entries[0]["text"].as_str().unwrap();
+    assert!(
+        text.contains("#1") && text.contains("spending limit"),
+        "{text}"
+    );
+}
+
+#[test]
+fn an_old_red_record_of_an_outage_joins_ci_down() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    let (id, _) = shipped(&env);
+    let job = "https://github.com/acme/app/actions/runs/7/job/9";
+    // Recorded before `not_started` existed.
+    append(
+        &env,
+        &id,
+        "ci",
+        Body::PrChecks {
+            pr_url: URL.into(),
+            passed: false,
+            failing: vec![hallmark::event::FailingCheck {
+                name: "fmt".into(),
+                link: Some(job.into()),
+            }],
+            ended: None,
+            not_started: None,
+        },
+    );
+    pr(&gh, "OPEN", "x", "");
+    let dir = gh.parent().unwrap();
+    std::fs::write(
+        dir.join("job.json"),
+        json!({"steps": [], "runner_name": "", "conclusion": "failure"}).to_string(),
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("annotations.json"),
+        json!([{"annotation_level": "failure",
+                "message": "The job was not started because your spending limit needs to be increased."}])
+        .to_string(),
+    )
+    .unwrap();
+    checks(&gh, json!([{"name": "fmt", "bucket": "fail", "link": job}]));
+    ci_pass(&env, &gh);
+    let recorded = events(&env, &id, "pr_checks");
+    assert_eq!(recorded.len(), 2, "recorded again");
+    assert!(recorded[1]["not_started"].is_string(), "{recorded:?}");
+    let inbox = env.hall(&env.repo, &["inbox"]);
+    assert_eq!(
+        inbox.json["entries"][0]["kind"], "ci_down",
+        "{}",
+        inbox.stdout
+    );
+}
+
+fn outage_files(gh: &Path) {
+    let dir = gh.parent().unwrap();
+    std::fs::write(
+        dir.join("job.json"),
+        json!({"steps": [], "runner_name": "", "conclusion": "failure"}).to_string(),
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("annotations.json"),
+        json!([{"annotation_level": "failure", "message": "spending limit"}]).to_string(),
+    )
+    .unwrap();
+}
+
+fn forget_reads(env: &Env) {
+    std::fs::remove_file(env.repo.join(".git/hallmark/ci-watch.json")).unwrap();
+}
+
+#[test]
+fn an_outage_that_reruns_and_fails_for_real_is_recorded_as_a_failure() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    let (id, _) = shipped(&env);
+    pr(&gh, "OPEN", "x", "");
+    let job = "https://github.com/acme/app/actions/runs/7/job/9";
+    outage_files(&gh);
+    checks(&gh, json!([{"name": "fmt", "bucket": "fail", "link": job}]));
+    ci_pass(&env, &gh);
+    assert!(events(&env, &id, "pr_checks")[0]["not_started"].is_string());
+    // The re-run starts and fails: GitHub says the job ran.
+    std::fs::write(
+        gh.parent().unwrap().join("job.json"),
+        json!({"steps": [{"name": "fmt"}], "runner_name": "r1"}).to_string(),
+    )
+    .unwrap();
+    forget_reads(&env);
+    ci_pass(&env, &gh);
+    let recorded = events(&env, &id, "pr_checks");
+    assert_eq!(recorded.len(), 2, "{recorded:?}");
+    assert!(recorded[1]["not_started"].is_null(), "{recorded:?}");
+    assert_eq!(recorded[1]["passed"], false);
+}
+
+#[test]
+fn an_api_error_while_rechecking_an_outage_keeps_it_as_ci_down() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    let (id, _) = shipped(&env);
+    pr(&gh, "OPEN", "x", "");
+    let job = "https://github.com/acme/app/actions/runs/7/job/9";
+    outage_files(&gh);
+    checks(&gh, json!([{"name": "fmt", "bucket": "fail", "link": job}]));
+    ci_pass(&env, &gh);
+    // GitHub's API now answers with something that isn't a job.
+    std::fs::write(gh.parent().unwrap().join("job.json"), "HTTP 403").unwrap();
+    forget_reads(&env);
+    ci_pass(&env, &gh);
+    assert_eq!(events(&env, &id, "pr_checks").len(), 1, "outage kept");
+    let inbox = env.hall(&env.repo, &["inbox"]);
+    assert_eq!(
+        inbox.json["entries"][0]["kind"], "ci_down",
+        "{}",
+        inbox.stdout
+    );
 }

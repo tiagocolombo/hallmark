@@ -225,6 +225,14 @@ expression: v
           "required": false,
           "syntax": "--all",
           "takes_value": false
+        },
+        {
+          "default": "false",
+          "help": "List notices instead: what the loop is handling on its own, or news (stuck items, waiting sessions, CI being fixed, proposed learnings). They never reach your office and are never notified",
+          "name": "notices",
+          "required": false,
+          "syntax": "--notices",
+          "takes_value": false
         }
       ],
       "name": "inbox",

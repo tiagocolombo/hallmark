@@ -18,6 +18,7 @@ gates       = []
 reviewer    = "claude -p"
 fixer       = "claude -p"   # or another fix engine, run in the worktree
 claude_args = []            # extra arguments for every headless claude -p run
+dev_commands = []           # what headless dev runs may run besides the gates
 max_rejects = 3             # rejected reviews before the item is escalated to you
 auto_ready  = true          # propose-ready goes straight to review when nothing is left to confirm
 stuck_after = "30m"

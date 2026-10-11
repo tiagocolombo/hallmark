@@ -196,8 +196,15 @@ fn the_watchman_flags_a_silent_item_once() {
         1
     );
 
-    // It is in your inbox.
+    // A notice, not an escalation: your office stays empty.
     let inbox = env.hall(&env.repo, &["inbox"]);
+    assert_eq!(
+        inbox.json["entries"],
+        serde_json::json!([]),
+        "{}",
+        inbox.stdout
+    );
+    let inbox = env.hall(&env.repo, &["inbox", "--notices"]);
     let entries = inbox.json["entries"].as_array().unwrap();
     assert!(
         entries
