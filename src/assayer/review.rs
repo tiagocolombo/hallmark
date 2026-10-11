@@ -41,6 +41,14 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
     };
     let events = repo.hall.read_item(item.id)?;
     let (req, review_base) = request(repo, item, &events, &sha)?;
+    // The review checkout goes away on every exit, verdict or not.
+    struct Cleanup<'a>(&'a crate::repo::Repo, crate::item::ItemId);
+    impl Drop for Cleanup<'_> {
+        fn drop(&mut self) {
+            super::remove_review_checkout(self.0, self.1);
+        }
+    }
+    let _cleanup = Cleanup(repo, item.id);
     match runner::run_metered(repo, ctx.runner, Some(item.id), &req)? {
         Metered::Blocked(stop) => Ok(stop.progress()),
         Metered::Failed {
@@ -120,7 +128,7 @@ pub fn request(
 ) -> Result<(RunRequest, String)> {
     let default_effort = repo.config.budget.effort(Role::Reviewer);
     let review = super::prompt::prepare(repo, item, events, sha, default_effort.as_deref())?;
-    let wt = super::checkout(repo, sha)?;
+    let wt = super::checkout_review(repo, item.id, sha)?.path;
     let mut req = runner::request(
         repo,
         Role::Reviewer,

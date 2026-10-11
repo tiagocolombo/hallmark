@@ -43,6 +43,8 @@ pub struct Config {
     pub budget: Budget,
     /// How the Front Desk plans a request.
     pub intake: Intake,
+    /// How many items each phase works on at once, per repo.
+    pub parallel: Parallel,
     /// Notification channels. Usually set in the user config
     /// (`<user data dir>/hallmark/config.toml`), which this overrides.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -68,6 +70,7 @@ impl Default for Config {
             capture: Capture::default(),
             budget: Budget::default(),
             intake: Intake::default(),
+            parallel: Parallel::default(),
             notify: None,
             library: Library::default(),
         }
@@ -227,6 +230,42 @@ impl Default for Budget {
             fix: None,
             intake: None,
             librarian: None,
+        }
+    }
+}
+
+/// `[parallel]`: how many items each phase works on at once, per repo
+/// (ADR 0026). Checks share build caches and sometimes ports, so each check
+/// slot has its own assay worktree; set `checks = 1` when tests can't run
+/// side by side.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct Parallel {
+    pub checks: u32,
+    pub review: u32,
+    pub fix: u32,
+    pub ship: u32,
+}
+
+impl Default for Parallel {
+    fn default() -> Self {
+        Parallel {
+            checks: 2,
+            review: 4,
+            fix: 4,
+            ship: 2,
+        }
+    }
+}
+
+impl Parallel {
+    /// Slots for a daemon worker: the assayer covers checks and review.
+    pub fn slots(&self, worker: &str) -> u32 {
+        match worker {
+            "assayer" => self.checks.max(1) + self.review.max(1),
+            "fixer" => self.fix.max(1),
+            "shipper" => self.ship.max(1),
+            _ => 1,
         }
     }
 }
