@@ -351,6 +351,8 @@ pub enum DaemonAction {
     },
     /// Is it running, paused, and what is it doing?
     Status,
+    /// Lift a pause now (a rate limit or the daily budget), before its time.
+    Resume,
     /// Run the loop in the foreground (what `start` launches).
     Run {
         /// One pass over the repos, then exit.
