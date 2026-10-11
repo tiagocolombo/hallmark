@@ -142,6 +142,6 @@ pub fn watch(cwd: &Path, a: WatchArgs, mode: Mode) -> Result<Response> {
                 next,
             ));
         }
-        std::thread::sleep(interval);
+        crate::daemon::nap(interval);
     }
 }

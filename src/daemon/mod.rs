@@ -25,6 +25,25 @@ use crate::worker::{ORDER, Progress, WorkerCtx};
 use state::{Pause, RepoPass};
 use targets::{Skip, Target};
 
+/// Sleeps for `d`, and never panics.
+///
+/// Not `std::thread::sleep`: on macOS its `nanosleep` can fail with
+/// `EAGAIN`, and std asserts that the only failure is `EINTR`, so the
+/// calling thread panics (`assertion left == right failed, left: 35,
+/// right: 4` at `std/src/sys/thread/unix.rs`). The daemon's loop died of
+/// that several times a day (ADR 0030). A timed park has no such assertion;
+/// it may wake early, so this loops until the time is up.
+pub fn nap(d: std::time::Duration) {
+    let end = std::time::Instant::now() + d;
+    loop {
+        let now = std::time::Instant::now();
+        if now >= end {
+            return;
+        }
+        std::thread::park_timeout(end - now);
+    }
+}
+
 /// One worker's result in a pass.
 #[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 pub struct Step {
@@ -382,6 +401,17 @@ pub fn record_pause(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nap_sleeps_at_least_as_long_as_asked() {
+        let t = std::time::Instant::now();
+        nap(std::time::Duration::from_millis(30));
+        assert!(t.elapsed() >= std::time::Duration::from_millis(30));
+        // Nothing to wait for returns at once.
+        let t = std::time::Instant::now();
+        nap(std::time::Duration::ZERO);
+        assert!(t.elapsed() < std::time::Duration::from_millis(30));
+    }
 
     #[test]
     fn a_pause_reaches_every_served_journal() {

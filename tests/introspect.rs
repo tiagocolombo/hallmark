@@ -278,7 +278,7 @@ fn an_entry_that_leaves_and_returns_is_announced_again() {
     assert!(!context(&prompt).contains("waiting for the human"));
 
     // ...then comes back: it is a new occurrence.
-    std::thread::sleep(std::time::Duration::from_millis(20));
+    hallmark::daemon::nap(std::time::Duration::from_millis(20));
     env.hall(&wt, &["propose-ready", "--summary", "done again"]);
     let prompt = env.hook(
         "user-prompt-submit",
