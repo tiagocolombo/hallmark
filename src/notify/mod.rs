@@ -358,6 +358,7 @@ mod tests {
             session: Some("s".into()),
             since: Utc::now(),
             answer_with: vec!["hall answer Q-12 billed".into()],
+            notice: false,
         };
         let m = message("platform", &e, false);
         assert_eq!(m.title, "platform: H-0043 question");

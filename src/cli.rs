@@ -203,6 +203,11 @@ pub struct InboxArgs {
     /// Show dismissed entries too.
     #[arg(long)]
     pub all: bool,
+    /// List notices instead: what the loop is handling on its own, or news
+    /// (stuck items, waiting sessions, CI being fixed, proposed learnings).
+    /// They never reach your office and are never notified.
+    #[arg(long, conflicts_with_all = ["entry", "clear", "all"])]
+    pub notices: bool,
 }
 
 #[derive(Debug, Args)]

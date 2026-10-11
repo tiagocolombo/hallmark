@@ -61,6 +61,9 @@ pub struct ItemView {
     /// New PR comments waiting for the Delivery office's dev run.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub feedback: Option<crate::item::FeedbackRequest>,
+    /// The PR's failing CI, waiting for the Delivery office's dev run.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ci_fix: Option<crate::item::CiFixRequest>,
     /// How the shipped PR ended: merged or closed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub delivered: Option<String>,
@@ -88,6 +91,7 @@ impl From<&Item> for ItemView {
             drop_reason: i.drop_reason.clone(),
             rebase: i.rebase.clone(),
             feedback: i.feedback.clone(),
+            ci_fix: i.ci_fix.clone(),
             delivered: i.delivered.clone(),
             created_at: i.created_at,
             state_since: i.state_since,

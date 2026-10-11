@@ -1,7 +1,9 @@
 //! The CI watch (ADR 0025): after the shipper opens a PR, the daemon follows
-//! its checks until they finish, and records the result. A red check is
-//! feedback on a closed item: it lands in the inbox (`ci_failed`) until a
-//! follow-up item (`hall new --follow-up <pr>`) takes it on.
+//! its checks until they finish, and records the result. A red check on an
+//! open PR is the Delivery office's to fix (ADR 0031); one on a merged PR is
+//! a notice until a follow-up item (`hall new --follow-up <pr>`) takes it on.
+//! Jobs that never started (billing, no runners) aren't code failures: they
+//! are recorded as `not_started` and reach you as one `ci_down` entry.
 //!
 //! The local gates run on one machine; CI runs the full matrix. H-0001 was
 //! the reason: a Linux-only test race passed the gates and the review, failed
@@ -184,6 +186,20 @@ pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
     }
 }
 
+/// GitHub's reason when none of the failing checks ever started, else None.
+/// Only checks with a job link are asked; one that ran settles it.
+fn not_started(dir: &std::path::Path, failing: &[FailingCheck]) -> Option<String> {
+    let links: Vec<&str> = failing.iter().filter_map(|f| f.link.as_deref()).collect();
+    if links.is_empty() || links.len() < failing.len() {
+        return None;
+    }
+    let mut why = None;
+    for l in links {
+        why = Some(crate::gh::never_started(dir, l)?);
+    }
+    why
+}
+
 /// `merged` or `closed` for a PR that left the open state.
 pub fn ended_by(state: &str) -> Option<String> {
     match state {
@@ -202,6 +218,11 @@ fn record(
     ended: Option<String>,
 ) -> Result<Progress> {
     let names: Vec<String> = failing.iter().map(|f| f.name.clone()).collect();
+    let not_started = if passed {
+        None
+    } else {
+        not_started(&ctx.repo.main_root, &failing)
+    };
     ctx.repo.hall.append_item(
         id,
         &Event::new(
@@ -212,11 +233,14 @@ fn record(
                 passed,
                 failing,
                 ended: ended.clone(),
+                not_started: not_started.clone(),
             },
         ),
     )?;
     let what = if passed {
         format!("{id}: CI passed on {url}")
+    } else if let Some(why) = &not_started {
+        format!("{id}: CI never ran on {url}: {why}")
     } else if let Some(e) = &ended {
         format!("{id}: {url} {e} with CI failing: {}", names.join(", "))
     } else {

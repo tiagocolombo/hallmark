@@ -57,11 +57,13 @@ pub struct Index {
     root: std::path::PathBuf,
 }
 
-/// Something waiting for you.
+/// Something waiting for you, or a notice about what the loop is doing.
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct InboxEntry {
-    /// question, escalated, ready, session_waiting, budget, run_failed,
-    /// ship_failed, stuck, daemon_stopped, learnings
+    /// Escalations: question, escalated, ready, budget, run_failed,
+    /// ship_failed, conflict, feedback, ci_failed (after the Delivery
+    /// office's fixes), ci_down, daemon_stopped. Notices: stuck,
+    /// session_waiting, ci_failed (merged, or being fixed), learnings.
     pub kind: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub item: Option<ItemId>,
@@ -77,6 +79,11 @@ pub struct InboxEntry {
     pub since: DateTime<Utc>,
     /// The command that settles it.
     pub answer_with: Vec<String>,
+    /// A notice, not an escalation: the loop is handling it, or it is news.
+    /// Notices never reach your office (`hall inbox --notices` lists them).
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub notice: bool,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
@@ -462,7 +469,8 @@ impl Index {
     }
 
     /// Everything waiting for you, oldest first, without what you
-    /// dismissed (`hall inbox --dismiss`, `--clear`).
+    /// dismissed (`hall inbox --dismiss`, `--clear`). Only escalations: what
+    /// the loop gave up on, or what only a person can decide.
     pub fn inbox(&self) -> Result<Vec<InboxEntry>> {
         let dismissed = crate::journal::dismissed(&self.root);
         let mut out = self.inbox_all()?;
@@ -470,8 +478,23 @@ impl Index {
         Ok(out)
     }
 
-    /// Every inbox entry, dismissed ones included.
+    /// Every escalation, dismissed ones included.
     pub fn inbox_all(&self) -> Result<Vec<InboxEntry>> {
+        let mut out = self.entries()?;
+        out.retain(|e| !e.notice);
+        Ok(out)
+    }
+
+    /// What the loop is handling on its own, or news: never in your office,
+    /// never notified.
+    pub fn notices(&self) -> Result<Vec<InboxEntry>> {
+        let mut out = self.entries()?;
+        out.retain(|e| e.notice);
+        Ok(out)
+    }
+
+    /// Escalations and notices, oldest first.
+    fn entries(&self) -> Result<Vec<InboxEntry>> {
         let mut out = Vec::new();
         // A question about a closed or dropped item waits for nobody.
         let mut stmt = self.conn.prepare(
@@ -496,6 +519,7 @@ impl Index {
                 default: q.default,
                 session: q.session,
                 since: q.asked_at,
+                notice: false,
             });
         }
         for item in self.items(false)? {
@@ -539,6 +563,7 @@ impl Index {
                                 format!("hall log {}", item.id),
                                 format!("hall pull-back {}", item.id),
                             ],
+                            notice: false,
                         });
                     } else if let Some(since) = item.stuck_since {
                         out.push(InboxEntry {
@@ -559,6 +584,8 @@ impl Index {
                                 format!("hall status {}", item.id),
                                 "hall daemon status".into(),
                             ],
+                            // The watchman's flag: news, not a decision.
+                            notice: true,
                         });
                     }
                     continue;
@@ -574,11 +601,12 @@ impl Index {
                 session: None,
                 since: item.state_since,
                 answer_with: cmds,
+                notice: false,
             });
         }
         // One entry per waiting session: its latest unresolved notification.
         let mut stmt = self.conn.prepare(
-            "SELECT item, session, MAX(t), message FROM notifications
+            "SELECT item, session, MAX(t), message, kind FROM notifications
              WHERE resolved_at IS NULL GROUP BY session",
         )?;
         let rows = stmt.query_map([], |r| {
@@ -587,10 +615,11 @@ impl Index {
                 r.get::<_, Option<String>>(1)?,
                 r.get::<_, String>(2)?,
                 r.get::<_, Option<String>>(3)?,
+                r.get::<_, Option<String>>(4)?,
             ))
         })?;
         for row in rows {
-            let (item, session, t, message) = row?;
+            let (item, session, t, message, kind) = row?;
             let item = item.and_then(|s| s.parse().ok());
             out.push(InboxEntry {
                 kind: "session_waiting".into(),
@@ -605,10 +634,17 @@ impl Index {
                 }],
                 session,
                 since: parse_time(&t),
+                // Your own Claude Code session tells you itself; only an
+                // answer the loop couldn't deliver to it escalates.
+                notice: kind.as_deref() != Some(crate::resume::GAVE_UP),
             });
         }
         // A shipped PR whose CI failed, until a follow-up item takes it on.
+        // On an open PR the Delivery office fixes it; it reaches you only
+        // when its fixes didn't turn CI green. CI that never ran (billing,
+        // runners) is one entry for every PR, since only you can fix it.
         let all = self.items(true)?;
+        let mut down: Vec<(&Item, &str)> = Vec::new();
         for item in &all {
             let (Some(ci), Some(url)) = (&item.ci, &item.pr_url) else {
                 continue;
@@ -621,6 +657,12 @@ impl Index {
             if ci.passed || followed || ci.ended.as_deref() == Some("closed") {
                 continue;
             }
+            if let Some(why) = &ci.not_started {
+                if ci.ended.is_none() {
+                    down.push((item, why));
+                }
+                continue;
+            }
             // A check that ran for several events (push, pull_request) once.
             let mut failing: Vec<&str> = Vec::new();
             for f in &ci.failing {
@@ -628,16 +670,69 @@ impl Index {
                     failing.push(f);
                 }
             }
+            let open = ci.ended.is_none() && item.state == State::Closed;
+            let gave_up = open && item.ci_fixes >= crate::delivery::CI_FIXES;
+            let text = if gave_up {
+                format!(
+                    "{}: CI still fails on {url} after {} fixes: {}",
+                    item.title,
+                    item.ci_fixes,
+                    failing.join(", ")
+                )
+            } else if open {
+                format!(
+                    "{}: CI failed on {url}: {}; the Delivery office fixes it",
+                    item.title,
+                    failing.join(", ")
+                )
+            } else {
+                format!("{}: CI failed on {url}: {}", item.title, failing.join(", "))
+            };
             out.push(InboxEntry {
                 kind: "ci_failed".into(),
                 item: Some(item.id),
                 qid: None,
-                text: format!("{}: CI failed on {url}: {}", item.title, failing.join(", ")),
+                text,
                 options: vec![],
                 default: None,
                 session: None,
                 since: ci.t,
                 answer_with: vec![format!("hall new --follow-up {url}")],
+                notice: !gave_up,
+            });
+        }
+        if let Some(since) = down
+            .iter()
+            .filter_map(|(i, _)| i.ci.as_ref())
+            .map(|c| c.t)
+            .min()
+        {
+            let why = down[0].1;
+            let prs: Vec<String> = down
+                .iter()
+                .filter_map(|(i, _)| i.pr_url.as_deref())
+                .map(|u| {
+                    u.rsplit('/')
+                        .next()
+                        .map(|n| format!("#{n}"))
+                        .unwrap_or_default()
+                })
+                .collect();
+            out.push(InboxEntry {
+                kind: "ci_down".into(),
+                item: None,
+                qid: None,
+                text: format!("CI never ran on {}: {why}", prs.join(", ")),
+                options: vec![],
+                default: None,
+                session: None,
+                since,
+                answer_with: down
+                    .iter()
+                    .filter_map(|(i, _)| i.pr_url.as_deref())
+                    .map(|u| format!("gh pr checks {u}"))
+                    .collect(),
+                notice: false,
             });
         }
         // Proposed learnings in the local Library (ADR 0027): one entry.
@@ -657,6 +752,8 @@ impl Index {
                 session: None,
                 since: since.unwrap_or_else(Utc::now),
                 answer_with: vec!["hall library review".into()],
+                // The Library never waits for you (ADR 0027).
+                notice: true,
             });
         }
         let now = Utc::now();
@@ -673,6 +770,7 @@ impl Index {
                 session: None,
                 since,
                 answer_with: vec!["hall daemon start".into(), "hall daemon status".into()],
+                notice: false,
             });
         }
         // Knowledge items left by ADR 0021 never wait for you: only what

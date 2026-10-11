@@ -204,12 +204,49 @@ pub fn log(cwd: &Path, a: LogArgs) -> Result<Response> {
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct InboxOut {
     pub entries: Vec<InboxEntry>,
+    /// Notices left out: what the loop is handling on its own, or news
+    /// (`hall inbox --notices`). With `--notices`, the entries are notices.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub notices: usize,
+    #[serde(skip)]
+    #[schemars(skip)]
+    listing_notices: bool,
+}
+
+fn is_zero(n: &usize) -> bool {
+    *n == 0
 }
 
 impl Render for InboxOut {
     fn render(&self) -> String {
+        if self.listing_notices {
+            if self.entries.is_empty() {
+                return "No notices.\n".into();
+            }
+            let mut s = format!(
+                "{} notice{}: the loop is on it, or it's news\n\n",
+                self.entries.len(),
+                if self.entries.len() == 1 { "" } else { "s" }
+            );
+            for e in &self.entries {
+                let who = e.item.map(|i| i.to_string()).unwrap_or_default();
+                s.push_str(&format!(
+                    "  {:15} {:7} {}  {}\n",
+                    e.kind,
+                    who,
+                    clip(&e.text, 60),
+                    age(e.since)
+                ));
+            }
+            return s;
+        }
+        let more = match self.notices {
+            0 => String::new(),
+            1 => "1 notice: `hall inbox --notices`\n".into(),
+            n => format!("{n} notices: `hall inbox --notices`\n"),
+        };
         if self.entries.is_empty() {
-            return "Nothing needs you.\n".into();
+            return format!("Nothing needs you.\n{more}");
         }
         let mut s = format!("⚑ {} waiting\n\n", self.entries.len());
         for e in &self.entries {
@@ -244,6 +281,23 @@ pub fn inbox(cwd: &Path, a: crate::cli::InboxArgs) -> Result<Response> {
     let repo = Repo::discover(cwd)?;
     repo.require_init()?;
     let ix = repo.index()?;
+    if a.notices {
+        let entries = ix.notices()?;
+        let next = entries
+            .iter()
+            .flat_map(|e| e.answer_with.first().cloned())
+            .take(5)
+            .chain(std::iter::once("hall inbox".to_string()))
+            .collect::<Vec<_>>();
+        return Ok(Response::new(
+            InboxOut {
+                entries,
+                notices: 0,
+                listing_notices: true,
+            },
+            next,
+        ));
+    }
     let entries = if a.all { ix.inbox_all()? } else { ix.inbox()? };
     if a.clear {
         return dismiss(&repo, entries);
@@ -277,7 +331,18 @@ pub fn inbox(cwd: &Path, a: crate::cli::InboxArgs) -> Result<Response> {
     if !entries.is_empty() {
         next.push("hall inbox --clear".into());
     }
-    Ok(Response::new(InboxOut { entries }, next))
+    let notices = ix.notices()?.len();
+    if notices > 0 {
+        next.push("hall inbox --notices".into());
+    }
+    Ok(Response::new(
+        InboxOut {
+            entries,
+            notices,
+            listing_notices: false,
+        },
+        next,
+    ))
 }
 
 /// What `hall inbox --dismiss` and `--clear` did.

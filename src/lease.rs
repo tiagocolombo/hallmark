@@ -149,7 +149,8 @@ pub fn candidates(repo: &Repo, role: &str, holder: &str) -> Result<Vec<Item>> {
             "fixer" => i.state == State::Fixing,
             "shipper" => i.state == State::Hallmarked,
             "delivery" => {
-                i.state == State::Development && (i.rebase.is_some() || i.feedback.is_some())
+                i.state == State::Development
+                    && (i.rebase.is_some() || i.feedback.is_some() || i.ci_fix.is_some())
             }
             _ => false,
         })

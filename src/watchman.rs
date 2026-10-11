@@ -111,6 +111,8 @@ mod tests {
             ci: None,
             rebase: None,
             feedback: None,
+            ci_fix: None,
+            ci_fixes: 0,
             delivered: None,
             hold: None,
             stuck_since: None,

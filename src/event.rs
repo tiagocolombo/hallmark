@@ -398,6 +398,13 @@ pub enum Body {
         /// The newest comment's time: later comments are new next time.
         until: DateTime<Utc>,
     },
+    /// The shipped PR's CI failed: a headless dev run (the Delivery office)
+    /// fixes it in development and sends the item to review; the shipper
+    /// then updates the same PR.
+    CiFixRequested {
+        pr_url: String,
+        failing: Vec<FailingCheck>,
+    },
     /// The shipped PR left the open state: `merged` or `closed`. The
     /// Delivery office stops watching it.
     Delivered {
@@ -421,6 +428,10 @@ pub enum Body {
         /// `merged` or `closed`. The checks did not pass.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         ended: Option<String>,
+        /// Set when none of the failing jobs ever started (billing, no
+        /// runners): GitHub's reason. There is no code to fix.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        not_started: Option<String>,
     },
 }
 
@@ -489,6 +500,7 @@ impl Body {
             Body::InboxDismissed { .. } => "inbox_dismissed",
             Body::Rebased { .. } => "rebased",
             Body::RebaseRequested { .. } => "rebase_requested",
+            Body::CiFixRequested { .. } => "ci_fix_requested",
             Body::Delivered { .. } => "delivered",
             Body::FeedbackRequested { .. } => "feedback_requested",
         }
@@ -743,6 +755,17 @@ impl Body {
                     )
                 }
             }
+            Body::CiFixRequested { failing, .. } => format!(
+                "CI failed on the PR: {} · fix requested",
+                c(
+                    &failing
+                        .iter()
+                        .map(|f| f.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    50
+                )
+            ),
             Body::Delivered { pr_url, outcome } => format!("PR {outcome} · {pr_url}"),
             Body::FeedbackRequested { comments, .. } => format!(
                 "{} new PR comment{} to address",
@@ -826,6 +849,8 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
         ci: None,
         rebase: None,
         feedback: None,
+        ci_fix: None,
+        ci_fixes: 0,
         delivered: None,
     };
     let mut ledger = Ledger::default();
@@ -845,6 +870,7 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
                 // And a rebase or feedback request: asked for again if needed.
                 item.rebase = None;
                 item.feedback = None;
+                item.ci_fix = None;
             } else {
                 continue;
             }
@@ -885,14 +911,20 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
                 passed,
                 failing,
                 ended,
+                not_started,
                 ..
             } => {
                 item.ci = Some(crate::item::Ci {
                     passed: *passed,
                     ended: ended.clone(),
                     failing: failing.iter().map(|f| f.name.clone()).collect(),
+                    not_started: not_started.clone(),
                     t: e.t,
-                })
+                });
+                // Green again: a later failure gets fixes of its own.
+                if *passed {
+                    item.ci_fixes = 0;
+                }
             }
             Body::Shipped { sha, pr_url } => {
                 // An update ship keeps the PR it updated.
@@ -933,6 +965,14 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
             Body::FeedbackRequested { comments, .. } => {
                 item.feedback = Some(crate::item::FeedbackRequest {
                     comments: comments.clone(),
+                    since: e.t,
+                })
+            }
+            Body::CiFixRequested { pr_url, failing } => {
+                item.ci_fixes += 1;
+                item.ci_fix = Some(crate::item::CiFixRequest {
+                    pr_url: pr_url.clone(),
+                    failing: failing.clone(),
                     since: e.t,
                 })
             }
@@ -1123,6 +1163,7 @@ mod tests {
             passed: false,
             failing: vec![],
             ended: None,
+            not_started: None,
         }));
         let item = fold(ItemId(1), &events).unwrap();
         assert_eq!(item.state, State::Closed);

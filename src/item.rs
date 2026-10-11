@@ -246,6 +246,14 @@ pub struct Item {
     /// cleared when the item moves.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub feedback: Option<FeedbackRequest>,
+    /// Set while the shipped PR's failing CI waits for the Delivery
+    /// office's dev run; cleared when the item moves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ci_fix: Option<CiFixRequest>,
+    /// How many times the Delivery office reopened the item to fix its PR's
+    /// CI. After `delivery::CI_FIXES`, a red PR waits for you.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub ci_fixes: u32,
     /// How the shipped PR ended: `merged` or `closed`. Until then the
     /// Delivery office watches it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -257,6 +265,18 @@ pub struct Item {
 pub struct FeedbackRequest {
     pub comments: Vec<crate::event::PrComment>,
     pub since: DateTime<Utc>,
+}
+
+/// The shipped PR's failing checks the Delivery office's dev run should fix.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CiFixRequest {
+    pub pr_url: String,
+    pub failing: Vec<crate::event::FailingCheck>,
+    pub since: DateTime<Utc>,
+}
+
+fn is_zero(n: &u32) -> bool {
+    *n == 0
 }
 
 /// Why and onto what the Delivery office should rebase an item.
@@ -280,6 +300,10 @@ pub struct Ci {
     /// `merged` or `closed` when the PR ended with red checks.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ended: Option<String>,
+    /// Set when no failing job ever started (billing, no runners): CI
+    /// didn't run, so there is no code to fix. GitHub's reason.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub not_started: Option<String>,
     pub t: DateTime<Utc>,
 }
 
@@ -299,6 +323,9 @@ pub enum HoldKind {
     /// New PR comments the Delivery office's dev run didn't act on: they
     /// need you.
     Feedback,
+    /// The shipped PR's CI failed and the Delivery office's dev run
+    /// couldn't fix it.
+    CiFailed,
     /// Anything else that needs a person.
     Other,
 }
@@ -311,6 +338,7 @@ impl HoldKind {
             HoldKind::ShipFailed => "ship_failed",
             HoldKind::Conflict => "conflict",
             HoldKind::Feedback => "feedback",
+            HoldKind::CiFailed => "ci_failed",
             HoldKind::Other => "other",
         }
     }

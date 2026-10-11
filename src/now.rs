@@ -261,6 +261,40 @@ fn now_with(
                 ),
             ];
         }
+        // The Delivery office fixes its PR's failing CI (ADR 0031).
+        State::Development if item.ci_fix.is_some() => {
+            let c = item.ci_fix.as_ref().expect("guarded");
+            n.since = c.since;
+            match &lease {
+                Some(l) => {
+                    n.status = "running".into();
+                    n.doing = "The Delivery office is fixing its PR's failing CI".into();
+                    n.since = l.acquired;
+                }
+                None => {
+                    n.status = "queued".into();
+                    n.doing = "Waiting for the Delivery office to fix its PR's failing CI".into();
+                }
+            }
+            n.detail.push(format!(
+                "failing: {}",
+                c.failing
+                    .iter()
+                    .map(|f| f.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+            n.actions = vec![
+                act(
+                    "hall daemon status",
+                    "see whether the daemon runs, and what it is doing",
+                ),
+                act(
+                    format!("hall ready {id}"),
+                    "fixed it yourself: send it to review",
+                ),
+            ];
+        }
         State::Development => {
             n.status = "working".into();
             n.doing = format!("In development in {}", item.worktree);

@@ -433,6 +433,7 @@ impl App {
                 session: None,
                 since,
                 answer_with: vec!["hall daemon start".into()],
+                notice: false,
             });
         }
         out

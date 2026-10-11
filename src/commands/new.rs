@@ -261,6 +261,12 @@ pub fn new(cwd: &Path, a: NewArgs, mode: Mode) -> Result<Response> {
                 parts: Vec::new(),
             };
         }
+        // Everything else starts from the latest base, fetched now: never
+        // from a main checkout that is behind, or on another branch.
+        let fresh = match (&parent, &stack) {
+            (None, None) => fresh_start(&repo, &repo.config.base),
+            _ => None,
+        };
         let item = create(
             &repo,
             Spec {
@@ -276,7 +282,8 @@ pub fn new(cwd: &Path, a: NewArgs, mode: Mode) -> Result<Response> {
                 start: parent
                     .as_ref()
                     .map(|p| p.branch.as_str())
-                    .or(stack.as_deref()),
+                    .or(stack.as_deref())
+                    .or(fresh.as_deref()),
                 base: stack.clone(),
                 adopted: false,
                 pr: None,
@@ -913,6 +920,14 @@ fn split_blocked(repo: &Repo, title: &str, branch: Option<&str>, parts: &[Part])
     None
 }
 
+/// The commit a new item starts from: `origin/<base>` fetched now, else the
+/// local `<base>`. A commit, not a ref, so the new branch tracks nothing.
+/// None when neither exists: the worktree command starts from HEAD.
+fn fresh_start(repo: &Repo, base: &str) -> Option<String> {
+    let target = crate::delivery::base_ref(&repo.main_root, base)?;
+    git::rev(&repo.main_root, &target.git_ref)
+}
+
 /// Creates one item: its branch and worktree, then its `created` event.
 /// Call under the repo lock.
 fn create(repo: &Repo, spec: Spec) -> Result<Item> {
@@ -995,8 +1010,9 @@ fn create(repo: &Repo, spec: Spec) -> Result<Item> {
     repo.hall.refresh_item_json(id)
 }
 
-/// The worktree command for a new item. `{start}` is the branch it starts
-/// from: a child's parent branch, else nothing (the main checkout's HEAD).
+/// The worktree command for a new item. `{start}` is where it starts: a
+/// child's parent branch, the PR it stacks on, or the latest base; nothing
+/// (the main checkout's HEAD) only when no base can be found.
 /// The default command gets the start point appended; a custom command
 /// without `{start}` is left as is, and `create` fast-forwards instead.
 pub fn worktree_command(template: &str, vars: &[(&str, &str)], start: Option<&str>) -> String {

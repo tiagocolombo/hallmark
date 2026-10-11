@@ -353,6 +353,52 @@ pub fn run_and_job(link: &str) -> Option<(String, String)> {
         .then_some((run, job))
 }
 
+/// Why a failed job never started (an Actions billing or spending limit, no
+/// runner), or None when it ran or gh can't tell. A job that never started
+/// has no steps and no runner; GitHub gives the reason in an annotation.
+pub fn never_started(dir: &Path, link: &str) -> Option<String> {
+    #[derive(Deserialize)]
+    struct Annotation {
+        #[serde(default)]
+        annotation_level: String,
+        #[serde(default)]
+        message: String,
+    }
+    let (_, job) = run_and_job(link)?;
+    let api = |path: String| {
+        Command::new(gh().ok()?)
+            .current_dir(dir)
+            .args(["api", &path])
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| o.stdout)
+    };
+    // Only a job object with an empty `steps` list counts; anything else
+    // (an error, an unexpected shape) means "can't tell".
+    let j: serde_json::Value = serde_json::from_slice(&api(format!(
+        "repos/{{owner}}/{{repo}}/actions/jobs/{job}"
+    ))?)
+    .ok()?;
+    let ran = !j.get("steps")?.as_array()?.is_empty()
+        || j.get("runner_name")
+            .and_then(|r| r.as_str())
+            .is_some_and(|r| !r.is_empty());
+    if ran {
+        return None;
+    }
+    let reason = api(format!(
+        "repos/{{owner}}/{{repo}}/check-runs/{job}/annotations"
+    ))
+    .and_then(|b| serde_json::from_slice::<Vec<Annotation>>(&b).ok())
+    .and_then(|a| {
+        a.into_iter()
+            .find(|a| a.annotation_level == "failure" && !a.message.trim().is_empty())
+            .map(|a| a.message.trim().to_string())
+    });
+    Some(reason.unwrap_or_else(|| "the job never started".into()))
+}
+
 /// The tail of a failed job's log (`gh run view --job --log-failed`),
 /// focused on the lines that say what broke. None when gh can't read it.
 pub fn failed_log(dir: &Path, link: &str, max_lines: usize) -> Option<String> {
