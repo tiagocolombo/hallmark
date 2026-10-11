@@ -251,7 +251,7 @@ fn resolve(
         wt,
     )?;
     req.permission_mode = Some("acceptEdits".into());
-    req.allowed_tools = tools(&repo.config.gates);
+    req.allowed_tools = tools(&repo.config.run_commands(), wt);
     for (k, v) in req.env.iter_mut() {
         if k == "HALL_ACTOR" {
             *v = ACTOR.into();
@@ -506,7 +506,7 @@ fn dev_run(
     let before = git::head(wt)?;
     let mut req = runner::request(repo, Role::Fixer, None, prompt, wt)?;
     req.permission_mode = Some("acceptEdits".into());
-    req.allowed_tools = tools(&repo.config.gates)
+    req.allowed_tools = tools(&repo.config.run_commands(), wt)
         .into_iter()
         .filter(|t| !t.contains("rebase"))
         .collect();
@@ -573,34 +573,39 @@ fn append(repo: &Repo, id: ItemId, body: Body) -> Result<()> {
         .append_item(id, &Event::new(ACTOR, Some(id), body))
 }
 
-/// The dev run's tools: read and edit files, stage them, continue the
-/// rebase, commit, and run the repo's gates. Never push, never abort.
+/// The dev run's tools: read and edit files, take one side of a conflict,
+/// stage, continue the rebase, commit, and run the repo's gates and
+/// `dev_commands`. Git also as `git -C <worktree>`. Never push, never abort.
 ///
 /// `GIT_EDITOR=true` is in the run's environment and the prompt asks for a
 /// bare `git rebase --continue`, but models still reach for an editor
 /// override; a rule only matches its exact prefix, so those forms are
 /// allowed too.
-pub fn tools(gates: &[String]) -> Vec<String> {
-    let mut t: Vec<String> = [
-        "Read",
-        "Edit",
-        "Write",
-        "Grep",
-        "Glob",
-        "Bash(git status:*)",
-        "Bash(git diff:*)",
-        "Bash(git log:*)",
-        "Bash(git show:*)",
-        "Bash(git add:*)",
-        "Bash(git rebase --continue:*)",
-        "Bash(GIT_EDITOR=true git rebase --continue:*)",
-        "Bash(git -c core.editor=true rebase --continue:*)",
-        "Bash(git commit:*)",
-    ]
-    .into_iter()
-    .map(String::from)
-    .collect();
-    for g in gates {
+pub fn tools(commands: &[String], wt: &Path) -> Vec<String> {
+    let git = [
+        "status",
+        "diff",
+        "log",
+        "show",
+        "add",
+        "rm",
+        "checkout --ours",
+        "checkout --theirs",
+        "rebase --continue",
+        "commit",
+    ];
+    let mut t: Vec<String> = ["Read", "Edit", "Write", "Grep", "Glob"]
+        .into_iter()
+        .map(String::from)
+        .collect();
+    let dir = crate::paths::display(wt);
+    for g in git {
+        t.push(format!("Bash(git {g}:*)"));
+        t.push(format!("Bash(git -C {dir} {g}:*)"));
+    }
+    t.push("Bash(GIT_EDITOR=true git rebase --continue:*)".into());
+    t.push("Bash(git -c core.editor=true rebase --continue:*)".into());
+    for g in commands {
         let g = g.trim();
         if g.is_empty() {
             continue;
@@ -742,6 +747,10 @@ fn prompt(repo: &Repo, item: &Item, events: &[Event], target: &Target, files: &[
          1. For each conflicted file, read both sides and what each change meant \
          (`git log`, `git show`, `git diff`), and edit the file so it keeps both: the base's \
          changes and this item's. Remove every conflict marker.\n\
+         Generated files (test snapshots, lockfiles, generated code) aren't merged by hand: \
+         take one side (`git checkout --theirs <file>` keeps this item's, `--ours` the \
+         base's) and regenerate them with the repo's own command once the sources are \
+         resolved.\n\
          2. `git add` each resolved file, then `git rebase --continue`. Repeat for every commit \
          that stops. Run each git command on its own, exactly as written, from the worktree \
          you are in: `GIT_EDITOR` is already `true` here, so no editor opens. Don't add \
@@ -755,6 +764,17 @@ fn prompt(repo: &Repo, item: &Item, events: &[Event], target: &Target, files: &[
             "3. When the rebase is done, run the gates ({}) and fix anything the rebase broke, \
              in a new commit.\n",
             repo.config.gates.join(", ")
+        ));
+    }
+    let cmds = repo.config.run_commands();
+    if !cmds.is_empty() {
+        s.push_str(&format!(
+            "\nBesides git, the only commands you may run are these, and what starts with them: \
+             {}. Run each on its own, from the worktree, never chained with `&&`, `;` or a pipe.\n",
+            cmds.iter()
+                .map(|c| format!("`{c}`"))
+                .collect::<Vec<_>>()
+                .join(", ")
         ));
     }
     s.push_str(&format!(
@@ -1186,9 +1206,14 @@ mod tests {
 
     #[test]
     fn tools_never_push_or_abort() {
-        let t = tools(&["cargo test".into(), " ".into()]);
+        let t = tools(
+            &["cargo test".into(), " ".into()],
+            Path::new("/w/app-H-0001"),
+        );
         assert!(t.contains(&"Bash(git rebase --continue:*)".to_string()));
         assert!(t.contains(&"Bash(GIT_EDITOR=true git rebase --continue:*)".to_string()));
+        assert!(t.contains(&"Bash(git checkout --theirs:*)".to_string()));
+        assert!(t.contains(&"Bash(git -C /w/app-H-0001 status:*)".to_string()));
         assert!(t.contains(&"Bash(cargo test:*)".to_string()));
         assert!(!t.iter().any(|x| x.contains("push") || x.contains("abort")));
     }

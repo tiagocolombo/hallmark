@@ -78,6 +78,25 @@ Each request adds one to the item's `ci_fixes`. A green CI result resets it.
 After `CI_FIXES` (2) fixes, a PR that is still red stops being reopened and
 becomes a `ci_failed` escalation.
 
+### The Delivery office can resolve conflicts in generated files
+
+The first live rebase (PR #26) conflicted in `src/tui/app.rs` and five insta
+snapshots. The dev run resolved the source file, but every command it needed
+next was refused: `git checkout --theirs`, a narrower `cargo test --test tui`,
+`INSTA_UPDATE=always … cargo test` to regenerate the snapshots, and
+`git -C <worktree> status`. Its rebase was aborted, and a second attempt would
+have failed the same way and held the PR. So:
+
+- The office's dev runs may also run `git checkout --ours`/`--theirs` and
+  `git rm`. Every git command is also allowed as `git -C <its worktree> …`.
+  They still can't push or abort.
+- **`dev_commands`** in `.hallmark.toml` lists commands, as prefixes, that the
+  fixer and the office's dev runs may run besides the gates. The default is
+  empty. Hallmark's own list allows test subsets, `cargo fmt`, and
+  `INSTA_UPDATE=always` to regenerate snapshots.
+- The rebase prompt says not to merge generated files by hand: take one side,
+  regenerate them, and run each allowed command on its own.
+
 ### New items start from the latest base
 
 `hall new` fetches `origin <base>` and starts a top-level item's branch at

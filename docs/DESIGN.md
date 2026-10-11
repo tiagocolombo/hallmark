@@ -337,6 +337,7 @@ worktree    = "git worktree add ../{repo}-{id} -b {branch}"
 branch      = "hm/{id}-{slug}"
 ship        = "git push -u origin {branch} && gh pr create --base {base} --head {branch} --title {title} --body-file {body_file}"
 gates       = []                # hall init fills these
+dev_commands = []               # what headless dev runs may run besides the gates
 reviewer    = "claude -p"
 fixer       = "claude -p"       # or an external fix engine (Ralph Orchestrator…)
 claude_args = []                # extra arguments for every headless run
