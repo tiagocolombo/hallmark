@@ -184,6 +184,34 @@ hall history --rejected --since 7d
 On a terminal, commands print readable text. When an agent runs them, they
 print JSON. See the [command reference](docs/commands.md) for every command.
 
+### The terminal app
+
+Run `hall` with no arguments to watch the whole building live: your office
+(everything waiting for you), the board, each item's journal and findings, and
+what the daemon is doing. It updates as the journal changes, and closing it
+never stops work.
+
+<img alt="The hall terminal app: items move from development through checks and review to a PR while the inbox fills and empties" src="docs/images/tui-board.gif">
+
+<details>
+<summary><b>More: your office, findings, diffs, usage and history</b></summary>
+<br>
+
+**Your office.** Every entry explains why it waits, shows the evidence, and lists
+what you can do. Press <kbd>1</kbd>–<kbd>9</kbd> to run an action, such as
+answering an agent's question.
+
+<img alt="Your office in the hall terminal app: reading inbox entries and answering a question" src="docs/images/tui-office.gif">
+
+**Review detail.** The findings with their scenario and fix, the diff at any
+round, tokens and cost by room, model or day, and the history of closed and
+dropped items.
+
+<img alt="Findings, a diff, usage and history in the hall terminal app" src="docs/images/tui-review.gif">
+
+<sub>The demo data is fictional.</sub>
+</details>
+
 ### Built for agents
 
 Agents are the main users of `hall`, so the CLI behaves like an API:
