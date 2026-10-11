@@ -361,6 +361,30 @@ fn adopt_turns_a_branch_into_an_item() {
 }
 
 #[test]
+fn a_dropped_items_questions_leave_the_inbox() {
+    let env = Env::initialized();
+    let (_, wt) = env.new_item("Usage page");
+    assert_eq!(env.hall(&wt, &["ask", "billed or raw?"]).code, 0);
+    let r = env.hall(&env.repo, &["ask", "Freeze the repo first?"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(
+        env.hall(&env.repo, &["inbox"]).json["entries"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+
+    let r = env.hall(&wt, &["drop", "--reason", "not needed"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    // The repo's own question stays.
+    let inbox = env.hall(&env.repo, &["inbox"]);
+    let entries = inbox.json["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 1, "{entries:?}");
+    assert_eq!(entries[0]["text"], "Freeze the repo first?");
+}
+
+#[test]
 fn questions_land_in_the_inbox_and_get_answered() {
     let env = Env::initialized();
     let (id, wt) = env.new_item("Usage page");

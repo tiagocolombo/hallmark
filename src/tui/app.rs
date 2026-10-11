@@ -106,6 +106,8 @@ pub enum Input {
     Filter,
     /// `x`: the reason an item is dropped.
     DropReason(ItemId),
+    /// `X` in your office: the reason every item waiting there is dropped.
+    DropAll(Vec<ItemId>),
     /// An action with a placeholder (`"<why>"`, `"<answer>"`): the text
     /// that replaces `args[at]` before `args` runs.
     Fill { args: Vec<String>, at: usize },
@@ -622,6 +624,22 @@ impl App {
                     return self.run_command("hall inbox --clear");
                 }
             }
+            (View::Inbox, KeyCode::Char('x')) => match self.entry_item() {
+                Some(id) => {
+                    self.input = Some(Input::DropReason(id));
+                    self.buffer.clear();
+                }
+                None => self.err("This entry isn't about an item that can be dropped."),
+            },
+            (View::Inbox, KeyCode::Char('X')) => {
+                let ids = self.office_items();
+                if ids.is_empty() {
+                    self.err("Nothing in your office is an item that can be dropped.");
+                } else {
+                    self.input = Some(Input::DropAll(ids));
+                    self.buffer.clear();
+                }
+            }
             (View::Repos, KeyCode::Up) => self.repo_sel = self.repo_sel.saturating_sub(1),
             (View::Repos, KeyCode::Down) => {
                 self.repo_sel = (self.repo_sel + 1).min(self.repos.len().saturating_sub(1))
@@ -736,7 +754,7 @@ impl App {
                         self.filter.clear();
                         self.fix_board_selection();
                     }
-                    Input::DropReason(_) => self.info("Drop cancelled."),
+                    Input::DropReason(_) | Input::DropAll(_) => self.info("Drop cancelled."),
                     Input::RetryReason(_) => self.info("Cancelled."),
                     Input::Fill { .. } => self.info("Not run."),
                 }
@@ -752,6 +770,7 @@ impl App {
                         self.fix_board_selection();
                     }
                     Input::DropReason(id) => self.drop_item(id, text.trim()),
+                    Input::DropAll(ids) => self.drop_all(&ids, text.trim()),
                     Input::Fill { mut args, at } => {
                         if text.trim().is_empty() {
                             self.err("Not run: the text is required.");
@@ -978,6 +997,60 @@ impl App {
         self.report(id, r);
     }
 
+    /// `X` in your office: drops every item waiting there, each as
+    /// `hall drop` would, with the same reason. One that can't be dropped
+    /// (a parent whose parts are still open) is reported and the rest go on.
+    fn drop_all(&mut self, ids: &[ItemId], reason: &str) {
+        if reason.is_empty() {
+            self.err("Not dropped: a reason is required.");
+            return;
+        }
+        let Some(repo) = self.repo() else {
+            self.err("No repository.");
+            return;
+        };
+        if repo.data.status != RepoStatus::Ready {
+            let name = repo.name.clone();
+            self.err(&format!(
+                "{name} doesn't use Hallmark yet: run `hall init` there."
+            ));
+            return;
+        }
+        let cwd = repo.path.clone();
+        let mut dropped = vec![];
+        let mut failed = vec![];
+        for id in ids {
+            let r = flow::drop(
+                &cwd,
+                DropArgs {
+                    id: Some(id.to_string()),
+                    reason: reason.into(),
+                    keep_worktree: false,
+                },
+            );
+            match r {
+                Ok(_) => dropped.push(id.to_string()),
+                Err(e) => failed.push(format!("{id}: {} ({})", e.message, e.code.as_str())),
+            }
+        }
+        if failed.is_empty() {
+            self.info(&format!(
+                "Dropped {} item{}: {}.",
+                dropped.len(),
+                if dropped.len() == 1 { "" } else { "s" },
+                dropped.join(", ")
+            ));
+        } else {
+            self.err(&format!(
+                "Dropped {} of {}. {}",
+                dropped.len(),
+                ids.len(),
+                failed.join(" · ")
+            ));
+        }
+        self.reload_active();
+    }
+
     /// `d`: the diff at the selected round, from the worktree if it is
     /// still there, else from the main checkout.
     fn open_diff(&mut self) {
@@ -1116,6 +1189,35 @@ impl App {
     /// The selected inbox entry.
     pub fn inbox_entry(&self) -> Option<InboxEntry> {
         self.inbox().get(self.inbox_sel).cloned()
+    }
+
+    /// The selected entry's item, if it is one that can be dropped.
+    fn entry_item(&self) -> Option<ItemId> {
+        let id = self.inbox_entry()?.item?;
+        let it = self.repo()?.data.item(id)?;
+        (!it.state.is_terminal()).then_some(id)
+    }
+
+    /// Every item waiting in your office that can be dropped, once each,
+    /// newest first: a parallel part is always newer than its parent, so
+    /// parts are dropped before the parent that waits on them.
+    pub fn office_items(&self) -> Vec<ItemId> {
+        let Some(repo) = self.repo() else {
+            return vec![];
+        };
+        let mut ids: Vec<ItemId> = self
+            .inbox()
+            .iter()
+            .filter_map(|e| e.item)
+            .filter(|id| {
+                repo.data
+                    .item(*id)
+                    .is_some_and(|it| !it.state.is_terminal())
+            })
+            .collect();
+        ids.sort_by_key(|id| std::cmp::Reverse(id.0));
+        ids.dedup();
+        ids
     }
 
     /// Explains the selected entry, as `hall inbox <n>` does.

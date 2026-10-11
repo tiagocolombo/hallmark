@@ -1,0 +1,40 @@
+---
+source: tests/tui.rs
+expression: "screen(&env, &app, W, H)"
+---
+hall · app (1 of 1 repo)   daemon ● stopped   ⚑ 6 waiting   rejected today 3 · review tokens 400k    your office · hh:mm
+┌ Your office ─⚑ 6 waiting ────────────────────────────────────────────────────────────────────────────────────────────┐
+│1.  ready?     H-0002  Export tenant usage looks done: CSV export with 14 tests                               –       │
+│2.  question   H-0002  Billed usage or raw events?  [a] billed  [b] raw                                       –       │
+│3.  escalated  H-0007  Migrate billing tables: rejected 1 times                                               –       │
+│4.  question   H-0003  Still wanted?                                                                          –       │
+│5.  question   H-0004  Still wanted?                                                                          –       │
+│6.  daemon             The Hallmark daemon stopped; the review loop isn't running                             –       │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ 6. daemon ──────────────────────────────────────────────────────────────────────────────────────────────── waiting – ┐
+│The Hallmark daemon stopped; the review loop isn't running                                                            │
+│                                                                                                                      │
+│Why       The daemon should run but has no fresh heartbeat, so nothing moves through the loop.                        │
+│                                                                                                                      │
+│What you can do                                                                                                       │
+│ 1  hall daemon start                                                                                                 │
+│    start it again                                                                                                    │
+│ 2  hall daemon status                                                                                                │
+│    see what it last did                                                                                              │
+│ 3  hall inbox daemon_stopped:-:#############:################ --dismiss                                              │
+│    dismiss it: hidden until it changes; nothing is answered or retried                                               │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+└──────────────────────────────────────────────────────────── 1-9 runs an action; one with <…> asks for the text first ┘
+Drop all 4 items in your office (H-0007 H-0004 H-0003 H-0002), reason: clearing the desk▏  enter drop all · esc cancel
+↑↓ entry 1-9 run action D C dismiss·all enter journal pgup pgdn scroll x drop X drop all d diff ? help q quit

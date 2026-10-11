@@ -37,4 +37,4 @@ hall · app (1 of 1 repo)   daemon ● running   ⚑ 3 waiting   rejected today 
 │                                                                                                                      │
 └──────────────────────────────────────────────────────────── 1-9 runs an action; one with <…> asks for the text first ┘
 
-↑↓ entry 1-9 run action D C dismiss·all enter journal pgup pgdn scroll d diff w worktree o PR esc board ? help q quit
+↑↓ entry 1-9 run action D C dismiss·all enter journal pgup pgdn scroll x drop X drop all d diff ? help q quit

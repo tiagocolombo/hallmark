@@ -955,6 +955,96 @@ fn your_office_explains_each_entry_and_runs_its_actions() {
 }
 
 #[test]
+fn your_office_drops_an_entrys_item_or_every_item_waiting() {
+    let env = building();
+    let hall = hall_of(&env);
+    // A parent and its parallel part both wait for you.
+    for id in ["H-0003", "H-0004"] {
+        let r = env.hall(&env.repo, &["ask", "Still wanted?", "--item", id]);
+        assert_eq!(r.code, 0, "{}", r.stdout);
+    }
+    let mut app = load(&env, &env.repo);
+    // The daemon stopped: an entry that isn't about an item.
+    app.daemon.as_mut().unwrap().heartbeat = None;
+    app.daemon.as_mut().unwrap().started_at = None;
+    key(&mut app, KeyCode::Char('i'));
+    assert!(app.inbox().iter().any(|e| e.kind == "daemon_stopped"));
+
+    // x drops the entry's item, not whatever the board had selected.
+    while app.inbox_entry().unwrap().item != Some(ItemId(7)) {
+        key(&mut app, KeyCode::Down);
+    }
+    key(&mut app, KeyCode::Char('x'));
+    assert_eq!(app.input, Some(Input::DropReason(ItemId(7))));
+    key(&mut app, KeyCode::Esc);
+    assert_eq!(hall.load_item(ItemId(7)).unwrap().state, State::Escalated);
+    while app.inbox_entry().unwrap().kind != "daemon_stopped" {
+        key(&mut app, KeyCode::Down);
+    }
+    key(&mut app, KeyCode::Char('x'));
+    assert_eq!(app.input, None);
+    assert!(app.status.as_ref().unwrap().error);
+
+    // X drops every item waiting, once each, parts before their parent.
+    key(&mut app, KeyCode::Char('X'));
+    assert_eq!(
+        app.input,
+        Some(Input::DropAll(vec![
+            ItemId(7),
+            ItemId(4),
+            ItemId(3),
+            ItemId(2)
+        ]))
+    );
+    chars(&mut app, "clearing the desk");
+    assert_snapshot!("inbox_drop_all", screen(&env, &app, W, H));
+    key(&mut app, KeyCode::Enter);
+    let st = app.status.clone().unwrap();
+    assert!(!st.error, "{}", st.text);
+    assert_eq!(st.text, "Dropped 4 items: H-0007, H-0004, H-0003, H-0002.");
+    for id in [2, 3, 4, 7] {
+        let item = hall.load_item(ItemId(id)).unwrap();
+        assert_eq!(item.state, State::Dropped, "H-{id:04}");
+        assert_eq!(item.drop_reason.as_deref(), Some("clearing the desk"));
+    }
+    assert_eq!(hall.load_item(ItemId(1)).unwrap().state, State::Review);
+    let left: Vec<String> = app.inbox().iter().map(|e| e.kind.clone()).collect();
+    assert_eq!(left, ["daemon_stopped"]);
+
+    // Nothing left to drop.
+    key(&mut app, KeyCode::Char('X'));
+    assert_eq!(app.input, None);
+    assert!(app.status.as_ref().unwrap().error);
+}
+
+#[test]
+fn your_office_drop_all_reports_what_it_could_not_drop() {
+    let env = building();
+    let hall = hall_of(&env);
+    // The parent waits for you; its part doesn't, so the parent can't go.
+    let r = env.hall(&env.repo, &["ask", "Still wanted?", "--item", "H-0003"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let mut app = load(&env, &env.repo);
+    key(&mut app, KeyCode::Char('i'));
+    key(&mut app, KeyCode::Char('X'));
+    chars(&mut app, "clearing the desk");
+    key(&mut app, KeyCode::Enter);
+    let st = app.status.clone().unwrap();
+    assert!(st.error, "{}", st.text);
+    assert!(st.text.starts_with("Dropped 2 of 3."), "{}", st.text);
+    assert!(st.text.contains("H-0003:") && st.text.contains("CHILDREN_OPEN"));
+    assert_eq!(hall.load_item(ItemId(3)).unwrap().state, State::Development);
+    assert_eq!(hall.load_item(ItemId(7)).unwrap().state, State::Dropped);
+
+    // Esc on the reason drops nothing.
+    key(&mut app, KeyCode::Char('X'));
+    chars(&mut app, "no");
+    key(&mut app, KeyCode::Esc);
+    assert_eq!(app.input, None);
+    assert_eq!(hall.load_item(ItemId(3)).unwrap().state, State::Development);
+}
+
+#[test]
 fn whats_waiting_reads_in_full() {
     let env = building();
     let summary = "CSV and JSON export of tenant usage, billed by the hour, with 14 tests; \
