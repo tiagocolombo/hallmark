@@ -57,7 +57,7 @@ pub fn run(cwd: &Path) -> Result<Response> {
     drop(watcher);
     match r? {
         Exit::Quit => Ok(Response::raw(None)),
-        Exit::Updated => restart(),
+        Exit::Updated(exe) => restart(&exe),
     }
 }
 
@@ -66,7 +66,7 @@ enum Exit {
     Quit,
     /// `hall` was replaced on disk (`hall update`): this process still runs
     /// the old build, which must not keep reading, or syncing, the journal.
-    Updated,
+    Updated(PathBuf),
 }
 
 /// The running executable as it is on disk: a new install changes it.
@@ -79,8 +79,10 @@ struct Build {
 }
 
 impl Build {
-    fn now() -> Option<Build> {
-        let m = std::fs::metadata(std::env::current_exe().ok()?).ok()?;
+    /// `exe` is resolved once at startup: on Linux `current_exe()` turns into
+    /// "... (deleted)" once an update renames a new binary over this one.
+    fn of(exe: &Path) -> Option<Build> {
+        let m = std::fs::metadata(exe).ok()?;
         Some(Build {
             len: m.len(),
             modified: m.modified().ok(),
@@ -92,9 +94,8 @@ impl Build {
 
 /// Runs the new `hall` in this terminal, with the same arguments.
 #[cfg(unix)]
-fn restart() -> Result<Response> {
+fn restart(exe: &Path) -> Result<Response> {
     use std::os::unix::process::CommandExt;
-    let exe = std::env::current_exe()?;
     let e = std::process::Command::new(exe)
         .args(std::env::args_os().skip(1))
         .exec();
@@ -105,7 +106,7 @@ fn restart() -> Result<Response> {
 }
 
 #[cfg(not(unix))]
-fn restart() -> Result<Response> {
+fn restart(_exe: &Path) -> Result<Response> {
     Ok(Response::raw(Some(serde_json::json!(
         "hall was updated: run `hall` again to open the new version"
     ))))
@@ -117,7 +118,8 @@ fn event_loop(
     rx: &Receiver<PathBuf>,
     watching: bool,
 ) -> Result<Exit> {
-    let build = Build::now();
+    let exe = std::env::current_exe().ok();
+    let build = exe.as_deref().and_then(Build::of);
     let mut stale: BTreeSet<usize> = BTreeSet::new();
     let mut first_change: Option<Instant> = None;
     let mut last_change = Instant::now();
@@ -181,8 +183,10 @@ fn event_loop(
         }
         if last_tick.elapsed() >= TICK {
             last_tick = Instant::now();
-            if build.is_some() && Build::now().is_some_and(|b| Some(b) != build) {
-                return Ok(Exit::Updated);
+            if let (Some(exe), Some(old)) = (&exe, &build)
+                && Build::of(exe).is_some_and(|b| &b != old)
+            {
+                return Ok(Exit::Updated(exe.clone()));
             }
             app.now = Utc::now();
             app.daemon = crate::daemon::state::load();

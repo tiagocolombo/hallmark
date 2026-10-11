@@ -72,7 +72,7 @@ pub enum Cmd {
     /// Tokens and list-price cost, grouped.
     Usage(UsageArgs),
     /// Rebuild the SQLite index from the journal.
-    Reindex,
+    Reindex(ReindexArgs),
     /// Commands, arguments, exit codes and error codes.
     Help(HelpArgs),
     /// The JSON Schema of a command's output (or error, event, config).
@@ -296,6 +296,13 @@ pub struct AnswerArgs {
     pub qid: String,
     /// An option's text or letter (a, b, …), or free text.
     pub answer: String,
+}
+
+#[derive(Debug, Args)]
+pub struct ReindexArgs {
+    /// Rebuild even when a newer hall owns the index, and take it over.
+    #[arg(long)]
+    pub force: bool,
 }
 
 #[derive(Debug, Args)]
@@ -739,7 +746,7 @@ fn dispatch(cmd: Option<Cmd>, cwd: &std::path::Path, mode: Mode) -> Result<Respo
         Some(Cmd::Ask(a)) => ask::ask(cwd, a),
         Some(Cmd::Answer(a)) => ask::answer(cwd, a),
         Some(Cmd::Usage(a)) => status::usage(cwd, a),
-        Some(Cmd::Reindex) => status::reindex(cwd),
+        Some(Cmd::Reindex(a)) => status::reindex(cwd, a.force),
         Some(Cmd::Help(a)) => meta::help(a, mode),
         Some(Cmd::Schema(a)) => meta::schema(a),
         Some(Cmd::Hook(a)) => crate::hooks::run(a.event, cwd),

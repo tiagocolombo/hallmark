@@ -260,90 +260,76 @@ impl Index {
         Ok(ix)
     }
 
-    /// Empties the index and rebuilds it from the journal.
-    pub fn rebuild(hall: &Hall) -> Result<Index> {
+    /// Empties the index and rebuilds it from the journal. Returns false,
+    /// leaving the index alone, when a newer hall owns it and `force` is not
+    /// set. `force` takes the ownership.
+    pub fn rebuild(hall: &Hall, force: bool) -> Result<(Index, bool)> {
         let mut ix = Index::open(hall)?;
-        // Never empty an index a newer hall owns: this one would refill it
-        // without the fields it doesn't know.
-        if ix.owned_by_newer() {
-            return Ok(ix);
+        if force {
+            ix.conn.execute(
+                "DELETE FROM meta WHERE key IN ('item_fields', 'item_fields_at', 'items_stale')",
+                [],
+            )?;
+        } else if ix.owned_by_newer() {
+            return Ok((ix, false));
         }
         ix.clear()?;
         ix.sync(hall)?;
-        Ok(ix)
+        Ok((ix, true))
     }
 
     fn clear(&mut self) -> Result<()> {
-        self.conn.execute_batch(
-            "DELETE FROM files; DELETE FROM items; DELETE FROM events; DELETE FROM usage;
-             DELETE FROM questions; DELETE FROM notifications; DELETE FROM findings;",
-        )?;
-        Ok(())
+        clear_tables(&self.conn)
     }
 
     pub fn sync(&mut self, hall: &Hall) -> Result<()> {
         if !hall.exists() {
             return Ok(());
         }
-        // A newer hall owns the rows while it runs: this one would fold items
-        // without the fields it doesn't know, and drop them (ADR 0032).
-        if self.owned_by_newer() {
-            return Ok(());
-        }
-        self.sync_rows(hall)?;
-        self.mark_writer(&item_fields(), Utc::now())
+        self.sync_rows(hall)
     }
 
     /// A newer hall (one whose items have fields this build doesn't know)
     /// synced this index in the last hour. After an hour without it (a
     /// downgrade), this one takes over.
     pub fn owned_by_newer(&self) -> bool {
-        let mine = item_fields();
-        self.writer().is_some_and(|(fields, at)| {
-            fields.iter().any(|f| !mine.contains(f)) && Utc::now() - at < chrono::Duration::hours(1)
-        })
+        owned_by_newer(&self.conn)
     }
 
     /// The item fields of the newest hall that synced this index, and when
     /// it last did.
     pub fn writer(&self) -> Option<(Vec<String>, DateTime<Utc>)> {
-        let get = |k: &str| {
-            self.conn
-                .query_row("SELECT value FROM meta WHERE key = ?1", [k], |r| {
-                    r.get::<_, String>(0)
-                })
-                .ok()
-        };
-        let fields = serde_json::from_str(&get("item_fields")?).ok()?;
-        let at = DateTime::parse_from_rfc3339(&get("item_fields_at")?)
-            .ok()?
-            .with_timezone(&Utc);
-        Some((fields, at))
+        writer(&self.conn)
     }
 
-    /// Records `fields` as this index's item format, unless a newer one
-    /// (with fields this one doesn't know) wrote it: then only a stale mark,
-    /// an hour old, is taken over. Written at most every five minutes.
+    /// Records `fields` as this index's item format. Written at most every
+    /// five minutes.
     #[doc(hidden)]
     pub fn mark_writer(&self, fields: &[String], now: DateTime<Utc>) -> Result<()> {
-        if let Some((known, at)) = self.writer()
-            && known == fields
-            && at <= now
-            && now - at < chrono::Duration::minutes(5)
-        {
-            return Ok(());
-        }
-        self.conn.execute(
-            "INSERT INTO meta(key, value) VALUES ('item_fields', ?1), ('item_fields_at', ?2)
-             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-            params![serde_json::to_string(fields)?, now.to_rfc3339()],
-        )?;
-        Ok(())
+        mark_writer(&self.conn, fields, now)
     }
 
     fn sync_rows(&mut self, hall: &Hall) -> Result<()> {
         let files = hall.journal_files()?;
-        let tx = self.conn.transaction()?;
+        // The ownership check and the writes share one write lock, so an older
+        // build can't pass the check just before a newer one syncs.
+        let tx = self
+            .conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let mine = item_fields();
+        let owned = owned_by_newer(&tx);
+        if !owned {
+            // The last writer was older (or unknown), or skipped item rows it
+            // couldn't fold: rows it wrote lack fields this build knows, and
+            // the offsets are already past those events. Fold them all again.
+            let stale = match writer(&tx) {
+                Some((fields, _)) => mine.iter().any(|f| !fields.contains(f)),
+                None => true,
+            } || meta_get(&tx, "items_stale").is_some();
+            if stale {
+                clear_tables(&tx)?;
+            }
+        }
         let mut touched: BTreeSet<ItemId> = BTreeSet::new();
         let mut rebuild = false;
         for (item, path) in &files {
@@ -385,10 +371,25 @@ impl Index {
             self.clear()?;
             return self.sync_rows(hall);
         }
-        for id in touched {
-            if let Ok(item) = hall.load_item(id) {
-                upsert_item(&tx, &item)?;
+        if owned {
+            // A newer hall owns the item rows: this one would fold items
+            // without the fields it doesn't know, and drop them (ADR 0032).
+            // Events are indexed; the owner re-folds the rows on its next sync.
+            if !touched.is_empty() {
+                tx.execute(
+                    "INSERT INTO meta(key, value) VALUES ('items_stale', '1')
+                     ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    [],
+                )?;
             }
+        } else {
+            for id in touched {
+                if let Ok(item) = hall.load_item(id) {
+                    upsert_item(&tx, &item)?;
+                }
+            }
+            tx.execute("DELETE FROM meta WHERE key = 'items_stale'", [])?;
+            mark_writer(&tx, &mine, Utc::now())?;
         }
         tx.commit()?;
         Ok(())
@@ -780,6 +781,52 @@ fn question_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<QuestionRow> {
         answer: r.get(9)?,
         answered_at: opt_time(10)?,
     })
+}
+
+fn clear_tables(c: &Connection) -> Result<()> {
+    c.execute_batch(
+        "DELETE FROM files; DELETE FROM items; DELETE FROM events; DELETE FROM usage;
+         DELETE FROM questions; DELETE FROM notifications; DELETE FROM findings;",
+    )?;
+    Ok(())
+}
+
+fn meta_get(c: &Connection, k: &str) -> Option<String> {
+    c.query_row("SELECT value FROM meta WHERE key = ?1", [k], |r| {
+        r.get::<_, String>(0)
+    })
+    .ok()
+}
+
+fn writer(c: &Connection) -> Option<(Vec<String>, DateTime<Utc>)> {
+    let fields = serde_json::from_str(&meta_get(c, "item_fields")?).ok()?;
+    let at = DateTime::parse_from_rfc3339(&meta_get(c, "item_fields_at")?)
+        .ok()?
+        .with_timezone(&Utc);
+    Some((fields, at))
+}
+
+fn owned_by_newer(c: &Connection) -> bool {
+    let mine = item_fields();
+    writer(c).is_some_and(|(fields, at)| {
+        fields.iter().any(|f| !mine.contains(f)) && Utc::now() - at < chrono::Duration::hours(1)
+    })
+}
+
+fn mark_writer(c: &Connection, fields: &[String], now: DateTime<Utc>) -> Result<()> {
+    if let Some((known, at)) = writer(c)
+        && known == fields
+        && at <= now
+        && now - at < chrono::Duration::minutes(5)
+    {
+        return Ok(());
+    }
+    c.execute(
+        "INSERT INTO meta(key, value) VALUES ('item_fields', ?1), ('item_fields_at', ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![serde_json::to_string(fields)?, now.to_rfc3339()],
+    )?;
+    Ok(())
 }
 
 fn upsert_item(tx: &rusqlite::Transaction<'_>, item: &Item) -> Result<()> {

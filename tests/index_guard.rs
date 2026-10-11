@@ -38,7 +38,9 @@ fn an_older_hall_leaves_a_newer_ones_rows_alone() {
     // The journal has it; the row is the newer hall's to rewrite.
     assert_eq!(row_state(&env, &id), "development");
     // An explicit reindex doesn't empty it either.
-    assert_eq!(env.hall(&env.repo, &["reindex"]).code, 0);
+    let r = env.hall(&env.repo, &["reindex"]);
+    assert_eq!(r.code, 0);
+    assert!(r.stdout.contains("\"rebuilt\":false") || r.stdout.contains("Did not rebuild"));
     assert_eq!(row_state(&env, &id), "development");
 
     // An hour without the newer hall (a downgrade): this one takes over.
@@ -47,4 +49,35 @@ fn an_older_hall_leaves_a_newer_ones_rows_alone() {
     assert_eq!(row_state(&env, &id), "dropped");
     let (fields, _) = Index::open(&hall(&env)).unwrap().writer().unwrap();
     assert_eq!(fields, item_fields());
+}
+
+#[test]
+fn a_newer_hall_refolds_rows_an_older_one_wrote() {
+    let env = Env::initialized();
+    let (id, _) = env.new_item("Retry webhooks");
+    assert_eq!(env.hall(&env.repo, &["status", "--all"]).code, 0);
+
+    // An older build synced last: it marked the index with fewer fields.
+    let ix = Index::open(&hall(&env)).unwrap();
+    let mut fields = item_fields();
+    let dropped = fields.pop().unwrap();
+    ix.mark_writer(&fields, chrono::Utc::now() + chrono::Duration::hours(1))
+        .unwrap();
+    drop(ix);
+    assert_eq!(env.hall(&env.repo, &["status", "--all"]).code, 0);
+    let (fields, _) = Index::open(&hall(&env)).unwrap().writer().unwrap();
+    assert!(fields.contains(&dropped));
+    assert_eq!(row_state(&env, &id), "development");
+}
+
+#[test]
+fn reindex_force_takes_the_index_over() {
+    let env = Env::initialized();
+    let (id, _) = env.new_item("Retry webhooks");
+    assert_eq!(env.hall(&env.repo, &["status", "--all"]).code, 0);
+    newer_wrote_it(&env, chrono::Duration::minutes(1));
+    assert_eq!(env.hall(&env.repo, &["reindex", "--force"]).code, 0);
+    let (fields, _) = Index::open(&hall(&env)).unwrap().writer().unwrap();
+    assert_eq!(fields, item_fields());
+    assert_eq!(row_state(&env, &id), "development");
 }

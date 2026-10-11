@@ -509,7 +509,16 @@ expression: v
     },
     {
       "about": "Rebuild the SQLite index from the journal",
-      "args": [],
+      "args": [
+        {
+          "default": "false",
+          "help": "Rebuild even when a newer hall owns the index, and take it over",
+          "name": "force",
+          "required": false,
+          "syntax": "--force",
+          "takes_value": false
+        }
+      ],
       "name": "reindex",
       "schema": "hall schema reindex",
       "usage": "hall reindex [OPTIONS]"
