@@ -2,8 +2,10 @@
 members = ["cargo:."]
 
 # Config for 'dist' (cargo-dist). See docs/decisions/0023-packaging-and-releases.md.
-# After changing anything here, run `dist generate` to refresh
-# .github/workflows/release.yml, and `dist plan` to check the result.
+# .github/workflows/release.yml is edited by hand after generation (least-privilege
+# token permissions), so `allow-dirty` below keeps dist from checking or
+# rewriting it. After changing anything here, run `dist plan` to check the
+# result; ADR 0023 says how to regenerate the workflow.
 [dist]
 # The preferred dist version to use in CI (Cargo.toml SemVer syntax)
 cargo-dist-version = "0.31.0"
@@ -28,7 +30,5 @@ tap = "tiagocolombo/homebrew-tap"
 formula = "hall"
 # Release only on version tags: never run the release workflow on pull requests.
 pr-run-mode = "skip"
-# The actions the generated workflow uses, pinned by commit. Dependabot skips
-# release.yml (it would put the file out of step with this config), so bump
-# these here, then `dist generate`.
-github-action-commits = { "actions/checkout" = "3d3c42e5aac5ba805825da76410c181273ba90b1", "actions/upload-artifact" = "cf430e030ddbb5b0abf93d22962f4752f3646cd9", "actions/download-artifact" = "9000827ccba6bdab643e8b6fd33ac0654aef8333" }
+# release.yml is maintained by hand; Dependabot bumps its pinned actions.
+allow-dirty = ["ci"]
