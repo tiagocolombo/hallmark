@@ -63,7 +63,8 @@ is an **item**, and it moves from room to room:
 | Assay Office | The checks, then the principal engineer's review | the assayer |
 | Repair Shop | A fixer addresses failing checks and findings | the fixer |
 | Stamping Room | The approved commit gets its hallmark, a git note | the assayer |
-| Dispatch Dock | The ship command opens the PR (or `update` updates an adopted one), and the item closes | the shipper |
+| Dispatch Dock | Rebases onto the latest base, then the ship command opens the PR (or `update` updates an adopted one), and the item closes | the shipper |
+| Delivery Office | Watches each PR until it merges; a conflict sends it back to development, where a headless dev run rebases it and sends it to review | the delivery worker, the CI watch |
 
 An item's states:
 
@@ -84,7 +85,9 @@ stateDiagram-v2
     review --> escalated: 3rd rejection
     escalated --> fixing: hall retry
     review --> hallmarked: approved
-    hallmarked --> closed: ship command opens the PR
+    hallmarked --> closed: rebase onto the base, ship command opens the PR
+    hallmarked --> development: rebase conflicts
+    closed --> development: delivery - the PR conflicts
     loop --> development: hall pull-back
     escalated --> development: hall pull-back
     development --> dropped: hall drop --reason
@@ -253,7 +256,7 @@ Agents are the main users of `hall`, so every command follows these rules:
 | `hall merge [<child>]` | Merges a parallel part into its parent's branch and closes it. |
 | `hall status [<id>]` | Lists items by state, or shows one item with a **now** block: queued (and what is ahead), the gate running, the reviewer's run, the fixer, a hold, and what you can do. `--all` includes closed and dropped items. |
 | `hall log [<id>]` | Prints the journal. `--kind <event>`, `--limit <n>` |
-| `hall inbox [<n>]` | Everything waiting for you: questions, "ready?", escalations, holds, stuck items, waiting sessions. `hall inbox 1` explains one: why it waits, the evidence, and each action. |
+| `hall inbox [<n>]` | Everything waiting for you: questions, "ready?", escalations, holds, stuck items, waiting sessions. `hall inbox 1` explains one: why it waits, the evidence, and each action. `hall inbox 1 --dismiss` hides one, `--clear` hides them all (each comes back if it changes), `--all` shows them. |
 | `hall watch [<id>]` | Follows an item live until it leaves the loop or needs you. |
 | `hall ready [<id>]` | Freezes the commit and queues the item for review. |
 | `hall pull-back [<id>]` | Returns the item to development. |
@@ -305,6 +308,7 @@ ship   = 2
 
 [capture]
 mode = "gate"   # gate: edits need an item · ask: Claude asks you · off
+free = ["docs/", "*.md"]   # docs and plans need no item
 
 [intake]
 split     = "auto"   # or "off"
