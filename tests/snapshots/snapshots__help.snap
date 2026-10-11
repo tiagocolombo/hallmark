@@ -905,6 +905,20 @@ expression: v
           "required": false,
           "syntax": "--set <set>",
           "takes_value": true
+        },
+        {
+          "help": "Let the loop go past the daily budget today without changing it: today's cap becomes `daily` plus this many tokens (default: another `daily`), and a daily-budget pause lifts now. Repeating it with the same amount changes nothing; it ends at 00:00 UTC",
+          "name": "grant",
+          "required": false,
+          "syntax": "--grant <grant>",
+          "takes_value": true
+        },
+        {
+          "help": "Why, for the journal (with --grant)",
+          "name": "reason",
+          "required": false,
+          "syntax": "--reason <reason>",
+          "takes_value": true
         }
       ],
       "name": "budget",
