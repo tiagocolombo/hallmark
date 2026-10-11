@@ -372,9 +372,15 @@ impl Index {
             return self.sync_rows(hall);
         }
         if owned {
-            // A newer hall owns the item rows: this one would fold items
-            // without the fields it doesn't know, and drop them (ADR 0032).
-            // Events are indexed; the owner re-folds the rows on its next sync.
+            // A newer hall owns the item format: this one folds items without
+            // the fields it doesn't know. Update the rows (so state is never
+            // stale) but keep the unknown fields already in each row's JSON
+            // (ADR 0032). The owner re-folds everything on its next sync.
+            for id in &touched {
+                if let Ok(item) = hall.load_item(*id) {
+                    upsert_item_merged(&tx, &item, &mine)?;
+                }
+            }
             if !touched.is_empty() {
                 tx.execute(
                     "INSERT INTO meta(key, value) VALUES ('items_stale', '1')
@@ -827,6 +833,45 @@ fn mark_writer(c: &Connection, fields: &[String], now: DateTime<Utc>) -> Result<
         params![serde_json::to_string(fields)?, now.to_rfc3339()],
     )?;
     Ok(())
+}
+
+/// Like `upsert_item`, but keeps the fields of the existing row's JSON that
+/// this build doesn't know (`mine` lists the ones it does).
+fn upsert_item_merged(tx: &rusqlite::Transaction<'_>, item: &Item, mine: &[String]) -> Result<()> {
+    let old: Option<serde_json::Value> = tx
+        .query_row(
+            "SELECT json FROM items WHERE id = ?1",
+            [item.id.to_string()],
+            |r| r.get::<_, String>(0),
+        )
+        .optional()?
+        .and_then(|s| serde_json::from_str(&s).ok());
+    if let Some(serde_json::Value::Object(mut merged)) = old {
+        merged.retain(|k, _| !mine.contains(k));
+        if let serde_json::Value::Object(new) = serde_json::to_value(item)? {
+            merged.extend(new);
+        }
+        let json = serde_json::Value::Object(merged);
+        tx.execute(
+            "INSERT INTO items(id, num, state, branch, worktree, updated_at, state_since, json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(id) DO UPDATE SET state = excluded.state, branch = excluded.branch,
+               worktree = excluded.worktree, updated_at = excluded.updated_at,
+               state_since = excluded.state_since, json = excluded.json",
+            params![
+                item.id.to_string(),
+                item.id.0,
+                item.state.as_str(),
+                item.branch,
+                item.worktree,
+                item.updated_at.to_rfc3339(),
+                item.state_since.to_rfc3339(),
+                serde_json::to_string(&json)?,
+            ],
+        )?;
+        return Ok(());
+    }
+    upsert_item(tx, item)
 }
 
 fn upsert_item(tx: &rusqlite::Transaction<'_>, item: &Item) -> Result<()> {

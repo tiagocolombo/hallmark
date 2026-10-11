@@ -30,11 +30,17 @@ the field names in `Item`'s JSON Schema of the hall that last synced it, and
 when. A newer build adds fields, so it is the one whose list the others don't
 contain.
 
-- `sync` skips everything when a build whose fields this one doesn't know
-  synced in the last hour. It writes no rows, indexes no events and advances
-  no offsets, so the newer build still re-folds the items those events touch.
-  Reads work as before.
-- `hall reindex` never empties an index a newer build owns.
+- When a build whose fields this one doesn't know synced in the last hour,
+  `sync` still indexes events and advances offsets, and updates the rows of
+  touched items, but keeps the unknown fields already in each row's JSON. It
+  doesn't claim ownership, and sets `items_stale`. The check and the writes
+  share one immediate transaction, so an older build can't pass the check just
+  before a newer one syncs.
+- A build that finds the last writer older than itself (missing a field it
+  knows), unknown, or `items_stale` set, clears all tables and re-folds every
+  journal, so rows an older build wrote are rebuilt in full.
+- `hall reindex` leaves an index a newer build owns alone. `hall reindex
+  --force` takes ownership.
 - After an hour without the newer build (a downgrade), the older one takes
   over and marks the index as its own.
 - The writer refreshes the mark at most every five minutes, or when its fields
