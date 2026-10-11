@@ -103,10 +103,18 @@ pub struct HudDaemon {
 
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct HudToday {
-    /// Review-loop tokens today (UTC), what `[budget] daily` caps.
+    /// Review-loop tokens today (UTC), weighted by price: what a token
+    /// `[budget] daily` caps.
     pub loop_tokens: u64,
+    /// Review-loop dollars today (UTC) at list price: what a dollar daily
+    /// cap counts.
+    pub loop_usd: f64,
+    /// The daily cap, when it is in weighted tokens.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub daily_cap: Option<u64>,
+    /// The daily cap, when it is in dollars.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub daily_cap_usd: Option<f64>,
     /// Every token today, your sessions included.
     pub tokens: u64,
     pub cost_usd: f64,
@@ -180,14 +188,24 @@ pub fn hud(cwd: &Path, a: HudArgs) -> Result<Response> {
         .and_hms_opt(0, 0, 0)
         .map(|t| t.and_utc());
     let all_today = ix.usage(UsageBy::Day, midnight, None)?;
+    let loop_spent = crate::budget::daily_spent(&ix, &crate::budget::today());
+    let daily = repo
+        .config
+        .budget
+        .daily
+        .as_deref()
+        .and_then(crate::budget::Cap::parse);
     let today = HudToday {
-        loop_tokens: crate::budget::daily_tokens(&ix, &crate::budget::today()),
-        daily_cap: repo
-            .config
-            .budget
-            .daily
-            .as_deref()
-            .and_then(crate::config::parse_tokens),
+        loop_tokens: loop_spent.tokens,
+        loop_usd: loop_spent.usd,
+        daily_cap: match daily {
+            Some(crate::budget::Cap::Tokens(t)) => Some(t),
+            _ => None,
+        },
+        daily_cap_usd: match daily {
+            Some(crate::budget::Cap::Usd(u)) => Some(u),
+            _ => None,
+        },
         tokens: all_today.iter().map(|r| r.tokens).sum(),
         cost_usd: all_today.iter().map(|r| r.cost_usd).sum(),
     };
@@ -263,13 +281,14 @@ fn line(
     if inbox > 0 {
         parts.push(format!("⚑ {inbox} need you"));
     }
-    let spent = match today.daily_cap {
-        Some(cap) => format!(
+    let spent = match (today.daily_cap, today.daily_cap_usd) {
+        (Some(cap), _) => format!(
             "{}/{} today",
             fmt_tokens(today.loop_tokens),
             fmt_tokens(cap)
         ),
-        None => format!("{} today", fmt_usd(today.cost_usd)),
+        (_, Some(cap)) => format!("{}/{} today", fmt_usd(today.loop_usd), fmt_usd(cap)),
+        _ => format!("{} today", fmt_usd(today.cost_usd)),
     };
     parts.push(spent);
     parts.join(" · ")

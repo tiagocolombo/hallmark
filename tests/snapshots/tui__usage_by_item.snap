@@ -5,8 +5,8 @@ expression: "screen(&env, &app, W, H)"
 hall · app (1 of 3 repos)   daemon ● running   ⚑ 3 waiting   rejected today 3 · review tokens 400k         usage · hh:mm
 ┌ Usage · by item · all time ──────────────────────────────────────────────────────────────────────────────────────────┐
 │item                           runs   tokens    ≈ $       budget                                                      │
-│H-0003 Rate limit the public … 1      1.20M     9.50      ██████████ 150% of 800k                                     │
-│H-0001 Retry failed webhook d… 2      500k      5.10      ██████░░░░  62% of 800k                                     │
+│H-0003 Rate limit the public … 1      1.20M     9.50      ████░░░░░░  42% of 800k                                     │
+│H-0001 Retry failed webhook d… 2      500k      5.10      ██░░░░░░░░  18% of 800k                                     │
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │

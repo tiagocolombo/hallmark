@@ -254,6 +254,7 @@ Agents are the main users of `hall`, so every command follows these rules:
 | `hall pull-back [<id>]` | Returns the item to development. |
 | `hall drop [<id>] --reason <r>` | Abandons the item. The branch and journal stay. `--keep-worktree` |
 | `hall retry [<id>] --reason <r>` | Allows an escalated item one more round, or releases a held item. |
+| `hall continue [<id>]` | Moves an item on from wherever it waits: releases a hold, retries an escalation, sends "ready?" to review, or reopens its Claude session. |
 | `hall propose-ready [<id>] --summary <s>` | The agent says the work looks done. |
 | `hall ask <question>` | Asks you a question. `--options a,b`, `--default`, `--wait 4h`, `--item`, `--session` |
 | `hall answer <qid> <answer>` | Answers; the daemon resumes the asking session with it. |
@@ -291,6 +292,12 @@ stuck_after = "30m"
 lenses      = "all"
 rules       = ["CLAUDE.md", "AGENTS.md"]
 
+[parallel]                     # how many of each run at once, per repo
+checks = 2
+review = 4
+fix    = 4
+ship   = 2
+
 [capture]
 mode = "gate"   # gate: edits need an item · ask: Claude asks you · off
 
@@ -303,7 +310,7 @@ review_model    = "opus"
 fix_model       = "sonnet"
 intake_model    = "haiku"
 librarian_model = "haiku"
-# daily = "4M"; per_item = "800k"
+# daily = "4M"; per_item = "800k" (weighted by price: a cache read counts a tenth) or "$15"
 # [budget.review] max_usd = 3.0, daily = "2M", effort = "high", timeout = "20m"
 
 [library]

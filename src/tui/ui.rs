@@ -9,7 +9,7 @@ use ratatui::widgets::{Block, Clear, Paragraph, Row, Table, TableState};
 
 use super::app::{App, COLUMNS, Input, Tone, UsageGroup, View, placeholder, tone};
 use super::data::{RepoStatus, room_label, room_role};
-use crate::config::parse_tokens;
+use crate::budget::{Cap, Spent};
 use crate::event::short;
 use crate::findings::{Status as FStatus, Tracked};
 use crate::index::{InboxEntry, UsageRow};
@@ -1315,12 +1315,8 @@ fn live(f: &mut Frame, area: Rect, app: &App) {
 // --- usage -------------------------------------------------------------------
 
 /// `██████░░░░  61%`
-fn bar(used: u64, cap: u64) -> Line<'static> {
-    let frac = if cap == 0 {
-        1.0
-    } else {
-        used as f64 / cap as f64
-    };
+fn bar(spent: Spent, cap: Cap) -> Line<'static> {
+    let frac = cap.fraction(&spent);
     let filled = ((frac * 10.0).round() as usize).min(10);
     let c = if frac >= 0.9 {
         STOP
@@ -1332,7 +1328,7 @@ fn bar(used: u64, cap: u64) -> Line<'static> {
     Line::from(vec![
         Span::styled("█".repeat(filled), fg(c)),
         Span::styled("░".repeat(10 - filled), fg(DIM)),
-        Span::raw(format!(" {:>3.0}% of {}", frac * 100.0, fmt_tokens(cap))),
+        Span::raw(format!(" {:>3.0}% of {}", frac * 100.0, cap.limit_label())),
     ])
 }
 
@@ -1350,8 +1346,8 @@ fn usage(f: &mut Frame, area: Rect, app: &App) {
     let Some(repo) = app.repo() else { return };
     let u = &repo.data.usage;
     let budget = &repo.data.config.budget;
-    let daily = budget.daily.as_deref().and_then(parse_tokens);
-    let per_item = budget.per_item.as_deref().and_then(parse_tokens);
+    let daily = budget.daily.as_deref().and_then(Cap::parse);
+    let per_item = budget.per_item.as_deref().and_then(Cap::parse);
     let widths = [
         Constraint::Length(30),
         Constraint::Length(6),
@@ -1379,10 +1375,10 @@ fn usage(f: &mut Frame, area: Rect, app: &App) {
                     let cap = room_role(&r.key)
                         .and_then(|role| budget.role(role))
                         .and_then(|b| b.daily.as_deref())
-                        .and_then(parse_tokens);
+                        .and_then(Cap::parse);
                     let b = match (r.key.as_str(), cap) {
                         ("workshop", _) => dim("not capped"),
-                        (_, Some(c)) => bar(r.tokens, c),
+                        (_, Some(c)) => bar(row_spent(r), c),
                         (_, None) => dim("—"),
                     };
                     usage_cells(Line::from(room_label(&r.key).to_string()), r, b)
@@ -1395,7 +1391,10 @@ fn usage(f: &mut Frame, area: Rect, app: &App) {
                     l.spans.insert(0, Span::raw("loop "));
                     l
                 }
-                None => dim(&format!("loop {} · no daily cap", fmt_tokens(u.loop_today))),
+                None => dim(&format!(
+                    "loop {} · no daily cap",
+                    fmt_tokens(u.loop_today.tokens)
+                )),
             };
             rows.push(usage_cells(Line::from("total"), &total, loop_line).style(bold()));
             ("Usage · by room · today (UTC)".into(), rows)
@@ -1427,7 +1426,11 @@ fn usage(f: &mut Frame, area: Rect, app: &App) {
                     };
                     let b = match daily {
                         Some(c) => {
-                            let mut l = bar(d.loop_tokens, c);
+                            let spent = Spent {
+                                tokens: d.loop_tokens,
+                                usd: d.loop_usd,
+                            };
+                            let mut l = bar(spent, c);
                             l.spans.insert(0, Span::raw("loop "));
                             l
                         }
@@ -1481,7 +1484,14 @@ fn usage(f: &mut Frame, area: Rect, app: &App) {
     }
 }
 
-fn item_rows(app: &App, rows: &[UsageRow], cap: Option<u64>, n: usize) -> Vec<Row<'static>> {
+fn row_spent(r: &UsageRow) -> Spent {
+    Spent {
+        tokens: r.weighted_tokens(),
+        usd: r.cost_usd,
+    }
+}
+
+fn item_rows(app: &App, rows: &[UsageRow], cap: Option<Cap>, n: usize) -> Vec<Row<'static>> {
     let Some(repo) = app.repo() else {
         return vec![];
     };
@@ -1502,7 +1512,7 @@ fn item_rows(app: &App, rows: &[UsageRow], cap: Option<u64>, n: usize) -> Vec<Ro
                 {
                     Line::from(Span::styled("over item cap · with you", fg(STOP)))
                 }
-                (Some(it), Some(c)) if !it.state.is_terminal() => bar(r.tokens, c),
+                (Some(it), Some(c)) if !it.state.is_terminal() => bar(row_spent(r), c),
                 (Some(it), _) => {
                     let (t, c) = tag(it);
                     let label = if t.is_empty() {

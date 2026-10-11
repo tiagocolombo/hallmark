@@ -134,8 +134,9 @@ pub struct UsageData {
     pub by_item: Vec<UsageRow>,
     /// The last [`USAGE_DAYS`] days, newest first.
     pub by_day: Vec<DayRow>,
-    /// Tokens the review loop (every room but the Workshop) used today.
-    pub loop_today: u64,
+    /// What the review loop (every room but the Workshop) spent today:
+    /// weighted tokens and dollars.
+    pub loop_today: crate::budget::Spent,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -143,8 +144,10 @@ pub struct DayRow {
     pub day: String,
     pub records: u64,
     pub tokens: u64,
-    /// Tokens outside the Workshop, which the daily cap counts.
+    /// Weighted tokens outside the Workshop, which a token daily cap counts.
     pub loop_tokens: u64,
+    /// Dollars outside the Workshop, which a dollar daily cap counts.
+    pub loop_usd: f64,
     pub cost_usd: f64,
 }
 
@@ -258,11 +261,14 @@ impl UsageData {
     fn load(ix: &Index, now: DateTime<Utc>) -> crate::error::Result<UsageData> {
         let today = start_of_day(now);
         let by_room = ix.usage(UsageBy::Room, Some(today), None)?;
-        let loop_today = by_room
-            .iter()
-            .filter(|r| r.key != "workshop")
-            .map(|r| r.tokens)
-            .sum();
+        let loop_today = by_room.iter().filter(|r| r.key != "workshop").fold(
+            crate::budget::Spent::default(),
+            |mut s, r| {
+                s.tokens += r.weighted_tokens();
+                s.usd += r.cost_usd;
+                s
+            },
+        );
         let first_day = (now - Duration::days(USAGE_DAYS - 1))
             .format("%Y-%m-%d")
             .to_string();
@@ -271,9 +277,12 @@ impl UsageData {
                     COALESCE(SUM(COALESCE(input,0) + COALESCE(output,0) + COALESCE(cache_read,0)
                                  + COALESCE(cache_write,0)), 0),
                     COALESCE(SUM(CASE WHEN COALESCE(room,'') != 'workshop'
-                        THEN COALESCE(input,0) + COALESCE(output,0) + COALESCE(cache_read,0)
-                             + COALESCE(cache_write,0) ELSE 0 END), 0),
-                    COALESCE(SUM(cost_usd), 0.0)
+                        THEN COALESCE(input,0) + COALESCE(output,0)
+                             + COALESCE(cache_read,0) * 0.1
+                             + COALESCE(cache_write,0) * 1.25 ELSE 0 END), 0),
+                    COALESCE(SUM(cost_usd), 0.0),
+                    COALESCE(SUM(CASE WHEN COALESCE(room,'') != 'workshop'
+                        THEN COALESCE(cost_usd,0) ELSE 0 END), 0.0)
              FROM usage WHERE day >= ?1 GROUP BY day ORDER BY day DESC",
         )?;
         let by_day = stmt
@@ -282,8 +291,9 @@ impl UsageData {
                     day: r.get(0)?,
                     records: r.get::<_, i64>(1)? as u64,
                     tokens: r.get::<_, i64>(2)? as u64,
-                    loop_tokens: r.get::<_, i64>(3)? as u64,
+                    loop_tokens: r.get::<_, f64>(3)?.max(0.0).round() as u64,
                     cost_usd: r.get(4)?,
+                    loop_usd: r.get(5)?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
