@@ -361,7 +361,25 @@ fn more_repos(env: &Env) {
     std::fs::write(&reg, v.to_string()).unwrap();
 }
 
+/// The "now" line asks whether a daemon runs on this machine (its lock under
+/// `HALL_HOME`). In-process, that would be the real one: every test here sees
+/// a private `HALL_HOME` whose daemon lock this process holds, so a daemon
+/// always runs, whatever the machine is doing.
+fn daemon_here() {
+    static LOCK: std::sync::OnceLock<std::fs::File> = std::sync::OnceLock::new();
+    LOCK.get_or_init(|| {
+        let home = std::env::temp_dir().join(format!("hall-tui-{}", std::process::id()));
+        // SAFETY: set once, before any test reads it, from inside the
+        // OnceLock that every test passes through first.
+        unsafe { std::env::set_var("HALL_HOME", &home) };
+        hallmark::daemon::state::try_instance_lock()
+            .unwrap()
+            .expect("a private daemon lock")
+    });
+}
+
 fn load(env: &Env, cwd: &Path) -> App {
+    daemon_here();
     let mut app = App::load(cwd, &env.home.join("repos.json"));
     app.redact = Redact {
         times: true,
@@ -827,6 +845,7 @@ fn switches_repos_and_survives_odd_ones() {
 #[test]
 fn falls_back_to_the_current_repo_without_a_registry() {
     let env = Env::initialized();
+    daemon_here();
     let app = App::load(&env.repo, &env.root.join("no-such-registry.json"));
     assert_eq!(app.repos.len(), 1);
     assert_eq!(app.repo().unwrap().name, "app");
@@ -840,6 +859,7 @@ fn falls_back_to_the_current_repo_without_a_registry() {
         render(&app, 1, 1);
     }
     // Outside any repo, with no registry: nothing to show, no crash.
+    daemon_here();
     let app = App::load(&env.root, &env.root.join("no-such-registry.json"));
     assert!(app.repos.is_empty());
     render(&app, W, 10);
