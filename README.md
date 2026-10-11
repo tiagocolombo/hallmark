@@ -9,11 +9,18 @@
 Coding agents build your change. An independent principal-engineer agent reviews it.<br>
 Only commits that earn a **hallmark** leave your machine.
 
-[![CI](https://github.com/tiagocolombo/hallmark/actions/workflows/ci.yml/badge.svg)](https://github.com/tiagocolombo/hallmark/actions/workflows/ci.yml)
+[![CI](https://github.com/tiagocolombo/hallmark/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/tiagocolombo/hallmark/actions/workflows/ci.yml)
+[![Security audit](https://github.com/tiagocolombo/hallmark/actions/workflows/audit.yml/badge.svg?branch=main)](https://github.com/tiagocolombo/hallmark/actions/workflows/audit.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/tiagocolombo/hallmark/badge)](https://scorecard.dev/viewer/?uri=github.com/tiagocolombo/hallmark)
+[![Release](https://img.shields.io/github/v/release/tiagocolombo/hallmark?include_prereleases&sort=semver)](https://github.com/tiagocolombo/hallmark/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Rust 1.88+](https://img.shields.io/badge/rust-1.88%2B-orange.svg)](https://www.rust-lang.org)
+
+[![Rust 1.88+](https://img.shields.io/badge/rust-1.88%2B-orange.svg?logo=rust)](https://www.rust-lang.org)
 [![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)](#install)
 [![Built for Claude Code](https://img.shields.io/badge/built%20for-Claude%20Code-d97757.svg)](https://claude.com/claude-code)
+[![Security policy](https://img.shields.io/badge/security-policy-brightgreen.svg)](SECURITY.md)
+[![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-fe5196.svg?logo=conventionalcommits&logoColor=white)](https://www.conventionalcommits.org)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 [Quick start](#quick-start) · [How it works](#how-it-works) · [Install](#install) · [Usage](#usage) · [Docs](#documentation) · [Contributing](CONTRIBUTING.md)
 
