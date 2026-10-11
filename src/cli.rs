@@ -14,7 +14,7 @@ use crate::output::{self, Mode, Response};
 #[derive(Debug, Parser)]
 #[command(
     name = "hall",
-    version,
+    version = env!("HALL_VERSION"),
     about = "Hallmark: agentic development · automated review · a full record",
     long_about = "Hallmark runs a local, agent-first development loop. Agents are its main \
 users: output is JSON whenever stdout isn't a terminal, every reply lists `next` commands, and \
@@ -80,6 +80,8 @@ pub enum Cmd {
     Hook(HookArgs),
     /// One-time machine setup.
     Setup(SetupArgs),
+    /// Install the latest hall from main; does nothing when it's current.
+    Update(UpdateArgs),
     /// Run the review loop in the background for every registered repo.
     Daemon(DaemonArgs),
     /// Claim the next piece of work for a role, with a lease (agents).
@@ -328,6 +330,22 @@ pub struct SetupArgs {
     /// `hall setup`: don't create a phone topic.
     #[arg(long)]
     pub no_notify: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct UpdateArgs {
+    /// Only say whether an update is available; install nothing.
+    #[arg(long)]
+    pub check: bool,
+    /// The git repository to install from.
+    #[arg(long, env = "HALL_UPDATE_SOURCE", default_value = commands::update::SOURCE)]
+    pub source: String,
+    /// The branch whose latest commit is installed.
+    #[arg(long, default_value = "main")]
+    pub branch: String,
+    /// Don't refresh the Claude Code plugin or restart the daemon afterwards.
+    #[arg(long)]
+    pub no_setup: bool,
 }
 
 #[derive(Debug, Args)]
@@ -702,6 +720,7 @@ fn dispatch(cmd: Option<Cmd>, cwd: &std::path::Path, mode: Mode) -> Result<Respo
         Some(Cmd::Schema(a)) => meta::schema(a),
         Some(Cmd::Hook(a)) => crate::hooks::run(a.event, cwd),
         Some(Cmd::Setup(a)) => setup::setup(cwd, a),
+        Some(Cmd::Update(a)) => update::update(cwd, a),
         Some(Cmd::Daemon(a)) => daemon::daemon(cwd, a),
         Some(Cmd::Next(a)) => next::next(cwd, a),
         Some(Cmd::Findings(a)) => review::findings(cwd, a),

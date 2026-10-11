@@ -19,6 +19,7 @@ pub mod record;
 pub mod review;
 pub mod setup;
 pub mod status;
+pub mod update;
 pub mod watch;
 
 use chrono::{DateTime, Utc};

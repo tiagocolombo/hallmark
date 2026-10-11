@@ -588,6 +588,46 @@ expression: v
       "usage": "hall setup [OPTIONS] [TARGET]"
     },
     {
+      "about": "Install the latest hall from main; does nothing when it's current",
+      "args": [
+        {
+          "default": "false",
+          "help": "Only say whether an update is available; install nothing",
+          "name": "check",
+          "required": false,
+          "syntax": "--check",
+          "takes_value": false
+        },
+        {
+          "default": "https://github.com/tiagocolombo/hallmark.git",
+          "help": "The git repository to install from",
+          "name": "source",
+          "required": false,
+          "syntax": "--source <source>",
+          "takes_value": true
+        },
+        {
+          "default": "main",
+          "help": "The branch whose latest commit is installed",
+          "name": "branch",
+          "required": false,
+          "syntax": "--branch <branch>",
+          "takes_value": true
+        },
+        {
+          "default": "false",
+          "help": "Don't refresh the Claude Code plugin or restart the daemon afterwards",
+          "name": "no_setup",
+          "required": false,
+          "syntax": "--no-setup",
+          "takes_value": false
+        }
+      ],
+      "name": "update",
+      "schema": "hall schema update",
+      "usage": "hall update [OPTIONS]"
+    },
+    {
       "about": "Run the review loop in the background for every registered repo",
       "args": [],
       "name": "daemon",
