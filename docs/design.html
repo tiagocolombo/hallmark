@@ -801,9 +801,9 @@ scenario. Approve when nothing blocks.</code></pre>
       <ol class="steps" style="max-width: none">
         <li><div><strong>An item closes or escalates.</strong> Its journal holds what the reviewer found, what was disputed and how it was settled, and your decisions with reasons.</div></li>
         <li><div><strong>The librarian distils it.</strong> A small Haiku run turns the journal into proposed learnings. It updates existing entries rather than adding duplicates. Each costs a few thousand tokens.</div></li>
-        <li><div><strong>You approve the learnings.</strong> Proposed learnings collect into a knowledge item that goes through Hallmark like any other change. A bad learning would quietly weaken every later review, so it passes the same gate as code.</div></li>
+        <li><div><strong>You approve the learnings.</strong> Proposed learnings wait in your inbox until you accept or reject them with <code>hall library review</code>. They live in a local store next to the journal, never in the repository, so no branch can change what its review is told.</div></li>
         <li><div><strong>The reviewer is briefed.</strong> Before each review, Hallmark picks the learnings scoped to the changed paths and searches the rest using the diff. It sends the best of them within a set token limit.</div></li>
-        <li><div><strong>Learnings earn their place.</strong> Each verdict says which learnings it used and whether they held. Contradicted or unused ones are proposed for retirement.</div></li>
+        <li><div><strong>Learnings earn their place.</strong> Each verdict says which learnings it used and whether they held. Contradicted or unused ones are retired.</div></li>
       </ol>
     </div>
     <div>

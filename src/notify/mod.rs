@@ -191,6 +191,7 @@ fn kind_label(kind: &str) -> &str {
         "ship_failed" => "ship failed",
         "stuck" => "stuck",
         "daemon_stopped" => "daemon stopped",
+        "learnings" => "learnings",
         other => other,
     }
 }

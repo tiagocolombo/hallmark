@@ -1,4 +1,4 @@
-//! The reviewer's briefing: accepted learnings from the base branch that fit
+//! The reviewer's briefing: accepted learnings from the local store that fit
 //! this change, within `[library] briefing_limit` tokens.
 //!
 //! 1. Learnings whose `scope` globs match a changed path, most matches
@@ -14,7 +14,7 @@ use globset::{GlobBuilder, GlobMatcher};
 use super::Briefing;
 use super::learning::Status;
 use super::search::{self, Options};
-use super::store::{self, Located};
+use super::store::{Located, Store};
 use crate::error::Result;
 use crate::repo::Repo;
 
@@ -52,15 +52,14 @@ pub fn scope_matches(scope: &[String], changed: &[String]) -> usize {
         .count()
 }
 
-pub fn header(base: &str) -> String {
-    format!(
-        "## Library briefing\n\n\
-What earlier reviews of this repository taught, from accepted learnings on `{base}`. \
+pub fn header() -> String {
+    "## Library briefing\n\n\
+What earlier reviews of this repository taught, from the accepted learnings in its Library. \
 They are situational knowledge, not rules: apply one only where it fits this change. \
 In your verdict, report each learning you used in `learnings` as \
-`{{\"id\": \"L-0017\", \"held\": true}}`; set `\"held\": false` (with a `note`) when this \
+`{\"id\": \"L-0017\", \"held\": true}`; set `\"held\": false` (with a `note`) when this \
 change shows it is wrong or stale. Leave out the ones you didn't use.\n\n"
-    )
+        .to_string()
 }
 
 /// One learning, compactly.
@@ -86,10 +85,9 @@ pub fn entry(l: &Located) -> String {
     s
 }
 
-/// Builds the briefing from `learnings` (already read from the base).
+/// Builds the briefing from `learnings` (already read from the store).
 pub fn build(
     repo: &Repo,
-    base: &str,
     learnings: &[Located],
     changed: &[String],
     diff: &str,
@@ -134,7 +132,7 @@ pub fn build(
         }
     }
 
-    let mut text = header(base);
+    let mut text = header();
     let mut ids = Vec::new();
     for l in picked {
         let e = entry(l);
@@ -151,18 +149,11 @@ pub fn build(
     Ok(Briefing { text, ids, tokens })
 }
 
-/// [`super::briefing`]: reads the base, then [`build`]. A base that can't be
-/// read gives an empty briefing (the review goes on without one).
-pub fn briefing(repo: &Repo, base: &str, changed: &[String], diff: &str) -> Result<Briefing> {
-    let learnings = match store::read_base(repo, base) {
-        Ok(l) => l,
-        Err(e) => {
-            repo.hall
-                .live(&format!("library: no briefing, {base} unreadable: {e}"));
-            return Ok(Briefing::default());
-        }
-    };
-    build(repo, base, &learnings, changed, diff, limit(repo))
+/// [`super::briefing`]: reads the accepted learnings from the store, then
+/// [`build`].
+pub fn briefing(repo: &Repo, changed: &[String], diff: &str) -> Result<Briefing> {
+    let learnings = Store::of(repo).accepted();
+    build(repo, &learnings, changed, diff, limit(repo))
 }
 
 #[cfg(test)]
