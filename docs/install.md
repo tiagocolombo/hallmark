@@ -11,6 +11,10 @@ installs for you. You need `git` and [Claude Code](https://claude.com/claude-cod
 
 ### From a release
 
+> No release has been published yet, so these URLs return 404 until the first
+> tag is cut. Until then, [build from source](#from-source). Homebrew
+> publishing is off (ADR 0023), so there is no `brew` formula.
+
 Each release has archives for macOS (Apple silicon and Intel), Linux (x86_64
 and arm64, glibc; x86_64 musl) and Windows (x86_64), each with a `.sha256`
 checksum. Each release also has the installer scripts below.
@@ -26,12 +30,6 @@ curl --proto '=https' --tlsv1.2 -LsSf \
 
 ```powershell
 powershell -ExecutionPolicy Bypass -c "irm https://github.com/tiagocolombo/hallmark/releases/latest/download/hallmark-installer.ps1 | iex"
-```
-
-**Homebrew:**
-
-```sh
-brew install tiagocolombo/tap/hall
 ```
 
 The installers put `hall` in `~/.cargo/bin` (`%USERPROFILE%\.cargo\bin` on
@@ -135,7 +133,7 @@ It needs `cargo` (or `HALL_CARGO`) and git access to the repository: git and
 cargo both use your git credentials, and never prompt for them. `--source`
 (or `HALL_UPDATE_SOURCE`) installs from another repository, such as a fork or
 an SSH URL, and `--branch`
-from another branch. A `hall` installed with Nix or Homebrew, or run from a
+from another branch. A `hall` installed with Nix, or run from a
 build directory, is left to the tool that installed it. A `hall` built
 without git (a crate tarball, the Nix package) doesn't know its commit, so
 `hall update` always installs.
@@ -143,7 +141,7 @@ without git (a crate tarball, the Nix package) doesn't know its commit, so
 ### By hand
 
 Upgrade the binary the same way you installed it: rerun the installer, use
-`brew upgrade hall`, `cargo install … --locked --force`, `nix profile upgrade`,
+`cargo install … --locked --force`, `nix profile upgrade`,
 or `rig install` in Hallmark's repo. Then **rerun `hall setup`**. The plugin is
 embedded in the binary, so this refreshes the skills, agents and hooks to
 match, re-points the hooks and the status line if `hall` moved, and restarts

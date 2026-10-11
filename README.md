@@ -66,9 +66,8 @@ holds up:
 ## Quick start
 
 ```sh
-# 1. Install (macOS and Linux; see Install for Windows, Homebrew, Cargo and Nix)
-curl --proto '=https' --tlsv1.2 -LsSf \
-  https://github.com/tiagocolombo/hallmark/releases/latest/download/hallmark-installer.sh | sh
+# 1. Install (Rust 1.88+; see Install for prebuilt binaries and Nix)
+cargo install --git https://github.com/tiagocolombo/hallmark --locked
 
 # 2. In the repository you want reviewed
 cd your-repo
@@ -134,15 +133,13 @@ is used for issues and pull requests by the default ship command.
 
 | Method | Command |
 | --- | --- |
-| macOS, Linux | `curl --proto '=https' --tlsv1.2 -LsSf https://github.com/tiagocolombo/hallmark/releases/latest/download/hallmark-installer.sh \| sh` |
-| Windows (PowerShell) | `powershell -ExecutionPolicy Bypass -c "irm https://github.com/tiagocolombo/hallmark/releases/latest/download/hallmark-installer.ps1 \| iex"` |
-| Homebrew | `brew install tiagocolombo/tap/hall` |
 | Cargo (Rust 1.88+) | `cargo install --git https://github.com/tiagocolombo/hallmark --locked` |
 | Nix | `nix-build nix` from a clone, or `nix profile install --file nix` |
+| Prebuilt binaries | Installer scripts and archives, once a release is published (see the [installation guide](docs/install.md)) |
 
-Prebuilt binaries cover macOS (Apple silicon and Intel), Linux (x86_64 and
-arm64, glibc and musl) and Windows (x86_64), each with a SHA-256 checksum.
-Then run `hall setup` in your repository.
+Releases will carry binaries for macOS (Apple silicon and Intel), Linux
+(x86_64 and arm64 glibc, x86_64 musl) and Windows (x86_64), each with a SHA-256
+checksum. Then run `hall setup` in your repository.
 
 See the [installation guide](docs/install.md) for every option, upgrading
 with `hall update`, and notes for Windows.
