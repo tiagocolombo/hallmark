@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS questions (
 CREATE TABLE IF NOT EXISTS notifications (
   item TEXT, session TEXT, t TEXT NOT NULL, message TEXT, kind TEXT, resolved_at TEXT
 );
+CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS findings (
   item TEXT NOT NULL, id TEXT NOT NULL, round INTEGER NOT NULL, t TEXT NOT NULL, sha TEXT,
   lens TEXT NOT NULL, severity TEXT NOT NULL, file TEXT, line INTEGER, title TEXT, scenario TEXT,
@@ -259,28 +260,76 @@ impl Index {
         Ok(ix)
     }
 
-    /// Empties the index and rebuilds it from the journal.
-    pub fn rebuild(hall: &Hall) -> Result<Index> {
+    /// Empties the index and rebuilds it from the journal. Returns false,
+    /// leaving the index alone, when a newer hall owns it and `force` is not
+    /// set. `force` takes the ownership.
+    pub fn rebuild(hall: &Hall, force: bool) -> Result<(Index, bool)> {
         let mut ix = Index::open(hall)?;
+        if force {
+            ix.conn.execute(
+                "DELETE FROM meta WHERE key IN ('item_fields', 'item_fields_at', 'items_stale')",
+                [],
+            )?;
+        } else if ix.owned_by_newer() {
+            return Ok((ix, false));
+        }
         ix.clear()?;
         ix.sync(hall)?;
-        Ok(ix)
+        Ok((ix, true))
     }
 
     fn clear(&mut self) -> Result<()> {
-        self.conn.execute_batch(
-            "DELETE FROM files; DELETE FROM items; DELETE FROM events; DELETE FROM usage;
-             DELETE FROM questions; DELETE FROM notifications; DELETE FROM findings;",
-        )?;
-        Ok(())
+        clear_tables(&self.conn)
     }
 
     pub fn sync(&mut self, hall: &Hall) -> Result<()> {
         if !hall.exists() {
             return Ok(());
         }
+        self.sync_rows(hall)
+    }
+
+    /// A newer hall (one whose items have fields this build doesn't know)
+    /// synced this index in the last hour. After an hour without it (a
+    /// downgrade), this one takes over.
+    pub fn owned_by_newer(&self) -> bool {
+        owned_by_newer(&self.conn)
+    }
+
+    /// The item fields of the newest hall that synced this index, and when
+    /// it last did.
+    pub fn writer(&self) -> Option<(Vec<String>, DateTime<Utc>)> {
+        writer(&self.conn)
+    }
+
+    /// Records `fields` as this index's item format. Written at most every
+    /// five minutes.
+    #[doc(hidden)]
+    pub fn mark_writer(&self, fields: &[String], now: DateTime<Utc>) -> Result<()> {
+        mark_writer(&self.conn, fields, now)
+    }
+
+    fn sync_rows(&mut self, hall: &Hall) -> Result<()> {
         let files = hall.journal_files()?;
-        let tx = self.conn.transaction()?;
+        // The ownership check and the writes share one write lock, so an older
+        // build can't pass the check just before a newer one syncs.
+        let tx = self
+            .conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let mine = item_fields();
+        let owned = owned_by_newer(&tx);
+        if !owned {
+            // The last writer was older (or unknown), or skipped item rows it
+            // couldn't fold: rows it wrote lack fields this build knows, and
+            // the offsets are already past those events. Fold them all again.
+            let stale = match writer(&tx) {
+                Some((fields, _)) => mine.iter().any(|f| !fields.contains(f)),
+                None => true,
+            } || meta_get(&tx, "items_stale").is_some();
+            if stale {
+                clear_tables(&tx)?;
+            }
+        }
         let mut touched: BTreeSet<ItemId> = BTreeSet::new();
         let mut rebuild = false;
         for (item, path) in &files {
@@ -320,12 +369,33 @@ impl Index {
             // A journal shrank, which only happens if someone edited it.
             drop(tx);
             self.clear()?;
-            return self.sync(hall);
+            return self.sync_rows(hall);
         }
-        for id in touched {
-            if let Ok(item) = hall.load_item(id) {
-                upsert_item(&tx, &item)?;
+        if owned {
+            // A newer hall owns the item format: this one folds items without
+            // the fields it doesn't know. Update the rows (so state is never
+            // stale) but keep the unknown fields already in each row's JSON
+            // (ADR 0032). The owner re-folds everything on its next sync.
+            for id in &touched {
+                if let Ok(item) = hall.load_item(*id) {
+                    upsert_item_merged(&tx, &item, &mine)?;
+                }
             }
+            if !touched.is_empty() {
+                tx.execute(
+                    "INSERT INTO meta(key, value) VALUES ('items_stale', '1')
+                     ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    [],
+                )?;
+            }
+        } else {
+            for id in touched {
+                if let Ok(item) = hall.load_item(id) {
+                    upsert_item(&tx, &item)?;
+                }
+            }
+            tx.execute("DELETE FROM meta WHERE key = 'items_stale'", [])?;
+            mark_writer(&tx, &mine, Utc::now())?;
         }
         tx.commit()?;
         Ok(())
@@ -719,6 +789,91 @@ fn question_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<QuestionRow> {
     })
 }
 
+fn clear_tables(c: &Connection) -> Result<()> {
+    c.execute_batch(
+        "DELETE FROM files; DELETE FROM items; DELETE FROM events; DELETE FROM usage;
+         DELETE FROM questions; DELETE FROM notifications; DELETE FROM findings;",
+    )?;
+    Ok(())
+}
+
+fn meta_get(c: &Connection, k: &str) -> Option<String> {
+    c.query_row("SELECT value FROM meta WHERE key = ?1", [k], |r| {
+        r.get::<_, String>(0)
+    })
+    .ok()
+}
+
+fn writer(c: &Connection) -> Option<(Vec<String>, DateTime<Utc>)> {
+    let fields = serde_json::from_str(&meta_get(c, "item_fields")?).ok()?;
+    let at = DateTime::parse_from_rfc3339(&meta_get(c, "item_fields_at")?)
+        .ok()?
+        .with_timezone(&Utc);
+    Some((fields, at))
+}
+
+fn owned_by_newer(c: &Connection) -> bool {
+    let mine = item_fields();
+    writer(c).is_some_and(|(fields, at)| {
+        fields.iter().any(|f| !mine.contains(f)) && Utc::now() - at < chrono::Duration::hours(1)
+    })
+}
+
+fn mark_writer(c: &Connection, fields: &[String], now: DateTime<Utc>) -> Result<()> {
+    if let Some((known, at)) = writer(c)
+        && known == fields
+        && at <= now
+        && now - at < chrono::Duration::minutes(5)
+    {
+        return Ok(());
+    }
+    c.execute(
+        "INSERT INTO meta(key, value) VALUES ('item_fields', ?1), ('item_fields_at', ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![serde_json::to_string(fields)?, now.to_rfc3339()],
+    )?;
+    Ok(())
+}
+
+/// Like `upsert_item`, but keeps the fields of the existing row's JSON that
+/// this build doesn't know (`mine` lists the ones it does).
+fn upsert_item_merged(tx: &rusqlite::Transaction<'_>, item: &Item, mine: &[String]) -> Result<()> {
+    let old: Option<serde_json::Value> = tx
+        .query_row(
+            "SELECT json FROM items WHERE id = ?1",
+            [item.id.to_string()],
+            |r| r.get::<_, String>(0),
+        )
+        .optional()?
+        .and_then(|s| serde_json::from_str(&s).ok());
+    if let Some(serde_json::Value::Object(mut merged)) = old {
+        merged.retain(|k, _| !mine.contains(k));
+        if let serde_json::Value::Object(new) = serde_json::to_value(item)? {
+            merged.extend(new);
+        }
+        let json = serde_json::Value::Object(merged);
+        tx.execute(
+            "INSERT INTO items(id, num, state, branch, worktree, updated_at, state_since, json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(id) DO UPDATE SET state = excluded.state, branch = excluded.branch,
+               worktree = excluded.worktree, updated_at = excluded.updated_at,
+               state_since = excluded.state_since, json = excluded.json",
+            params![
+                item.id.to_string(),
+                item.id.0,
+                item.state.as_str(),
+                item.branch,
+                item.worktree,
+                item.updated_at.to_rfc3339(),
+                item.state_since.to_rfc3339(),
+                serde_json::to_string(&json)?,
+            ],
+        )?;
+        return Ok(());
+    }
+    upsert_item(tx, item)
+}
+
 fn upsert_item(tx: &rusqlite::Transaction<'_>, item: &Item) -> Result<()> {
     tx.execute(
         "INSERT INTO items(id, num, state, branch, worktree, updated_at, state_since, json)
@@ -897,6 +1052,19 @@ fn index_event(tx: &rusqlite::Transaction<'_>, file_item: Option<ItemId>, e: &Ev
         _ => {}
     }
     Ok(())
+}
+
+/// The fields of `Item` this build knows, from its JSON Schema: a newer
+/// build that adds one has a field list this one doesn't contain.
+pub fn item_fields() -> Vec<String> {
+    let schema = schemars::schema_for!(Item);
+    let mut out: Vec<String> = schema
+        .get("properties")
+        .and_then(|p| p.as_object())
+        .map(|p| p.keys().cloned().collect())
+        .unwrap_or_default();
+    out.sort();
+    out
 }
 
 #[cfg(test)]

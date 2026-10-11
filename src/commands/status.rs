@@ -660,10 +660,20 @@ pub struct ReindexOut {
     pub events: u64,
     pub usage_records: u64,
     pub path: String,
+    /// False when a newer hall owns the index and nothing was rebuilt.
+    pub rebuilt: bool,
+    /// Set when the rebuild was skipped: who owns the index, and since when.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
 }
 
 impl Render for ReindexOut {
     fn render(&self) -> String {
+        if let Some(owner) = &self.owner {
+            return format!(
+                "Did not rebuild the index: {owner}. Run `hall reindex --force` to take it over.\n"
+            );
+        }
         format!(
             "Rebuilt the index from the journal: {} items, {} events, {} usage records.\n",
             self.items, self.events, self.usage_records
@@ -671,10 +681,32 @@ impl Render for ReindexOut {
     }
 }
 
-pub fn reindex(cwd: &Path) -> Result<Response> {
+pub fn reindex(cwd: &Path, force: bool) -> Result<Response> {
     let repo = Repo::discover(cwd)?;
     repo.require_init()?;
-    let ix = Index::rebuild(&repo.hall)?;
+    let (ix, rebuilt) = Index::rebuild(&repo.hall, force)?;
+    let path = crate::paths::display(&repo.hall.index_path());
+    if !rebuilt {
+        let owner = ix
+            .writer()
+            .map(|(fields, at)| {
+                format!(
+                    "a newer hall owns the index (item fields: {}; last synced {})",
+                    fields.join(", "),
+                    at.to_rfc3339()
+                )
+            })
+            .unwrap_or_else(|| "a newer hall owns the index".into());
+        let out = ReindexOut {
+            items: 0,
+            events: ix.event_count()?,
+            usage_records: ix.usage_count()?,
+            path,
+            rebuilt: false,
+            owner: Some(owner),
+        };
+        return Ok(Response::new(out, vec!["hall reindex --force".into()]));
+    }
     let ids = repo.hall.item_ids()?;
     for id in &ids {
         repo.hall.refresh_item_json(*id)?;
@@ -683,7 +715,9 @@ pub fn reindex(cwd: &Path) -> Result<Response> {
         items: ids.len(),
         events: ix.event_count()?,
         usage_records: ix.usage_count()?,
-        path: crate::paths::display(&repo.hall.index_path()),
+        path,
+        rebuilt: true,
+        owner: None,
     };
     Ok(Response::new(out, vec!["hall status --all".into()]))
 }
