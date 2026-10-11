@@ -26,10 +26,11 @@ a decision, add a new record that supersedes the old one. Don't edit the old one
 | [0018](0018-the-assay-office.md) | The Assay Office: checks, then an isolated review | Accepted |
 | [0019](0019-fixer-and-shipper.md) | The fixer, the shipper, and the record | Accepted |
 | [0020](0020-notifications-resume-and-budget-accounting.md) | Notifications, resuming on an answer, and what budgets count | Accepted |
-| [0021](0021-the-library.md) | The Library: learnings as reviewed files, read from the base | Accepted |
+| [0021](0021-the-library.md) | The Library: learnings as reviewed files, read from the base | Superseded in part by 0027 |
 | [0022](0022-the-terminal-app-is-a-reader.md) | The terminal app is a reader | Accepted |
 | [0023](0023-packaging-and-releases.md) | Packaging and releases | Accepted |
 | [0024](0024-parallel-parts-and-follow-ups.md) | Parallel parts: the Front Desk splits, the session orchestrates, the parent is reviewed once | Accepted |
 | [0025](0025-watch-ci-after-shipping.md) | Watch CI after shipping; follow-ups carry it and stack on open PRs | Accepted |
 | [0026](0026-parallel-phases.md) | Every phase runs in parallel, with configurable slots | Accepted |
+| [0027](0027-the-library-stays-local.md) | The Library stays local: learnings live next to the journal | Accepted |
 | [0028](0028-grant-the-daily-budget.md) | Grant the daily budget for today, without changing the cap | Accepted |

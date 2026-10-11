@@ -1,5 +1,6 @@
 ---
 source: tests/tui.rs
+assertion_line: 508
 expression: "screen(&env, &app, W, H)"
 ---
 hall · app (1 of 1 repo)   daemon ● running   ⚑ 3 waiting   rejected today 3 · review tokens 400k                  hh:mm
@@ -37,4 +38,4 @@ hall · app (1 of 1 repo)   daemon ● running   ⚑ 3 waiting   rejected today 
 │F2   minor   evidence         No test for the backoff cap            src/webhooks.rs:42     open                      │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 
-↑↓ item enter journal ←→ step f findings d diff r ready p pull back x drop / filter w worktree o PR ? help q quit
+↑↓ item enter journal ←→ step f findings d diff r ready p pull back g go x drop / filter w worktree o PR ? help q quit

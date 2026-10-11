@@ -15,11 +15,11 @@ expression: "scrub(&env, &r.json)"
       "id": "L-0001",
       "kind": "rule",
       "lens": "correctness",
-      "path": ".hallmark/knowledge/L-0001-retries-must-check-the-endpoint.md",
+      "path": "[root]/app/.git/hallmark/library/learnings/L-0001-retries-must-check-the-endpoint.md",
       "scope": [
         "apps/api/src/webhooks/**"
       ],
-      "score": 0.649,
+      "score": 0.473,
       "status": "accepted",
       "title": "Retries must check the endpoint still exists",
       "used": 0
@@ -28,7 +28,7 @@ expression: "scrub(&env, &r.json)"
       "id": "L-0002",
       "kind": "false-positive",
       "lens": "correctness",
-      "path": ".hallmark/knowledge/L-0002-backoff-jitter-lives-in-the-queue.md",
+      "path": "[root]/app/.git/hallmark/library/learnings/L-0002-backoff-jitter-lives-in-the-queue.md",
       "scope": [
         "apps/api/src/queue/**"
       ],

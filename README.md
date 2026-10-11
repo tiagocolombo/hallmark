@@ -59,7 +59,7 @@ is an **item**, and it moves from room to room:
 | Your Office | Questions, "looks done?", escalations: your inbox | you (`hall inbox`) |
 | Post Room | Every handoff passes through and is recorded | the `hall` CLI, the watchman |
 | Records | The journal: every prompt, commit, check, verdict and decision | `hall log` |
-| Library | What closed items taught, briefed to each review | the librarian |
+| Library | What closed items taught, briefed to each review; kept locally, never committed | the librarian |
 | Assay Office | The checks, then the principal engineer's review | the assayer |
 | Repair Shop | A fixer addresses failing checks and findings | the fixer |
 | Stamping Room | The approved commit gets its hallmark, a git note | the assayer |
@@ -253,7 +253,7 @@ Agents are the main users of `hall`, so every command follows these rules:
 | `hall ready [<id>]` | Freezes the commit and queues the item for review. |
 | `hall pull-back [<id>]` | Returns the item to development. |
 | `hall drop [<id>] --reason <r>` | Abandons the item. The branch and journal stay. `--keep-worktree` |
-| `hall retry [<id>] --reason <r>` | Allows an escalated item one more round, or releases a held item. |
+| `hall retry [<id>] --reason <r> [--tokens <n>]` | Allows an escalated item one more round, or releases a held item. A budget hold also grants that item another `per_item` (or `--tokens`); the budget is unchanged. |
 | `hall continue [<id>]` | Moves an item on from wherever it waits: releases a hold, retries an escalation, sends "ready?" to review, or reopens its Claude session. |
 | `hall propose-ready [<id>] --summary <s>` | The agent says the work looks done. |
 | `hall ask <question>` | Asks you a question. `--options a,b`, `--default`, `--wait 4h`, `--item`, `--session` |
@@ -265,7 +265,7 @@ Agents are the main users of `hall`, so every command follows these rules:
 | `hall daemon start\|stop\|status\|run` | The review loop. `--at-login`; `run --once --only <workers>` |
 | `hall notify test` | Sends a test notification to every channel. `--channel` |
 | `hall statusline` | One line for Claude Code's status line. |
-| `hall library search\|review\|retire\|distill` | The Library of learnings. |
+| `hall library search\|review\|retire\|distill\|import\|export` | The Library of learnings, kept locally next to the journal, never in the repo. |
 | `hall next --role assayer\|fixer\|shipper` | Claims work with a lease (agents). |
 | `hall findings [<id>]` | Open findings and failing checks (the fixer). |
 | `hall fixed <ids>` | Records what a commit fixes, or `--dispute <id> --reason` (the fixer). |
@@ -317,6 +317,8 @@ librarian_model = "haiku"
 search         = "builtin"   # or "qmd"
 briefing_limit = "6k"
 retire_after   = "90d"
+# Learnings live in <git-common-dir>/hallmark/library/, never in the repo.
+# `hall library import` brings in ones committed by earlier versions.
 ```
 
 Notification channels usually live in your user config,

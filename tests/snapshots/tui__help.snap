@@ -8,17 +8,17 @@ hall · app (1 of 3 repos)   daemon ● running   ⚑ 3 waiting   rejected today
 │ready?     H-0002  Export tenant usage looks done: CSV export with 14 tests                                   –       │
 │question   H-0002  Billed usage or raw events?  [a] billed  [b] raw                                           –       │
 │escalated  H-0007  Migrate billing tables: rejected 1 times                                                   –       │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-┌ Board ────────────────────┌ Keys ────────────────────────────────────────────────────────┐───────────────────────────┐
-│DEVELOPMENT (2)            │                                                              │OSED TODAY (2)             │
-│H-0003 Rate limit the publi│  ↑ ↓       select an item (or a finding, a row, a repo)      │0005 Tenant check in … #191│
-│└ H-0004 Rate limit: docume│  enter     open the item's journal                           │0006 Old experiment dropped│
-└───────────────────────────│  ← →       step through the journal; the board follows       │───────────────────────────┘
-┌ H-0001 · Retry failed webh│  home end  first event · back to now                         │──── review · r2 · ####### ┐
-│now Next for the review; th│  f         findings for this item                            │                           │
-│hh:mm  you       created · │  d         diff at the selected round                        │                           │
-│hh:mm  you       ready · ro│  r         send to review (hall ready)                       │                           │
-│hh:mm  assayer   checks pas│  p         pull back to development                          │                           │
+└───────────────────────────┌ Keys ────────────────────────────────────────────────────────┐───────────────────────────┘
+┌ Board ────────────────────│                                                              │───────────────────────────┐
+│DEVELOPMENT (2)            │  ↑ ↓       select an item (or a finding, a row, a repo)      │OSED TODAY (2)             │
+│H-0003 Rate limit the publi│  enter     open the item's journal                           │0005 Tenant check in … #191│
+│└ H-0004 Rate limit: docume│  ← →       step through the journal; the board follows       │0006 Old experiment dropped│
+└───────────────────────────│  home end  first event · back to now                         │───────────────────────────┘
+┌ H-0001 · Retry failed webh│  f         findings for this item                            │──── review · r2 · ####### ┐
+│now Next for the review; th│  d         diff at the selected round                        │                           │
+│hh:mm  you       created · │  r         send to review (hall ready)                       │                           │
+│hh:mm  you       ready · ro│  p         pull back to development                          │                           │
+│hh:mm  assayer   checks pas│  g         go on: lift a hold, or retry (hall retry)         │                           │
 │hh:mm  assayer   usage · op│  x         drop, with a reason                               │                           │
 │hh:mm  assayer   review · c│  w         open the item's worktree                          │                           │
 │hh:mm  fixer     fix submit│  o         open the PR                                       │                           │
@@ -38,4 +38,4 @@ hall · app (1 of 3 repos)   daemon ● running   ⚑ 3 waiting   rejected today
 │F2   minor   evidence         No test for the backoff cap            src/webhooks.rs:42     open                      │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 
-↑↓ item enter journal ←→ step f findings d diff r ready p pull back x drop / filter w worktree o PR ? help q quit
+↑↓ item enter journal ←→ step f findings d diff r ready p pull back g go x drop / filter w worktree o PR ? help q quit

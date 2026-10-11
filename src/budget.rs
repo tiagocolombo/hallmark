@@ -14,6 +14,9 @@
 //! - **Daily grants.** `hall budget --grant` lets the loop go past `daily`
 //!   for today without touching the config: today's cap is `daily` plus the
 //!   latest `budget_granted` for today in the repo journal (ADR 0028).
+//! - **Grants.** `hall retry` on a budget hold lets that one item spend more
+//!   (another `per_item` by default, or `--tokens`) without touching the
+//!   config: its cap is `per_item` plus every grant in its journal.
 
 use rusqlite::params;
 use schemars::JsonSchema;
@@ -168,17 +171,45 @@ pub fn check_with(
         && let Some(limit) = Cap::parse(cap)
     {
         let used = item_spent(ix, id);
-        if limit.reached(&used) {
+        // A grant is in weighted tokens: it raises a token cap only.
+        let (allowed, shown, hint) = match limit {
+            Cap::Tokens(base) => {
+                let granted = item_granted(ix, id);
+                let allowed = Cap::Tokens(base.saturating_add(granted));
+                let shown = match granted {
+                    0 => allowed.show(&used),
+                    g => format!(
+                        "{} of {} + {} granted weighted tokens",
+                        fmt_tokens(used.tokens),
+                        fmt_tokens(base),
+                        fmt_tokens(g)
+                    ),
+                };
+                (
+                    allowed,
+                    shown,
+                    format!("; `hall retry` grants it {} more", fmt_tokens(base)),
+                )
+            }
+            usd => (usd, usd.show(&used), String::new()),
+        };
+        if allowed.reached(&used) {
             return Err(Stop {
                 level: Level::Item,
-                reason: format!(
-                    "{id} reached its cap ({} spent by the loop)",
-                    limit.show(&used)
-                ),
+                reason: format!("{id} reached its cap ({shown} spent by the loop){hint}"),
             });
         }
     }
     Ok(())
+}
+
+/// What `item` may spend under `per_item` now: the cap plus its grants (a
+/// dollar cap has none). None when `per_item` is unset or unreadable.
+pub fn item_allowance(ix: &Index, b: &Budget, item: ItemId) -> Option<Cap> {
+    Some(match Cap::parse(b.per_item.as_deref()?)? {
+        Cap::Tokens(t) => Cap::Tokens(t.saturating_add(item_granted(ix, item))),
+        usd => usd,
+    })
 }
 
 /// How a daily-budget stop's reason starts; a pause with this reason is the
@@ -364,6 +395,16 @@ pub fn item_tokens(ix: &Index, item: ItemId) -> u64 {
     sum(
         ix,
         &format!("SELECT {TOKENS} FROM usage WHERE item = ?1 AND source = 'headless'"),
+        params![item.to_string()],
+    )
+}
+
+/// Tokens granted to `item` on top of `per_item` by `hall retry`.
+pub fn item_granted(ix: &Index, item: ItemId) -> u64 {
+    sum(
+        ix,
+        "SELECT SUM(json_extract(json, '$.granted_tokens')) FROM events
+         WHERE item = ?1 AND event = 'released'",
         params![item.to_string()],
     )
 }
@@ -619,6 +660,45 @@ mod tests {
         assert_eq!(check_with(&ix, &b, None, "reviewer", &day), Ok(()));
         // The cap itself didn't move.
         assert_eq!(b.daily.as_deref(), Some("400k"));
+    }
+
+    #[test]
+    fn grants_raise_one_items_cap() {
+        let (_d, hall) = hall();
+        let (a, b_) = (ItemId(1), ItemId(2));
+        for id in [a, b_] {
+            add(
+                &hall,
+                Some(id),
+                usage("assay", "reviewer", "headless", 500_000),
+            );
+        }
+        add(
+            &hall,
+            Some(a),
+            Body::Released {
+                reason: Some("worth it".into()),
+                granted_tokens: Some(300_000),
+            },
+        );
+        let ix = Index::synced(&hall).unwrap();
+        let day = today();
+        let b = Budget {
+            per_item: Some("400k".into()),
+            ..Default::default()
+        };
+        assert_eq!(item_granted(&ix, a), 300_000);
+        assert_eq!(item_allowance(&ix, &b, a), Some(Cap::Tokens(700_000)));
+        assert_eq!(check_with(&ix, &b, Some(a), "fixer", &day), Ok(()));
+        // The other item still answers to the unchanged cap.
+        let s = check_with(&ix, &b, Some(b_), "fixer", &day).unwrap_err();
+        assert_eq!(s.level, Level::Item);
+        assert!(
+            s.reason.contains("`hall retry` grants it 400k more"),
+            "{}",
+            s.reason
+        );
+        assert_eq!(item_allowance(&ix, &Budget::default(), a), None);
     }
 
     #[test]
