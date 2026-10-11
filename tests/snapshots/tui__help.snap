@@ -14,7 +14,7 @@ hall · app (1 of 3 repos)   daemon ● running   ⚑ 3 waiting   rejected today
 │└ H-0004 Rate limit: docume│  D C       your office: dismiss the entry · clear them all   │0005 Tenant check in … #191│
 └───────────────────────────│  ← →       step through the journal; the board follows       │───────────────────────────┘
 ┌ H-0001 · Retry failed webh│  home end  first event · back to now                         │──── review · r2 · ####### ┐
-│now Waiting for the review,│  f         findings for this item                            │                           │
+│now Next for the review; th│  f         findings for this item                            │                           │
 │hh:mm  you       created · │  d         diff at the selected round                        │                           │
 │hh:mm  you       ready · ro│  r         send to review (hall ready)                       │                           │
 │hh:mm  assayer   checks pas│  p         pull back to development                          │                           │
