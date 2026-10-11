@@ -198,6 +198,7 @@ hall                        # the terminal app: your office, board, journal, fin
 hall history --rejected --since 7d
 hall export H-0042          # the whole record as Markdown
 hall budget                 # caps and today's spend; --set per_item=800k
+hall budget --grant         # daily budget spent? let the loop go on today, the cap stays
 hall daemon status
 hall library search "webhook retries"
 ```
@@ -259,7 +260,7 @@ Agents are the main users of `hall`, so every command follows these rules:
 | `hall history` | Closed and dropped items, and why things were rejected. `--rejected`, `--lens`, `--since`, `--all` |
 | `hall export [<id>]` | The item's whole record as Markdown. `--out` |
 | `hall usage` | Tokens and list-price cost. `--by item\|room\|role\|model\|day`, `--since`, `--item` |
-| `hall budget` | The caps at four levels, with today's spend. `--set key=value` |
+| `hall budget` | The caps at four levels, with today's spend. `--set key=value`; `--grant [<tokens>]` lets the loop go past the daily cap today without changing it (ADR 0028) |
 | `hall daemon start\|stop\|status\|run` | The review loop. `--at-login`; `run --once --only <workers>` |
 | `hall notify test` | Sends a test notification to every channel. `--channel` |
 | `hall statusline` | One line for Claude Code's status line. |

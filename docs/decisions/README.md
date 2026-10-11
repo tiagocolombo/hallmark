@@ -31,3 +31,4 @@ a decision, add a new record that supersedes the old one. Don't edit the old one
 | [0023](0023-packaging-and-releases.md) | Packaging and releases | Accepted |
 | [0024](0024-parallel-parts-and-follow-ups.md) | Parallel parts: the Front Desk splits, the session orchestrates, the parent is reviewed once | Accepted |
 | [0025](0025-watch-ci-after-shipping.md) | Watch CI after shipping; follow-ups carry it and stack on open PRs | Accepted |
+| [0028](0028-grant-the-daily-budget.md) | Grant the daily budget for today, without changing the cap | Accepted |

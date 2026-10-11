@@ -352,6 +352,112 @@ fn a_spent_daily_budget_pauses_the_loop_and_tells_the_session() {
     );
 }
 
+#[test]
+fn a_grant_lets_the_loop_go_on_today_without_changing_the_cap() {
+    let env = Env::initialized();
+    let (id, wt) = env.new_item("Usage page");
+    add_usage(&env, Some(&id), "assay", "reviewer", "headless", 50_000);
+    assert_eq!(
+        env.hall(&env.repo, &["budget", "--set", "daily=40k"]).code,
+        0
+    );
+    let toml_before = std::fs::read_to_string(env.repo.join(".hallmark.toml")).unwrap();
+    // The daemon paused on the spent budget.
+    let now = chrono::Utc::now();
+    let journal = p(&env.repo.join(".git").join("hallmark"));
+    std::fs::create_dir_all(env.home.join("daemon")).unwrap();
+    std::fs::write(
+        env.home.join("daemon").join("state.json"),
+        json!({
+            "pid": 0, "started_at": null, "heartbeat": null, "wanted": false,
+            "paused": {
+                "reason": "the daily budget is spent (50k of 40k tokens today); the loop waits until 00:00 UTC",
+                "until": (now + chrono::Duration::hours(3)).to_rfc3339(),
+                "since": now.to_rfc3339(),
+                "repo": "app",
+                "journals": [journal],
+            }
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let b = env.hall(&env.repo, &["budget"]);
+    assert!(
+        b.json["next"][0]
+            .as_str()
+            .unwrap()
+            .starts_with("hall budget --grant"),
+        "{}",
+        b.stdout
+    );
+
+    let r = env.hall(
+        &env.repo,
+        &["budget", "--grant", "--reason", "quota left in Claude"],
+    );
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    // No amount: another `daily`.
+    assert_eq!(r.json["grant"]["tokens"], 40_000);
+    assert_eq!(r.json["grant"]["changed"], true);
+    assert_eq!(r.json["grant"]["resumed"], true);
+    let caps = r.json["caps"].as_array().unwrap();
+    let daily = caps.iter().find(|c| c["level"] == "daily").unwrap();
+    assert_eq!(daily["limit"], "40k");
+    assert_eq!(daily["granted"], 40_000);
+    assert_eq!(daily["reached"], false);
+    // The config is untouched; the grant and the lifted pause are journaled.
+    assert_eq!(
+        std::fs::read_to_string(env.repo.join(".hallmark.toml")).unwrap(),
+        toml_before
+    );
+    let kinds: Vec<String> = env
+        .repo_journal()
+        .iter()
+        .map(|e| e["event"].as_str().unwrap().to_string())
+        .collect();
+    let g = kinds.iter().position(|k| k == "budget_granted").unwrap();
+    assert!(kinds[g..].contains(&"unpaused".to_string()), "{kinds:?}");
+    let state: Value = serde_json::from_str(
+        &std::fs::read_to_string(env.home.join("daemon").join("state.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(state["paused"].is_null(), "{state}");
+
+    // Sessions are no longer told the loop waits.
+    let h = env.hook(
+        "SessionStart",
+        &json!({"session_id": "s-1", "cwd": p(&wt), "source": "startup"}),
+    );
+    let ctx = h.json["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap_or_default();
+    assert!(!ctx.contains("the daily budget is spent"), "{ctx}");
+
+    // The same grant again changes nothing; a bigger one replaces it.
+    let again = env.hall(&env.repo, &["budget", "--grant"]);
+    assert_eq!(again.json["grant"]["changed"], false, "{}", again.stdout);
+    assert_eq!(again.json["grant"]["resumed"], false);
+    let more = env.hall(&env.repo, &["budget", "--grant", "1M"]);
+    assert_eq!(more.json["grant"]["tokens"], 1_000_000);
+    let grants = env
+        .repo_journal()
+        .into_iter()
+        .filter(|e| e["event"] == "budget_granted")
+        .count();
+    assert_eq!(grants, 2);
+    // Bad amounts are usage errors.
+    let bad = env.hall(&env.repo, &["budget", "--grant", "lots"]);
+    assert_eq!(bad.code, 2, "{}", bad.stdout);
+}
+
+#[test]
+fn a_grant_needs_a_daily_cap() {
+    let env = Env::initialized();
+    let r = env.hall(&env.repo, &["budget", "--grant", "1M"]);
+    assert_eq!(r.code, 4, "{}", r.stdout);
+    assert_eq!(r.json["error"]["code"], "WRONG_STATE");
+}
+
 // --- answers --------------------------------------------------------------
 
 #[test]

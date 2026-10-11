@@ -1,6 +1,7 @@
 //! `hall budget` (workstream D): the caps at four levels and today's spend.
 //! `--set key=value` edits the main checkout's `.hallmark.toml` in place,
-//! keeping its comments and layout.
+//! keeping its comments and layout. `--grant` lets the loop go past the
+//! daily cap for today without editing it (ADR 0028).
 
 use std::path::Path;
 
@@ -33,6 +34,21 @@ pub struct BudgetOut {
     /// The file --set wrote, when it changed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub written: Option<String>,
+    /// What --grant did.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grant: Option<GrantOut>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct GrantOut {
+    /// The UTC day the grant is for (today).
+    pub day: String,
+    /// Tokens on top of `daily` for that day.
+    pub tokens: u64,
+    /// False when today already had this grant.
+    pub changed: bool,
+    /// True when a daily-budget pause of the daemon was lifted.
+    pub resumed: bool,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -68,6 +84,9 @@ pub struct Cap {
     /// Spent today (tokens), where it applies.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub used: Option<u64>,
+    /// For the daily cap: tokens granted on top of it today (`--grant`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub granted: Option<u64>,
     /// True when the cap stops work now.
     pub reached: bool,
 }
@@ -122,7 +141,13 @@ impl Render for BudgetOut {
                 None => "daily total".into(),
             };
             let used = c.used.unwrap_or(0);
+            let granted = c.granted.unwrap_or(0);
             let tail = match (c.limit.as_deref(), c.limit_tokens) {
+                (Some(l), Some(t)) if granted > 0 => format!(
+                    "{l:>6}  {} (+{} granted today)",
+                    bar(used, t.saturating_add(granted)),
+                    fmt_tokens(granted)
+                ),
                 (Some(l), Some(t)) => format!("{l:>6}  {}", bar(used, t)),
                 (Some(l), None) => format!("{l:>6}  (unreadable)"),
                 _ => "  not capped".into(),
@@ -161,6 +186,23 @@ impl Render for BudgetOut {
         if !self.set.is_empty() {
             s.push('\n');
         }
+        if let Some(g) = &self.grant {
+            s.push_str(&format!(
+                "\n{} +{} for {} on top of the daily cap{}\n",
+                if g.changed {
+                    "granted"
+                } else {
+                    "already granted"
+                },
+                fmt_tokens(g.tokens),
+                g.day,
+                if g.resumed {
+                    "; the daemon's budget pause is lifted"
+                } else {
+                    ""
+                }
+            ));
+        }
         s
     }
 }
@@ -181,9 +223,13 @@ pub fn budget(cwd: &Path, a: BudgetArgs) -> Result<Response> {
         }
         repo.config = Config::parse(&new_text)?;
     }
+    let day = budget::today();
+    let grant = match &a.grant {
+        Some(t) => Some(grant(&repo, &day, t, a.reason.as_deref())?),
+        None => None,
+    };
     let b = &repo.config.budget;
     let ix = repo.index()?;
-    let day = budget::today();
     let runs = ROLES
         .iter()
         .map(|r| RunCap {
@@ -204,6 +250,7 @@ pub fn budget(cwd: &Path, a: BudgetArgs) -> Result<Response> {
         limit: b.per_item.clone(),
         limit_tokens: per_item,
         used: None,
+        granted: None,
         reached: false,
     });
     for r in ROLES {
@@ -218,10 +265,12 @@ pub fn budget(cwd: &Path, a: BudgetArgs) -> Result<Response> {
             limit,
             limit_tokens,
             used: Some(used),
+            granted: None,
         });
     }
     let daily_tokens = b.daily.as_deref().and_then(parse_tokens);
     let used = budget::daily_tokens(&ix, &day);
+    let granted = budget::daily_granted(&ix, &day);
     caps.push(Cap {
         level: "daily".into(),
         key: "budget.daily".into(),
@@ -229,7 +278,8 @@ pub fn budget(cwd: &Path, a: BudgetArgs) -> Result<Response> {
         limit: b.daily.clone(),
         limit_tokens: daily_tokens,
         used: Some(used),
-        reached: daily_tokens.is_some_and(|l| used >= l),
+        granted: (granted > 0).then_some(granted),
+        reached: daily_tokens.is_some_and(|l| used >= l.saturating_add(granted)),
     });
     let items = ix.items(true)?;
     let top_items: Vec<TopItem> = budget::top_items(&ix, 5)
@@ -255,15 +305,93 @@ pub fn budget(cwd: &Path, a: BudgetArgs) -> Result<Response> {
         workshop_today: budget::workshop_tokens(&ix, &day),
         set,
         written,
+        grant,
     };
-    Ok(Response::new(
-        out,
-        vec![
-            "hall budget --set daily=4M per_item=800k".into(),
-            "hall usage --by room --since 24h".into(),
-            "hall usage --by item".into(),
-        ],
-    ))
+    let mut next: Vec<String> = Vec::new();
+    if out.caps.iter().any(|c| c.level == "daily" && c.reached) {
+        next.push("hall budget --grant (go on today; the cap stays)".into());
+    }
+    next.extend([
+        "hall budget --set daily=4M per_item=800k".into(),
+        "hall usage --by room --since 24h".into(),
+        "hall usage --by item".into(),
+    ]);
+    if out.grant.as_ref().is_some_and(|g| g.resumed) {
+        next.insert(0, "hall daemon status".into());
+    }
+    Ok(Response::new(out, next))
+}
+
+/// `--grant`: records today's grant in the repo journal (unless today
+/// already has exactly this one) and lifts the daemon's daily-budget pause.
+fn grant(repo: &Repo, day: &str, tokens: &str, reason: Option<&str>) -> Result<GrantOut> {
+    let b = &repo.config.budget;
+    let Some(daily) = b.daily.as_deref().and_then(parse_tokens) else {
+        return Err(HallError::new(
+            ErrorCode::WrongState,
+            "there is no daily budget to go past: `[budget] daily` isn't set",
+        )
+        .next(["hall budget"]));
+    };
+    let tokens = if tokens.trim() == "daily" {
+        daily
+    } else {
+        parse_tokens(tokens).ok_or_else(|| {
+            HallError::usage(format!(
+                "--grant {tokens}: use a token count such as 20M or 800k"
+            ))
+            .next(["hall budget --grant 20M"])
+        })?
+    };
+    let ix = repo.index()?;
+    let changed = budget::daily_granted(&ix, day) != tokens;
+    if changed {
+        let e = crate::journal::ev(
+            &crate::repo::actor(),
+            None,
+            crate::event::Body::BudgetGranted {
+                day: day.to_string(),
+                tokens,
+                reason: reason.map(str::to_string),
+            },
+        );
+        repo.hall.append(&repo.hall.repo_events(), &e)?;
+        repo.hall.live(&format!(
+            "daily budget: +{} granted for {day} (the cap stays {})",
+            fmt_tokens(tokens),
+            b.daily.as_deref().unwrap_or_default()
+        ));
+    }
+    // Lift the pause the spent budget caused, if the grant covers today's
+    // spend. Another repo still over its own cap pauses the loop again on
+    // its next model run.
+    let ix = repo.index()?;
+    let resumed = budget::daily_stop(&ix, b, day).is_none() && lift_budget_pause()?;
+    Ok(GrantOut {
+        day: day.to_string(),
+        tokens,
+        changed,
+        resumed,
+    })
+}
+
+/// Ends a daily-budget pause now, journaling `unpaused` where it was
+/// recorded. Other pauses (a rate limit) are left alone.
+fn lift_budget_pause() -> Result<bool> {
+    use crate::daemon::{pause, state};
+    let now = chrono::Utc::now();
+    state::update(|s| -> Result<bool> {
+        let is_budget = s
+            .pause_at(now)
+            .is_some_and(|p| p.reason.contains(budget::DAILY_SPENT));
+        if !is_budget {
+            return Ok(false);
+        }
+        if let Some(p) = s.paused.as_mut() {
+            p.until = Some(now - chrono::Duration::seconds(1));
+        }
+        Ok(pause::settle(s, now)?.is_some())
+    })?
 }
 
 /// What a `--set` key is.
