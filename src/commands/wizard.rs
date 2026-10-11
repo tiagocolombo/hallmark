@@ -178,6 +178,34 @@ pub fn run<R: BufRead, W: Write>(ctx: &Context, input: R, out: W) -> Result<Plan
         Some("Desktop notifications"),
     )?;
     let phone = w.phone(notify_scope)?;
+    // Dropping the repo's phone key must not empty its [notify] table: an
+    // absent table falls back to the user's phone channel.
+    if phone == Phone::Off
+        && notify_scope == Scope::Repo
+        && w.changes
+            .iter()
+            .any(|c| c.scope == Scope::Repo && c.key == "notify.phone" && c.value.is_none())
+        && !w
+            .changes
+            .iter()
+            .any(|c| c.scope == Scope::Repo && c.key == "notify.desktop" && c.value.is_some())
+    {
+        w.changes
+            .retain(|c| !(c.scope == Scope::Repo && c.key == "notify.desktop"));
+        let desktop = w.current(Scope::Repo, "notify.desktop");
+        if let Some(b) = desktop.as_bool() {
+            let keeps = w
+                .entry(Scope::Repo, "notify.desktop")
+                .is_some_and(|e| e.source == "repo");
+            if !keeps {
+                w.changes.push(Change {
+                    scope: Scope::Repo,
+                    key: "notify.desktop".into(),
+                    value: Some(b.into()),
+                });
+            }
+        }
+    }
     if phone != Phone::Off {
         w.ask(
             notify_scope,
@@ -739,6 +767,38 @@ mod tests {
         assert_eq!(desktop.map(|c| c.scope), Some(Scope::User));
         assert!(!plan.daemon);
         assert_eq!(plan.phone, Phone::Off);
+    }
+
+    #[test]
+    fn no_phone_keeps_the_repos_notify_table() {
+        let mut ctx = ctx();
+        for e in &mut ctx.entries {
+            if e.scope == Scope::Repo && e.key == "notify.phone" {
+                e.value = "telegram://t@c".into();
+                e.source = "repo".into();
+            }
+        }
+        // Find the phone question: the answer that picks "None" there.
+        let mut found = false;
+        for at in 0..30 {
+            let mut answers = vec![""; 40];
+            answers[at] = "4";
+            let (plan, out) = run_with(&ctx, &answers);
+            let Ok(plan) = plan else { continue };
+            if plan.phone == Phone::Off && out.contains("Phone notifications") {
+                found = true;
+                assert!(
+                    plan.changes
+                        .iter()
+                        .any(|c| c.key == "notify.phone" && c.value.is_none())
+                );
+                let d = plan.changes.iter().find(|c| c.key == "notify.desktop");
+                assert_eq!(d.map(|c| c.scope), Some(Scope::Repo));
+                assert!(d.is_some_and(|c| c.value.is_some()));
+                break;
+            }
+        }
+        assert!(found);
     }
 
     #[test]

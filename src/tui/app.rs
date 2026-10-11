@@ -1347,8 +1347,13 @@ impl App {
             self.err("No repository.");
             return Effect::None;
         };
+        let program = if args[0] == "claude" {
+            crate::config::Tool::Claude.command()
+        } else {
+            args[0].clone()
+        };
         Effect::Run {
-            program: args[0].clone(),
+            program,
             args: args[1..].to_vec(),
             cwd,
         }

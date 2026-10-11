@@ -39,6 +39,7 @@ expression: keys
   "repo capture.free list",
   "repo capture.mode choice",
   "repo claude_args list",
+  "repo dev_commands list",
   "repo fixer string",
   "repo gates list",
   "repo intake.max_parts integer",
