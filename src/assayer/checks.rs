@@ -121,6 +121,60 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
     Ok(Progress::worked(what))
 }
 
+/// Runs every gate at `sha` in a slot of the assay pool, outside the
+/// review loop, and writes `checks/<name>.log`. `renew` runs before each
+/// gate, so the caller can renew its lease. Used by the Dispatch Dock to
+/// check a rebased commit before carrying its hallmark (ADR 0030).
+/// `CLAIMED` when every slot is busy.
+pub fn gates_at(
+    repo: &crate::repo::Repo,
+    id: crate::item::ItemId,
+    sha: &str,
+    name: &str,
+    renew: &dyn Fn(),
+) -> Result<Vec<CheckRun>> {
+    let gates = repo.config.gates.clone();
+    if gates.is_empty() {
+        return Ok(vec![]);
+    }
+    let timeout = repo.config.budget.timeout_secs(Role::Reviewer).max(0) as u64;
+    let slot = super::checkout_checks(repo, sha)?;
+    let dir = repo.hall.item_checks(id);
+    fs::create_dir_all(&dir)?;
+    let rel = format!("checks/{name}.log");
+    let mut log = File::create(dir.join(format!("{name}.log")))?;
+    writeln!(
+        log,
+        "# {id} {name}: checks at {sha} in {}",
+        crate::paths::display(&slot.path)
+    )?;
+    let mut runs = Vec::new();
+    for (i, g) in gates.iter().enumerate() {
+        renew();
+        repo.hall.live(&format!(
+            "{id} {name} checks {}/{}: {g}",
+            i + 1,
+            gates.len()
+        ));
+        writeln!(log, "\n$ {g}")?;
+        log.flush()?;
+        let (exit_code, duration_ms) = run_gate(g, &slot.path, &log, timeout)?;
+        writeln!(
+            log,
+            "\n[exit {exit_code} after {:.1}s]",
+            duration_ms as f64 / 1000.0
+        )?;
+        runs.push(CheckRun {
+            command: g.clone(),
+            exit_code,
+            duration_ms,
+            log: Some(rel.clone()),
+        });
+    }
+    log.flush()?;
+    Ok(runs)
+}
+
 /// Runs one gate through the platform shell with stdout and stderr both
 /// appended to `log`. Returns (exit code, milliseconds).
 pub fn run_gate(cmd: &str, dir: &Path, log: &File, timeout_secs: u64) -> Result<(i32, u64)> {

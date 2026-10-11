@@ -362,6 +362,39 @@ pub enum Body {
         child: ItemId,
         sha: String,
     },
+    /// The Dispatch Dock rebased a hallmarked branch onto the latest base
+    /// before shipping (ADR 0030). `carried`: the patch was identical and
+    /// the gates passed at `to`, so the approval moved to `to` (a
+    /// `hallmarked` event follows). Otherwise the item went back through
+    /// the loop at `to`.
+    Rebased {
+        from: String,
+        to: String,
+        /// The base ref it was rebased onto (`origin/main`).
+        onto: String,
+        carried: bool,
+        /// The gates run at `to`, when the patch was identical.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        checks: Vec<CheckRun>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+    },
+    /// The branch conflicts with its base: a headless dev run (the Delivery
+    /// office) rebases it in development and sends it to review.
+    RebaseRequested {
+        /// The base branch to rebase onto.
+        onto: String,
+        reason: String,
+        /// Files that conflicted, when known.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        files: Vec<String>,
+    },
+    /// The shipped PR left the open state: `merged` or `closed`. The
+    /// Delivery office stops watching it.
+    Delivered {
+        pr_url: String,
+        outcome: String,
+    },
     /// You dismissed inbox entries (`hall inbox --dismiss`, `--clear`):
     /// each stays hidden until it changes. Kept in its own journal file.
     InboxDismissed {
@@ -432,6 +465,9 @@ impl Body {
             Body::ChildMerged { .. } => "child_merged",
             Body::PrChecks { .. } => "pr_checks",
             Body::InboxDismissed { .. } => "inbox_dismissed",
+            Body::Rebased { .. } => "rebased",
+            Body::RebaseRequested { .. } => "rebase_requested",
+            Body::Delivered { .. } => "delivered",
         }
     }
 
@@ -650,6 +686,33 @@ impl Body {
                 format!("reopened from {pr_url} · base {base}")
             }
             Body::ChildMerged { child, sha } => format!("{child} merged · {}", short(sha)),
+            Body::Rebased {
+                from,
+                to,
+                onto,
+                carried,
+                ..
+            } => format!(
+                "rebased {} → {} onto {onto}{}",
+                short(from),
+                short(to),
+                if *carried {
+                    " · approval carried"
+                } else {
+                    " · back to review"
+                }
+            ),
+            Body::RebaseRequested { onto, files, .. } => {
+                if files.is_empty() {
+                    format!("conflicts with {onto} · rebase requested")
+                } else {
+                    format!(
+                        "conflicts with {onto} in {} · rebase requested",
+                        clip(&files.join(", "), 50)
+                    )
+                }
+            }
+            Body::Delivered { pr_url, outcome } => format!("PR {outcome} · {pr_url}"),
             Body::InboxDismissed { keys } => format!(
                 "{} inbox entr{} dismissed",
                 keys.len(),
@@ -725,6 +788,8 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
         reviewed_sha: None,
         findings: Counts::default(),
         ci: None,
+        rebase: None,
+        delivered: None,
     };
     let mut ledger = Ledger::default();
     for e in it {
@@ -740,6 +805,8 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
                 item.state = to;
                 // Any move settles a hold: the item is somewhere new.
                 item.hold = None;
+                // And a rebase request: it is asked for again if needed.
+                item.rebase = None;
             } else {
                 continue;
             }
@@ -812,6 +879,19 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
                 item.rejects = 0;
             }
             Body::Dropped { reason, .. } => item.drop_reason = Some(reason.clone()),
+            Body::RebaseRequested {
+                onto,
+                reason,
+                files,
+            } => {
+                item.rebase = Some(crate::item::RebaseRequest {
+                    onto: onto.clone(),
+                    reason: reason.clone(),
+                    files: files.clone(),
+                    since: e.t,
+                })
+            }
+            Body::Delivered { outcome, .. } => item.delivered = Some(outcome.clone()),
             _ => {}
         }
     }

@@ -510,6 +510,11 @@ pub fn explain(repo: &Repo, ix: &Index, entry: InboxEntry, number: usize) -> Res
                     "A model run failed twice in a row, so the loop stopped working on it."
                 }
                 "ship_failed" => "The ship command failed, so it hasn't been pushed.",
+                "conflict" => {
+                    "Its branch conflicts with its base, and the Delivery office's headless rebase \
+                     couldn't resolve it. Resolve it in a session (rebase in its worktree), then \
+                     `hall ready`; or `hall retry` to let the Delivery office try again."
+                }
                 "stuck" => "Nothing has happened to it for longer than `stuck_after`.",
                 "ci_failed" => "The shipped PR's CI failed after the review approved it.",
                 _ => "It needs your decision.",

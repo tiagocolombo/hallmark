@@ -17,7 +17,7 @@ use crate::repo::Repo;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Lease {
     pub item: ItemId,
-    /// assayer, fixer, shipper.
+    /// assayer, fixer, shipper, delivery.
     pub role: String,
     /// Who holds it: `daemon:<pid>`, or an agent's name.
     pub holder: String,
@@ -116,6 +116,7 @@ pub fn release(hall: &Hall, id: ItemId, holder: &str) -> Result<bool> {
 ///
 /// - assayer: checks or review, oldest ticket first.
 /// - fixer: fixing. shipper: hallmarked.
+/// - delivery: development with a rebase request (ADR 0030).
 ///
 /// Each phase takes at most its `[parallel]` count at once: while that many
 /// items in the phase are leased by others, it offers none. Held items,
@@ -133,6 +134,8 @@ pub fn candidates(repo: &Repo, role: &str, holder: &str) -> Result<Vec<Item>> {
             .count() as u32
     };
     let room = |state: State| match state {
+        // The Delivery office rebases one item at a time.
+        State::Development => role == "delivery" && busy(State::Development) < 1,
         State::Checks => busy(State::Checks) < par.checks.max(1),
         State::Review => busy(State::Review) < par.review.max(1),
         State::Fixing => busy(State::Fixing) < par.fix.max(1),
@@ -145,6 +148,7 @@ pub fn candidates(repo: &Repo, role: &str, holder: &str) -> Result<Vec<Item>> {
             "assayer" => matches!(i.state, State::Checks | State::Review),
             "fixer" => i.state == State::Fixing,
             "shipper" => i.state == State::Hallmarked,
+            "delivery" => i.state == State::Development && i.rebase.is_some(),
             _ => false,
         })
         .filter(|i| room(i.state))

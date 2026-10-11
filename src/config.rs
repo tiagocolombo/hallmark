@@ -398,7 +398,7 @@ impl Route {
             "question" => &self.question,
             "escalated" => &self.escalated,
             "stuck" | "daemon_stopped" => &self.stuck,
-            "ci_failed" => &self.escalated,
+            "ci_failed" | "conflict" => &self.escalated,
             "ready" => &self.ready,
             "budget" | "run_failed" | "ship_failed" | "held" => &self.budget,
             "session_waiting" => &self.session_waiting,

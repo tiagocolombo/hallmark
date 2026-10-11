@@ -25,8 +25,8 @@ hall · app (1 of 1 repo)   daemon ● running   ⚑ 2 waiting   rejected today 
 │    abandon it                                                                                                        │
 │ 5  hall log H-0007                                                                                                   │
 │    read its whole journal                                                                                            │
-│                                                                                                                      │
-│                                                                                                                      │
+│ 6  hall inbox H-0007 --dismiss                                                                                       │
+│    dismiss it: hidden until it changes; nothing is answered or retried                                               │
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
@@ -37,4 +37,4 @@ hall · app (1 of 1 repo)   daemon ● running   ⚑ 2 waiting   rejected today 
 │                                                                                                                      │
 └──────────────────────────────────────────────────────────── 1-9 runs an action; one with <…> asks for the text first ┘
 hall retry H-0007 --reason <why> · why: the reviewer misread the migration▏  enter run · esc cancel
-↑↓ entry  1-9 run action  enter journal  pgup pgdn scroll  d diff  w worktree  o PR  esc board  ? help  q quit
+↑↓ entry 1-9 run action D C dismiss·all enter journal pgup pgdn scroll d diff w worktree o PR esc board ? help q quit

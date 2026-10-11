@@ -109,6 +109,8 @@ mod tests {
             parent: None,
             follow_up: None,
             ci: None,
+            rebase: None,
+            delivered: None,
             hold: None,
             stuck_since: None,
             reviewed_sha: None,

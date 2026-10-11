@@ -194,6 +194,40 @@ fn now_with(
 
     let lease = crate::lease::current(&repo.hall, item.id);
     match item.state {
+        // The Delivery office rebases it, then sends it to review (ADR 0030).
+        State::Development if item.rebase.is_some() => {
+            let r = item.rebase.as_ref().expect("guarded");
+            n.since = r.since;
+            match &lease {
+                Some(l) => {
+                    n.status = "running".into();
+                    n.doing = format!("The Delivery office is rebasing it onto {}", r.onto);
+                    n.since = l.acquired;
+                }
+                None => {
+                    n.status = "queued".into();
+                    n.doing = format!(
+                        "Waiting for the Delivery office to rebase it onto {}",
+                        r.onto
+                    );
+                }
+            }
+            n.detail.push(r.reason.clone());
+            if !r.files.is_empty() {
+                n.detail
+                    .push(format!("conflicts in {}", r.files.join(", ")));
+            }
+            n.actions = vec![
+                act(
+                    "hall daemon status",
+                    "see whether the daemon runs, and what it is doing",
+                ),
+                act(
+                    format!("hall ready {id}"),
+                    "rebased it yourself: send it to review",
+                ),
+            ];
+        }
         State::Development => {
             n.status = "working".into();
             n.doing = format!("In development in {}", item.worktree);
@@ -327,9 +361,13 @@ fn now_with(
         }
         State::Closed => {
             n.status = "done".into();
-            n.doing = match &item.pr_url {
-                Some(u) => format!("Shipped: {u}"),
-                None => "Shipped".into(),
+            n.doing = match (&item.pr_url, &item.delivered) {
+                (Some(u), Some(how)) => format!("Delivered: {u} {how}"),
+                (Some(u), None) if u.contains("/pull/") && item.parent.is_none() => {
+                    format!("Shipped: {u}; the Delivery office watches it until it merges")
+                }
+                (Some(u), None) => format!("Shipped: {u}"),
+                (None, _) => "Shipped".into(),
             };
             n.actions = vec![act(
                 format!("hall export {id}"),
@@ -338,6 +376,7 @@ fn now_with(
             // Its PR can still need a rebase or a conflict fix (ADR 0029).
             if let Some(u) = &item.pr_url
                 && item.parent.is_none()
+                && item.delivered.is_none()
             {
                 n.actions.push(act(
                     format!("hall adopt --pr {u}"),

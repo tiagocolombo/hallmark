@@ -106,6 +106,77 @@ pub fn hallmark_note(dir: &Path, rev: &str) -> Option<String> {
         .filter(|s| !s.trim().is_empty())
 }
 
+/// The commit `rev` names, if it names one.
+pub fn rev(dir: &Path, rev: &str) -> Option<String> {
+    run(
+        dir,
+        &[
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &format!("{rev}^{{commit}}"),
+        ],
+    )
+    .ok()
+    .filter(|s| !s.is_empty())
+}
+
+/// Whether `a` is an ancestor of (or equal to) `b`.
+pub fn is_ancestor(dir: &Path, a: &str, b: &str) -> bool {
+    ok(dir, &["merge-base", "--is-ancestor", a, b])
+}
+
+pub fn merge_base(dir: &Path, a: &str, b: &str) -> Option<String> {
+    run(dir, &["merge-base", a, b])
+        .ok()
+        .filter(|s| !s.is_empty())
+}
+
+/// The stable patch ID of the diff `from..to`: equal for the same change
+/// on a different base. None for an empty diff.
+pub fn patch_id(dir: &Path, from: &str, to: &str) -> Option<String> {
+    use std::io::Write;
+    use std::process::Stdio;
+    let diff = command(dir)
+        .args(["diff", "--no-color", "--no-ext-diff", from, to])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())?
+        .stdout;
+    if diff.is_empty() {
+        return None;
+    }
+    let mut child = command(dir)
+        .args(["patch-id", "--stable"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    child.stdin.take()?.write_all(&diff).ok()?;
+    let out = child.wait_with_output().ok()?;
+    String::from_utf8_lossy(&out.stdout)
+        .split_whitespace()
+        .next()
+        .map(str::to_string)
+}
+
+/// A rebase stopped half-way in this worktree.
+pub fn rebase_in_progress(dir: &Path) -> bool {
+    ["rebase-merge", "rebase-apply"].iter().any(|d| {
+        run(dir, &["rev-parse", "--git-path", d])
+            .map(|p| crate::paths::resolve(dir, Path::new(&p)).exists())
+            .unwrap_or(false)
+    })
+}
+
+/// Files with unresolved conflicts.
+pub fn conflicted(dir: &Path) -> Vec<String> {
+    run(dir, &["diff", "--name-only", "--diff-filter=U"])
+        .map(|s| s.lines().map(str::to_string).collect())
+        .unwrap_or_default()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Worktree {
     pub path: PathBuf,
