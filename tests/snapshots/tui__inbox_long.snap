@@ -30,7 +30,7 @@ hall · app (1 of 1 repo)   daemon ● running   ⚑ 4 waiting   ryour office ·
 │    abandon it                                                                │
 │ 4  hall log H-0008                                                           │
 │    read its whole journal                                                    │
-│ 5  hall inbox H-0008 --dismiss                                               │
+│ 5  hall inbox ready:H-0008:#############:################ --dismiss          │
 │    dismiss it: hidden until it changes; nothing is answered or retried       │
 │                                                                              │
 │                                                                              │

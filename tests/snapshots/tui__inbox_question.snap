@@ -24,7 +24,7 @@ hall · app (1 of 1 repo)   daemon ● running   ⚑ 3 waiting   rejected today 
 │    answer "billed"; the asking agent resumes with it                                                                 │
 │ 2  hall answer Q-1 b                                                                                                 │
 │    answer "raw"; the asking agent resumes with it                                                                    │
-│ 3  hall inbox Q-1 --dismiss                                                                                          │
+│ 3  hall inbox question:Q-1:#############:################ --dismiss                                                  │
 │    dismiss it: hidden until it changes; nothing is answered or retried                                               │
 │                                                                                                                      │
 │                                                                                                                      │

@@ -402,7 +402,32 @@ fn screen(env: &Env, app: &App, w: u16, h: u16) -> String {
     for sha in git(&env.repo, &["rev-list", "--all"]).lines() {
         s = s.replace(&sha[..7], "#######");
     }
-    s
+    // Inbox entry keys (`kind:who:<ms>:<hash>`) carry a time and a hash;
+    // blank them at the same width so the layout stays.
+    let marker = "hall inbox ";
+    let mut out = String::new();
+    let mut rest = s.as_str();
+    while let Some(i) = rest.find(marker) {
+        let (head, tail) = rest.split_at(i + marker.len());
+        out.push_str(head);
+        let end = tail.find([' ', '"', '│']).unwrap_or(tail.len());
+        let (token, after) = tail.split_at(end);
+        let parts: Vec<&str> = token.split(':').collect();
+        if parts.len() == 4 {
+            out.push_str(&format!(
+                "{}:{}:{}:{}",
+                parts[0],
+                parts[1],
+                "#".repeat(parts[2].len()),
+                "#".repeat(parts[3].len())
+            ));
+        } else {
+            out.push_str(token);
+        }
+        rest = after;
+    }
+    out.push_str(rest);
+    out
 }
 
 fn key(app: &mut App, code: KeyCode) -> Effect {

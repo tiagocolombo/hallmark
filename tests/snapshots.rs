@@ -10,7 +10,29 @@ use serde_json::{Value, json};
 /// Replaces the temp directory with `[root]` everywhere.
 fn scrub(env: &Env, v: &Value) -> Value {
     let s = v.to_string().replace(&p(&env.root), "[root]");
-    serde_json::from_str(&s).unwrap()
+    serde_json::from_str(&scrub_keys(&s)).unwrap()
+}
+
+/// Inbox entry keys end in a time and a hash: `kind:who:<ms>:<hash>`.
+fn scrub_keys(s: &str) -> String {
+    let marker = "hall inbox ";
+    let mut out = String::new();
+    let mut rest = s;
+    while let Some(i) = rest.find(marker) {
+        let (head, tail) = rest.split_at(i + marker.len());
+        out.push_str(head);
+        let end = tail.find([' ', '"']).unwrap_or(tail.len());
+        let (token, after) = tail.split_at(end);
+        let parts: Vec<&str> = token.split(':').collect();
+        if parts.len() == 4 {
+            out.push_str(&format!("{}:{}:[ms]:[hash]", parts[0], parts[1]));
+        } else {
+            out.push_str(token);
+        }
+        rest = after;
+    }
+    out.push_str(rest);
+    out
 }
 
 macro_rules! snap {

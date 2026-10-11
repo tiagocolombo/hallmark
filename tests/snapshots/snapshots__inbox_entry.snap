@@ -21,7 +21,7 @@ expression: "scrub(&env, &r.json)"
       "does": "read its whole journal"
     },
     {
-      "command": "hall inbox H-0001 --dismiss",
+      "command": "hall inbox ready:H-0001:[ms]:[hash] --dismiss",
       "does": "dismiss it: hidden until it changes; nothing is answered or retried"
     }
   ],
@@ -40,7 +40,7 @@ expression: "scrub(&env, &r.json)"
     "hall pull-back H-0001",
     "hall drop H-0001 --reason \"<why>\"",
     "hall log H-0001",
-    "hall inbox H-0001 --dismiss"
+    "hall inbox ready:H-0001:[ms]:[hash] --dismiss"
   ],
   "now": {
     "actions": [

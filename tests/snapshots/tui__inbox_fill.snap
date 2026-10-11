@@ -25,7 +25,7 @@ hall · app (1 of 1 repo)   daemon ● running   ⚑ 2 waiting   rejected today 
 │    abandon it                                                                                                        │
 │ 5  hall log H-0007                                                                                                   │
 │    read its whole journal                                                                                            │
-│ 6  hall inbox H-0007 --dismiss                                                                                       │
+│ 6  hall inbox escalated:H-0007:#############:################ --dismiss                                              │
 │    dismiss it: hidden until it changes; nothing is answered or retried                                               │
 │                                                                                                                      │
 │                                                                                                                      │

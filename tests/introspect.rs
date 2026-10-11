@@ -311,11 +311,14 @@ fn the_inbox_clears_and_entries_return_when_they_change() {
     // One entry, from its explanation: the last action dismisses it.
     let detail = env.hall(&env.repo, &["inbox", "Q-1"]);
     let actions = detail.json["actions"].as_array().unwrap();
-    assert_eq!(
-        actions.last().unwrap()["command"],
-        "hall inbox Q-1 --dismiss"
-    );
-    let r = env.hall(&env.repo, &["inbox", "Q-1", "--dismiss"]);
+    let dismiss = actions.last().unwrap()["command"].as_str().unwrap();
+    let key = dismiss
+        .strip_prefix("hall inbox ")
+        .and_then(|s| s.strip_suffix(" --dismiss"))
+        .unwrap()
+        .to_string();
+    assert!(key.starts_with("question:Q-1:"), "{dismiss}");
+    let r = env.hall(&env.repo, &["inbox", &key, "--dismiss"]);
     assert_eq!(r.code, 0, "{}", r.stdout);
     assert_eq!(r.json["dismissed"][0]["qid"], "Q-1");
     assert_eq!(r.json["remaining"], 1);
