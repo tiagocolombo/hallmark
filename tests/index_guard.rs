@@ -9,13 +9,36 @@ use c_support::hall;
 use common::Env;
 use hallmark::index::{Index, item_fields};
 
-fn row_state(env: &Env, id: &str) -> String {
-    let c = rusqlite::Connection::open(env.repo.join(".git/hallmark/index.sqlite")).unwrap();
-    let json: String = c
+fn conn(env: &Env) -> rusqlite::Connection {
+    rusqlite::Connection::open(env.repo.join(".git/hallmark/index.sqlite")).unwrap()
+}
+
+fn row_json(env: &Env, id: &str) -> serde_json::Value {
+    let json: String = conn(env)
         .query_row("SELECT json FROM items WHERE id = ?1", [id], |r| r.get(0))
         .unwrap();
-    let v: serde_json::Value = serde_json::from_str(&json).unwrap();
-    v["state"].as_str().unwrap().to_string()
+    serde_json::from_str(&json).unwrap()
+}
+
+fn row_state(env: &Env, id: &str) -> String {
+    row_json(env, id)["state"].as_str().unwrap().to_string()
+}
+
+fn add_unknown_field(env: &Env, id: &str) {
+    let mut v = row_json(env, id);
+    v["from_a_newer_hall"] = "kept".into();
+    conn(env)
+        .execute(
+            "UPDATE items SET json = ?1 WHERE id = ?2",
+            rusqlite::params![v.to_string(), id],
+        )
+        .unwrap();
+}
+
+fn meta(env: &Env, key: &str) -> Option<String> {
+    conn(env)
+        .query_row("SELECT value FROM meta WHERE key = ?1", [key], |r| r.get(0))
+        .ok()
 }
 
 fn newer_wrote_it(env: &Env, ago: chrono::Duration) {
@@ -33,20 +56,25 @@ fn an_older_hall_leaves_a_newer_ones_rows_alone() {
     assert_eq!(row_state(&env, &id), "development");
 
     newer_wrote_it(&env, chrono::Duration::minutes(1));
+    add_unknown_field(&env, &id);
     let r = env.hall(&env.repo, &["drop", &id, "--reason", "not needed"]);
     assert_eq!(r.code, 0, "{}", r.stdout);
-    // The journal has it; the row is the newer hall's to rewrite.
-    assert_eq!(row_state(&env, &id), "development");
-    // An explicit reindex doesn't empty it either.
+    // An explicit reindex doesn't empty the index.
     let r = env.hall(&env.repo, &["reindex"]);
     assert_eq!(r.code, 0);
     assert!(r.stdout.contains("\"rebuilt\":false") || r.stdout.contains("Did not rebuild"));
-    assert_eq!(row_state(&env, &id), "development");
+    // A syncing command updates the row's state but keeps the field this
+    // build doesn't know, and marks the rows stale for the owner.
+    assert_eq!(env.hall(&env.repo, &["status", "--all"]).code, 0);
+    assert_eq!(row_state(&env, &id), "dropped");
+    assert_eq!(row_json(&env, &id)["from_a_newer_hall"], "kept");
+    assert!(meta(&env, "items_stale").is_some());
 
     // An hour without the newer hall (a downgrade): this one takes over.
     newer_wrote_it(&env, chrono::Duration::hours(2));
     assert_eq!(env.hall(&env.repo, &["status", "--all"]).code, 0);
     assert_eq!(row_state(&env, &id), "dropped");
+    assert!(meta(&env, "items_stale").is_none());
     let (fields, _) = Index::open(&hall(&env)).unwrap().writer().unwrap();
     assert_eq!(fields, item_fields());
 }
