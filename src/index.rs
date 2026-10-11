@@ -111,6 +111,18 @@ pub struct UsageRow {
     pub cost_usd: f64,
 }
 
+impl UsageRow {
+    /// Tokens weighted by price (cache reads 0.1, cache writes 1.25), what
+    /// the token caps count.
+    pub fn weighted_tokens(&self) -> u64 {
+        (self.input_tokens as f64
+            + self.output_tokens as f64
+            + self.cache_read_tokens as f64 * 0.1
+            + self.cache_write_tokens as f64 * 1.25)
+            .round() as u64
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum UsageBy {

@@ -9,7 +9,7 @@ use schemars::JsonSchema;
 use serde::Serialize;
 
 use super::{ItemView, next_for};
-use crate::cli::{DropArgs, ProposeReadyArgs, PullBackArgs, ReadyArgs, RetryArgs};
+use crate::cli::{ContinueArgs, DropArgs, ProposeReadyArgs, PullBackArgs, ReadyArgs, RetryArgs};
 use crate::error::{ErrorCode, HallError, Result};
 use crate::event::{Body, short};
 use crate::git;
@@ -362,4 +362,72 @@ pub fn propose_ready(cwd: &Path, a: ProposeReadyArgs) -> Result<Response> {
         item.id
     );
     Ok(reply(&item, changed, Some(note)))
+}
+
+/// `hall continue`: move an item on from wherever it waits.
+pub fn continue_item(cwd: &Path, a: ContinueArgs, mode: crate::output::Mode) -> Result<Response> {
+    let repo = Repo::discover(cwd)?;
+    let item = repo.resolve(a.id.as_deref())?;
+    let id = item.id.to_string();
+    let reason = a
+        .reason
+        .clone()
+        .unwrap_or_else(|| "continued with hall continue".into());
+    if item.hold.is_some() || item.state == State::Escalated {
+        return retry(
+            cwd,
+            RetryArgs {
+                id: Some(id),
+                reason,
+            },
+        );
+    }
+    match item.state {
+        State::AwaitingYou => ready(
+            cwd,
+            ReadyArgs {
+                id: Some(id),
+                note: a.reason.clone(),
+            },
+        ),
+        State::Development => {
+            // Back to work: Claude's last conversation in the worktree.
+            let open = format!(
+                "cd {} && claude --continue",
+                crate::commands::new::shell_quote(&item.worktree)
+            );
+            if mode == crate::output::Mode::Text && std::path::Path::new(&item.worktree).is_dir() {
+                let status = std::process::Command::new("claude")
+                    .arg("--continue")
+                    .current_dir(&item.worktree)
+                    .status();
+                if status.is_err() {
+                    eprintln!("could not start claude. Run: {open}");
+                }
+                return Ok(Response::raw(None));
+            }
+            let mut r = reply(
+                &item,
+                false,
+                Some(format!(
+                    "{} is in development. Reopen its session: {open}",
+                    item.id
+                )),
+            );
+            r.value["next"] = serde_json::json!([open]);
+            Ok(r)
+        }
+        s if s.is_terminal() => Err(wrong_state(&item, "it is finished; nothing to continue")),
+        _ => {
+            // In the loop and not held: it moves on its own.
+            Ok(reply(
+                &item,
+                false,
+                Some(format!(
+                    "{} is in {} (round {}) and moves on its own; `hall status {}` shows what it is doing.",
+                    item.id, item.state, item.round, item.id
+                )),
+            ))
+        }
+    }
 }

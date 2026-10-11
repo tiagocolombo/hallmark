@@ -56,27 +56,43 @@ pub fn all(hall: &Hall) -> Vec<Lease> {
 /// Claims `id` for `holder`, or renews the holder's own lease. Another live
 /// holder means `CLAIMED` (exit 7).
 pub fn claim(hall: &Hall, id: ItemId, role: &str, holder: &str, ttl: Duration) -> Result<Lease> {
-    hall.with_repo_lock(|| {
-        let now = Utc::now();
-        if let Some(l) = current(hall, id)
-            && l.holder != holder
-        {
-            return Err(claimed(&l));
-        }
-        let lease = Lease {
-            item: id,
-            role: role.to_string(),
-            holder: holder.to_string(),
-            acquired: now,
-            expires: now + ttl,
-        };
-        fs::create_dir_all(hall.leases_dir())?;
-        let p = path(hall, id);
-        let tmp = p.with_extension("json.tmp");
-        fs::write(&tmp, serde_json::to_string_pretty(&lease)?)?;
-        fs::rename(&tmp, &p)?;
-        Ok(lease)
-    })
+    hall.with_repo_lock(|| claim_locked(hall, id, role, holder, ttl))
+}
+
+/// `claim`, for a caller that already holds the repo lock.
+fn claim_locked(hall: &Hall, id: ItemId, role: &str, holder: &str, ttl: Duration) -> Result<Lease> {
+    let now = Utc::now();
+    if let Some(l) = current(hall, id)
+        && l.holder != holder
+    {
+        return Err(claimed(&l));
+    }
+    let lease = Lease {
+        item: id,
+        role: role.to_string(),
+        holder: holder.to_string(),
+        acquired: now,
+        expires: now + ttl,
+    };
+    fs::create_dir_all(hall.leases_dir())?;
+    let p = path(hall, id);
+    let tmp = p.with_extension("json.tmp");
+    fs::write(&tmp, serde_json::to_string_pretty(&lease)?)?;
+    fs::rename(&tmp, &p)?;
+    Ok(lease)
+}
+
+/// The most items in `state` that `[parallel]` lets run at once.
+fn limit(repo: &Repo, state: State) -> u32 {
+    let par = &repo.config.parallel;
+    match state {
+        State::Checks => par.checks,
+        State::Review => par.review,
+        State::Fixing => par.fix,
+        State::Hallmarked => par.ship,
+        _ => 0,
+    }
+    .max(1)
 }
 
 /// Releases the holder's lease. Releasing someone else's live lease is
@@ -98,31 +114,43 @@ pub fn release(hall: &Hall, id: ItemId, holder: &str) -> Result<bool> {
 
 /// The items a role may work on now, best first.
 ///
-/// - assayer: checks or review, oldest ticket first. One at a time per
-///   repo: while another holder has an assayer lease, there is none.
+/// - assayer: checks or review, oldest ticket first.
 /// - fixer: fixing. shipper: hallmarked.
 ///
-/// Held items, child items and items leased by someone else are skipped.
+/// Each phase takes at most its `[parallel]` count at once: while that many
+/// items in the phase are leased by others, it offers none. Held items,
+/// child items and items leased by someone else are skipped.
 pub fn candidates(repo: &Repo, role: &str, holder: &str) -> Result<Vec<Item>> {
     let items = repo.index()?.items(false)?;
     let leases = all(&repo.hall);
-    if role == "assayer"
-        && leases
+    // Each phase runs up to `[parallel]` items at once (ADR 0026).
+    let par = &repo.config.parallel;
+    let busy = |state: State| {
+        leases
             .iter()
-            .any(|l| l.role == "assayer" && l.holder != holder)
-    {
-        return Ok(Vec::new());
-    }
+            .filter(|l| l.role == role && l.holder != holder)
+            .filter(|l| items.iter().any(|i| i.id == l.item && i.state == state))
+            .count() as u32
+    };
+    let room = |state: State| match state {
+        State::Checks => busy(State::Checks) < par.checks.max(1),
+        State::Review => busy(State::Review) < par.review.max(1),
+        State::Fixing => busy(State::Fixing) < par.fix.max(1),
+        State::Hallmarked => busy(State::Hallmarked) < par.ship.max(1),
+        _ => false,
+    };
     let mut out: Vec<(chrono::DateTime<Utc>, Item)> = items
-        .into_iter()
+        .iter()
         .filter(|i| match role {
             "assayer" => matches!(i.state, State::Checks | State::Review),
             "fixer" => i.state == State::Fixing,
             "shipper" => i.state == State::Hallmarked,
             _ => false,
         })
+        .filter(|i| room(i.state))
         .filter(|i| i.hold.is_none() && i.parent.is_none())
         .filter(|i| !leases.iter().any(|l| l.item == i.id && l.holder != holder))
+        .cloned()
         .map(|i| {
             let when = repo
                 .hall
@@ -149,8 +177,26 @@ pub fn claim_next(
         if only.is_some_and(|o| o != cand.id) {
             continue;
         }
-        match claim(&repo.hall, cand.id, role, holder, ttl) {
-            Ok(l) => return Ok(Some((repo.hall.load_item(cand.id)?, l))),
+        // Re-check the phase limit under the lock: other slots may have
+        // claimed since `candidates` took its snapshot.
+        let res = repo.hall.with_repo_lock(|| {
+            let busy = all(&repo.hall)
+                .iter()
+                .filter(|l| l.role == role && l.holder != holder && l.item != cand.id)
+                .filter(|l| {
+                    repo.hall
+                        .load_item(l.item)
+                        .is_ok_and(|i| i.state == cand.state)
+                })
+                .count() as u32;
+            if busy >= limit(repo, cand.state) {
+                return Ok(None);
+            }
+            claim_locked(&repo.hall, cand.id, role, holder, ttl).map(Some)
+        });
+        match res {
+            Ok(None) => continue,
+            Ok(Some(l)) => return Ok(Some((repo.hall.load_item(cand.id)?, l))),
             Err(e) if e.code == ErrorCode::Claimed => continue,
             Err(e) => return Err(e),
         }

@@ -1,12 +1,12 @@
 //! The loop behind `hall daemon run` (what `hall daemon start` launches).
 //!
 //! - One instance: the loop holds `daemon/daemon.lock` for its whole life.
-//! - Each repo has its own schedule: its next pass starts one poll interval
-//!   after its own last pass ended, on its own thread, so a slow repo never
-//!   holds another's queue. The loop settles an expired pause, records a new
-//!   one in every served repo's journal, and keeps the last pass per repo
-//!   (`passes` counts finished per-repo passes). The registry is re-read once
-//!   per poll interval.
+//! - Every repo, worker and slot has its own schedule (ADR 0026): a job's
+//!   next run starts one poll interval after its own last run ended, on its
+//!   own thread, so a slow job never holds another's queue. The loop settles
+//!   an expired pause, records a new one in every served repo's journal, and
+//!   keeps the latest news per repo (`passes` counts finished jobs). The
+//!   registry and each repo's `[parallel]` are re-read once per poll interval.
 //! - A heartbeat (and what it is doing now) every few seconds, also while
 //!   a long pass runs, so the inbox only flags a daemon that is really gone.
 //! - It reads the state file every second and exits cleanly once `wanted`
@@ -179,23 +179,37 @@ pub fn run_loop(opts: &Options) -> Result<DaemonState> {
     // interval after its own last pass ended, so a slow repo (a long review,
     // a cold build) never holds another repo's queue.
     let current: Arc<Mutex<BTreeMap<String, String>>> = Arc::default();
-    let (done_tx, done_rx) = mpsc::channel::<Outcome>();
-    let mut running: BTreeMap<String, (Target, std::thread::JoinHandle<()>)> = BTreeMap::new();
+    let (done_tx, done_rx) = mpsc::channel::<(String, Outcome)>();
+    // Jobs are keyed `<repo path>|<worker>|<slot>` (ADR 0026): each repo,
+    // worker and slot runs on its own schedule.
+    let mut running: BTreeMap<String, (Instant, Target, std::thread::JoinHandle<()>)> =
+        BTreeMap::new();
     let mut halls: BTreeMap<String, Hall> = BTreeMap::new();
     let mut due: BTreeMap<String, Instant> = BTreeMap::new();
-    let mut targets: Vec<Target> = Vec::new();
+    // When each repo's worker last did something, to wake its extra slots.
+    let mut busy: BTreeMap<String, Instant> = BTreeMap::new();
+    let mut targets: Vec<(Target, crate::config::Parallel)> = Vec::new();
     let mut refreshed: Option<Instant> = None;
     loop {
         ctl.check();
-        // The registry is read again every poll interval, so a repo added
-        // with `hall init` joins without a restart.
+        // The registry and each repo's [parallel] are read again every poll
+        // interval, so a repo added with `hall init` joins without a restart.
         if refreshed.is_none_or(|r| r.elapsed() >= opts.poll) {
-            targets = match &opts.repo {
+            let list = match &opts.repo {
                 Some(t) => vec![t.clone()],
                 None => targets::registered(),
             };
+            targets = list
+                .into_iter()
+                .map(|t| {
+                    let par = targets::open(&t)
+                        .map(|r| r.config.parallel.clone())
+                        .unwrap_or_default();
+                    (t, par)
+                })
+                .collect();
             refreshed = Some(Instant::now());
-            for t in &targets {
+            for (t, _) in &targets {
                 let key = crate::paths::display(&t.path);
                 if !announced.contains(&key) {
                     if let Ok(r) = targets::open(t) {
@@ -205,7 +219,7 @@ pub fn run_loop(opts: &Options) -> Result<DaemonState> {
                 }
             }
         }
-        // Start the repos whose turn it is.
+        // Start the jobs whose turn it is.
         if !ctl.stop {
             let now = Utc::now();
             let paused = state::update(|s| -> Result<_> {
@@ -214,58 +228,86 @@ pub fn run_loop(opts: &Options) -> Result<DaemonState> {
                 }
                 Ok(s.pause_at(now).cloned())
             })??;
-            for t in &targets {
-                let key = crate::paths::display(&t.path);
-                if running.contains_key(&key) || due.get(&key).is_some_and(|d| *d > Instant::now())
-                {
-                    continue;
+            for (t, par) in &targets {
+                let repo_key = crate::paths::display(&t.path);
+                for (worker, _) in super::worker_order() {
+                    if !opts.only.is_empty() && !opts.only.iter().any(|o| o == worker) {
+                        continue;
+                    }
+                    let group = format!("{repo_key}|{worker}");
+                    // Extra slots wake only while the worker has work: one
+                    // of its jobs runs long, or one did something lately.
+                    let working = busy
+                        .get(&group)
+                        .is_some_and(|t| t.elapsed() < opts.poll * 2)
+                        || running.iter().any(|(k, (started, _, _))| {
+                            k.starts_with(&format!("{group}|"))
+                                && started.elapsed() > Duration::from_secs(1)
+                        });
+                    let slots = if working { par.slots(worker) } else { 1 };
+                    for slot in 1..=slots {
+                        let key = format!("{group}|{slot}");
+                        if running.contains_key(&key)
+                            || due.get(&key).is_some_and(|d| *d > Instant::now())
+                        {
+                            continue;
+                        }
+                        let t_key = t.clone();
+                        let (t, paused) = (t.clone(), paused.clone());
+                        let (cur, tx, k) = (Arc::clone(&current), done_tx.clone(), key.clone());
+                        let handle = std::thread::spawn(move || {
+                            let o = super::one_slot(&t, worker, slot, paused.as_ref(), &cur);
+                            let _ = tx.send((k, o));
+                        });
+                        running.insert(key, (Instant::now(), t_key, handle));
+                    }
                 }
-                let t_key = t.clone();
-                let (t, only, paused) = (t.clone(), opts.only.clone(), paused.clone());
-                let (cur, tx) = (Arc::clone(&current), done_tx.clone());
-                let handle = std::thread::spawn(move || {
-                    let o = super::one(&t, &only, paused.as_ref(), &cur);
-                    let _ = tx.send(o);
-                });
-                running.insert(key, (t_key, handle));
             }
         }
         // A thread that died without reporting: record a panic for it. This
         // runs before the drain, so an outcome sent just before a thread
         // finished is still in the channel when the drain looks.
-        let mut ended: Vec<Outcome> = Vec::new();
+        let mut ended: Vec<(String, Outcome)> = Vec::new();
         let dead: Vec<String> = running
             .iter()
-            .filter(|(_, (_, h))| h.is_finished())
+            .filter(|(_, (_, _, h))| h.is_finished())
             .map(|(k, _)| k.clone())
             .collect();
         for k in dead {
-            if let Some((t, h)) = running.remove(&k)
+            if let Some((_, t, h)) = running.remove(&k)
                 && h.join().is_err()
             {
-                log(&format!("the pass over {k} panicked"));
-                ended.push(Outcome {
-                    target: t,
-                    hall: None,
-                    steps: vec![],
-                    skip: Some(Skip::Error("the pass panicked".into())),
-                });
+                log(&format!("the job {k} panicked"));
+                ended.push((
+                    k.clone(),
+                    Outcome {
+                        target: t,
+                        hall: None,
+                        steps: vec![],
+                        skip: Some(Skip::Error("the job panicked".into())),
+                    },
+                ));
             }
             due.insert(k, Instant::now() + opts.poll);
         }
-        // Collect the passes that ended.
-        while let Ok(o) = done_rx.try_recv() {
-            let key = crate::paths::display(&o.target.path);
-            if let Some((_, h)) = running.remove(&key) {
+        // Collect the jobs that ended.
+        while let Ok((key, o)) = done_rx.try_recv() {
+            if let Some((_, _, h)) = running.remove(&key) {
                 let _ = h.join();
             }
-            ended.push(o);
+            ended.push((key, o));
         }
-        for o in ended {
-            let key = crate::paths::display(&o.target.path);
+        for (key, o) in ended {
             due.insert(key.clone(), Instant::now() + opts.poll);
             if let Some(h) = &o.hall {
-                halls.insert(key, h.clone());
+                halls.insert(crate::paths::display(&o.target.path), h.clone());
+            }
+            let did = o
+                .steps
+                .iter()
+                .any(|s| s.error.is_some() || !matches!(s.progress, crate::worker::Progress::Idle));
+            if did && let Some((group, _)) = key.rsplit_once('|') {
+                busy.insert(group.to_string(), Instant::now());
             }
             for line in progress_lines(&o) {
                 log(&line);
@@ -275,13 +317,17 @@ pub fn run_loop(opts: &Options) -> Result<DaemonState> {
             // reporting one (ADR 0017).
             let journals: Vec<Hall> = targets
                 .iter()
-                .filter_map(|t| halls.get(&crate::paths::display(&t.path)).cloned())
+                .filter_map(|(t, _)| halls.get(&crate::paths::display(&t.path)).cloned())
                 .collect();
             let new_pause = state::update(|s| -> Result<_> {
                 let p = record_pause(s, std::slice::from_ref(&o), &journals, now)?;
                 let sum = o.summary();
-                s.repos.retain(|r| r.path != sum.path);
-                s.repos.push(sum);
+                // Keep the latest news per repo: an idle job doesn't hide
+                // what another job just did.
+                if did || o.skip.is_some() || !s.repos.iter().any(|r| r.path == sum.path) {
+                    s.repos.retain(|r| r.path != sum.path);
+                    s.repos.push(sum);
+                }
                 s.passes += 1;
                 s.heartbeat = Some(now);
                 Ok(p)
