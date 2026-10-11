@@ -222,7 +222,8 @@ fn resolving_run() -> Value {
     json!([{
         "role": "fixer",
         "files": {"retry.rs": "fn retry() {\n    log();\n    deliver();\n}\n"},
-        "run": ["git add retry.rs", "GIT_EDITOR=true git rebase --continue"],
+        // As the prompt asks: bare commands; the run's env sets GIT_EDITOR.
+        "run": ["git add retry.rs", "git rebase --continue"],
         "result": "resolved"
     }])
 }

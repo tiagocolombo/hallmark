@@ -486,6 +486,11 @@ fn append(repo: &Repo, id: ItemId, body: Body) -> Result<()> {
 
 /// The dev run's tools: read and edit files, stage them, continue the
 /// rebase, commit, and run the repo's gates. Never push, never abort.
+///
+/// `GIT_EDITOR=true` is in the run's environment and the prompt asks for a
+/// bare `git rebase --continue`, but models still reach for an editor
+/// override; a rule only matches its exact prefix, so those forms are
+/// allowed too.
 pub fn tools(gates: &[String]) -> Vec<String> {
     let mut t: Vec<String> = [
         "Read",
@@ -499,6 +504,8 @@ pub fn tools(gates: &[String]) -> Vec<String> {
         "Bash(git show:*)",
         "Bash(git add:*)",
         "Bash(git rebase --continue:*)",
+        "Bash(GIT_EDITOR=true git rebase --continue:*)",
+        "Bash(git -c core.editor=true rebase --continue:*)",
         "Bash(git commit:*)",
     ]
     .into_iter()
@@ -591,7 +598,10 @@ fn prompt(repo: &Repo, item: &Item, events: &[Event], target: &Target, files: &[
          (`git log`, `git show`, `git diff`), and edit the file so it keeps both: the base's \
          changes and this item's. Remove every conflict marker.\n\
          2. `git add` each resolved file, then `git rebase --continue`. Repeat for every commit \
-         that stops.\n",
+         that stops. Run each git command on its own, exactly as written, from the worktree \
+         you are in: `GIT_EDITOR` is already `true` here, so no editor opens. Don't add \
+         `GIT_EDITOR=…`, `-c core.editor=…` or `-C <dir>`, and don't chain commands with `&&` \
+         or `;`: any other form needs an approval nobody can give, and the rebase is lost.\n",
     );
     if repo.config.gates.is_empty() {
         s.push_str("3. When the rebase is done, check that the code still builds.\n");
@@ -967,6 +977,7 @@ mod tests {
     fn tools_never_push_or_abort() {
         let t = tools(&["cargo test".into(), " ".into()]);
         assert!(t.contains(&"Bash(git rebase --continue:*)".to_string()));
+        assert!(t.contains(&"Bash(GIT_EDITOR=true git rebase --continue:*)".to_string()));
         assert!(t.contains(&"Bash(cargo test:*)".to_string()));
         assert!(!t.iter().any(|x| x.contains("push") || x.contains("abort")));
     }
