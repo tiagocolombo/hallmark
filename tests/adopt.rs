@@ -1,4 +1,4 @@
-//! `hall adopt` on open PRs (ADR 0027): a shipped item comes back to
+//! `hall adopt` on open PRs (ADR 0029): a shipped item comes back to
 //! development through its open PR, any other open PR can be taken over,
 //! and the shipper updates the PR instead of opening a new one. `gh` is a
 //! fake shell script, so these run on Unix only.

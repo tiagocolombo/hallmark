@@ -335,7 +335,7 @@ fn now_with(
                 format!("hall export {id}"),
                 "the whole record as Markdown",
             )];
-            // Its PR can still need a rebase or a conflict fix (ADR 0027).
+            // Its PR can still need a rebase or a conflict fix (ADR 0029).
             if let Some(u) = &item.pr_url
                 && item.parent.is_none()
             {

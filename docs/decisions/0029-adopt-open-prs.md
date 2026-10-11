@@ -1,4 +1,4 @@
-# 0027. Adopt open PRs: reopen shipped items, take over the rest
+# 0029. Adopt open PRs: reopen shipped items, take over the rest
 
 Status: Accepted, 2026-10-10
 

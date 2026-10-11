@@ -141,7 +141,7 @@ pub fn next_for(item: &Item) -> Vec<String> {
         ],
         State::Hallmarked => vec![format!("hall status {id}")],
         // A shipped PR that is still open can come back for a rebase or a
-        // conflict fix (ADR 0027).
+        // conflict fix (ADR 0029).
         State::Closed => match &item.pr_url {
             Some(url) if item.parent.is_none() => {
                 vec![format!("hall log {id}"), format!("hall adopt --pr {url}")]

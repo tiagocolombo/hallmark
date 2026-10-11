@@ -96,7 +96,7 @@ stateDiagram-v2
 Any live item can be dropped with a reason. Closing ends an item's life: later
 PR feedback starts a new item. The exception is a PR that needs a rebase or a
 conflict fix while it is still open: `hall adopt` brings its item back to
-development, and after review the shipper updates the same PR (ADR 0027).
+development, and after review the shipper updates the same PR (ADR 0029).
 
 One item's life, from the replay in the design page:
 
@@ -248,7 +248,7 @@ Agents are the main users of `hall`, so every command follows these rules:
 | `hall doctor` | Checks the install. |
 | `hall setup claude` | Installs the Claude Code plugin. `--statusline`, `--dry-run` |
 | `hall new [<request>]` | Creates an item and its worktree; splits into parallel parts when it can. `--title`, `--issue <n>`, `--no-split`, `--parent <id>`, `--follow-up <pr>`, `--open`, `--branch` |
-| `hall adopt [--pr] [--base]` | Turns the current branch and worktree, or an open PR, into an item. A shipped item whose PR is still open is reopened: rebase it, resolve conflicts or change it, and the shipper updates the PR after review (ADR 0027). |
+| `hall adopt [--pr] [--base]` | Turns the current branch and worktree, or an open PR, into an item. A shipped item whose PR is still open is reopened: rebase it, resolve conflicts or change it, and the shipper updates the PR after review (ADR 0029). |
 | `hall merge [<child>]` | Merges a parallel part into its parent's branch and closes it. |
 | `hall status [<id>]` | Lists items by state, or shows one item with a **now** block: queued (and what is ahead), the gate running, the reviewer's run, the fixer, a hold, and what you can do. `--all` includes closed and dropped items. |
 | `hall log [<id>]` | Prints the journal. `--kind <event>`, `--limit <n>` |

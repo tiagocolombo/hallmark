@@ -382,7 +382,7 @@ pub fn new(cwd: &Path, a: NewArgs, mode: Mode) -> Result<Response> {
 }
 
 /// `hall adopt`: turn the current branch, or an open PR (`--pr`), into an
-/// item (ADR 0027).
+/// item (ADR 0029).
 ///
 /// - A branch with an open item returns that item.
 /// - A branch Hallmark shipped, whose PR is still open, reopens that item:

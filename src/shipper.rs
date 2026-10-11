@@ -3,7 +3,7 @@
 //! One tick claims one hallmarked item, checks that its branch is still at
 //! the hallmarked commit, writes the PR body, runs the configured `ship`
 //! command in the worktree, and records `shipped` (the item closes). An
-//! item that already has a PR (adopted, or reopened to rebase it: ADR 0027)
+//! item that already has a PR (adopted, or reopened to rebase it: ADR 0029)
 //! runs `update` instead, which replaces the PR's head under a lease. It
 //! never ships a commit without a hallmark: a branch that moved past it is
 //! held for you instead. Child items never ship; they merge into their
