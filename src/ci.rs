@@ -75,8 +75,16 @@ pub fn watched(items: &[Item], now: DateTime<Utc>) -> Vec<Item> {
                 && match &i.ci {
                     None => now - i.state_since < Duration::hours(GIVE_UP_HOURS),
                     // A failed PR is watched until it turns green or closes.
+                    // An outage or a PR the office gave up on stays watched
+                    // while it is open, so a green re-run clears its entry.
                     Some(c) => {
-                        !c.passed && c.ended.is_none() && now - c.t < Duration::hours(GIVE_UP_HOURS)
+                        !c.passed
+                            && c.ended.is_none()
+                            && i.delivered.is_none()
+                            && (c.not_started.is_some()
+                                || i.ci_fixes >= crate::delivery::CI_FIXES
+                                || i.ci_declined.is_some()
+                                || now - c.t < Duration::hours(GIVE_UP_HOURS))
                     }
                 }
         })
@@ -147,6 +155,17 @@ pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
     // After a failure the watch goes on while the PR is open: a re-run that
     // goes green, or a fix pushed on GitHub, clears the inbox entry.
     if item.ci.as_ref().is_some_and(|c| !c.passed) {
+        // A failure recorded before `not_started` existed (or before the
+        // outage was told apart): record it again so it joins `ci_down`.
+        if item
+            .ci
+            .as_ref()
+            .is_some_and(|c| c.not_started.is_none() && c.ended.is_none())
+            && let Outcome::Failed(f) = conclude(&checks)
+            && not_started(&repo.main_root, &f).is_some()
+        {
+            return record(ctx, item.id, &url, false, f, None);
+        }
         return match conclude(&checks) {
             Outcome::Passed => record(ctx, item.id, &url, true, vec![], None),
             _ => {
@@ -188,7 +207,7 @@ pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
 
 /// GitHub's reason when none of the failing checks ever started, else None.
 /// Only checks with a job link are asked; one that ran settles it.
-fn not_started(dir: &std::path::Path, failing: &[FailingCheck]) -> Option<String> {
+pub fn not_started(dir: &std::path::Path, failing: &[FailingCheck]) -> Option<String> {
     let links: Vec<&str> = failing.iter().filter_map(|f| f.link.as_deref()).collect();
     if links.is_empty() || links.len() < failing.len() {
         return None;

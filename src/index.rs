@@ -657,6 +657,11 @@ impl Index {
             if ci.passed || followed || ci.ended.as_deref() == Some("closed") {
                 continue;
             }
+            // Ended (merged or closed) before the CI watch saw the end: the
+            // red record is stale, and nothing will clear it.
+            if item.delivered.is_some() && ci.ended.is_none() {
+                continue;
+            }
             if let Some(why) = &ci.not_started {
                 if ci.ended.is_none() {
                     down.push((item, why));
@@ -671,8 +676,16 @@ impl Index {
                 }
             }
             let open = ci.ended.is_none() && item.state == State::Closed;
-            let gave_up = open && item.ci_fixes >= crate::delivery::CI_FIXES;
-            let text = if gave_up {
+            let declined = open.then_some(item.ci_declined.as_deref()).flatten();
+            let gave_up =
+                open && (item.ci_fixes >= crate::delivery::CI_FIXES || declined.is_some());
+            let text = if let Some(why) = declined {
+                format!(
+                    "{}: CI failed on {url}: {}; the Delivery office won't fix it ({why})",
+                    item.title,
+                    failing.join(", ")
+                )
+            } else if gave_up {
                 format!(
                     "{}: CI still fails on {url} after {} fixes: {}",
                     item.title,
@@ -697,7 +710,14 @@ impl Index {
                 default: None,
                 session: None,
                 since: ci.t,
-                answer_with: vec![format!("hall new --follow-up {url}")],
+                answer_with: if declined.is_some() {
+                    vec![
+                        format!("hall adopt --pr {url}"),
+                        format!("hall new --follow-up {url}"),
+                    ]
+                } else {
+                    vec![format!("hall new --follow-up {url}")]
+                },
                 notice: !gave_up,
             });
         }

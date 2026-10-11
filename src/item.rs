@@ -254,6 +254,9 @@ pub struct Item {
     /// CI. After `delivery::CI_FIXES`, a red PR waits for you.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub ci_fixes: u32,
+    /// Why the Delivery office won't fix the red PR itself; it waits for you.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ci_declined: Option<String>,
     /// How the shipped PR ended: `merged` or `closed`. Until then the
     /// Delivery office watches it.
     #[serde(default, skip_serializing_if = "Option::is_none")]

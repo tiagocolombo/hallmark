@@ -396,3 +396,52 @@ fn ci_that_never_started_is_one_entry_and_nothing_to_fix() {
         "{text}"
     );
 }
+
+#[test]
+fn an_old_red_record_of_an_outage_joins_ci_down() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    let (id, _) = shipped(&env);
+    let job = "https://github.com/acme/app/actions/runs/7/job/9";
+    // Recorded before `not_started` existed.
+    append(
+        &env,
+        &id,
+        "ci",
+        Body::PrChecks {
+            pr_url: URL.into(),
+            passed: false,
+            failing: vec![hallmark::event::FailingCheck {
+                name: "fmt".into(),
+                link: Some(job.into()),
+            }],
+            ended: None,
+            not_started: None,
+        },
+    );
+    pr(&gh, "OPEN", "x", "");
+    let dir = gh.parent().unwrap();
+    std::fs::write(
+        dir.join("job.json"),
+        json!({"steps": [], "runner_name": "", "conclusion": "failure"}).to_string(),
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("annotations.json"),
+        json!([{"annotation_level": "failure",
+                "message": "The job was not started because your spending limit needs to be increased."}])
+        .to_string(),
+    )
+    .unwrap();
+    checks(&gh, json!([{"name": "fmt", "bucket": "fail", "link": job}]));
+    ci_pass(&env, &gh);
+    let recorded = events(&env, &id, "pr_checks");
+    assert_eq!(recorded.len(), 2, "recorded again");
+    assert!(recorded[1]["not_started"].is_string(), "{recorded:?}");
+    let inbox = env.hall(&env.repo, &["inbox"]);
+    assert_eq!(
+        inbox.json["entries"][0]["kind"], "ci_down",
+        "{}",
+        inbox.stdout
+    );
+}

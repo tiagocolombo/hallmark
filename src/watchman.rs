@@ -113,6 +113,7 @@ mod tests {
             feedback: None,
             ci_fix: None,
             ci_fixes: 0,
+            ci_declined: None,
             delivered: None,
             hold: None,
             stuck_since: None,

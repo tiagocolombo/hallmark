@@ -405,6 +405,12 @@ pub enum Body {
         pr_url: String,
         failing: Vec<FailingCheck>,
     },
+    /// The Delivery office won't fix the red PR itself (someone else pushed
+    /// to it, or its worktree is missing or dirty): it waits for you.
+    CiFixDeclined {
+        pr_url: String,
+        reason: String,
+    },
     /// The shipped PR left the open state: `merged` or `closed`. The
     /// Delivery office stops watching it.
     Delivered {
@@ -501,6 +507,7 @@ impl Body {
             Body::Rebased { .. } => "rebased",
             Body::RebaseRequested { .. } => "rebase_requested",
             Body::CiFixRequested { .. } => "ci_fix_requested",
+            Body::CiFixDeclined { .. } => "ci_fix_declined",
             Body::Delivered { .. } => "delivered",
             Body::FeedbackRequested { .. } => "feedback_requested",
         }
@@ -766,6 +773,9 @@ impl Body {
                     50
                 )
             ),
+            Body::CiFixDeclined { pr_url, reason } => {
+                format!("CI fix declined · {pr_url} · {reason}")
+            }
             Body::Delivered { pr_url, outcome } => format!("PR {outcome} · {pr_url}"),
             Body::FeedbackRequested { comments, .. } => format!(
                 "{} new PR comment{} to address",
@@ -851,6 +861,7 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
         feedback: None,
         ci_fix: None,
         ci_fixes: 0,
+        ci_declined: None,
         delivered: None,
     };
     let mut ledger = Ledger::default();
@@ -924,6 +935,7 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
                 // Green again: a later failure gets fixes of its own.
                 if *passed {
                     item.ci_fixes = 0;
+                    item.ci_declined = None;
                 }
             }
             Body::Shipped { sha, pr_url } => {
@@ -945,6 +957,7 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
                 item.base = base.clone();
                 // The PR's CI is watched again once the update ships.
                 item.ci = None;
+                item.ci_declined = None;
                 // Reviewed again like any other change.
                 item.rejects = 0;
             }
@@ -961,6 +974,7 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
                     since: e.t,
                 })
             }
+            Body::CiFixDeclined { reason, .. } => item.ci_declined = Some(reason.clone()),
             Body::Delivered { outcome, .. } => item.delivered = Some(outcome.clone()),
             Body::FeedbackRequested { comments, .. } => {
                 item.feedback = Some(crate::item::FeedbackRequest {

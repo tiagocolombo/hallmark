@@ -189,9 +189,19 @@ fn work(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
     }
     let dirty = git::dirty_files(&wt)?;
     if !dirty.is_empty() {
-        return held(
+        // Held as what the item was doing, so the inbox explains the right
+        // problem.
+        let kind = if item.rebase.is_some() {
+            HoldKind::Conflict
+        } else if item.feedback.is_some() {
+            HoldKind::Feedback
+        } else {
+            HoldKind::CiFailed
+        };
+        return hold(
             repo,
             id,
+            kind,
             format!(
                 "the worktree has uncommitted changes ({}); they aren't the Delivery office's \
                  to commit",
@@ -314,7 +324,7 @@ fn settle(repo: &Repo, id: ItemId, wt: &Path, target: &Target) -> Result<Progres
             if git::rebase_in_progress(wt) {
                 abort(wt);
             }
-            failed(repo, id, why)
+            failed(repo, id, "rebase", HoldKind::Conflict, why)
         }
     }
 }
@@ -369,7 +379,7 @@ fn send_to_review(repo: &Repo, id: ItemId, wt: &Path, note: &str) -> Result<Prog
 
 /// A failed attempt, counted like the fixer's: the next tick retries once,
 /// the second failure in a row holds the item.
-fn failed(repo: &Repo, id: ItemId, reason: String) -> Result<Progress> {
+fn failed(repo: &Repo, id: ItemId, what: &str, kind: HoldKind, reason: String) -> Result<Progress> {
     // Failed runs (counted by the runner as the fixer role's) and failed
     // results count together.
     let events = repo.hall.read_item(id)?;
@@ -386,12 +396,12 @@ fn failed(repo: &Repo, id: ItemId, reason: String) -> Result<Progress> {
         },
     )?;
     repo.hall
-        .live(&format!("{id} rebase failed (attempt {attempt}): {reason}"));
+        .live(&format!("{id} {what} failed (attempt {attempt}): {reason}"));
     if attempt >= 2 {
-        return held(repo, id, reason);
+        return hold(repo, id, kind, reason);
     }
     Ok(Progress::worked(format!(
-        "{id} rebase failed (attempt {attempt}): {reason}"
+        "{id} {what} failed (attempt {attempt}): {reason}"
     )))
 }
 
@@ -547,6 +557,8 @@ fn dev_run(
         return failed(
             repo,
             id,
+            task.what,
+            task.hold,
             format!(
                 "the {} run left uncommitted changes; they are kept for you",
                 task.what
@@ -991,19 +1003,39 @@ fn ci_next(
         || !wt.is_dir()
         || !git::dirty_files(&wt).map(|d| d.is_empty()).unwrap_or(false)
     {
-        note_once(
-            format!("ci-{id}-{}", ci.t.timestamp()),
-            format!(
-                "{id} delivery: CI failed on {url}, but someone else pushed to it or its \
-                 worktree {} is missing or dirty; `hall adopt --pr {url}` to fix it by hand",
-                item.worktree
-            ),
+        let why = format!(
+            "someone else pushed to {url} or its worktree {} is missing or dirty",
+            item.worktree
         );
+        if item.ci_declined.as_deref() != Some(why.as_str()) {
+            append(
+                repo,
+                id,
+                Body::CiFixDeclined {
+                    pr_url: url.to_string(),
+                    reason: why.clone(),
+                },
+            )?;
+            note_once(
+                format!("ci-{id}-{}", ci.t.timestamp()),
+                format!(
+                    "{id} delivery: CI failed on {url}, but {why}; `hall adopt --pr {url}` to \
+                     fix it by hand"
+                ),
+            );
+        }
         return Ok(Progress::Idle);
     }
     // The failing checks, with their links for the logs.
     let failing: Vec<FailingCheck> = match crate::gh::pr_checks(&repo.main_root, url) {
         Ok(checks) => match crate::ci::conclude(&checks) {
+            // Records from before `not_started` existed: jobs that never
+            // started are an outage, not code to fix.
+            crate::ci::Outcome::Failed(f)
+                if crate::ci::not_started(&repo.main_root, &f).is_some() =>
+            {
+                return Ok(Progress::Idle);
+            }
             crate::ci::Outcome::Failed(f) => f,
             // Green, or re-running: the CI watch records it.
             _ => return Ok(Progress::Idle),

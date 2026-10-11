@@ -724,6 +724,38 @@ fn ci_still_red_after_the_fixes_waits_for_you() {
 }
 
 #[test]
+fn a_red_pr_the_office_wont_touch_escalates() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    remote_with_main(&env);
+    let (id, _, _) = hallmarked_item(&env, "Retry webhooks");
+    pass(&env, &gh, "shipper", json!([]));
+    ci_failed(&env, &id);
+    // Someone pushed to the PR: its head is not the shipped one.
+    pr(
+        &gh,
+        "OPEN",
+        "MERGEABLE",
+        "feedfacefeedfacefeedfacefeedfacefeedface",
+    );
+    assert_eq!(pass(&env, &gh, "delivery", json!([]))["progress"], "idle");
+    assert_eq!(events(&env, &id, "ci_fix_declined").len(), 1);
+    let inbox = env.hall(&env.repo, &["inbox"]);
+    let e = &inbox.json["entries"][0];
+    assert_eq!(e["kind"], "ci_failed", "{}", inbox.stdout);
+    assert!(
+        e["answer_with"][0]
+            .as_str()
+            .unwrap()
+            .starts_with("hall adopt --pr"),
+        "{e}"
+    );
+    // Not repeated on the next tick.
+    pass(&env, &gh, "delivery", json!([]));
+    assert_eq!(events(&env, &id, "ci_fix_declined").len(), 1);
+}
+
+#[test]
 fn a_new_item_starts_from_the_latest_base_not_the_main_checkout() {
     let env = Env::initialized();
     remote_with_main(&env);
