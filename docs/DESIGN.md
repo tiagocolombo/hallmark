@@ -575,9 +575,10 @@ doubt makes one item.
 ## The daemon (Stage 2, ADR 0014, 0017)
 
 One process (`hall daemon start`, optionally at login) runs passes over every
-registered repo; repos run in parallel, and each repo's workers run in order:
-watchman, resume, assayer, fixer, shipper, librarian, notify. Leases keep one
-worker per item and one assayer per repo. A rate limit or the daily budget
+registered repo; every repo, worker and slot is scheduled on its own (ADR
+0026): watchman, resume, assayer, fixer, shipper, librarian, notify. Leases
+keep one worker per item and count per phase against `[parallel]` (checks,
+review, fix, ship), not one assayer per repo. A rate limit or the daily budget
 pauses the model workers until the reset, recorded as `paused`. Stopping is a
 flag in the state file, so it works the same on every OS.
 

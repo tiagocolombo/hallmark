@@ -50,10 +50,14 @@ pub fn strike(
         t: Utc::now(),
     };
     let body = serde_json::to_string(&note)?;
-    git::run(
-        &repo.main_root,
-        &["notes", "--ref", NOTES_REF, "add", "-f", "-m", &body, sha],
-    )?;
+    // Concurrent strikes would each write a notes commit on the same parent
+    // and the later ref update would drop the earlier note: serialize them.
+    repo.hall.with_repo_lock(|| {
+        git::run(
+            &repo.main_root,
+            &["notes", "--ref", NOTES_REF, "add", "-f", "-m", &body, sha],
+        )
+    })?;
     let seen = repo
         .hall
         .read_item(item)?

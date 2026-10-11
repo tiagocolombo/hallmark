@@ -306,6 +306,27 @@ expression: v
       "usage": "hall retry [OPTIONS] --reason <REASON> [ID]"
     },
     {
+      "about": "Move an item on from wherever it waits: release a hold, retry an escalation, send it to review, or reopen its Claude session",
+      "args": [
+        {
+          "name": "id",
+          "required": false,
+          "syntax": "<id>",
+          "takes_value": true
+        },
+        {
+          "help": "Why (recorded when it releases a hold or retries an escalation)",
+          "name": "reason",
+          "required": false,
+          "syntax": "--reason <reason>",
+          "takes_value": true
+        }
+      ],
+      "name": "continue",
+      "schema": "hall schema continue",
+      "usage": "hall continue [OPTIONS] [ID]"
+    },
+    {
       "about": "The dev agent says the work looks done (moves it to Awaiting you)",
       "args": [
         {
@@ -603,6 +624,13 @@ expression: v
       "name": "daemon status",
       "schema": "hall schema daemon",
       "usage": "hall daemon status [OPTIONS]"
+    },
+    {
+      "about": "Lift a pause now (a rate limit or the daily budget), before its time",
+      "args": [],
+      "name": "daemon resume",
+      "schema": "hall schema daemon",
+      "usage": "hall daemon resume [OPTIONS]"
     },
     {
       "about": "Run the loop in the foreground (what `start` launches)",

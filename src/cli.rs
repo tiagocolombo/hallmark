@@ -55,6 +55,9 @@ pub enum Cmd {
     Drop(DropArgs),
     /// Allow another fix round for an escalated item.
     Retry(RetryArgs),
+    /// Move an item on from wherever it waits: release a hold, retry an
+    /// escalation, send it to review, or reopen its Claude session.
+    Continue(ContinueArgs),
     /// The dev agent says the work looks done (moves it to Awaiting you).
     ProposeReady(ProposeReadyArgs),
     /// Ask the human a question; it lands in the inbox.
@@ -218,6 +221,14 @@ pub struct RetryArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct ContinueArgs {
+    pub id: Option<String>,
+    /// Why (recorded when it releases a hold or retries an escalation).
+    #[arg(long)]
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Args)]
 pub struct ProposeReadyArgs {
     pub id: Option<String>,
     /// What was done, for the human deciding.
@@ -333,6 +344,8 @@ pub enum DaemonAction {
     },
     /// Is it running, paused, and what is it doing?
     Status,
+    /// Lift a pause now (a rate limit or the daily budget), before its time.
+    Resume,
     /// Run the loop in the foreground (what `start` launches).
     Run {
         /// One pass over the repos, then exit.
@@ -614,6 +627,7 @@ fn dispatch(cmd: Option<Cmd>, cwd: &std::path::Path, mode: Mode) -> Result<Respo
         Some(Cmd::PullBack(a)) => flow::pull_back(cwd, a),
         Some(Cmd::Drop(a)) => flow::drop(cwd, a),
         Some(Cmd::Retry(a)) => flow::retry(cwd, a),
+        Some(Cmd::Continue(a)) => flow::continue_item(cwd, a, mode),
         Some(Cmd::ProposeReady(a)) => flow::propose_ready(cwd, a),
         Some(Cmd::Ask(a)) => ask::ask(cwd, a),
         Some(Cmd::Answer(a)) => ask::answer(cwd, a),
