@@ -36,3 +36,4 @@ a decision, add a new record that supersedes the old one. Don't edit the old one
 | [0028](0028-grant-the-daily-budget.md) | Grant the daily budget for today, without changing the cap | Accepted |
 | [0029](0029-adopt-open-prs.md) | Adopt open PRs: reopen shipped items, take over the rest | Accepted |
 | [0030](0030-delivery-and-rebase-before-shipping.md) | The Delivery office (conflicts and PR comments), rebasing before shipping, what becomes an item, a clean inbox, auto-ready, a wrapped timeline, and a daemon that doesn't die in its sleep | Accepted |
+| [0032](0032-old-processes-and-the-index.md) | An older hall never rewrites a newer one's index; the terminal app restarts on update | Accepted |

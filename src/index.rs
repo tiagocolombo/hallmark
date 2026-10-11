@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS questions (
 CREATE TABLE IF NOT EXISTS notifications (
   item TEXT, session TEXT, t TEXT NOT NULL, message TEXT, kind TEXT, resolved_at TEXT
 );
+CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS findings (
   item TEXT NOT NULL, id TEXT NOT NULL, round INTEGER NOT NULL, t TEXT NOT NULL, sha TEXT,
   lens TEXT NOT NULL, severity TEXT NOT NULL, file TEXT, line INTEGER, title TEXT, scenario TEXT,
@@ -262,6 +263,11 @@ impl Index {
     /// Empties the index and rebuilds it from the journal.
     pub fn rebuild(hall: &Hall) -> Result<Index> {
         let mut ix = Index::open(hall)?;
+        // Never empty an index a newer hall owns: this one would refill it
+        // without the fields it doesn't know.
+        if ix.owned_by_newer() {
+            return Ok(ix);
+        }
         ix.clear()?;
         ix.sync(hall)?;
         Ok(ix)
@@ -279,6 +285,63 @@ impl Index {
         if !hall.exists() {
             return Ok(());
         }
+        // A newer hall owns the rows while it runs: this one would fold items
+        // without the fields it doesn't know, and drop them (ADR 0032).
+        if self.owned_by_newer() {
+            return Ok(());
+        }
+        self.sync_rows(hall)?;
+        self.mark_writer(&item_fields(), Utc::now())
+    }
+
+    /// A newer hall (one whose items have fields this build doesn't know)
+    /// synced this index in the last hour. After an hour without it (a
+    /// downgrade), this one takes over.
+    pub fn owned_by_newer(&self) -> bool {
+        let mine = item_fields();
+        self.writer().is_some_and(|(fields, at)| {
+            fields.iter().any(|f| !mine.contains(f)) && Utc::now() - at < chrono::Duration::hours(1)
+        })
+    }
+
+    /// The item fields of the newest hall that synced this index, and when
+    /// it last did.
+    pub fn writer(&self) -> Option<(Vec<String>, DateTime<Utc>)> {
+        let get = |k: &str| {
+            self.conn
+                .query_row("SELECT value FROM meta WHERE key = ?1", [k], |r| {
+                    r.get::<_, String>(0)
+                })
+                .ok()
+        };
+        let fields = serde_json::from_str(&get("item_fields")?).ok()?;
+        let at = DateTime::parse_from_rfc3339(&get("item_fields_at")?)
+            .ok()?
+            .with_timezone(&Utc);
+        Some((fields, at))
+    }
+
+    /// Records `fields` as this index's item format, unless a newer one
+    /// (with fields this one doesn't know) wrote it: then only a stale mark,
+    /// an hour old, is taken over. Written at most every five minutes.
+    #[doc(hidden)]
+    pub fn mark_writer(&self, fields: &[String], now: DateTime<Utc>) -> Result<()> {
+        if let Some((known, at)) = self.writer()
+            && known == fields
+            && at <= now
+            && now - at < chrono::Duration::minutes(5)
+        {
+            return Ok(());
+        }
+        self.conn.execute(
+            "INSERT INTO meta(key, value) VALUES ('item_fields', ?1), ('item_fields_at', ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![serde_json::to_string(fields)?, now.to_rfc3339()],
+        )?;
+        Ok(())
+    }
+
+    fn sync_rows(&mut self, hall: &Hall) -> Result<()> {
         let files = hall.journal_files()?;
         let tx = self.conn.transaction()?;
         let mut touched: BTreeSet<ItemId> = BTreeSet::new();
@@ -320,7 +383,7 @@ impl Index {
             // A journal shrank, which only happens if someone edited it.
             drop(tx);
             self.clear()?;
-            return self.sync(hall);
+            return self.sync_rows(hall);
         }
         for id in touched {
             if let Ok(item) = hall.load_item(id) {
@@ -897,6 +960,19 @@ fn index_event(tx: &rusqlite::Transaction<'_>, file_item: Option<ItemId>, e: &Ev
         _ => {}
     }
     Ok(())
+}
+
+/// The fields of `Item` this build knows, from its JSON Schema: a newer
+/// build that adds one has a field list this one doesn't contain.
+pub fn item_fields() -> Vec<String> {
+    let schema = schemars::schema_for!(Item);
+    let mut out: Vec<String> = schema
+        .get("properties")
+        .and_then(|p| p.as_object())
+        .map(|p| p.keys().cloned().collect())
+        .unwrap_or_default();
+    out.sort();
+    out
 }
 
 #[cfg(test)]

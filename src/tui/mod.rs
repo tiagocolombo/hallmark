@@ -55,8 +55,60 @@ pub fn run(cwd: &Path) -> Result<Response> {
     let r = event_loop(&mut terminal, &mut app, &rx, watcher.is_some());
     ratatui::restore();
     drop(watcher);
-    r?;
-    Ok(Response::raw(None))
+    match r? {
+        Exit::Quit => Ok(Response::raw(None)),
+        Exit::Updated => restart(),
+    }
+}
+
+/// Why the event loop ended.
+enum Exit {
+    Quit,
+    /// `hall` was replaced on disk (`hall update`): this process still runs
+    /// the old build, which must not keep reading, or syncing, the journal.
+    Updated,
+}
+
+/// The running executable as it is on disk: a new install changes it.
+#[derive(Debug, Clone, PartialEq)]
+struct Build {
+    len: u64,
+    modified: Option<std::time::SystemTime>,
+    #[cfg(unix)]
+    inode: u64,
+}
+
+impl Build {
+    fn now() -> Option<Build> {
+        let m = std::fs::metadata(std::env::current_exe().ok()?).ok()?;
+        Some(Build {
+            len: m.len(),
+            modified: m.modified().ok(),
+            #[cfg(unix)]
+            inode: std::os::unix::fs::MetadataExt::ino(&m),
+        })
+    }
+}
+
+/// Runs the new `hall` in this terminal, with the same arguments.
+#[cfg(unix)]
+fn restart() -> Result<Response> {
+    use std::os::unix::process::CommandExt;
+    let exe = std::env::current_exe()?;
+    let e = std::process::Command::new(exe)
+        .args(std::env::args_os().skip(1))
+        .exec();
+    Err(
+        HallError::internal(format!("hall was updated, and restarting it failed: {e}"))
+            .next(["hall"]),
+    )
+}
+
+#[cfg(not(unix))]
+fn restart() -> Result<Response> {
+    Ok(Response::raw(Some(serde_json::json!(
+        "hall was updated: run `hall` again to open the new version"
+    ))))
 }
 
 fn event_loop(
@@ -64,7 +116,8 @@ fn event_loop(
     app: &mut App,
     rx: &Receiver<PathBuf>,
     watching: bool,
-) -> Result<()> {
+) -> Result<Exit> {
+    let build = Build::now();
     let mut stale: BTreeSet<usize> = BTreeSet::new();
     let mut first_change: Option<Instant> = None;
     let mut last_change = Instant::now();
@@ -80,7 +133,7 @@ fn event_loop(
             match event::read()? {
                 TermEvent::Key(k) => {
                     match app.handle_key(k) {
-                        Effect::Quit => return Ok(()),
+                        Effect::Quit => return Ok(Exit::Quit),
                         Effect::Open { target, fallback } => {
                             if open(&target).is_err() {
                                 app.open_failed(&fallback);
@@ -128,6 +181,9 @@ fn event_loop(
         }
         if last_tick.elapsed() >= TICK {
             last_tick = Instant::now();
+            if build.is_some() && Build::now().is_some_and(|b| Some(b) != build) {
+                return Ok(Exit::Updated);
+            }
             app.now = Utc::now();
             app.daemon = crate::daemon::state::load();
             if !watching {
