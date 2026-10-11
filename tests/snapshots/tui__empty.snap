@@ -1,5 +1,6 @@
 ---
 source: tests/tui.rs
+assertion_line: 791
 expression: "screen(&env, &app, W, 14)"
 ---
 hall · app (1 of 1 repo)   daemon ● stopped   ⚑ 0 waiting   rejected today 0 · review tokens 0                     hh:mm
@@ -15,4 +16,4 @@ hall · app (1 of 1 repo)   daemon ● stopped   ⚑ 0 waiting   rejected today 
 │no findings yet                                                                                                       │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 
-↑↓ item enter journal ←→ step f findings d diff r ready p pull back x drop / filter w worktree o PR ? help q quit
+↑↓ item enter journal ←→ step f findings d diff r ready p pull back g go x drop / filter w worktree o PR ? help q quit

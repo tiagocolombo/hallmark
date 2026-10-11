@@ -35,13 +35,13 @@ Windows.
   app's own index sync doesn't wake it. A 2 s tick refreshes the clock and
   the daemon state, and, if the watcher couldn't start, re-reads every
   repo instead. The bell rings when the inbox grows.
-- **Actions go through the commands.** `r`, `p` and `x` call
-  `commands::flow::{ready, pull_back, drop}` in-process with the same
-  argument structs as the CLI, so they take the same journal lock, check
-  the same states and write the same events as `hall ready`,
-  `hall pull-back` and `hall drop`. The reply's note, or the error code and
-  message, shows in the status bar. `x` asks for the reason in the app;
-  `esc` cancels. Nothing else writes.
+- **Actions go through the commands.** `r`, `p`, `g` and `x` call
+  `commands::flow::{ready, pull_back, retry, drop}` in-process with the
+  same argument structs as the CLI, so they take the same journal lock,
+  check the same states and write the same events as `hall ready`,
+  `hall pull-back`, `hall retry` and `hall drop`. The reply's note, or
+  the error code and message, shows in the status bar. `x` asks for the
+  reason in the app; `esc` cancels. Nothing else writes.
 - **Opening is never blocking.** `w` opens the worktree and `o` the PR
   with the system opener (`open`, `xdg-open`, `explorer`), spawned and
   reaped in the background; if the opener can't start, the status bar

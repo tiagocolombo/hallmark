@@ -10,14 +10,16 @@ use serde::Serialize;
 
 use super::{ItemView, next_for};
 use crate::cli::{ContinueArgs, DropArgs, ProposeReadyArgs, PullBackArgs, ReadyArgs, RetryArgs};
+use crate::config::parse_tokens;
 use crate::error::{ErrorCode, HallError, Result};
 use crate::event::{Body, short};
 use crate::git;
-use crate::item::{Item, State};
+use crate::item::{HoldKind, Item, State};
 use crate::journal::{Ticket, ev};
 use crate::output::{Render, Response};
 use crate::paths;
 use crate::repo::{Repo, actor};
+use crate::usage::fmt_tokens;
 
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct FlowOut {
@@ -304,36 +306,138 @@ pub fn retry(cwd: &Path, a: RetryArgs) -> Result<Response> {
     let repo = Repo::discover(cwd)?;
     let item = repo.resolve(a.id.as_deref())?;
     let actor = actor();
-    let (item, (changed, note)) = repo.hall.transact(item.id, |item, _| match item.state {
-        State::Escalated => Ok((
-            vec![ev(
-                &actor,
-                Some(item.id),
-                Body::Retried {
-                    reason: a.reason.clone(),
-                },
-            )],
-            (true, "One more fix round allowed."),
-        )),
-        // A hold (budget, run_failed, ship_failed, other) is lifted; the
-        // item stays where it is and the loop picks it up again (ADR 0016).
-        _ if item.hold.is_some() => Ok((
-            vec![ev(
-                &actor,
-                Some(item.id),
-                Body::Released {
-                    reason: Some(a.reason.clone()),
-                },
-            )],
-            (true, "Released: the loop picks it up again."),
-        )),
-        State::Fixing => Ok((vec![], (false, "One more fix round allowed."))),
-        _ => Err(wrong_state(
-            item,
-            "only escalated or held items can be retried",
-        )),
+    let tokens = match a.tokens.as_deref() {
+        Some(t) => Some(
+            parse_tokens(t)
+                .filter(|n| *n > 0 && *n <= i64::MAX as u64)
+                .ok_or_else(|| {
+                    HallError::usage(format!(
+                        "--tokens {t}: use a token count, such as 2M or 800k"
+                    ))
+                })?,
+        ),
+        None => None,
+    };
+    // A budget hold comes back at once unless the item may spend more, so
+    // lifting one grants another `per_item` (or --tokens) to this item
+    // alone; the config is unchanged (ADR 0016).
+    let per_item = repo
+        .config
+        .budget
+        .per_item
+        .as_deref()
+        .and_then(crate::budget::Cap::parse);
+    // A grant is in weighted tokens: it raises a token `per_item` only.
+    let (per_item, dollar_cap) = match per_item {
+        Some(crate::budget::Cap::Tokens(t)) => (Some(t), false),
+        Some(crate::budget::Cap::Usd(_)) => (None, true),
+        None => (None, false),
+    };
+    // What the item has overspent its allowance by: the grant covers that
+    // first, so `n` is what it may spend from now on.
+    let overshoot = repo
+        .index()
+        .ok()
+        .and_then(
+            |ix| match crate::budget::item_allowance(&ix, &repo.config.budget, item.id)? {
+                crate::budget::Cap::Tokens(allowance) => Some(
+                    crate::budget::item_spent(&ix, item.id)
+                        .tokens
+                        .saturating_sub(allowance),
+                ),
+                crate::budget::Cap::Usd(_) => None,
+            },
+        )
+        .unwrap_or(0);
+    let grant_for = |n: u64| n.saturating_add(overshoot).min(i64::MAX as u64 / 2);
+    let (item, (changed, note)) = repo.hall.transact(item.id, |item, _| {
+        let budget_hold = item
+            .hold
+            .as_ref()
+            .is_some_and(|h| h.kind == HoldKind::Budget);
+        if tokens.is_some() && !budget_hold {
+            return Err(HallError::usage(format!(
+                "{} isn't held for budget; --tokens only applies to a budget hold",
+                item.id
+            ))
+            .next(next_for(item)));
+        }
+        // Released as is, an item over a dollar cap would be held again at
+        // once, and a grant can't raise that cap.
+        if budget_hold && dollar_cap {
+            return Err(wrong_state(
+                item,
+                "its `per_item` budget is in dollars, and a grant only raises a token cap: \
+                 raise `[budget] per_item` to let it go on",
+            ));
+        }
+        match item.state {
+            State::Escalated => {
+                let mut events = vec![ev(
+                    &actor,
+                    Some(item.id),
+                    Body::Retried {
+                        reason: a.reason.clone(),
+                    },
+                )];
+                let mut note = "One more fix round allowed.".to_string();
+                // An escalated item held for budget would be held again at
+                // once, so the grant goes with the round.
+                if budget_hold && let Some(n) = tokens.or(per_item) {
+                    events.push(ev(
+                        &actor,
+                        Some(item.id),
+                        Body::Released {
+                            reason: Some(a.reason.clone()),
+                            granted_tokens: Some(grant_for(n)),
+                        },
+                    ));
+                    note = format!(
+                        "One more fix round allowed, with {} more tokens for {}; \
+                         the budget is unchanged.",
+                        fmt_tokens(n),
+                        item.id
+                    );
+                }
+                Ok((events, (true, note)))
+            }
+            // A hold (budget, run_failed, ship_failed, other) is lifted; the
+            // item stays where it is and the loop picks it up again (ADR 0016).
+            _ if item.hold.is_some() => {
+                let granted = if budget_hold {
+                    tokens.or(per_item)
+                } else {
+                    None
+                };
+                let note = match granted {
+                    Some(n) => format!(
+                        "Released with {} more tokens for {}; the budget is unchanged. \
+                         The loop picks it up again.",
+                        fmt_tokens(n),
+                        item.id
+                    ),
+                    None => "Released: the loop picks it up again.".to_string(),
+                };
+                Ok((
+                    vec![ev(
+                        &actor,
+                        Some(item.id),
+                        Body::Released {
+                            reason: Some(a.reason.clone()),
+                            granted_tokens: granted.map(grant_for),
+                        },
+                    )],
+                    (true, note),
+                ))
+            }
+            State::Fixing => Ok((vec![], (false, "One more fix round allowed.".to_string()))),
+            _ => Err(wrong_state(
+                item,
+                "only escalated or held items can be retried",
+            )),
+        }
     })?;
-    Ok(reply(&item, changed, Some(note.into())))
+    Ok(reply(&item, changed, Some(note)))
 }
 
 pub fn propose_ready(cwd: &Path, a: ProposeReadyArgs) -> Result<Response> {
@@ -379,6 +483,7 @@ pub fn continue_item(cwd: &Path, a: ContinueArgs, mode: crate::output::Mode) -> 
             RetryArgs {
                 id: Some(id),
                 reason,
+                tokens: None,
             },
         );
     }

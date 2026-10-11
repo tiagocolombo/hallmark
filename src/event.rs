@@ -272,6 +272,10 @@ pub enum Body {
     Released {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
+        /// Lifting a budget hold: tokens this item may spend on top of
+        /// `per_item`, which itself is unchanged (ADR 0016).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        granted_tokens: Option<u64>,
     },
     /// The watchman saw no event for `stuck_after`.
     Stuck {
@@ -312,9 +316,10 @@ pub enum Body {
         kind: String,
         channels: Vec<String>,
     },
-    /// The librarian distilled this item into proposed learnings.
+    /// The librarian distilled this item into learnings in the local store.
     Distilled {
-        /// The knowledge item that carries them.
+        /// The knowledge item that carried them (ADR 0021); absent since the
+        /// Library stays local (ADR 0027).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         into: Option<ItemId>,
         learnings: Vec<String>,
@@ -544,10 +549,19 @@ impl Body {
             Body::Held { kind, reason } => {
                 format!("held ({}) · {}", kind.as_str(), clip(reason, 60))
             }
-            Body::Released { reason } => match reason {
-                Some(r) => format!("released · \"{}\"", clip(r, 60)),
-                None => "released".into(),
-            },
+            Body::Released {
+                reason,
+                granted_tokens,
+            } => {
+                let mut s = "released".to_string();
+                if let Some(n) = granted_tokens {
+                    s.push_str(&format!(" · +{} tokens", crate::usage::fmt_tokens(*n)));
+                }
+                if let Some(r) = reason {
+                    s.push_str(&format!(" · \"{}\"", clip(r, 60)));
+                }
+                s
+            }
             Body::Stuck { state, .. } => format!("stuck in {state}"),
             Body::RunFailed {
                 role,
@@ -586,7 +600,7 @@ impl Body {
             }
             Body::Distilled { into, learnings } => match into {
                 Some(i) => format!("{} learnings proposed in {i}", learnings.len()),
-                None => format!("{} learnings proposed", learnings.len()),
+                None => format!("{} learnings added or updated", learnings.len()),
             },
             Body::Planned {
                 parallel, children, ..
@@ -874,7 +888,10 @@ mod tests {
         ];
         let item = fold(ItemId(1), &events).unwrap();
         assert_eq!(item.hold.as_ref().unwrap().kind, HoldKind::Budget);
-        events.push(ev(Body::Released { reason: None }));
+        events.push(ev(Body::Released {
+            reason: None,
+            granted_tokens: None,
+        }));
         assert!(fold(ItemId(1), &events).unwrap().hold.is_none());
         events.push(ev(Body::Held {
             kind: HoldKind::RunFailed,

@@ -1,6 +1,9 @@
 # 0021. The Library: learnings as reviewed files, read from the base
 
-Status: Accepted, 2026-10-09
+Status: Accepted, 2026-10-09. Superseded in part by
+[ADR 0027](0027-the-library-stays-local.md): learnings now live in a local
+store next to the journal, with no knowledge items and no reads from the base
+branch. The file format, search, briefing and the librarian's prompt stand.
 
 ## Context
 

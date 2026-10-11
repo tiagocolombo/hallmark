@@ -1,0 +1,32 @@
+---
+source: tests/library.rs
+expression: "scrub(&env, &r.json)"
+---
+{
+  "action": "import",
+  "imported": [
+    "L-0001",
+    "L-0006",
+    "L-0003",
+    "L-0004",
+    "L-0005"
+  ],
+  "next": [
+    "hall library review",
+    "hall library search \"<words>\""
+  ],
+  "renumbered": [
+    {
+      "from": "L-0002",
+      "path": ".hallmark/knowledge/L-0002-backoff-jitter-lives-in-the-queue.md",
+      "to": "L-0006"
+    }
+  ],
+  "skipped": [
+    {
+      "path": ".hallmark/knowledge/notes.md",
+      "reason": "not a learning: no frontmatter (the file must start with ---)"
+    }
+  ],
+  "source": "main:.hallmark/knowledge"
+}

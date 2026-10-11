@@ -38,4 +38,4 @@ hall · app (1 of 1 repo)   daemon ● running   ⚑ 3 waiting   rejected today 
 │no findings yet                                                                                                       │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 / export▏  enter keep · esc clear
-↑↓ item enter journal ←→ step f findings d diff r ready p pull back x drop / filter w worktree o PR ? help q quit
+↑↓ item enter journal ←→ step f findings d diff r ready p pull back g go x drop / filter w worktree o PR ? help q quit
