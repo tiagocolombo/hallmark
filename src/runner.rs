@@ -380,13 +380,25 @@ pub fn classify(
     stderr: &str,
     schema: bool,
 ) -> Option<Failure> {
-    let text = format!(
-        "{} {}",
-        result.and_then(|r| r.result.as_deref()).unwrap_or(raw),
-        stderr
-    );
-    if let Some(until) = rate_limit(&text) {
-        return Some(Failure::RateLimited { until });
+    // A rate limit only ever ends a run: a run that completed may well talk
+    // about rate limits in its result (a review of the code that handles
+    // them did, and paused the daemon for nothing).
+    let failed = result.is_none_or(|r| {
+        r.is_error
+            || r.subtype.as_deref().is_some_and(|s| s.starts_with("error"))
+            || r.terminal_reason
+                .as_deref()
+                .is_some_and(|t| t != "completed")
+    });
+    if failed {
+        let text = format!(
+            "{} {}",
+            result.and_then(|r| r.result.as_deref()).unwrap_or(raw),
+            stderr
+        );
+        if let Some(until) = rate_limit(&text) {
+            return Some(Failure::RateLimited { until });
+        }
     }
     let Some(r) = result else {
         return Some(Failure::Error {
@@ -855,6 +867,29 @@ mod tests {
         };
         assert!(long.prompt_via_stdin());
         assert!(!long.args().contains(&"--".to_string()));
+    }
+
+    #[test]
+    fn a_completed_run_that_mentions_rate_limits_is_no_rate_limit() {
+        // H-0007's review (live, 2026-10-10): it succeeded, and its verdict
+        // discussed the daemon's rate-limit pauses.
+        let ok: PrintResult = serde_json::from_value(serde_json::json!({
+            "type": "result", "subtype": "success", "is_error": false,
+            "terminal_reason": "completed",
+            "result": "{\"summary\":\"A rate limit pauses the daemon until it resets; the usage limit reached path is tested.\"}",
+            "structured_output": {"summary": "fine"}
+        }))
+        .unwrap();
+        assert_eq!(classify(Some(&ok), "", "", true), None);
+        // The same words in a failed run are a rate limit.
+        let failed: PrintResult = serde_json::from_value(serde_json::json!({
+            "is_error": true, "result": "Claude AI usage limit reached|1760000000"
+        }))
+        .unwrap();
+        assert!(matches!(
+            classify(Some(&failed), "", "", true),
+            Some(Failure::RateLimited { .. })
+        ));
     }
 
     #[test]
