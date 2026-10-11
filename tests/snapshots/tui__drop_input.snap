@@ -10,8 +10,8 @@ hall · app (1 of 1 repo)   daemon ● running   ⚑ 3 waiting   rejected today 
 └────────────────────────────────────────────────────────────────────────────────────────────── i read in full and act ┘
 ┌ Board ───────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │DEVELOPMENT (2)               AWAITING YOU (2)              REVIEW LOOP (1)              CLOSED TODAY (2)             │
-│H-0003 Rate limit the public… H-0002 Export tena… needs you H-0001 Retry fail… review r2 H-0005 Tenant check in … #191│
-│└ H-0004 Rate limit: documen… H-0007 Migrate … escalated ×1                              H-0006 Old experiment dropped│
+│H-0003 Rate limit the public… H-0002 Export tena… needs you H-0001 Retry fail… review r2 H-0006 Old experiment dropped│
+│└ H-0004 Rate limit: documen… H-0007 Migrate … escalated ×1                              H-0005 Tenant check in … #191│
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌ H-0003 · Rate limit the public API ───────────────────────────────────────────────────────────────────── development ┐
 │now In development in [root]/app-H-0003 (–)                                                                           │

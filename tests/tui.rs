@@ -535,11 +535,12 @@ fn selection_walks_the_board_with_children_under_parents() {
     let mut app = load(&env, &env.repo);
     let order = app.board_order();
     let ids: Vec<String> = order.iter().map(|i| i.to_string()).collect();
-    // Development (parent, child), Awaiting you, Review loop, Closed today.
+    // Development (parent, child), Awaiting you, Review loop, Closed today
+    // (newest first).
     assert_eq!(
         ids,
         [
-            "H-0003", "H-0004", "H-0002", "H-0007", "H-0001", "H-0005", "H-0006"
+            "H-0003", "H-0004", "H-0002", "H-0007", "H-0001", "H-0006", "H-0005"
         ]
     );
     assert_eq!(app.selected, Some(ItemId(3)));
@@ -548,7 +549,7 @@ fn selection_walks_the_board_with_children_under_parents() {
     for _ in 0..20 {
         key(&mut app, KeyCode::Down);
     }
-    assert_eq!(app.selected, Some(ItemId(6)), "stays at the bottom");
+    assert_eq!(app.selected, Some(ItemId(5)), "stays at the bottom");
     let cols = app.board();
     assert!(cols[0][1].child, "H-0004 is drawn under H-0003");
 }
