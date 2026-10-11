@@ -717,7 +717,7 @@ fn red_ci_on_an_open_pr_is_fixed_and_reviewed_again() {
     assert_eq!(inbox.json["entries"], json!([]), "{}", inbox.stdout);
 
     pr(&gh, "OPEN", "MERGEABLE", &sha);
-    let step = pass(&env, &gh, "delivery", json!([]));
+    let step = pass(&env, &gh, "delivery-watch", json!([]));
     assert!(
         step["what"].as_str().unwrap().contains("CI failed"),
         "{step}"
@@ -762,7 +762,7 @@ fn a_ci_failure_the_run_cant_fix_waits_for_you() {
     pass(&env, &gh, "shipper", json!([]));
     ci_failed(&env, &id);
     pr(&gh, "OPEN", "MERGEABLE", &sha);
-    pass(&env, &gh, "delivery", json!([]));
+    pass(&env, &gh, "delivery-watch", json!([]));
     let step = pass(
         &env,
         &gh,
@@ -801,7 +801,10 @@ fn ci_still_red_after_the_fixes_waits_for_you() {
     ci_failed(&env, &id);
     pr(&gh, "OPEN", "MERGEABLE", &sha);
     // No third try: it's yours.
-    assert_eq!(pass(&env, &gh, "delivery", json!([]))["progress"], "idle");
+    assert_eq!(
+        pass(&env, &gh, "delivery-watch", json!([]))["progress"],
+        "idle"
+    );
     assert_eq!(state(&env, &id), "closed");
     let inbox = env.hall(&env.repo, &["inbox"]);
     let e = &inbox.json["entries"][0];
@@ -824,7 +827,10 @@ fn a_red_pr_the_office_wont_touch_escalates() {
         "MERGEABLE",
         "feedfacefeedfacefeedfacefeedfacefeedface",
     );
-    assert_eq!(pass(&env, &gh, "delivery", json!([]))["progress"], "idle");
+    assert_eq!(
+        pass(&env, &gh, "delivery-watch", json!([]))["progress"],
+        "idle"
+    );
     assert_eq!(events(&env, &id, "ci_fix_declined").len(), 1);
     let inbox = env.hall(&env.repo, &["inbox"]);
     let e = &inbox.json["entries"][0];
@@ -837,7 +843,7 @@ fn a_red_pr_the_office_wont_touch_escalates() {
         "{e}"
     );
     // Not repeated on the next tick.
-    pass(&env, &gh, "delivery", json!([]));
+    pass(&env, &gh, "delivery-watch", json!([]));
     assert_eq!(events(&env, &id, "ci_fix_declined").len(), 1);
 }
 

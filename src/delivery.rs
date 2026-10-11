@@ -1000,7 +1000,9 @@ fn read_pr(
                         short(&pr.head_oid)
                     ),
                 );
-                decline_ci(repo, &item, &url, &mut note_once)?;
+                decline_ci(repo, item, &url, &mut |k, w| {
+                    watch.note_once(repo, path, k, w)
+                })?;
                 return Ok(Progress::Idle);
             }
             if !wt.is_dir() || !git::dirty_files(&wt).map(|d| d.is_empty()).unwrap_or(false) {
@@ -1014,7 +1016,9 @@ fn read_pr(
                         item.base, item.worktree
                     ),
                 );
-                decline_ci(repo, &item, &url, &mut note_once)?;
+                decline_ci(repo, item, &url, &mut |k, w| {
+                    watch.note_once(repo, path, k, w)
+                })?;
                 return Ok(Progress::Idle);
             }
             reopen(
@@ -1047,7 +1051,9 @@ fn read_pr(
             };
             let (comments, until) = new_comments(&events, &full);
             if comments.is_empty() {
-                return ci_next(repo, &item, &url, &pr.head_oid, &mut note_once);
+                return ci_next(repo, item, &url, &pr.head_oid, &mut |k, w| {
+                    watch.note_once(repo, path, k, w)
+                });
             }
             let wt = PathBuf::from(&item.worktree);
             if item.pr_head.as_deref() != Some(pr.head_oid.as_str())
@@ -1065,7 +1071,9 @@ fn read_pr(
                         item.worktree
                     ),
                 );
-                decline_ci(repo, &item, &url, &mut note_once)?;
+                decline_ci(repo, item, &url, &mut |k, w| {
+                    watch.note_once(repo, path, k, w)
+                })?;
                 return Ok(Progress::Idle);
             }
             let n = comments.len();
