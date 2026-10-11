@@ -88,7 +88,8 @@ pub enum State {
     Escalated,
     /// Approved; the commit carries a hallmark (Stamping Room).
     Hallmarked,
-    /// The PR is open. The item's life is over (Dispatch Dock).
+    /// The PR is open. The item's life is over, unless it is reopened
+    /// through that PR (`hall adopt`) (Dispatch Dock).
     Closed,
     /// Abandoned, with a reason (Records).
     Dropped,
@@ -148,7 +149,8 @@ impl State {
         }
     }
 
-    /// Closed and Dropped end the item's life.
+    /// Closed and Dropped end the item's life. A closed item whose PR is
+    /// still open can be reopened (`state::Action::Reopen`).
     pub fn is_terminal(self) -> bool {
         matches!(self, State::Closed | State::Dropped)
     }
@@ -203,6 +205,11 @@ pub struct Item {
     pub hallmark_sha: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pr_url: Option<String>,
+    /// The commit the PR's head is at, as far as Hallmark knows: what it
+    /// shipped, or what the PR had when the item took it over. An update
+    /// push replaces exactly this commit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pr_head: Option<String>,
     /// The dev agent's summary from `propose-ready`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,

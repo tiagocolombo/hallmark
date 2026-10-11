@@ -33,6 +33,10 @@ pub struct NewOut {
     pub item: ItemView,
     /// False when the command returned an item that already existed.
     pub created: bool,
+    /// True when `hall adopt` brought a shipped item back to development
+    /// through its open PR.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub reopened: bool,
     /// The command that opens Claude Code in the worktree.
     pub open: String,
     /// The Front Desk's plan, when the request was offered to it.
@@ -77,6 +81,8 @@ impl Render for NewOut {
     fn render(&self) -> String {
         let verb = if self.created {
             "Started"
+        } else if self.reopened {
+            "Reopened"
         } else {
             "Already tracking"
         };
@@ -121,6 +127,10 @@ struct Spec<'a> {
     /// The branch it is reviewed against and ships into, when not the
     /// configured base (a follow-up to an open PR targets that PR's branch).
     base: Option<String>,
+    /// Made by `hall adopt` rather than `hall new`.
+    adopted: bool,
+    /// The open PR the item takes over: its URL and head commit.
+    pr: Option<(String, String)>,
 }
 
 pub fn new(cwd: &Path, a: NewArgs, mode: Mode) -> Result<Response> {
@@ -268,6 +278,8 @@ pub fn new(cwd: &Path, a: NewArgs, mode: Mode) -> Result<Response> {
                     .map(|p| p.branch.as_str())
                     .or(stack.as_deref()),
                 base: stack.clone(),
+                adopted: false,
+                pr: None,
             },
         )?;
         if let Some(raw) = &raw {
@@ -294,6 +306,8 @@ pub fn new(cwd: &Path, a: NewArgs, mode: Mode) -> Result<Response> {
                     follow_up: None,
                     start: Some(item.branch.as_str()),
                     base: None,
+                    adopted: false,
+                    pr: None,
                 };
                 match create(&repo, spec) {
                     Ok(c) => children.push((c, part.clone())),
@@ -333,6 +347,7 @@ pub fn new(cwd: &Path, a: NewArgs, mode: Mode) -> Result<Response> {
     let out = NewOut {
         item: ItemView::from(&item),
         created: true,
+        reopened: false,
         open: open.clone(),
         plan: plan.map(|p| PlanView {
             ran: p.ran,
@@ -366,15 +381,31 @@ pub fn new(cwd: &Path, a: NewArgs, mode: Mode) -> Result<Response> {
     Ok(resp)
 }
 
+/// `hall adopt`: turn the current branch, or an open PR (`--pr`), into an
+/// item (ADR 0029).
+///
+/// - A branch with an open item returns that item.
+/// - A branch Hallmark shipped, whose PR is still open, reopens that item:
+///   it goes back to development to be rebased, have conflicts resolved or
+///   change, and when it is hallmarked again the shipper updates the PR.
+/// - Any other branch becomes a new item. If it has an open PR (Hallmark's
+///   or not), the item takes that PR over and updates it instead of opening
+///   a new one.
 pub fn adopt(cwd: &Path, a: AdoptArgs) -> Result<Response> {
     let repo = Repo::discover(cwd)?;
     repo.require_init()?;
+    if let Some(base) = &a.base {
+        check_base(&repo, base, None)?;
+    }
+    if let Some(pr) = &a.pr {
+        return adopt_pr(&repo, pr, &a);
+    }
     let branch = git::current_branch(&repo.toplevel).ok_or_else(|| {
         HallError::new(
             ErrorCode::WrongState,
             "HEAD is detached; check out a branch first",
         )
-        .next(["git switch -c <branch>"])
+        .next(["git switch -c <branch>", "hall adopt --pr <number>"])
     })?;
     if branch == repo.config.base {
         return Err(HallError::new(
@@ -384,6 +415,7 @@ pub fn adopt(cwd: &Path, a: AdoptArgs) -> Result<Response> {
         .next([
             "hall new \"<request>\"",
             "git switch -c <branch> && hall adopt",
+            "hall adopt --pr <number>",
         ]));
     }
     let ix = repo.index()?;
@@ -394,19 +426,49 @@ pub fn adopt(cwd: &Path, a: AdoptArgs) -> Result<Response> {
         .cloned()
         .or_else(|| repo.item_at(&items, &repo.toplevel));
     if let Some(existing) = existing {
-        let item = repo.hall.load_item(existing.id)?;
-        let out = NewOut {
-            item: ItemView::from(&item),
-            created: false,
-            open: format!("cd {} && claude", shell_quote(&item.worktree)),
-            plan: None,
-            children: Vec::new(),
-            parent: item.parent,
-            follow_up: item.follow_up.clone(),
-        };
-        return Ok(Response::new(out, next_for(&item)));
+        return existing_item(&repo, existing.id, a.base.as_deref());
     }
-    let title = a.title.unwrap_or_else(|| title_from_branch(&branch));
+    // A shipped item on this branch whose PR is still open comes back.
+    let closed = ix
+        .items(true)?
+        .into_iter()
+        .rev()
+        .find(|i| i.branch == branch && reopenable(i));
+    if let Some(closed) = closed {
+        let url = closed.pr_url.clone().unwrap_or_default();
+        let pr = crate::gh::pr(&repo.main_root, &url)?;
+        if pr.state == "OPEN" {
+            return reopen(
+                &repo,
+                &closed,
+                &pr,
+                &repo.toplevel,
+                a.base.as_deref(),
+                false,
+            );
+        }
+        // A merged or closed PR is history: the branch starts a new item.
+    }
+    // Any other open PR on this branch is taken over. Best effort: without
+    // `gh` or a GitHub remote, the item opens a PR of its own when it ships.
+    let pr = crate::gh::pr(&repo.main_root, &branch)
+        .ok()
+        .filter(|p| p.state == "OPEN" && !p.cross_repo && p.head == branch);
+    let title = a
+        .title
+        .clone()
+        .or_else(|| pr.as_ref().map(|p| p.title.clone()))
+        .unwrap_or_else(|| title_from_branch(&branch));
+    let base = a
+        .base
+        .clone()
+        .or_else(|| pr.as_ref().map(|p| p.base.clone()))
+        .filter(|b| !b.is_empty())
+        .unwrap_or_else(|| repo.config.base.clone());
+    if let Some(p) = &pr {
+        check_base(&repo, &base, None)?;
+        ensure_has_head(&repo.toplevel, &branch, &p.head_oid)?;
+    }
     let item = repo.hall.with_repo_lock(|| {
         let id: ItemId = repo.hall.next_item_id()?;
         let created = ev(
@@ -416,27 +478,380 @@ pub fn adopt(cwd: &Path, a: AdoptArgs) -> Result<Response> {
                 title: title.clone(),
                 branch: branch.clone(),
                 worktree: paths::display(&repo.toplevel),
-                base: repo.config.base.clone(),
+                base: base.clone(),
                 issue: None,
-                request: None,
+                request: pr.as_ref().map(took_over),
                 adopted: true,
                 parent: None,
                 follow_up: None,
+                pr_url: pr.as_ref().map(|p| p.url.clone()),
+                pr_head: pr.as_ref().map(|p| p.head_oid.clone()),
             },
         );
         repo.hall.append_item(id, &created)?;
         repo.hall.refresh_item_json(id)
     })?;
+    adopted(&item, true, false)
+}
+
+/// `hall adopt --pr <pr>`: take over an open PR, checking its branch out in
+/// a worktree when none has it.
+fn adopt_pr(repo: &Repo, pr_ref: &str, a: &AdoptArgs) -> Result<Response> {
+    let pr = crate::gh::pr(&repo.main_root, pr_ref)?;
+    if pr.state != "OPEN" {
+        return Err(HallError::new(
+            ErrorCode::WrongState,
+            format!(
+                "PR #{} is {}; only an open PR can be adopted",
+                pr.number,
+                pr.state.to_lowercase()
+            ),
+        )
+        .next([
+            format!("hall new --follow-up {}", pr.url),
+            "hall status --all".into(),
+        ]));
+    }
+    if pr.cross_repo {
+        return Err(HallError::new(
+            ErrorCode::WrongState,
+            format!(
+                "PR #{} comes from a fork; Hallmark can only update a branch in this repository",
+                pr.number
+            ),
+        )
+        .next([format!("hall new --follow-up {}", pr.url)]));
+    }
+    let ix = repo.index()?;
+    let all = ix.items(true)?;
+    // An item that already holds this PR, or that shipped it.
+    let holder = all
+        .iter()
+        .rev()
+        .find(|i| i.pr_url.as_deref() == Some(pr.url.as_str()) && i.state != State::Dropped)
+        .cloned()
+        .or_else(|| {
+            all.iter()
+                .rev()
+                .find(|i| i.branch == pr.head && !i.state.is_terminal())
+                .cloned()
+        });
+    if let Some(it) = holder {
+        if it.state == State::Closed {
+            if !reopenable(&it) {
+                return Err(HallError::new(
+                    ErrorCode::WrongState,
+                    format!("{} is closed and can't be reopened", it.id),
+                )
+                .next([format!("hall new --follow-up {}", pr.url)]));
+            }
+            let wt = worktree_of(repo, &it.branch).ok_or_else(|| no_worktree(&it))?;
+            return reopen(repo, &it, &pr, &wt, a.base.as_deref(), true);
+        }
+        return existing_item(repo, it.id, a.base.as_deref());
+    }
+    // Nobody holds it: a new item on the PR's own branch.
+    if git::branch_exists(&repo.main_root, &pr.head) && worktree_of(repo, &pr.head).is_none() {
+        return Err(HallError::new(
+            ErrorCode::WrongState,
+            format!(
+                "branch {} exists here but no worktree has it checked out",
+                pr.head
+            ),
+        )
+        .next([
+            format!(
+                "git worktree add ../{}-pr-{} {}",
+                repo.name, pr.number, pr.head
+            ),
+            format!("cd ../{}-pr-{} && hall adopt", repo.name, pr.number),
+        ]));
+    }
+    if let Some(wt) = worktree_of(repo, &pr.head) {
+        // Adopt from the worktree that has the branch, as `hall adopt` there would.
+        return adopt(
+            &wt,
+            AdoptArgs {
+                title: a.title.clone(),
+                pr: None,
+                base: a.base.clone(),
+            },
+        );
+    }
+    git::run(&repo.main_root, &["fetch", "-q", "origin", &pr.head]).map_err(|e| {
+        HallError::new(
+            ErrorCode::CommandFailed,
+            format!("could not fetch {} from origin: {}", pr.head, e.message),
+        )
+        .next(["git remote -v", "hall doctor"])
+    })?;
+    let start = format!("origin/{}", pr.head);
+    let base = a.base.clone().unwrap_or_else(|| pr.base.clone());
+    check_base(repo, &base, Some(pr.number))?;
+    let item = repo.hall.with_repo_lock(|| {
+        create(
+            repo,
+            Spec {
+                title: a.title.clone().unwrap_or_else(|| pr.title.clone()),
+                branch: Some(pr.head.clone()),
+                request: Some(took_over(&pr)),
+                issue: None,
+                parent: None,
+                follow_up: None,
+                start: Some(&start),
+                base: Some(base.clone()),
+                adopted: true,
+                pr: Some((pr.url.clone(), pr.head_oid.clone())),
+            },
+        )
+    })?;
+    adopted(&item, true, false)
+}
+
+/// A closed item that shipped a PR of its own (not a part merged into its
+/// parent) can come back through that PR.
+fn reopenable(i: &Item) -> bool {
+    i.state == State::Closed
+        && i.parent.is_none()
+        && i.pr_url.as_deref().is_some_and(|u| u.contains("/pull/"))
+}
+
+/// Moves a shipped item back to development through its open PR.
+fn reopen(
+    repo: &Repo,
+    item: &Item,
+    pr: &crate::gh::GhPr,
+    worktree: &Path,
+    base: Option<&str>,
+    via_pr: bool,
+) -> Result<Response> {
+    if pr.cross_repo {
+        return Err(HallError::new(
+            ErrorCode::WrongState,
+            format!(
+                "PR #{} comes from a fork; Hallmark can't update it",
+                pr.number
+            ),
+        )
+        .next([format!("hall new --follow-up {}", pr.url)]));
+    }
+    let base = base
+        .map(str::to_string)
+        .or_else(|| (!pr.base.is_empty()).then(|| pr.base.clone()))
+        .unwrap_or_else(|| item.base.clone());
+    check_base(repo, &base, via_pr.then_some(pr.number))?;
+    // The PR still at the commit this item shipped hasn't moved: a rebase or
+    // amend of it is what the update replaces.
+    if item.pr_head.as_deref() != Some(pr.head_oid.as_str()) {
+        ensure_has_head(worktree, &item.branch, &pr.head_oid)?;
+    }
+    let id = item.id;
+    let url = pr.url.clone();
+    let (item, reopened) = repo.hall.transact(id, |it, _| {
+        if it.state != State::Closed {
+            return Ok((vec![], false));
+        }
+        Ok((
+            vec![ev(
+                &actor(),
+                Some(id),
+                Body::Reopened {
+                    pr_url: url.clone(),
+                    pr_head: pr.head_oid.clone(),
+                    base: base.clone(),
+                    worktree: paths::display(worktree),
+                },
+            )],
+            true,
+        ))
+    })?;
+    if reopened {
+        repo.hall.live(&format!(
+            "{id} reopened from {url}: back in development, based on {base}"
+        ));
+    }
+    adopted(&item, false, reopened)
+}
+
+/// An open item asked for again. `--base` can't move it: its base is what
+/// it is reviewed against.
+fn existing_item(repo: &Repo, id: ItemId, base: Option<&str>) -> Result<Response> {
+    let item = repo.hall.load_item(id)?;
+    if let Some(b) = base
+        && b != item.base
+    {
+        return Err(HallError::new(
+            ErrorCode::WrongState,
+            format!(
+                "{id} is already open, based on {}; --base only applies when an item is created or reopened",
+                item.base
+            ),
+        )
+        .next([format!("hall status {id}")]));
+    }
+    adopted(&item, false, false)
+}
+
+fn adopted(item: &Item, created: bool, reopened: bool) -> Result<Response> {
+    let mut next = next_for(item);
+    // A rebased branch no longer contains the PR's head: say what the
+    // update push will replace.
+    if let (Some(pr), Some(head)) = (&item.pr_url, &item.pr_head)
+        && item.state == State::Development
+        && !head.is_empty()
+        && !git::ok(
+            Path::new(&item.worktree),
+            &["merge-base", "--is-ancestor", head, "HEAD"],
+        )
+    {
+        next.insert(
+            0,
+            format!(
+                "Note: HEAD doesn't contain {pr}'s head {}. When this item ships, its update \
+                 replaces that commit (a rebase does this); to keep it, merge or rebase onto it first",
+                crate::event::short(head)
+            ),
+        );
+    }
     let out = NewOut {
-        item: ItemView::from(&item),
-        created: true,
+        item: ItemView::from(item),
+        created,
+        reopened,
         open: format!("cd {} && claude", shell_quote(&item.worktree)),
         plan: None,
         children: Vec::new(),
-        parent: None,
-        follow_up: None,
+        parent: item.parent,
+        follow_up: item.follow_up.clone(),
     };
-    Ok(Response::new(out, next_for(&item)))
+    Ok(Response::new(out, next))
+}
+
+/// The base must be a branch here: the review compares against it and the
+/// PR targets it. Beyond the configured base, only the branch of an open PR
+/// Hallmark shipped, still at the commit it reviewed, can be stacked on.
+fn check_base(repo: &Repo, base: &str, pr: Option<u64>) -> Result<()> {
+    if !git::branch_exists(&repo.main_root, base) {
+        return Err(HallError::new(
+            ErrorCode::WrongState,
+            format!("the base {base} is not a branch in this repository"),
+        )
+        .next([
+            format!("git fetch origin {base}:{base}"),
+            "git branch --list".into(),
+        ]));
+    }
+    if stackable_base(repo, base) {
+        return Ok(());
+    }
+    Err(HallError::new(
+        ErrorCode::WrongState,
+        format!(
+            "the base {base} is neither {} nor the branch of an open PR still at its hallmarked \
+             commit; its commits would ship without review",
+            repo.config.base
+        ),
+    )
+    .next([
+        match pr {
+            Some(n) => format!("hall adopt --pr {n} --base {}", repo.config.base),
+            None => format!("hall adopt --base {}", repo.config.base),
+        },
+        "hall status --all".into(),
+    ]))
+}
+
+/// Whether `base` may be reviewed against and shipped into: the configured
+/// base, or the local branch of an open PR whose item is hallmarked and whose
+/// tip is still that hallmarked commit (what `hall new --follow-up` requires).
+pub fn stackable_base(repo: &Repo, base: &str) -> bool {
+    if base == repo.config.base {
+        return true;
+    }
+    let Ok(ix) = repo.index() else {
+        return false;
+    };
+    let Ok(items) = ix.items(true) else {
+        return false;
+    };
+    let tip = git::run(
+        &repo.main_root,
+        &["rev-parse", &format!("{base}^{{commit}}")],
+    )
+    .map(|t| t.trim().to_string())
+    .unwrap_or_default();
+    items.iter().any(|i| {
+        i.branch == base
+            && !tip.is_empty()
+            && i.hallmark_sha.as_deref() == Some(tip.as_str())
+            && i.pr_url
+                .as_deref()
+                .is_some_and(|u| crate::gh::pr_state(&repo.main_root, u).is_ok_and(|s| s == "OPEN"))
+    })
+}
+
+/// The worktree must hold the PR's head, so an update push only replaces
+/// commits the item had. Fetches the branch; a clean worktree behind the PR
+/// is fast-forwarded.
+fn ensure_has_head(worktree: &Path, branch: &str, head: &str) -> Result<()> {
+    let has = |w: &Path| git::ok(w, &["merge-base", "--is-ancestor", head, "HEAD"]);
+    if head.is_empty() || has(worktree) {
+        return Ok(());
+    }
+    let _ = git::run(worktree, &["fetch", "-q", "origin", branch]);
+    if has(worktree) {
+        return Ok(());
+    }
+    if git::ok(worktree, &["merge-base", "--is-ancestor", "HEAD", head])
+        && git::dirty_files(worktree).is_ok_and(|d| d.is_empty())
+        && git::run(worktree, &["merge", "-q", "--ff-only", head]).is_ok()
+    {
+        return Ok(());
+    }
+    Err(HallError::new(
+        ErrorCode::WrongState,
+        format!(
+            "the PR's head {} is not in this worktree; an update would overwrite it",
+            crate::event::short(head)
+        ),
+    )
+    .next([format!("git rebase origin/{branch}"), "hall adopt".into()]))
+}
+
+/// The worktree that has `branch` checked out.
+fn worktree_of(repo: &Repo, branch: &str) -> Option<std::path::PathBuf> {
+    git::worktrees(&repo.main_root)
+        .ok()?
+        .into_iter()
+        .find(|w| w.branch.as_deref() == Some(branch))
+        .map(|w| w.path)
+}
+
+fn no_worktree(it: &Item) -> HallError {
+    HallError::new(
+        ErrorCode::WrongState,
+        format!(
+            "{} shipped from branch {}, which no worktree has checked out",
+            it.id, it.branch
+        ),
+    )
+    .next([
+        format!(
+            "git worktree add {} {}",
+            shell_quote(&it.worktree),
+            it.branch
+        ),
+        format!("cd {} && hall adopt", shell_quote(&it.worktree)),
+    ])
+}
+
+/// The request of an item that took a PR over.
+fn took_over(pr: &crate::gh::GhPr) -> String {
+    format!(
+        "Took over PR #{} \"{}\" ({}).\n\n{}",
+        pr.number, pr.title, pr.url, pr.body
+    )
+    .trim()
+    .to_string()
 }
 
 /// `--parent <id>`: the parent must be a top-level item in development.
@@ -569,9 +984,11 @@ fn create(repo: &Repo, spec: Spec) -> Result<Item> {
             base: spec.base.unwrap_or_else(|| repo.config.base.clone()),
             issue: spec.issue,
             request: spec.request,
-            adopted: false,
+            adopted: spec.adopted,
             parent: spec.parent,
             follow_up: spec.follow_up,
+            pr_url: spec.pr.as_ref().map(|p| p.0.clone()),
+            pr_head: spec.pr.map(|p| p.1),
         },
     );
     repo.hall.append_item(id, &created)?;

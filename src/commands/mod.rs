@@ -141,7 +141,15 @@ pub fn next_for(item: &Item) -> Vec<String> {
             format!("hall drop {id} --reason \"<why>\""),
         ],
         State::Hallmarked => vec![format!("hall status {id}")],
-        State::Closed | State::Dropped => vec![format!("hall log {id}")],
+        // A shipped PR that is still open can come back for a rebase or a
+        // conflict fix (ADR 0029).
+        State::Closed => match &item.pr_url {
+            Some(url) if item.parent.is_none() => {
+                vec![format!("hall log {id}"), format!("hall adopt --pr {url}")]
+            }
+            _ => vec![format!("hall log {id}")],
+        },
+        State::Dropped => vec![format!("hall log {id}")],
     };
     n.push(format!("hall log {id}"));
     n.dedup();

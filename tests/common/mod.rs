@@ -62,6 +62,8 @@ impl Env {
             .env("HALL_HOME", &self.home)
             .env("HALL_ACTOR", "you")
             .env("HALL_CLAUDE", self.root.join("no-claude-here"))
+            // No real `gh` either: tests that need one pass a fake in HALL_GH.
+            .env("HALL_GH", self.root.join("no-gh-here"))
             // Desktop notifications go to a file, never to the screen.
             .env("HALL_NOTIFY_LOG", self.root.join("notify.log"))
             .env_remove("HALL_RUNNER")
