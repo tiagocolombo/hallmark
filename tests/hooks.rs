@@ -514,6 +514,37 @@ fn docs_and_markdown_need_no_item() {
     git(&env.repo, &["add", "src/lib.rs"]);
     assert_eq!(decision(&commit(&env).json).0, "deny");
 
+    // Review inputs are never free, even as Markdown or with an anchor.
+    std::fs::write(
+        env.repo.join(".hallmark.toml"),
+        "rules = [\"docs/plan.md#leave-alone\", \"CLAUDE.md\"]\n",
+    )
+    .unwrap();
+    for rel in [
+        ".hallmark.toml",
+        ".hallmark/review.md",
+        "CLAUDE.md",
+        "docs/plan.md",
+    ] {
+        let r = env.hook("pre-tool-use", &write(&env.repo, &env.repo.join(rel)));
+        assert_eq!(decision(&r.json).0, "deny", "{rel}");
+    }
+
+    // `git add -A` from a subdirectory also takes untracked code elsewhere.
+    git(&env.repo, &["reset", "-q"]);
+    std::fs::write(env.repo.join("docs/other.md"), "# Other\n").unwrap();
+    git(&env.repo, &["add", "docs/other.md"]);
+    let r = env.hook(
+        "pre-tool-use",
+        &bash(
+            "pre-tool-use",
+            &env.repo.join("docs"),
+            "git add -A && git commit -m docs",
+            "s1",
+        ),
+    );
+    assert_eq!(decision(&r.json).0, "deny");
+
     // `[capture] free = []` gates everything again.
     std::fs::write(
         env.repo.join(".hallmark.toml"),

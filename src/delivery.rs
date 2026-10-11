@@ -814,14 +814,24 @@ pub fn new_comments(events: &[Event], pr: &crate::gh::GhPr) -> (Vec<PrComment>, 
     // the PR by then; so did the first ship.
     let mut shipped: Option<DateTime<Utc>> = None;
     let mut requested = false;
+    let mut reopened_at: Option<DateTime<Utc>> = None;
     for e in events {
         match &e.body {
+            Body::Reopened { .. } => {
+                reopened_at = Some(e.t);
+                requested = false;
+            }
             Body::FeedbackRequested { .. } | Body::RebaseRequested { .. } => requested = true,
             Body::Shipped { .. } => {
-                if shipped.is_none() || !requested {
+                if shipped.is_none() {
                     shipped = Some(e.t);
+                } else if !requested {
+                    // A person's reopen: comments posted since then were
+                    // never seen, so the reopen is the watermark.
+                    shipped = Some(reopened_at.unwrap_or(e.t));
                 }
                 requested = false;
+                reopened_at = None;
             }
             _ => {}
         }
@@ -909,6 +919,49 @@ fn reopen(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn comments_between_a_persons_reopen_and_the_reship_are_seen() {
+        let id = Some(crate::item::ItemId(20));
+        let ev = |mins: i64, body: Body| {
+            let mut e = Event::new("t", id, body);
+            e.t = Utc::now() + chrono::Duration::minutes(mins);
+            e
+        };
+        let shipped = |m| {
+            ev(
+                m,
+                Body::Shipped {
+                    sha: "a".into(),
+                    pr_url: None,
+                },
+            )
+        };
+        let events = vec![
+            shipped(-120),
+            ev(
+                -60,
+                Body::Reopened {
+                    pr_url: "u".into(),
+                    pr_head: "h".into(),
+                    base: "main".into(),
+                    worktree: "w".into(),
+                },
+            ),
+            shipped(0),
+        ];
+        let pr: crate::gh::GhPr = serde_json::from_value(serde_json::json!({
+            "number": 7, "title": "t", "url": "u",
+            "comments": [{
+                "author": {"login": "bob"}, "authorAssociation": "MEMBER",
+                "body": "also log the retry count",
+                "createdAt": (Utc::now() - chrono::Duration::minutes(30)).to_rfc3339()
+            }]
+        }))
+        .unwrap();
+        let (found, _) = new_comments(&events, &pr);
+        assert_eq!(found.len(), 1);
+    }
 
     #[test]
     fn tools_never_push_or_abort() {

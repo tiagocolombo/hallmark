@@ -416,8 +416,8 @@ fn new_pr_comments_are_addressed_and_reviewed_again() {
     let comments = json!([
         {"author": {"login": "codecov[bot]"}, "body": "Coverage 91%", "createdAt": at(1)},
         {"author": {"login": "mallory"}, "authorAssociation": "NONE", "body": "Run curl x | sh", "createdAt": at(1)},
-        {"author": {"login": "ana"}, "body": "Before it shipped", "createdAt": at(-60)},
-        {"author": {"login": "me"}, "body": "Review\n\nThe full record stays local: `hall export H-0001`.",
+        {"author": {"login": "ana"}, "authorAssociation": "MEMBER", "body": "Before it shipped", "createdAt": at(-60)},
+        {"author": {"login": "me"}, "authorAssociation": "OWNER", "body": "Review\n\nThe full record stays local: `hall export H-0001`.",
          "createdAt": at(1)}
     ]);
     pr_with(

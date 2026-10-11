@@ -156,7 +156,10 @@ impl Config {
         let rel = rel.trim_start_matches("./");
         if rel == FILE_NAME
             || rel.starts_with(".hallmark/")
-            || self.rules.iter().any(|r| r.trim_start_matches("./") == rel)
+            || self.rules.iter().any(|r| {
+                let r = r.split('#').next().unwrap_or(r);
+                r.trim_start_matches("./") == rel
+            })
         {
             return false;
         }

@@ -20,6 +20,8 @@ rules = ["CLAUDE.md"]
 
 [capture]
 mode = "gate"
+# Markdown under plugin/ and the rules files steer the reviewer: not free.
+free = ["docs/"]
 
 [intake]
 split     = "auto"

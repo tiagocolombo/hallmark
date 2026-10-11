@@ -962,7 +962,13 @@ fn only_free_changes(repo: &Repo, dir: &Path) -> bool {
         &["diff", "--cached", "--name-only"][..],
         &["diff", "--name-only"][..],
         // A `git add -A && git commit` also takes untracked files.
-        &["ls-files", "--others", "--exclude-standard", "--full-name"][..],
+        &[
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "--full-name",
+            ":/",
+        ][..],
     ] {
         match git::run(dir, args) {
             Ok(out) => files.extend(out.lines().map(str::to_string)),

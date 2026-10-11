@@ -250,8 +250,17 @@ pub fn inbox(cwd: &Path, a: crate::cli::InboxArgs) -> Result<Response> {
     }
     if let Some(which) = &a.entry {
         if a.dismiss {
-            let pos = find_entry(&entries, which)?;
-            return dismiss(&repo, vec![entries[pos].clone()]);
+            return match find_entry(&entries, which) {
+                Ok(pos) => dismiss(&repo, vec![entries[pos].clone()]),
+                Err(e) => {
+                    // Repeating a dismissal: the key is already hidden.
+                    let all = ix.inbox_all()?;
+                    match all.iter().find(|x| x.key() == which.trim()) {
+                        Some(x) => dismiss(&repo, vec![x.clone()]),
+                        None => Err(e),
+                    }
+                }
+            };
         }
         return inbox_detail(&repo, &ix, entries, which);
     }
