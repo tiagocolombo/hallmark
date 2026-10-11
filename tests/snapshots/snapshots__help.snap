@@ -605,6 +605,13 @@ expression: v
       "usage": "hall daemon status [OPTIONS]"
     },
     {
+      "about": "Lift a pause now (a rate limit or the daily budget), before its time",
+      "args": [],
+      "name": "daemon resume",
+      "schema": "hall schema daemon",
+      "usage": "hall daemon resume [OPTIONS]"
+    },
+    {
       "about": "Run the loop in the foreground (what `start` launches)",
       "args": [
         {

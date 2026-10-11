@@ -95,6 +95,18 @@ pub fn settle(state: &mut DaemonState, now: DateTime<Utc>) -> Result<Option<Paus
     if state.pause_at(now).is_some() {
         return Ok(None);
     }
+    end(state, p).map(Some)
+}
+
+/// Ends the pause now, whatever its time (`hall daemon resume`).
+pub fn lift(state: &mut DaemonState) -> Result<Option<Pause>> {
+    match state.paused.clone() {
+        Some(p) => end(state, p).map(Some),
+        None => Ok(None),
+    }
+}
+
+fn end(state: &mut DaemonState, p: Pause) -> Result<Pause> {
     for j in &p.journals {
         let hall = Hall {
             root: PathBuf::from(j),
@@ -109,7 +121,7 @@ pub fn settle(state: &mut DaemonState, now: DateTime<Utc>) -> Result<Option<Paus
         hall.live("daemon resumed after the pause");
     }
     state.paused = None;
-    Ok(Some(p))
+    Ok(p)
 }
 
 #[cfg(test)]
