@@ -9,9 +9,9 @@ hall · app (1 of 1 repo)   daemon ● running   ⚑ 3 waiting   rejected today 
 │escalated  H-0007  Migrate billing tables: rejected 1 times                                                   –       │
 └────────────────────────────────────────────────────────────────────────────────────────────── i read in full and act ┘
 ┌ Board ───────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│DEVELOPMENT (2)               AWAITING YOU (2)              REVIEW LOOP (1)              CLOSED TODAY (2)             │
-│H-0003 Rate limit the public… H-0002 Export tena… needs you H-0001 Retry fail… fixing r1 H-0006 Old experiment dropped│
-│└ H-0004 Rate limit: documen… H-0007 Migrate … escalated ×1                              H-0005 Tenant check in … #191│
+│DEVELOPMENT (2)         AWAITING YOU (2)        REVIEW LOOP (1)        DELIVERY (1)            CLOSED TODAY (1)       │
+│H-0003 Rate limit the … H-0002 Expor… needs you H-0001 Retr… fixing r1 H-0005 Tenant che… #191 H-0006 Old exp… dropped│
+│└ H-0004 Rate limit: d… H-0007 Mi… escalated ×1                                                                       │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌ H-0001 · Retry failed webhook deliveries ───────────────────────────────────────────────────── fixing · r1 · ####### ┐
 │hh:mm  you       created · "Retry failed webhook deliveries"                                                          │

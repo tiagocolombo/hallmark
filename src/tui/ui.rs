@@ -717,27 +717,37 @@ fn tag(item: &Item) -> (String, Color) {
         State::Review => (format!("review r{}", item.round), INFO),
         State::Fixing => (format!("fixing r{}", item.round), STOP),
         State::Hallmarked => ("shipping".into(), OK),
-        State::Closed => (
-            item.pr_url
-                .as_deref()
-                .and_then(|u| u.rsplit('/').next())
-                .filter(|n| n.chars().all(|c| c.is_ascii_digit()) && !n.is_empty())
-                .map(|n| format!("#{n}"))
-                .unwrap_or_else(|| "closed".into()),
-            OK,
-        ),
+        // Delivery: the PR and its CI, while the office watches it.
+        State::Closed if crate::delivery::is_watched(item) => {
+            let pr = pr_number(item).unwrap_or_else(|| "PR".into());
+            match &item.ci {
+                Some(ci) if !ci.passed => (format!("{pr} ci ✗"), STOP),
+                Some(_) => (format!("{pr} ci ✓"), OK),
+                None => (pr, INFO),
+            }
+        }
+        State::Closed => (pr_number(item).unwrap_or_else(|| "closed".into()), OK),
         State::Dropped => ("dropped".into(), DIM),
     }
 }
 
-fn board_pane(f: &mut Frame, area: Rect, app: &App, cols: &[Vec<super::app::BoardRow>; 4]) {
+/// `#191` for a PR URL ending in `/pull/191`.
+fn pr_number(item: &Item) -> Option<String> {
+    item.pr_url
+        .as_deref()
+        .and_then(|u| u.rsplit('/').next())
+        .filter(|n| n.chars().all(|c| c.is_ascii_digit()) && !n.is_empty())
+        .map(|n| format!("#{n}"))
+}
+
+fn board_pane(f: &mut Frame, area: Rect, app: &App, cols: &[Vec<super::app::BoardRow>; 5]) {
     let block = pane("Board");
     let inner = block.inner(area);
     f.render_widget(block, area);
-    let areas = Layout::horizontal([Constraint::Ratio(1, 4); 4])
+    let areas = Layout::horizontal([Constraint::Ratio(1, 5); 5])
         .spacing(1)
         .split(inner);
-    for (i, (name, _)) in COLUMNS.iter().enumerate() {
+    for (i, name) in COLUMNS.iter().enumerate() {
         let rows = &cols[i];
         let w = areas[i].width as usize;
         let mut lines = vec![Line::from(Span::styled(

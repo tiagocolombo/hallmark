@@ -583,12 +583,12 @@ fn selection_walks_the_board_with_children_under_parents() {
     let mut app = load(&env, &env.repo);
     let order = app.board_order();
     let ids: Vec<String> = order.iter().map(|i| i.to_string()).collect();
-    // Development (parent, child), Awaiting you, Review loop, Closed today
-    // (newest first).
+    // Development (parent, child), Awaiting you, Review loop, Delivery
+    // (the shipped PR #191 isn't merged yet), Closed today.
     assert_eq!(
         ids,
         [
-            "H-0003", "H-0004", "H-0002", "H-0007", "H-0001", "H-0006", "H-0005"
+            "H-0003", "H-0004", "H-0002", "H-0007", "H-0001", "H-0005", "H-0006"
         ]
     );
     assert_eq!(app.selected, Some(ItemId(3)));
@@ -597,9 +597,56 @@ fn selection_walks_the_board_with_children_under_parents() {
     for _ in 0..20 {
         key(&mut app, KeyCode::Down);
     }
-    assert_eq!(app.selected, Some(ItemId(5)), "stays at the bottom");
+    assert_eq!(app.selected, Some(ItemId(6)), "stays at the bottom");
     let cols = app.board();
     assert!(cols[0][1].child, "H-0004 is drawn under H-0003");
+}
+
+#[test]
+fn delivery_holds_shipped_prs_until_they_merge() {
+    let env = building();
+    let hall = hall_of(&env);
+    let lane =
+        |app: &App, c: usize| -> Vec<ItemId> { app.board()[c].iter().map(|r| r.item.id).collect() };
+    let mut app = load(&env, &env.repo);
+    assert_eq!(lane(&app, 3), vec![ItemId(5)], "Delivery watches PR #191");
+    assert_eq!(lane(&app, 4), vec![ItemId(6)], "Closed today");
+
+    // Its CI shows next to the PR.
+    add(
+        &hall,
+        5,
+        "watchman",
+        Body::PrChecks {
+            pr_url: "https://github.com/acme/app/pull/191".into(),
+            passed: false,
+            failing: vec![],
+            ended: None,
+        },
+    );
+    app.reload_active();
+    assert_eq!(
+        lane(&app, 3),
+        vec![ItemId(5)],
+        "red CI doesn't end the watch"
+    );
+    select(&mut app, 5);
+    assert_snapshot!("board_delivery", screen(&env, &app, W, H));
+
+    // Merged: the watch ends, and it's just closed.
+    add(
+        &hall,
+        5,
+        "delivery",
+        Body::Delivered {
+            pr_url: "https://github.com/acme/app/pull/191".into(),
+            outcome: "merged".into(),
+        },
+    );
+    app.reload_active();
+    assert!(lane(&app, 3).is_empty());
+    // Closed today, by when each closed: H-0006 was dropped after H-0005 shipped.
+    assert_eq!(lane(&app, 4), vec![ItemId(6), ItemId(5)]);
 }
 
 #[test]

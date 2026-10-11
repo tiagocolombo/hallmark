@@ -1,0 +1,40 @@
+---
+source: tests/tui.rs
+expression: "screen(&env, &app, W, H)"
+---
+hall · app (1 of 1 repo)   daemon ● running   ⚑ 4 waiting   rejected today 3 · review tokens 400k                  hh:mm
+┌ Your office ─⚑ 4 waiting ────────────────────────────────────────────────────────────────────────────────────────────┐
+│ready?     H-0002  Export tenant usage looks done: CSV export with 14 tests                                   –       │
+│question   H-0002  Billed usage or raw events?  [a] billed  [b] raw                                           –       │
+│escalated  H-0007  Migrate billing tables: rejected 1 times                                                   –       │
+│CI failed  H-0005  Tenant check in export query: CI failed on https://github.com/acme/app/pull/191:           –       │
+└────────────────────────────────────────────────────────────────────────────────────────────── i read in full and act ┘
+┌ Board ───────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│DEVELOPMENT (2)         AWAITING YOU (2)        REVIEW LOOP (1)        DELIVERY (1)            CLOSED TODAY (1)       │
+│H-0003 Rate limit the … H-0002 Expor… needs you H-0001 Retr… review r2 H-0005 Tenan… #191 ci ✗ H-0006 Old exp… dropped│
+│└ H-0004 Rate limit: d… H-0007 Mi… escalated ×1                                                                       │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ H-0005 · Tenant check in export query ──────────────────────────────────────────────────────── closed · r2 · ####### ┐
+│⚑ CI failedTenant check in export query: CI failed on https://github.com/acme/app/pull/191:                           │
+│           i opens your office: why it waits, and what you can do                                                     │
+│hh:mm  you       created · "Tenant check in export query"                                                             │
+│hh:mm  you       ready · round 1 · #######                                                                            │
+│hh:mm  assayer   checks passed · round 1                                                                              │
+│hh:mm  assayer   review · changes · round 1 · 1 findings                                                              │
+│hh:mm  fixer     fix submitted ####### · F1                                                                           │
+│hh:mm  assayer   checks passed · round 2                                                                              │
+│hh:mm  assayer   review · approve · round 2 · 0 findings                                                              │
+│hh:mm  hall      hallmark · #######                                                                                   │
+│hh:mm  shipper   shipped · https://github.com/acme/app/pull/191                                                       │
+│hh:mm  watchman  CI failed on the PR:                                                                                 │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ Findings ────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│F1   blocker security_tenancy Export reads other tenants             src/webhooks.rs:42     fixed · verified r2       │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+↑↓ item enter journal i your office ←→ step f findings d diff r ready p pull back g go x drop / filter ? help q quit

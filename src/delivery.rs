@@ -632,18 +632,18 @@ struct Watch {
     noted: BTreeSet<String>,
 }
 
+/// A shipped item whose PR hasn't merged or closed yet: the office
+/// watches it.
+pub fn is_watched(i: &Item) -> bool {
+    i.state == State::Closed
+        && i.parent.is_none()
+        && i.delivered.is_none()
+        && i.pr_url.as_deref().is_some_and(|u| u.contains("/pull/"))
+}
+
 /// Shipped items whose PR hasn't merged or closed yet.
 pub fn watched(items: &[Item]) -> Vec<Item> {
-    items
-        .iter()
-        .filter(|i| {
-            i.state == State::Closed
-                && i.parent.is_none()
-                && i.delivered.is_none()
-                && i.pr_url.as_deref().is_some_and(|u| u.contains("/pull/"))
-        })
-        .cloned()
-        .collect()
+    items.iter().filter(|i| is_watched(i)).cloned().collect()
 }
 
 fn watch_next(ctx: &WorkerCtx) -> Result<Progress> {
