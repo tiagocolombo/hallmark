@@ -229,17 +229,20 @@ fn a_review_with_blockers_requests_changes() {
     let env = Env::initialized();
     configure(&env, &[("gates", &format!("[\"{PASS}\"]"))]);
     let (id, _, sha) = ready_item(&env, "Retry webhooks", "retry.rs", "fn retry() {}\n");
-    let script = env.script(json!([reviewer(verdict(
+    let mut step = reviewer(verdict(
         vec![
             finding(
                 "blocker",
                 "retry.rs",
-                "Two workers can retry the same delivery"
+                "Two workers can retry the same delivery",
             ),
             finding("minor", "retry.rs", "Name the backoff constant"),
         ],
-        json!([])
-    ))]));
+        json!([]),
+    ));
+    // Record the reviewer's HEAD while it runs, next to its checkout.
+    step["run"] = json!(["git rev-parse HEAD > \"{cwd}.head\""]);
+    let script = env.script(json!([step]));
 
     let r = tick(&env, &script);
     assert!(what(&r).contains("checks passed"), "{}", r.stdout);
@@ -283,9 +286,17 @@ fn a_review_with_blockers_requests_changes() {
     ] {
         assert!(env_pairs.contains(&want), "{want}");
     }
+    // Each review has its own checkout at its commit (ADR 0026), removed
+    // once the verdict is recorded.
     let cwd = PathBuf::from(call["cwd"].as_str().unwrap());
-    assert!(cwd.ends_with("app-assay"), "{}", cwd.display());
-    assert_eq!(git(&cwd, &["rev-parse", "HEAD"]), sha);
+    assert!(
+        cwd.ends_with(format!("app-review-{id}")),
+        "{}",
+        cwd.display()
+    );
+    assert!(!cwd.exists(), "removed after the verdict");
+    let head = std::fs::read_to_string(format!("{}.head", cwd.display())).unwrap();
+    assert_eq!(head.trim(), sha, "the review ran at the frozen commit");
 
     let prompt = call["prompt"].as_str().unwrap();
     assert!(

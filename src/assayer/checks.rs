@@ -29,7 +29,9 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
     let timeout = repo.config.budget.timeout_secs(Role::Reviewer).max(0) as u64;
     let mut runs = Vec::new();
     if !gates.is_empty() {
-        let wt = super::checkout(repo, &sha)?;
+        // A slot of the assay pool, locked until the checks end.
+        let slot = super::checkout_checks(repo, &sha)?;
+        let wt = slot.path.clone();
         let dir = repo.hall.item_checks(item.id);
         fs::create_dir_all(&dir)?;
         let rel = format!("checks/r{round}.log");
