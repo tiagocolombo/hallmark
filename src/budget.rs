@@ -300,7 +300,11 @@ pub fn daily_stop(ix: &Index, b: &Budget, day: &str) -> Option<Stop> {
                     fmt_tokens(g)
                 ),
             };
-            (limit, shown, ", or `hall budget --grant` lets it go on today")
+            (
+                limit,
+                shown,
+                ", or `hall budget --grant` lets it go on today",
+            )
         }
         usd => (usd, usd.show(&used), ""),
     };

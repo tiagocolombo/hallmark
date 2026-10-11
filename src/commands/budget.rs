@@ -178,7 +178,9 @@ impl Render for BudgetOut {
             let tail = match (c.limit.as_deref(), c.cap()) {
                 (Some(l), Some(budget::Cap::Tokens(t))) if granted > 0 => format!(
                     "{l:>6}  {} (+{} granted today)",
-                    pct_bar(budget::Cap::Tokens(t.saturating_add(granted)).fraction(&spent) * 100.0),
+                    pct_bar(
+                        budget::Cap::Tokens(t.saturating_add(granted)).fraction(&spent) * 100.0
+                    ),
                     fmt_tokens(granted)
                 ),
                 (Some(l), Some(cap)) => {
