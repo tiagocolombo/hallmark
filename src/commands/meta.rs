@@ -237,6 +237,7 @@ impl Render for SchemaOut {
 enum InboxReply {
     List(Out<InboxOut>),
     Detail(Out<super::status::InboxDetail>),
+    Dismissed(Out<super::status::DismissOut>),
 }
 
 #[derive(Serialize, JsonSchema)]

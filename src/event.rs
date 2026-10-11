@@ -362,6 +362,12 @@ pub enum Body {
         child: ItemId,
         sha: String,
     },
+    /// You dismissed inbox entries (`hall inbox --dismiss`, `--clear`):
+    /// each stays hidden until it changes. Kept in its own journal file.
+    InboxDismissed {
+        /// `InboxEntry::key` of each entry.
+        keys: Vec<String>,
+    },
     /// The shipped PR's CI finished (the daemon watches it after shipping).
     PrChecks {
         pr_url: String,
@@ -425,6 +431,7 @@ impl Body {
             Body::Reopened { .. } => "reopened",
             Body::ChildMerged { .. } => "child_merged",
             Body::PrChecks { .. } => "pr_checks",
+            Body::InboxDismissed { .. } => "inbox_dismissed",
         }
     }
 
@@ -643,6 +650,11 @@ impl Body {
                 format!("reopened from {pr_url} · base {base}")
             }
             Body::ChildMerged { child, sha } => format!("{child} merged · {}", short(sha)),
+            Body::InboxDismissed { keys } => format!(
+                "{} inbox entr{} dismissed",
+                keys.len(),
+                if keys.len() == 1 { "y" } else { "ies" }
+            ),
             Body::PrChecks {
                 passed, failing, ..
             } => {

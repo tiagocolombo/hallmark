@@ -583,6 +583,22 @@ impl App {
             (View::Inbox, KeyCode::Char(c @ '1'..='9')) => {
                 return self.run_action(c as usize - '1' as usize);
             }
+            // Dismiss the entry, or clear the whole inbox: hidden until
+            // each one changes.
+            (View::Inbox, KeyCode::Char('D')) => match self.inbox_actions().last() {
+                Some((cmd, _)) if cmd.ends_with("--dismiss") => {
+                    let cmd = cmd.clone();
+                    return self.run_command(&cmd);
+                }
+                _ => self.err("This entry can't be dismissed."),
+            },
+            (View::Inbox, KeyCode::Char('C')) => {
+                if self.inbox().is_empty() {
+                    self.info("Nothing needs you.");
+                } else {
+                    return self.run_command("hall inbox --clear");
+                }
+            }
             (View::Repos, KeyCode::Up) => self.repo_sel = self.repo_sel.saturating_sub(1),
             (View::Repos, KeyCode::Down) => {
                 self.repo_sel = (self.repo_sel + 1).min(self.repos.len().saturating_sub(1))

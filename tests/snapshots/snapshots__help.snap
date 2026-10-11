@@ -1,6 +1,5 @@
 ---
 source: tests/snapshots.rs
-assertion_line: 96
 expression: v
 ---
 {
@@ -194,7 +193,7 @@ expression: v
       "usage": "hall log [OPTIONS] [ID]"
     },
     {
-      "about": "Everything waiting for you, oldest first; `hall inbox <n>` explains one",
+      "about": "Everything waiting for you, oldest first; `hall inbox <n>` explains one, `--dismiss` hides it and `--clear` hides them all",
       "args": [
         {
           "help": "One entry to explain: its number in the list, a question ID (Q-3) or an item ID",
@@ -202,6 +201,30 @@ expression: v
           "required": false,
           "syntax": "<entry>",
           "takes_value": true
+        },
+        {
+          "default": "false",
+          "help": "Dismiss that entry: it stays hidden until it changes. Nothing is answered, retried or dropped",
+          "name": "dismiss",
+          "required": false,
+          "syntax": "--dismiss",
+          "takes_value": false
+        },
+        {
+          "default": "false",
+          "help": "Dismiss every entry shown now",
+          "name": "clear",
+          "required": false,
+          "syntax": "--clear",
+          "takes_value": false
+        },
+        {
+          "default": "false",
+          "help": "Show dismissed entries too",
+          "name": "all",
+          "required": false,
+          "syntax": "--all",
+          "takes_value": false
         }
       ],
       "name": "inbox",

@@ -45,6 +45,12 @@ impl Hall {
     }
     /// Events that belong to no item: prompts and notifications from
     /// sessions without an item, gate denials, repo-level questions.
+    /// Dismissed inbox entries: `inbox_dismissed` events, append-only. It
+    /// isn't indexed; the inbox reads it each time.
+    pub fn dismissed_events(&self) -> PathBuf {
+        dismissed_path(&self.root)
+    }
+
     pub fn repo_events(&self) -> PathBuf {
         self.root.join("events.jsonl")
     }
@@ -440,6 +446,24 @@ pub fn parse_lines(text: &str) -> Vec<Event> {
 /// Convenience for commands: an event for `item`, by `actor`.
 pub fn ev(actor: &str, item: Option<ItemId>, body: Body) -> Event {
     Event::new(actor, item, body)
+}
+
+fn dismissed_path(root: &Path) -> PathBuf {
+    root.join("inbox-dismissed.jsonl")
+}
+
+/// The keys of every dismissed inbox entry (`InboxEntry::key`).
+pub fn dismissed(root: &Path) -> std::collections::BTreeSet<String> {
+    let Ok(text) = fs::read_to_string(dismissed_path(root)) else {
+        return Default::default();
+    };
+    parse_lines(&text)
+        .into_iter()
+        .flat_map(|e| match e.body {
+            event::Body::InboxDismissed { keys } => keys,
+            _ => vec![],
+        })
+        .collect()
 }
 
 #[cfg(test)]

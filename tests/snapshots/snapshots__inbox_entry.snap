@@ -1,6 +1,5 @@
 ---
 source: tests/snapshots.rs
-assertion_line: 101
 expression: "scrub(&env, &r.json)"
 ---
 {
@@ -20,6 +19,10 @@ expression: "scrub(&env, &r.json)"
     {
       "command": "hall log H-0001",
       "does": "read its whole journal"
+    },
+    {
+      "command": "hall inbox H-0001 --dismiss",
+      "does": "dismiss it: hidden until it changes; nothing is answered or retried"
     }
   ],
   "answer_with": [
@@ -36,7 +39,8 @@ expression: "scrub(&env, &r.json)"
     "hall ready H-0001",
     "hall pull-back H-0001",
     "hall drop H-0001 --reason \"<why>\"",
-    "hall log H-0001"
+    "hall log H-0001",
+    "hall inbox H-0001 --dismiss"
   ],
   "now": {
     "actions": [

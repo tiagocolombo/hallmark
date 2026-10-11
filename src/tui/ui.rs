@@ -329,6 +329,8 @@ fn key_bar(f: &mut Frame, area: Rect, app: &App) {
         View::Inbox => &[
             ("↑↓", "entry"),
             ("1-9", "run action"),
+            ("D", "dismiss"),
+            ("C", "clear all"),
             ("enter", "journal"),
             ("pgup pgdn", "scroll"),
             ("d", "diff"),
@@ -379,6 +381,10 @@ fn help(f: &mut Frame, area: Rect) {
         ("↑ ↓", "select an item (or a finding, a row, a repo)"),
         ("enter", "open the item's journal"),
         ("i", "your office: read each entry, 1-9 runs actions"),
+        (
+            "D C",
+            "your office: dismiss the entry · clear them all (each returns if it changes)",
+        ),
         ("← →", "step through the journal; the board follows"),
         ("home end", "first event · back to now"),
         ("f", "findings for this item"),

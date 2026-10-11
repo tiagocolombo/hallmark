@@ -100,6 +100,31 @@ pub struct QuestionRow {
     pub answered_at: Option<DateTime<Utc>>,
 }
 
+impl InboxEntry {
+    /// What a dismissal hides: the entry as it is now. When anything about
+    /// it changes (a new hold, a new failure, a new message), the key
+    /// changes and the entry comes back.
+    pub fn key(&self) -> String {
+        let who = self
+            .qid
+            .clone()
+            .or_else(|| self.item.map(|i| i.to_string()))
+            .or_else(|| self.session.clone())
+            .unwrap_or_else(|| "-".into());
+        // FNV-1a: stable across builds, unlike the std hasher.
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        for b in self.text.bytes() {
+            h ^= u64::from(b);
+            h = h.wrapping_mul(0x0100_0000_01b3);
+        }
+        format!(
+            "{}:{who}:{}:{h:016x}",
+            self.kind,
+            self.since.timestamp_millis()
+        )
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, JsonSchema)]
 pub struct UsageRow {
     pub key: String,
@@ -366,7 +391,17 @@ impl Index {
             .map_err(Into::into)
     }
 
+    /// Everything waiting for you, oldest first, without what you
+    /// dismissed (`hall inbox --dismiss`, `--clear`).
     pub fn inbox(&self) -> Result<Vec<InboxEntry>> {
+        let dismissed = crate::journal::dismissed(&self.root);
+        let mut out = self.inbox_all()?;
+        out.retain(|e| !dismissed.contains(&e.key()));
+        Ok(out)
+    }
+
+    /// Every inbox entry, dismissed ones included.
+    pub fn inbox_all(&self) -> Result<Vec<InboxEntry>> {
         let mut out = Vec::new();
         let mut stmt = self.conn.prepare(
             "SELECT qid, item, text, options, dflt, wait, deadline, asked_at, session, answer, answered_at
