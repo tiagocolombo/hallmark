@@ -622,6 +622,7 @@ fn delivery_holds_shipped_prs_until_they_merge() {
             passed: false,
             failing: vec![],
             ended: None,
+            not_started: None,
         },
     );
     app.reload_active();

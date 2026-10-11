@@ -2,12 +2,11 @@
 source: tests/tui.rs
 expression: "screen(&env, &app, W, H)"
 ---
-hall · app (1 of 1 repo)   daemon ● running   ⚑ 4 waiting   rejected today 3 · review tokens 400k                  hh:mm
-┌ Your office ─⚑ 4 waiting ────────────────────────────────────────────────────────────────────────────────────────────┐
+hall · app (1 of 1 repo)   daemon ● running   ⚑ 3 waiting   rejected today 3 · review tokens 400k                  hh:mm
+┌ Your office ─⚑ 3 waiting ────────────────────────────────────────────────────────────────────────────────────────────┐
 │ready?     H-0002  Export tenant usage looks done: CSV export with 14 tests                                   –       │
 │question   H-0002  Billed usage or raw events?  [a] billed  [b] raw                                           –       │
 │escalated  H-0007  Migrate billing tables: rejected 1 times                                                   –       │
-│CI failed  H-0005  Tenant check in export query: CI failed on https://github.com/acme/app/pull/191:           –       │
 └────────────────────────────────────────────────────────────────────────────────────────────── i read in full and act ┘
 ┌ Board ───────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │DEVELOPMENT (2)         AWAITING YOU (2)        REVIEW LOOP (1)        DELIVERY (1)            CLOSED TODAY (1)       │
@@ -15,8 +14,6 @@ hall · app (1 of 1 repo)   daemon ● running   ⚑ 4 waiting   rejected today 
 │└ H-0004 Rate limit: d… H-0007 Mi… escalated ×1                                                                       │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌ H-0005 · Tenant check in export query ──────────────────────────────────────────────────────── closed · r2 · ####### ┐
-│⚑ CI failedTenant check in export query: CI failed on https://github.com/acme/app/pull/191:                           │
-│           i opens your office: why it waits, and what you can do                                                     │
 │hh:mm  you       created · "Tenant check in export query"                                                             │
 │hh:mm  you       ready · round 1 · #######                                                                            │
 │hh:mm  assayer   checks passed · round 1                                                                              │
@@ -27,6 +24,9 @@ hall · app (1 of 1 repo)   daemon ● running   ⚑ 4 waiting   rejected today 
 │hh:mm  hall      hallmark · #######                                                                                   │
 │hh:mm  shipper   shipped · https://github.com/acme/app/pull/191                                                       │
 │hh:mm  watchman  CI failed on the PR:                                                                                 │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
