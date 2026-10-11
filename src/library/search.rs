@@ -25,7 +25,6 @@ use super::learning::{Kind, Status};
 use super::store::Located;
 use crate::config::SearchBackend;
 use crate::error::Result;
-use crate::item::ItemId;
 use crate::repo::Repo;
 
 /// One search result.
@@ -41,13 +40,9 @@ pub struct Hit {
     /// score for qmd.
     pub score: f64,
     pub used: u32,
-    /// Repo-relative path of the file.
+    /// The learning's file in the local store.
     pub path: String,
     pub title: String,
-    /// The open knowledge item that proposes this version, if it isn't on
-    /// the base branch yet.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub item: Option<ItemId>,
 }
 
 impl Hit {
@@ -62,7 +57,6 @@ impl Hit {
             used: l.learning.used,
             path: l.path.clone(),
             title: l.learning.title.clone(),
-            item: l.item,
         }
     }
 }
@@ -214,7 +208,6 @@ fn key(docs: &[Located]) -> String {
     let mut h = DefaultHasher::new();
     for d in docs {
         d.path.hash(&mut h);
-        d.item.map(|i| i.0).hash(&mut h);
         d.learning.render().hash(&mut h);
     }
     format!("{:016x}-{}", h.finish(), docs.len())
@@ -346,7 +339,7 @@ pub mod qmd {
     /// A qmd result, as far as Hallmark reads it.
     #[derive(Debug, Clone, PartialEq)]
     pub struct QmdHit {
-        /// The file qmd matched (`qmd://<collection>/base/L-0017-x.md`, or a
+        /// The file qmd matched (`qmd://<collection>/L-0017-x.md`, or a
         /// relative or absolute path).
         pub file: String,
         pub score: f64,
@@ -379,32 +372,18 @@ pub mod qmd {
             .collect())
     }
 
-    /// The export file name for a document: `<origin>/<file name>`, where
-    /// the origin is `base` or the knowledge item's ID.
+    /// The export file name for a document: its file name in the store.
     fn export_rel(d: &Located) -> String {
-        let origin = d
-            .item
-            .map(|i| i.to_string())
-            .unwrap_or_else(|| "base".into());
-        let name = d.path.rsplit('/').next().unwrap_or(&d.path);
-        format!("{origin}/{name}")
+        d.path.rsplit('/').next().unwrap_or(&d.path).to_string()
     }
 
-    /// Matches a qmd file back to the exported document.
+    /// Matches a qmd file back to the exported document, by file name.
     fn resolve<'a>(file: &str, by_rel: &HashMap<String, &'a Located>) -> Option<&'a Located> {
         let f = file.replace('\\', "/");
-        let mut parts = f.rsplit('/');
-        let name = parts.next()?;
-        let origin = parts.next().unwrap_or("base");
-        let lower = |s: &str| s.to_ascii_lowercase();
+        let name = f.rsplit('/').next()?.to_ascii_lowercase();
         by_rel
             .iter()
-            .find(|(rel, _)| lower(rel) == lower(&format!("{origin}/{name}")))
-            .or_else(|| {
-                by_rel
-                    .iter()
-                    .find(|(rel, _)| lower(rel.rsplit('/').next().unwrap_or(rel)) == lower(name))
-            })
+            .find(|(rel, _)| rel.to_ascii_lowercase() == name)
             .map(|(_, d)| *d)
     }
 
@@ -479,7 +458,7 @@ pub mod qmd {
             let Some(d) = resolve(&h.file, &by_rel) else {
                 continue;
             };
-            if !opts.allows(d) || !seen.insert((d.learning.id.clone(), d.item)) {
+            if !opts.allows(d) || !seen.insert(d.learning.id.clone()) {
                 continue;
             }
             hits.push(Hit::from(d, (h.score * 1000.0).round() / 1000.0));

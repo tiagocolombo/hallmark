@@ -1,18 +1,19 @@
-//! The Library (ADR 0021): learnings in `.hallmark/knowledge/`, search,
-//! briefings for reviews, the librarian and retirement.
+//! The Library (ADR 0021, ADR 0027): learnings kept in the local store next
+//! to the journal, search, briefings for reviews, the librarian and
+//! retirement.
 //!
 //! - `learning`: the file format (frontmatter + title + body).
-//! - `store`: reading learnings from the base branch and from open
-//!   knowledge items; usage from verdict events.
+//! - `store`: the local store (`<git-common-dir>/hallmark/library/`), its
+//!   history and lock; usage from verdict events.
 //! - `search`: SQLite FTS5 (built in) or qmd.
 //! - `briefing`: what a review is told.
-//! - `knowledge`: knowledge items, which carry learnings through Hallmark.
-//! - `librarian`: distilling items and proposing retirements.
+//! - `librarian`: distilling items and retiring learnings.
+//! - `portable`: `hall library import` and `export`.
 
 pub mod briefing;
-pub mod knowledge;
 pub mod learning;
 pub mod librarian;
+pub mod portable;
 pub mod search;
 pub mod store;
 
@@ -34,12 +35,12 @@ pub struct Briefing {
     pub tokens: u64,
 }
 
-/// The briefing for a review of `changed` paths at `base` (learnings are
-/// read from the base branch, never the branch under review). `base` is a
-/// branch or a commit. Only accepted learnings are used: first those whose
-/// scope matches a changed path, then a search with terms from `diff`.
-pub fn briefing(repo: &Repo, base: &str, changed: &[String], diff: &str) -> Result<Briefing> {
-    briefing::briefing(repo, base, changed, diff)
+/// The briefing for a review of `changed` paths. Learnings come from the
+/// local store, which no branch can change, and only accepted ones are
+/// used: first those whose scope matches a changed path, then a search with
+/// terms from `diff`.
+pub fn briefing(repo: &Repo, changed: &[String], diff: &str) -> Result<Briefing> {
+    briefing::briefing(repo, changed, diff)
 }
 
 /// Distils closed and escalated items into proposed learnings.

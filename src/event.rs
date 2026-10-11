@@ -316,9 +316,10 @@ pub enum Body {
         kind: String,
         channels: Vec<String>,
     },
-    /// The librarian distilled this item into proposed learnings.
+    /// The librarian distilled this item into learnings in the local store.
     Distilled {
-        /// The knowledge item that carries them.
+        /// The knowledge item that carried them (ADR 0021); absent since the
+        /// Library stays local (ADR 0027).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         into: Option<ItemId>,
         learnings: Vec<String>,
@@ -599,7 +600,7 @@ impl Body {
             }
             Body::Distilled { into, learnings } => match into {
                 Some(i) => format!("{} learnings proposed in {i}", learnings.len()),
-                None => format!("{} learnings proposed", learnings.len()),
+                None => format!("{} learnings added or updated", learnings.len()),
             },
             Body::Planned {
                 parallel, children, ..
