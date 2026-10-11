@@ -4,8 +4,8 @@ expression: "screen(&env, &app, W, 14)"
 ---
 hall · app (1 of 1 repo)   daemon ● stopped   ⚑ 0 waiting   rejected today 0 · review tokens 0                     hh:mm
 ┌ Board ───────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│DEVELOPMENT (0)               AWAITING YOU (0)              REVIEW LOOP (0)              CLOSED TODAY (0)             │
-│none                          none                          none                         none                         │
+│DEVELOPMENT (0)         AWAITING YOU (0)        REVIEW LOOP (0)        DELIVERY (0)            CLOSED TODAY (0)       │
+│none                    none                    none                   none                    none                   │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌ No item selected ────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │No items here yet. Start one with `hall new "<request>"`.                                                             │

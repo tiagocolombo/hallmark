@@ -21,21 +21,27 @@ use crate::item::{Item, ItemId, State};
 use crate::output::Response;
 use crate::repo::Repo;
 
-/// The board's columns, left to right, and the states each one holds.
-pub const COLUMNS: [(&str, &[State]); 4] = [
-    ("Development", &[State::Development]),
-    ("Awaiting you", &[State::AwaitingYou, State::Escalated]),
-    (
-        "Review loop",
-        &[
-            State::Checks,
-            State::Review,
-            State::Fixing,
-            State::Hallmarked,
-        ],
-    ),
-    ("Closed today", &[State::Closed, State::Dropped]),
+/// The board's columns, left to right.
+pub const COLUMNS: [&str; 5] = [
+    "Development",
+    "Awaiting you",
+    "Review loop",
+    "Delivery",
+    "Closed today",
 ];
+
+/// The column an item is drawn in. A shipped PR stays in Delivery, whatever
+/// day it shipped, while the Delivery office watches it (ADR 0030); once it
+/// merges or closes, the item is just closed.
+pub fn column(item: &Item) -> usize {
+    match item.state {
+        State::Development => 0,
+        State::AwaitingYou | State::Escalated => 1,
+        State::Checks | State::Review | State::Fixing | State::Hallmarked => 2,
+        State::Closed if crate::delivery::is_watched(item) => 3,
+        State::Closed | State::Dropped => 4,
+    }
+}
 
 /// The most lines a diff view keeps.
 const DIFF_LINES: usize = 20_000;
@@ -309,8 +315,8 @@ impl App {
 
     /// The board's columns, with the selected item shown at the replay
     /// cursor and parallel parts grouped under their parent.
-    pub fn board(&self) -> [Vec<BoardRow>; 4] {
-        let mut cols: [Vec<BoardRow>; 4] = Default::default();
+    pub fn board(&self) -> [Vec<BoardRow>; 5] {
+        let mut cols: [Vec<BoardRow>; 5] = Default::default();
         let Some(repo) = self.repo() else {
             return cols;
         };
@@ -324,15 +330,14 @@ impl App {
             if !self.matches(it) {
                 continue;
             }
-            if it.state.is_terminal() && Self::local_day(it.state_since) != today {
+            let c = column(it);
+            if c == COLUMNS.len() - 1 && Self::local_day(it.state_since) != today {
                 continue;
             }
-            if let Some(c) = COLUMNS.iter().position(|(_, st)| st.contains(&it.state)) {
-                cols[c].push(BoardRow {
-                    item: it.clone(),
-                    child: false,
-                });
-            }
+            cols[c].push(BoardRow {
+                item: it.clone(),
+                child: false,
+            });
         }
         for col in &mut cols {
             let present: Vec<ItemId> = col.iter().map(|r| r.item.id).collect();

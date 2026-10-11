@@ -9,9 +9,9 @@ hall · app (1 of 3 repos)   daemon ● running   ⚑ 3 waiting   rejected today
 │escalated  H-0007  Migrate ┌ Keys ────────────────────────────────────────────────────────┐                   –       │
 └───────────────────────────│                                                              │─── i read in full and act ┘
 ┌ Board ────────────────────│  ↑ ↓       select an item (or a finding, a row, a repo)      │───────────────────────────┐
-│DEVELOPMENT (2)            │  enter     open the item's journal                           │OSED TODAY (2)             │
-│H-0003 Rate limit the publi│  i         your office: read each entry, 1-9 runs actions    │0006 Old experiment dropped│
-│└ H-0004 Rate limit: docume│  D C       your office: dismiss the entry · clear them all   │0005 Tenant check in … #191│
+│DEVELOPMENT (2)         AWA│  enter     open the item's journal                           │    CLOSED TODAY (1)       │
+│H-0003 Rate limit the … H-0│  i         your office: read each entry, 1-9 runs actions    │191 H-0006 Old exp… dropped│
+│└ H-0004 Rate limit: d… H-0│  D C       your office: dismiss the entry · clear them all   │                           │
 └───────────────────────────│  ← →       step through the journal; the board follows       │───────────────────────────┘
 ┌ H-0001 · Retry failed webh│  home end  first event · back to now                         │──── review · r2 · ####### ┐
 │now Next for the review; th│  f         findings for this item                            │                           │

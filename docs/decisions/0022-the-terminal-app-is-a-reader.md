@@ -2,7 +2,8 @@
 
 Status: Accepted, 2026-10-09. Amended 2026-10-10: your office shows each
 inbox entry in full and runs its actions. Amended 2026-10-11: your office
-drops the entry's item, or every item waiting.
+drops the entry's item, or every item waiting; the board has a Delivery
+lane.
 
 ## Context
 
@@ -30,6 +31,12 @@ Windows.
   so stepping through the journal shows the board and the findings as they
   were at that event. Folds are cached per selection and recomputed only
   when the cursor or the journal moves.
+- **The board has five lanes:** Development, Awaiting you, Review loop,
+  Delivery and Closed today. Delivery holds every shipped PR that the
+  Delivery office still watches (ADR 0030), however long ago it shipped,
+  tagged with its number and its CI (`#191 ci ✗`). Once the PR merges or
+  closes (`delivered`), the item is just closed. A PR the office reopens
+  for a rebase or comments goes back to Development.
 - **It refreshes on change.** A `notify` watcher on each repo's
   `<git-common-dir>/hallmark/` marks the repo stale; the app re-reads it
   once writes have been quiet for 250 ms, or after 1 s while they keep

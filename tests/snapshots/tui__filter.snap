@@ -9,8 +9,8 @@ hall · app (1 of 1 repo)   daemon ● running   ⚑ 3 waiting   rejected today 
 │escalated  H-0007  Migrate billing tables: rejected 1 times                                                   –       │
 └────────────────────────────────────────────────────────────────────────────────────────────── i read in full and act ┘
 ┌ Board ───────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│DEVELOPMENT (0)               AWAITING YOU (1)              REVIEW LOOP (0)              CLOSED TODAY (1)             │
-│none                          H-0002 Export tena… needs you none                         H-0005 Tenant check in … #191│
+│DEVELOPMENT (0)         AWAITING YOU (1)        REVIEW LOOP (0)        DELIVERY (1)            CLOSED TODAY (0)       │
+│none                    H-0002 Expor… needs you none                   H-0005 Tenant che… #191 none                   │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌ H-0002 · Export tenant usage ────────────────────────────────────────────────────────────────────────── awaiting you ┐
 │now The agent says it looks done; it waits for your call (–)                                                          │
