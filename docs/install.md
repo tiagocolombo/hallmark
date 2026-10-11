@@ -95,11 +95,21 @@ That one command does every step and reports each one; it is safe to repeat:
    to commit (`git add .hallmark.toml .hallmark/ CLAUDE.md && git commit -m
    "Adopt Hallmark"`).
 5. **The daemon**, started now and registered to start at login, with the
-   PATH you ran `hall setup` from. Run it from the shell your project builds in
-   (inside `nix develop` for a Nix project), so the gates and `gh` are found.
+   PATH you ran `hall setup` from. If `claude` or `gh` aren't on that PATH,
+   set `tools.claude` and `tools.gh` (`hall config set --user tools.gh
+   <path>`). If your gates need a toolchain shell such as `nix develop`, wrap
+   them (see [Configuration](configuration.md#gates-that-need-a-toolchain-shell)).
 6. **A phone topic**: a private, random ntfy topic, if you have no phone
    channel yet, with how to subscribe.
 7. **`hall doctor`**, whose fixes go in `next`.
+
+**`hall setup --interactive`** (or `-i`) asks first. It covers the base
+branch, the gates and the shell they run in (`nix develop`, devbox, mise,
+direnv), how work is shipped, models and budget caps, where `claude` and `gh`
+are, notifications and the daemon. Then it offers every other setting. It
+writes nothing until you confirm, and then runs the steps above. Every answer
+can also be set later with `hall config`; see
+[Configuration](configuration.md#changing-settings).
 
 `--dry-run` shows the plan without doing anything; `--no-statusline`,
 `--no-daemon` and `--no-notify` skip a step. Each step also has its own command
@@ -129,7 +139,7 @@ nothing and says so. Then it has the new `hall` rewrite the Claude Code plugin
 (if you installed it) and restarts a running daemon on the new binary.
 Restart Claude Code afterwards.
 
-It needs `cargo` (or `HALL_CARGO`) and git access to the repository: git and
+It needs `cargo` (or `tools.cargo` in your user config, or `HALL_CARGO`) and git access to the repository: git and
 cargo both use your git credentials, and never prompt for them. `--source`
 (or `HALL_UPDATE_SOURCE`) installs from another repository, such as a fork or
 an SSH URL, and `--branch`

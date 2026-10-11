@@ -39,7 +39,8 @@ Agents are the main users of `hall`, so every command follows these rules
 
 | Command | Does |
 | --- | --- |
-| `hall setup` | One-time setup: the Claude Code plugin and status line, this repo, the daemon at login, a phone topic, then `hall doctor`. Safe to repeat. `--dry-run`, `--no-statusline`, `--no-daemon`, `--no-notify`, `--force` |
+| `hall setup` | One-time setup: the Claude Code plugin and status line, this repo, the daemon at login, a phone topic, then `hall doctor`. Safe to repeat. `--interactive` (`-i`) asks about every setting first, on a terminal. `--dry-run`, `--no-statusline`, `--no-daemon`, `--no-notify`, `--force` |
+| `hall config` | Reads and changes settings without editing TOML: `list [prefix]`, `get <key>`, `set <key> <value>…`, `unset <key>`. `--user` for your user config (`tools.*`, notifications). Keeps comments and checks values. |
 | `hall setup claude` | Installs only the Claude Code plugin. `--statusline`, `--dry-run` |
 | `hall init` | Sets up a repo. `--capture gate\|ask\|off`, `--base`, `--no-claude-md` |
 | `hall doctor` | Checks the install. Each failed check names the command that fixes it. |

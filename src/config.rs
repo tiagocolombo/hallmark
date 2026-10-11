@@ -501,6 +501,85 @@ impl Default for Library {
 pub struct UserConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub notify: Option<Notify>,
+    /// Where the programs Hallmark runs live.
+    pub tools: Tools,
+}
+
+/// `[tools]`: the programs Hallmark runs, for when they aren't on PATH. The
+/// daemon's login service starts with a bare PATH, so an absolute path here
+/// is the dependable way to point it at them. `HALL_CLAUDE`, `HALL_GH`,
+/// `HALL_QMD` and `HALL_CARGO` override these.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct Tools {
+    /// Claude Code (`claude`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub claude: Option<String>,
+    /// The GitHub CLI (`gh`), for issues, PRs and the default ship command.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gh: Option<String>,
+    /// tobi/qmd, for `[library] search = "qmd"`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub qmd: Option<String>,
+    /// `cargo`, which `hall update` installs with.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cargo: Option<String>,
+}
+
+/// A program Hallmark runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tool {
+    Claude,
+    Gh,
+    Qmd,
+    Cargo,
+}
+
+impl Tool {
+    pub const ALL: [Tool; 4] = [Tool::Claude, Tool::Gh, Tool::Qmd, Tool::Cargo];
+
+    /// The program's name, and its key under `[tools]`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Tool::Claude => "claude",
+            Tool::Gh => "gh",
+            Tool::Qmd => "qmd",
+            Tool::Cargo => "cargo",
+        }
+    }
+
+    /// The environment variable that overrides `[tools]`.
+    pub fn env(self) -> &'static str {
+        match self {
+            Tool::Claude => "HALL_CLAUDE",
+            Tool::Gh => "HALL_GH",
+            Tool::Qmd => "HALL_QMD",
+            Tool::Cargo => "HALL_CARGO",
+        }
+    }
+
+    /// `HALL_<TOOL>`, else `[tools] <tool>` in the user config.
+    pub fn configured(self) -> Option<String> {
+        if let Ok(v) = std::env::var(self.env())
+            && !v.trim().is_empty()
+        {
+            return Some(v);
+        }
+        let t = UserConfig::load().ok()?.tools;
+        match self {
+            Tool::Claude => t.claude,
+            Tool::Gh => t.gh,
+            Tool::Qmd => t.qmd,
+            Tool::Cargo => t.cargo,
+        }
+        .filter(|v| !v.trim().is_empty())
+    }
+
+    /// The command to run: [`Tool::configured`], else the bare name, found
+    /// on PATH.
+    pub fn command(self) -> String {
+        self.configured().unwrap_or_else(|| self.name().into())
+    }
 }
 
 impl UserConfig {

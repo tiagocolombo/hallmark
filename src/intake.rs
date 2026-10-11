@@ -79,7 +79,7 @@ pub fn runner_available() -> bool {
     if std::env::var("HALL_RUNNER").is_ok_and(|v| v.starts_with("fake:")) {
         return true;
     }
-    let bin = std::env::var("HALL_CLAUDE").unwrap_or_else(|_| "claude".into());
+    let bin = crate::config::Tool::Claude.command();
     let p = Path::new(&bin);
     if p.is_absolute() || p.components().count() > 1 {
         p.is_file()

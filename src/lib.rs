@@ -36,6 +36,7 @@ pub mod plugin;
 pub mod repo;
 pub mod resume;
 pub mod runner;
+pub mod settings;
 pub mod shipper;
 pub mod stamp;
 pub mod state;

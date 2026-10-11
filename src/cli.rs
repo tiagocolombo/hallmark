@@ -81,6 +81,10 @@ pub enum Cmd {
     Hook(HookArgs),
     /// One-time machine setup.
     Setup(SetupArgs),
+    /// Read and change settings: this repo's .hallmark.toml, or your user
+    /// config (tools, notifications) with --user. `hall config list` shows
+    /// every key with its value and where it comes from.
+    Config(ConfigArgs),
     /// Install the latest hall from main; does nothing when it's current.
     Update(UpdateArgs),
     /// Run the review loop in the background for every registered repo.
@@ -366,6 +370,61 @@ pub struct SetupArgs {
     /// `hall setup`: don't create a phone topic.
     #[arg(long)]
     pub no_notify: bool,
+    /// `hall setup`: ask about every setting first: base branch, gates and
+    /// the shell they run in, how work is shipped, models, budget, tools
+    /// and notifications. Needs a terminal; `hall config` sets the same
+    /// keys without questions.
+    #[arg(long, short = 'i')]
+    pub interactive: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct ConfigArgs {
+    /// What to do; `list` when omitted.
+    #[command(subcommand)]
+    pub action: Option<ConfigAction>,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ConfigAction {
+    /// Every key with its value and where it comes from (default, repo,
+    /// user, env, path).
+    List {
+        /// Only keys under this prefix, such as `budget` or `notify.route`.
+        prefix: Option<String>,
+        /// Your user config instead of the repo's.
+        #[arg(long)]
+        user: bool,
+    },
+    /// One key's value.
+    Get {
+        /// A dotted key, such as `budget.daily`.
+        key: String,
+        /// Your user config instead of the repo's.
+        #[arg(long)]
+        user: bool,
+    },
+    /// Set a key; the file's comments and layout are kept. A list takes
+    /// several values, or one TOML array ('["a", "b"]').
+    Set {
+        /// A dotted key, such as `budget.daily` or `tools.gh`.
+        key: String,
+        /// The value. Put `--` before values that start with `-`.
+        #[arg(required = true, num_args = 1..)]
+        value: Vec<String>,
+        /// Your user config instead of the repo's (`tools.*` is always
+        /// there).
+        #[arg(long)]
+        user: bool,
+    },
+    /// Remove a key, so its default applies again.
+    Unset {
+        /// A dotted key.
+        key: String,
+        /// Your user config instead of the repo's.
+        #[arg(long)]
+        user: bool,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -755,7 +814,8 @@ fn dispatch(cmd: Option<Cmd>, cwd: &std::path::Path, mode: Mode) -> Result<Respo
         Some(Cmd::Help(a)) => meta::help(a, mode),
         Some(Cmd::Schema(a)) => meta::schema(a),
         Some(Cmd::Hook(a)) => crate::hooks::run(a.event, cwd),
-        Some(Cmd::Setup(a)) => setup::setup(cwd, a),
+        Some(Cmd::Setup(a)) => setup::setup(cwd, a, mode),
+        Some(Cmd::Config(a)) => config::config(cwd, a),
         Some(Cmd::Update(a)) => update::update(cwd, a),
         Some(Cmd::Daemon(a)) => daemon::daemon(cwd, a),
         Some(Cmd::Next(a)) => next::next(cwd, a),

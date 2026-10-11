@@ -623,7 +623,7 @@ pub fn apply_sets(text: &str, sets: &[String]) -> Result<(String, Vec<String>)> 
 
 /// Sets `field`, keeping an existing value's comment and spacing; an equal
 /// value is left untouched.
-fn set_value(target: &mut dyn toml_edit::TableLike, field: &str, val: toml_edit::Value) {
+pub(crate) fn set_value(target: &mut dyn toml_edit::TableLike, field: &str, val: toml_edit::Value) {
     match target.get_mut(field).and_then(|i| i.as_value_mut()) {
         Some(old) if old.to_string().trim() == val.to_string().trim() => {}
         Some(old) => {
@@ -639,7 +639,7 @@ fn set_value(target: &mut dyn toml_edit::TableLike, field: &str, val: toml_edit:
 
 /// Removes commented-out hints for `field` (`# daily    = "4M"`) from the
 /// end of the file, where `hall init` leaves them.
-fn drop_hint(doc: &mut toml_edit::DocumentMut, field: &str) {
+pub(crate) fn drop_hint(doc: &mut toml_edit::DocumentMut, field: &str) {
     let Some(trailing) = doc.trailing().as_str().map(String::from) else {
         return;
     };

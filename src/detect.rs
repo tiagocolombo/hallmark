@@ -89,6 +89,34 @@ fn make_like(root: &Path, g: &mut Vec<String>) {
     }
 }
 
+/// Tools that provide a repo's toolchain in a shell of their own: (name,
+/// the prefix that runs a command inside it). Gates run through `sh -c`
+/// from the daemon, outside any shell you have entered, so a repo whose
+/// tools come from one of these needs its gates wrapped.
+pub const WRAPPERS: &[(&str, &str)] = &[
+    ("nix", "nix develop --command"),
+    ("devbox", "devbox run --"),
+    ("mise", "mise exec --"),
+    ("direnv", "direnv exec ."),
+];
+
+/// The wrapper this repo appears to use, by the files it has.
+pub fn env_wrapper(root: &Path) -> Option<(&'static str, &'static str)> {
+    let has = |f: &str| root.join(f).is_file();
+    let name = if has("devbox.json") {
+        "devbox"
+    } else if has("flake.nix") {
+        "nix"
+    } else if has("mise.toml") || has(".mise.toml") || has(".tool-versions") {
+        "mise"
+    } else if has(".envrc") {
+        "direnv"
+    } else {
+        return None;
+    };
+    WRAPPERS.iter().copied().find(|(n, _)| *n == name)
+}
+
 /// The repo-rules files that exist.
 pub fn rules(root: &Path) -> Vec<String> {
     ["CLAUDE.md", "AGENTS.md"]
@@ -130,6 +158,19 @@ mod tests {
         )
         .unwrap();
         assert_eq!(gates(d.path()), vec!["just lint", "just test"]);
+    }
+
+    #[test]
+    fn finds_the_toolchain_shell() {
+        let d = tempfile::tempdir().unwrap();
+        assert_eq!(env_wrapper(d.path()), None);
+        fs::write(d.path().join(".envrc"), "use flake\n").unwrap();
+        assert_eq!(env_wrapper(d.path()).map(|w| w.0), Some("direnv"));
+        fs::write(d.path().join("flake.nix"), "{}").unwrap();
+        assert_eq!(
+            env_wrapper(d.path()),
+            Some(("nix", "nix develop --command"))
+        );
     }
 
     #[test]

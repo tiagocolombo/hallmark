@@ -83,10 +83,10 @@ pub fn doctor(cwd: &Path) -> Result<Response> {
             "gh",
             false,
             "not found; needed for --issue and the default ship command",
-            Some("install gh, or set HALL_GH=/path/to/gh"),
+            Some("install gh, or `hall config set --user tools.gh /path/to/gh`"),
         )),
     }
-    let claude = std::env::var("HALL_CLAUDE").unwrap_or_else(|_| "claude".into());
+    let claude = crate::config::Tool::Claude.command();
     let claude_ok = match claude_version(&claude) {
         Some(v) => {
             checks.push(check("claude", true, v, None));
@@ -97,7 +97,9 @@ pub fn doctor(cwd: &Path) -> Result<Response> {
                 "claude",
                 false,
                 "Claude Code not found",
-                Some("install Claude Code"),
+                Some(
+                    "install Claude Code, or `hall config set --user tools.claude /path/to/claude`",
+                ),
             ));
             false
         }

@@ -273,7 +273,8 @@ pub trait Runner: Send + Sync {
 }
 
 /// The runner chosen by the environment: `HALL_RUNNER=fake:<script>` for
-/// tests, else the real `claude` (`HALL_CLAUDE`, else `claude`).
+/// tests, else the real `claude` (`HALL_CLAUDE`, `[tools] claude`, else
+/// `claude`).
 pub fn from_env() -> Box<dyn Runner> {
     if let Ok(v) = std::env::var("HALL_RUNNER")
         && let Some(script) = v.strip_prefix("fake:")
@@ -281,7 +282,7 @@ pub fn from_env() -> Box<dyn Runner> {
         return Box::new(FakeRunner::new(PathBuf::from(script)));
     }
     Box::new(ClaudeRunner {
-        bin: std::env::var("HALL_CLAUDE").unwrap_or_else(|_| "claude".into()),
+        bin: crate::config::Tool::Claude.command(),
     })
 }
 

@@ -79,6 +79,9 @@ claude
 
 `hall setup` installs the Claude Code plugin, configures the repository,
 starts the review daemon and runs `hall doctor`. It is safe to run again.
+Use `hall setup --interactive` to choose your settings as you go: gates,
+how work ships, models, budgets, tools and notifications. `hall config`
+changes any of them later.
 
 Then just work. Ask Claude for a change (*"retry failed webhook deliveries"*),
 or be explicit with `/hallmark <request>`. Claude opens an **item** with its

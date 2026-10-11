@@ -89,7 +89,7 @@ pub fn update(cwd: &Path, a: UpdateArgs) -> Result<Response> {
     }
 
     let root = install_root(&exe)?;
-    let cargo = std::env::var("HALL_CARGO").unwrap_or_else(|_| "cargo".into());
+    let cargo = crate::config::Tool::Cargo.command();
     // Build into a staging root, so the installed hall is only out of place
     // for the renames in `swap_in`, not for the whole build.
     let staging = root.join(".hall-update");
@@ -247,7 +247,7 @@ fn cargo_install(cargo: &str, cwd: &Path, a: &UpdateArgs, rev: &str, root: &Path
             format!("could not run {cargo}: {e}"),
         )
         .next([
-            "install Rust (https://rustup.rs), or set HALL_CARGO=/path/to/cargo",
+            "install Rust (https://rustup.rs), or `hall config set --user tools.cargo /path/to/cargo`",
             "hall update",
         ])
     })?;
