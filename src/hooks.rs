@@ -399,6 +399,12 @@ impl Ctx {
             text.push_str("\n\n");
             text.push_str(&skill);
         }
+        // Extensions turned on for development sessions (ADR 0038): which
+        // skills, and the command that prints one.
+        if let Some(x) = crate::extensions::session(&self.repo.config.extensions) {
+            text.push_str("\n\n");
+            text.push_str(&x);
+        }
         // The fixer works on an item in the loop on purpose.
         if headless_actor().as_deref() == Some("fixer")
             && let Some(i) = &item

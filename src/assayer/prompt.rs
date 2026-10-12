@@ -145,6 +145,14 @@ pub fn prepare(
         repo_skill.as_ref(),
         &format!("{} at {}", base.name, short(&base.sha)),
     );
+    // Extensions the base's config turns on for the reviewer (ADR 0038):
+    // after the repo's skill, so a replaced method doesn't drop them.
+    if let Some(x) =
+        crate::extensions::prompt(&base.config.extensions, crate::extensions::Role::Reviewer)
+    {
+        p.push('\n');
+        p.push_str(&x);
+    }
     p.push_str("\n---\n\n");
     let b = &base.name;
     let _ = writeln!(

@@ -9,7 +9,7 @@ repository = "https://github.com/tiagocolombo/hallmark"
 readme = "README.md"
 keywords = ["claude", "agents", "code-review", "git", "cli"]
 categories = ["command-line-utilities", "development-tools"]
-include = ["src/**", "plugin/**", "assets/**", "build.rs", "Cargo.toml", "README.md", "LICENSE"]
+include = ["src/**", "plugin/**", "extensions/**", "assets/**", "build.rs", "Cargo.toml", "README.md", "LICENSE"]
 
 [[bin]]
 name = "hall"

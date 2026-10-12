@@ -540,6 +540,13 @@ pub fn prompt(repo: &Repo, item: &Item, events: &[Event], ledger: &Ledger) -> St
         let origin = format!("{} at {}", base.name, short(&base.sha));
         s.push_str(&format!("\n{}\n", crate::skills::section(&skill, &origin)));
     }
+    // Extensions turned on for the fixer (ADR 0038), from the main
+    // checkout's config like every other setting (ADR 0012).
+    if let Some(x) =
+        crate::extensions::prompt(&repo.config.extensions, crate::extensions::Role::Fixer)
+    {
+        s.push_str(&format!("\n{x}"));
+    }
     let gates: Vec<String> = repo.config.gates.iter().map(|g| format!("`{g}`")).collect();
     s.push_str("\n## When you are done\n\n");
     s.push_str(

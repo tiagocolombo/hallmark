@@ -632,3 +632,34 @@ fn session_start_carries_the_repo_hallmark_skill_from_the_base() {
         "{c}"
     );
 }
+
+#[test]
+fn session_start_lists_the_extensions_for_developers() {
+    let env = Env::initialized();
+    let ctx = |session: &str| {
+        let r = env.hook("session-start", &input("session_start", &env.repo, session));
+        r.json["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+    assert!(!ctx("k1").contains("## Extensions"));
+    let r = env.hall(
+        &env.repo,
+        &["extensions", "enable", "mattpocock", "--role", "reviewer"],
+    );
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert!(!ctx("k2").contains("## Extensions"), "not for developers");
+
+    // From the main checkout's config, without a commit.
+    env.hall(
+        &env.repo,
+        &["extensions", "enable", "mattpocock", "--role", "developer"],
+    );
+    let c = ctx("k3");
+    let at = c.find("## Extensions\n").unwrap_or_else(|| panic!("{c}"));
+    assert!(c[at..].contains("`hall extensions show mattpocock <skill>`"));
+    assert!(c[at..].contains("- `tdd`:") && c[at..].contains("- `codebase-design`:"));
+    assert!(c[at..].contains("by Matt Pocock"));
+    assert!(!c.contains("Refuse to give up"), "an index, not the text");
+}

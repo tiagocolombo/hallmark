@@ -111,6 +111,9 @@ pub enum Cmd {
     Statusline,
     /// The Library: learnings from past reviews.
     Library(LibraryArgs),
+    /// Skill packs by other authors, with their credits: which of Hallmark's
+    /// roles follow them here. `hall extensions enable mattpocock` turns one on.
+    Extensions(ExtensionsArgs),
     /// Everything the Claude Code heads-up display shows, in one call.
     Hud(HudArgs),
 }
@@ -686,6 +689,41 @@ pub enum LibraryAction {
     },
 }
 
+#[derive(Debug, Args)]
+pub struct ExtensionsArgs {
+    #[command(subcommand)]
+    pub action: Option<ExtensionsAction>,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ExtensionsAction {
+    /// Every extension, its credits, and the roles it serves here (the default).
+    List,
+    /// Turn an extension on for every role it serves, or only for --role.
+    Enable {
+        /// The extension: `hall extensions` lists them.
+        name: String,
+        /// Only this role (repeatable): planner, developer, reviewer, fixer.
+        #[arg(long = "role", value_name = "ROLE", value_enum)]
+        roles: Vec<crate::extensions::Role>,
+    },
+    /// Turn an extension off for every role, or only for --role.
+    Disable {
+        /// The extension.
+        name: String,
+        /// Only this role (repeatable).
+        #[arg(long = "role", value_name = "ROLE", value_enum)]
+        roles: Vec<crate::extensions::Role>,
+    },
+    /// An extension's credits and license, or one of its skills as agents read it.
+    Show {
+        /// The extension.
+        name: String,
+        /// The skill to print.
+        skill: Option<String>,
+    },
+}
+
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum SetupTarget {
     /// Install the Hallmark plugin for Claude Code (user level).
@@ -829,6 +867,7 @@ fn dispatch(cmd: Option<Cmd>, cwd: &std::path::Path, mode: Mode) -> Result<Respo
         Some(Cmd::Notify(a)) => notify::notify(cwd, a),
         Some(Cmd::Statusline) => notify::statusline(cwd),
         Some(Cmd::Library(a)) => library::library(cwd, a),
+        Some(Cmd::Extensions(a)) => extensions::extensions(cwd, a),
         Some(Cmd::Hud(a)) => hud::hud(cwd, a),
     }
 }

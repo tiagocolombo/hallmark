@@ -1,0 +1,60 @@
+---
+source: tests/extensions.rs
+expression: "scrub(&env, &r.json)"
+---
+{
+  "action": "list",
+  "extensions": [
+    {
+      "author": "Matt Pocock",
+      "commit": "49dd158d1076134a641b33efb035946536778336",
+      "credit": "by Matt Pocock, https://github.com/mattpocock/skills (MIT) at 49dd158",
+      "id": "mattpocock",
+      "license": "MIT",
+      "name": "Matt Pocock's skills",
+      "roles": [
+        {
+          "on": false,
+          "role": "planner",
+          "skills": [
+            "to-tickets"
+          ],
+          "who": "the Front Desk"
+        },
+        {
+          "on": false,
+          "role": "developer",
+          "skills": [
+            "tdd",
+            "diagnosing-bugs",
+            "codebase-design"
+          ],
+          "who": "development sessions"
+        },
+        {
+          "on": false,
+          "role": "reviewer",
+          "skills": [
+            "code-review"
+          ],
+          "who": "the reviewer"
+        },
+        {
+          "on": false,
+          "role": "fixer",
+          "skills": [
+            "tdd",
+            "diagnosing-bugs"
+          ],
+          "who": "the fixer"
+        }
+      ],
+      "source": "https://github.com/mattpocock/skills"
+    }
+  ],
+  "next": [
+    "hall extensions enable mattpocock",
+    "hall extensions show mattpocock"
+  ],
+  "repo_file": "[root]/app/.hallmark.toml"
+}

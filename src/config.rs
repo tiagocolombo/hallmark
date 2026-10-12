@@ -64,6 +64,9 @@ pub struct Config {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub notify: Option<Notify>,
     pub library: Library,
+    /// Skill packs by other authors, and the roles that follow them
+    /// (`hall extensions`).
+    pub extensions: Extensions,
 }
 
 impl Config {
@@ -104,6 +107,7 @@ impl Default for Config {
             parallel: Parallel::default(),
             notify: None,
             library: Library::default(),
+            extensions: Extensions::default(),
         }
     }
 }
@@ -459,6 +463,29 @@ pub enum SearchBackend {
     Builtin,
     /// tobi/qmd, when installed: one collection per repo.
     Qmd,
+}
+
+/// `[extensions]`: for each extension, the roles that follow its skills
+/// (planner, developer, reviewer, fixer). Empty: off. `hall extensions`
+/// lists them with their credits and what each role gets.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct Extensions {
+    /// Matt Pocock's skills (https://github.com/mattpocock/skills, MIT):
+    /// to-tickets for the planner; tdd, diagnosing-bugs and codebase-design
+    /// for the developer; code-review for the reviewer; tdd and
+    /// diagnosing-bugs for the fixer.
+    pub mattpocock: Vec<crate::extensions::Role>,
+}
+
+impl Extensions {
+    /// The roles that follow extension `id`.
+    pub fn roles(&self, id: &str) -> &[crate::extensions::Role] {
+        match id {
+            "mattpocock" => &self.mattpocock,
+            _ => &[],
+        }
+    }
 }
 
 /// `[library]`: the Library of learnings.

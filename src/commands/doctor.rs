@@ -98,6 +98,43 @@ fn skills_check(repo: &Repo) -> Option<Check> {
     Some(check("skills", false, detail, Some(&fix)))
 }
 
+/// The extensions turned on (ADR 0038), with their credit, and for the
+/// reviewer, whether the base branch has the setting yet. None when none is.
+fn extensions_check(repo: &Repo) -> Option<Check> {
+    use crate::extensions::{CATALOG, Role};
+    let base = crate::assayer::base::Base::resolve(repo, &repo.config.base).ok();
+    let reviews = |id: &str| {
+        base.as_ref()
+            .map_or(&repo.config, |b| &b.config)
+            .extensions
+            .roles(id)
+            .contains(&Role::Reviewer)
+    };
+    let mut parts = Vec::new();
+    for e in CATALOG {
+        let mut roles: Vec<String> = repo
+            .config
+            .extensions
+            .roles(e.id)
+            .iter()
+            .filter(|r| **r != Role::Reviewer)
+            .map(|r| r.as_str().to_string())
+            .collect();
+        let here = repo.config.extensions.roles(e.id).contains(&Role::Reviewer);
+        let name = base.as_ref().map_or("the base", |b| b.name.as_str());
+        match (here, reviews(e.id)) {
+            (true, true) => roles.push("reviewer".into()),
+            (true, false) => roles.push(format!("reviewer once .hallmark.toml is on {name}")),
+            (false, true) => roles.push(format!("reviewer until .hallmark.toml is on {name}")),
+            (false, false) => {}
+        }
+        if !roles.is_empty() {
+            parts.push(format!("{} ({}): {}", e.id, e.credit(), roles.join(", ")));
+        }
+    }
+    (!parts.is_empty()).then(|| check("extensions", true, parts.join("; "), None))
+}
+
 pub fn doctor(cwd: &Path) -> Result<Response> {
     let mut checks = Vec::new();
 
@@ -228,6 +265,7 @@ pub fn doctor(cwd: &Path) -> Result<Response> {
                     ));
                 }
                 checks.extend(skills_check(&repo));
+                checks.extend(extensions_check(&repo));
             } else {
                 checks.push(check(
                     "repo",

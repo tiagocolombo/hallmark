@@ -46,6 +46,23 @@ Agents are the main users of `hall`, so every command follows these rules
 | `hall doctor` | Checks the install. Each failed check names the command that fixes it. |
 | `hall update` | Installs the latest `hall` from main, or says it's already current, naming the installed version and the latest release ([ADR 0035](decisions/0035-semver-from-conventional-commits.md)). `--check`, `--source`, `--branch`, `--no-setup` |
 
+## Extensions
+
+Skill packs by other authors, embedded in `hall` unchanged and turned on per
+role ([ADR 0038](decisions/0038-extensions.md)).
+
+| Command | Does |
+| --- | --- |
+| `hall extensions [list]` | Every extension with its credit (author, source, license, the upstream commit) and, for each role it serves, the skills and whether they're on here. Works outside a repo too. |
+| `hall extensions enable\|disable <name>` | Turns an extension on or off for every role it serves, or only `--role planner\|developer\|reviewer\|fixer` (repeatable). Writes `[extensions]` in the main checkout's `.hallmark.toml` and is idempotent. The reviewer reads that file from the base branch: the reply's `note` says so until it's committed there. Refused inside headless runs. |
+| `hall extensions show <name> [<skill>]` | The extension's credits and full license, or one skill as Hallmark's agents read it. Development sessions use it to read a skill when the work calls for it. |
+
+The extensions, and what each role gets:
+
+| Extension | Credit | planner | developer | reviewer | fixer |
+| --- | --- | --- | --- | --- | --- |
+| `mattpocock` | [Matt Pocock's skills](https://github.com/mattpocock/skills) by Matt Pocock, MIT | `to-tickets` | `tdd`, `diagnosing-bugs`, `codebase-design` | `code-review` | `tdd`, `diagnosing-bugs` |
+
 ## Items
 
 | Command | Does |

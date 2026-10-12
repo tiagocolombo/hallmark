@@ -367,6 +367,9 @@ briefing_limit = "6k"
 auto_accept    = []
 retire_after   = "90d"
 
+[extensions]                    # skill packs by other authors (ADR 0038)
+# mattpocock = ["planner", "developer", "reviewer", "fixer"]
+
 # [notify] usually lives in <user data dir>/hallmark/config.toml
 ```
 
@@ -628,6 +631,15 @@ flag in the state file, so it works the same on every OS.
 | Index | rusqlite |
 | Daemon and notifications | service-manager, notify-rust |
 | Releases | dist (cargo-dist), a Nix package |
+
+**Extensions** (ADR 0038) bring in skills by other authors, embedded
+unchanged at a pinned commit with their license and credit, and turned on
+per role in `[extensions]`. The first is Matt Pocock's skills (MIT):
+`to-tickets` for the Front Desk, `tdd`, `diagnosing-bugs` and
+`codebase-design` for development sessions, `code-review` for the reviewer,
+`tdd` and `diagnosing-bugs` for the fixer. Headless roles get the skill in
+full with a note on how it fits and a rule for running without a person;
+sessions get an index and `hall extensions show`.
 
 Two outside tools fit at the edges:
 

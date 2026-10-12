@@ -74,6 +74,9 @@ librarian_model = "haiku"
 # daily = "4M"; per_item = "800k" (weighted by price: a cache read counts a tenth) or "$15"
 # [budget.review] max_usd = 3.0, daily = "2M", effort = "high", timeout = "20m"
 
+[extensions]                # skill packs by other authors: `hall extensions`
+# mattpocock = ["planner", "developer", "reviewer", "fixer"]
+
 [library]
 search         = "builtin"   # or "qmd"
 # collection   = "hallmark-<repo>"   # the qmd collection
@@ -83,6 +86,27 @@ retire_after   = "90d"
 # Learnings live in <git-common-dir>/hallmark/library/, never in the repo.
 # `hall library import` brings in ones committed by earlier versions.
 ```
+
+## Extensions
+
+`[extensions]` lists, for each extension, the roles that follow its skills:
+`planner` (the Front Desk), `developer` (development sessions), `reviewer`
+and `fixer`. Empty or absent means off. `hall extensions enable mattpocock`
+writes it for you, and `hall extensions` shows what each role gets
+([ADR 0038](decisions/0038-extensions.md)).
+
+```toml
+[extensions]
+mattpocock = ["reviewer", "fixer"]   # Matt Pocock's skills, for these roles only
+```
+
+| Key | Extension |
+| --- | --- |
+| `mattpocock` | [Matt Pocock's skills](https://github.com/mattpocock/skills), by Matt Pocock (MIT): `to-tickets` for the planner; `tdd`, `diagnosing-bugs` and `codebase-design` for the developer; `code-review` for the reviewer; `tdd` and `diagnosing-bugs` for the fixer |
+
+The reviewer reads this table from the base branch, like its other settings,
+so commit the change there. The other roles read the main checkout's file
+and follow it at once.
 
 ## Placeholders
 

@@ -289,6 +289,7 @@ pub const SCHEMA_NAMES: &[&str] = &[
     "notify",
     "statusline",
     "library",
+    "extensions",
     "hud",
     "watch",
     "watch-line",
@@ -338,6 +339,7 @@ pub fn schema_value(name: &str) -> Option<serde_json::Value> {
         "notify" => schema_for!(Out<NotifyOut>),
         "statusline" => schema_for!(StatuslineOut),
         "library" => schema_for!(Out<LibraryOut>),
+        "extensions" => schema_for!(Out<super::extensions::ExtensionsOut>),
         "hud" => schema_for!(Out<HudOut>),
         // What the principal engineer returns (plugin/schemas/verdict.json).
         "verdict-input" => schema_for!(crate::findings::ModelVerdict),

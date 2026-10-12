@@ -276,6 +276,15 @@ pub fn edit(
     if value.is_some() && tables == ["budget"] {
         crate::commands::budget::drop_hint(&mut doc, field);
     }
+    // Comments after the last table's keys (`hall init`'s hints at the end
+    // of [budget]) are the document's trailing text: a table added now goes
+    // after them, not between that table and its comments.
+    let trailing = (value.is_some() && tables.first().is_some_and(|t| doc.get(t).is_none()))
+        .then(|| doc.trailing().as_str().unwrap_or_default().to_string())
+        .filter(|t| !t.trim().is_empty());
+    if trailing.is_some() {
+        doc.set_trailing("");
+    }
     let mut target: &mut dyn toml_edit::TableLike = doc.as_table_mut();
     for (i, t) in tables.iter().enumerate() {
         if target.get(t).is_none() {
@@ -295,6 +304,13 @@ pub fn edit(
             target.remove(field);
         }
         Some(v) => crate::commands::budget::set_value(target, field, v),
+    }
+    if let Some(t) = trailing
+        && let Some(table) = doc.get_mut(tables[0]).and_then(|i| i.as_table_mut())
+    {
+        table
+            .decor_mut()
+            .set_prefix(format!("{}\n\n", t.trim_end()));
     }
     // An empty [notify] still replaces the user's channels as a whole.
     if removing
@@ -435,5 +451,30 @@ mod tests {
         let user = edit(Scope::User, "", "tools.gh", Some("/opt/gh".into())).unwrap();
         assert_eq!(lookup(&user, "tools.gh"), Some(Value::from("/opt/gh")));
         assert_eq!(lookup(&user, "tools.qmd"), None);
+    }
+
+    #[test]
+    fn a_new_table_goes_after_the_last_tables_comments() {
+        // `hall init` ends [budget] with commented hints; toml_edit keeps
+        // them as the document's trailing text.
+        let text = crate::config::render_initial("main", &[], crate::config::CaptureMode::Gate);
+        assert!(
+            text.trim_end().ends_with(r#"# per_item = "800k""#),
+            "{text}"
+        );
+        let roles = toml_edit::Value::Array(["reviewer"].into_iter().collect());
+        let out = edit(Scope::Repo, &text, "extensions.mattpocock", Some(roles)).unwrap();
+        let budget = out.find("[budget]").unwrap();
+        let hint = out.find("# per_item").unwrap();
+        let table = out.find("[extensions]").unwrap();
+        assert!(budget < hint && hint < table, "{out}");
+        assert!(
+            out.trim_end()
+                .ends_with("[extensions]\nmattpocock = [\"reviewer\"]"),
+            "{out}"
+        );
+        // Unset leaves the hints where they were.
+        let back = edit(Scope::Repo, &out, "extensions.mattpocock", None).unwrap();
+        assert!(back.find("# per_item").unwrap() > back.find("[budget]").unwrap());
     }
 }

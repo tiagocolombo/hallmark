@@ -117,6 +117,21 @@ the frontmatter. Keep additions concrete, with the severity each problem
 gets: "An N+1 query on a list endpoint is a major." It's development work:
 make it an item. `hall doctor` lists what the base branch has.
 
+## Extensions
+
+Skills by other authors that Hallmark's roles can follow, embedded in `hall`
+and credited: `hall extensions --json` lists them, what each role gets and
+what's on. When the person wants one, such as Matt Pocock's skills:
+
+- `hall extensions enable mattpocock` turns it on for every role it serves;
+  `--role reviewer --role fixer` for only some.
+- `hall extensions disable mattpocock [--role …]` turns roles off.
+- Like other repo settings, it's written to the main checkout's
+  `.hallmark.toml`: tell the person to commit it. The reply's `note` says
+  when the reviewer will follow it.
+- When you mention an extension, name its author: the credit is in the
+  reply.
+
 ## Finish
 
 Run `hall doctor --json`, and follow its `next` for anything still missing. If

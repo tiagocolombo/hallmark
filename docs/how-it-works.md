@@ -114,6 +114,27 @@ explicit to the one that can't be skipped:
    Claude creates the item and carries on. `[capture] mode` sets it to `gate`,
    `ask` or `off`.
 
+## Extensions
+
+A repo can turn on skills by other authors for Hallmark's roles: Matt
+Pocock's skills, for one, with `hall extensions enable mattpocock`
+([ADR 0038](decisions/0038-extensions.md)). Each role gets the skills that
+fit its job:
+
+- **The Front Desk** (planner) reads `to-tickets` while it plans, so it sees
+  the request as tickets with blocking edges; any edge keeps it one item.
+- **Development sessions** (developer) are told which skills are on and when
+  each applies (`tdd`, `diagnosing-bugs`, `codebase-design`), and read one
+  with `hall extensions show` when the work calls for it.
+- **The reviewer** applies `code-review`'s two axes, spec and standards, and
+  its smell baseline, and still answers with a verdict.
+- **The fixer** fixes test-first with `tdd`, and builds a feedback loop with
+  `diagnosing-bugs` when a cause isn't plain.
+
+The text is the author's, unchanged and credited; Hallmark's instructions
+and your repo's rules win where they disagree. `hall extensions` lists every
+extension with its author, source and license.
+
 ## When Hallmark needs you
 
 Only escalations land in Your Office as inbox entries: a question from an
