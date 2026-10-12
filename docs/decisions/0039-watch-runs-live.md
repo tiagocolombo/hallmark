@@ -57,7 +57,11 @@ which only arrived with the result.
   debugging records like `checks/`, kept with the item.
 - `rate_limit_event` lines are normal in a stream. Rate-limit detection
   must read the result and stderr, not every line.
-- If the daemon dies mid-run the stream has no end line; it reads as
-  still going while a live lease that began before it holds the item; once
-  a newer run exists or no such lease is live, it reads as interrupted and
-  can be opened.
+- If the daemon dies mid-run the stream has no end line. The runner holds
+  an exclusive lock on a sidecar `<stamp>-<role>.lock` for as long as it
+  writes the stream (the OS frees it when the process dies). A stream with
+  no end line reads as still going while that lock is held, and as
+  interrupted, so it can be opened, once it is free. This holds for runs
+  that take no item lease (resume, `hall library distill`). A stream with
+  no sidecar (older) falls back to the lease: going while a live lease that
+  began before it holds the item and no newer run exists.

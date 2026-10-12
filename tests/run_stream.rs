@@ -25,6 +25,8 @@ fn names(dir: &Path) -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default();
+    // The writer's `.lock` sidecar is not a run file.
+    n.retain(|f| !f.ends_with(".lock"));
     n.sort();
     n
 }

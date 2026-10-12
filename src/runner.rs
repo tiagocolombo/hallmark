@@ -352,7 +352,7 @@ impl Runner for ClaudeRunner {
 impl ClaudeRunner {
     /// Runs the process, teeing stdout into `stream` as it arrives; hands
     /// the stream back for its end line.
-    fn exec(&self, req: &RunRequest, stream: Option<File>) -> (RunOutcome, Option<File>) {
+    fn exec(&self, req: &RunRequest, stream: Option<Stream>) -> (RunOutcome, Option<Stream>) {
         let start = Instant::now();
         let ms = |s: Instant| s.elapsed().as_millis() as u64;
         let mut cmd = Command::new(&self.bin);
@@ -438,8 +438,8 @@ impl ClaudeRunner {
 /// file.
 fn tee<R: Read + Send + 'static>(
     r: R,
-    mut file: Option<File>,
-) -> std::thread::JoinHandle<(String, Option<File>)> {
+    mut file: Option<Stream>,
+) -> std::thread::JoinHandle<(String, Option<Stream>)> {
     std::thread::spawn(move || {
         let mut r = BufReader::new(r);
         let mut all = Vec::new();
@@ -466,16 +466,60 @@ fn tee<R: Read + Send + 'static>(
 
 /// The run's stream file, opened for appending. None when the run has no
 /// item, or the file can't be opened: the run goes on without a trace.
-fn open_stream(req: &RunRequest) -> Option<File> {
+fn open_stream(req: &RunRequest) -> Option<Stream> {
     let p = req.stream.as_ref()?;
     if let Some(d) = p.parent() {
         let _ = std::fs::create_dir_all(d);
     }
-    OpenOptions::new().create(true).append(true).open(p).ok()
+    let file = OpenOptions::new().create(true).append(true).open(p).ok()?;
+    // The writer holds a lock on a sidecar for as long as it lives; the OS
+    // frees it if the process dies. Readers tell a stream still being
+    // written from an abandoned one by whether they can take it.
+    let lock = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(lock_path(p))
+        .ok()
+        .filter(|l| fs4::FileExt::try_lock(l).is_ok());
+    Some(Stream { file, _lock: lock })
+}
+
+/// `<stamp>-<role>.lock`, next to the stream.
+pub fn lock_path(stream: &Path) -> PathBuf {
+    stream.with_extension("lock")
+}
+
+/// Whether nothing is writing `stream` any more: its writer's lock can be
+/// taken. None when it has no lock (a stream from before locks, or one whose
+/// lock couldn't be made).
+pub fn writer_gone(stream: &Path) -> Option<bool> {
+    let l = OpenOptions::new()
+        .write(true)
+        .open(lock_path(stream))
+        .ok()?;
+    let free = fs4::FileExt::try_lock(&l).is_ok();
+    let _ = fs4::FileExt::unlock(&l);
+    Some(free)
+}
+
+/// A run's stream file and the lock that says its writer is alive.
+struct Stream {
+    file: File,
+    _lock: Option<File>,
+}
+
+impl Write for Stream {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.file.write(buf)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.file.flush()
+    }
 }
 
 /// Appends the `hall_run_end` line, on a line of its own.
-fn end_stream(mut f: File, o: &RunOutcome) {
+fn end_stream(mut f: Stream, o: &RunOutcome) {
     let _ = f.write_all(o.end_text().as_bytes());
 }
 
@@ -725,7 +769,7 @@ impl Runner for FakeRunner {
         };
         let (lead, result_line) = self.print(&step, req);
         let mut raw = String::new();
-        let mut say = |stream: &mut Option<File>, line: &str| {
+        let mut say = |stream: &mut Option<Stream>, line: &str| {
             let line = format!("{line}\n");
             if let Some(f) = stream.as_mut() {
                 let _ = f.write_all(line.as_bytes());
@@ -1407,12 +1451,21 @@ mod tests {
         tail.poll(&stream).unwrap();
         assert!(tail.info.ended);
         assert!(tail.info.resume_command().is_some());
-        // Nothing else: no `.json` result, no stderr when it is empty.
-        let names: Vec<_> = std::fs::read_dir(dir.path().join("runs"))
+        // Nothing else: no `.json` result, no stderr when it is empty; the
+        // writer's lock is free again.
+        let mut names: Vec<_> = std::fs::read_dir(dir.path().join("runs"))
             .unwrap()
-            .map(|e| e.unwrap().file_name())
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
-        assert_eq!(names.len(), 1, "{names:?}");
+        names.sort();
+        assert_eq!(
+            names,
+            [
+                "20261012T215146-reviewer.jsonl",
+                "20261012T215146-reviewer.lock"
+            ]
+        );
+        assert_eq!(writer_gone(&stream), Some(true));
     }
 
     #[cfg(unix)]

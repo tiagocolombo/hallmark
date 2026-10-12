@@ -345,6 +345,38 @@ fn follow_stops_at_the_timeout_while_the_run_is_going() {
 }
 
 #[test]
+fn a_run_without_a_lease_is_going_while_its_writer_holds_the_lock() {
+    // A resume or distill run: nothing leases the item, but the runner
+    // holds the stream's lock for as long as it lives.
+    let env = Env::initialized();
+    let (id, _) = env.new_item("Usage page");
+    let dir = runs_dir(&env, &id);
+    std::fs::create_dir_all(&dir).unwrap();
+    let stream = dir.join("20261012T215146-resume.jsonl");
+    std::fs::write(&stream, running_stream()).unwrap();
+    let lock = std::fs::File::create(hallmark::runner::lock_path(&stream)).unwrap();
+    fs4::FileExt::try_lock(&lock).unwrap();
+    // A newer run exists too: the older one is still going.
+    std::fs::write(dir.join("20261012T215147-librarian.jsonl"), ended_stream()).unwrap();
+
+    let t = hall_lines(&env, &env.repo, &["trace", &id, "--list"]);
+    assert_ne!(t.reply["runs"][0]["interrupted"], true, "{}", t.reply);
+    assert_eq!(t.reply["runs"][0]["ended"], false, "{}", t.reply);
+    assert!(t.reply["runs"][0].get("resume").is_none(), "{}", t.reply);
+    let t = hall_lines(
+        &env,
+        &env.repo,
+        &["trace", &id, "--run", "1", "--follow", "--timeout", "1s"],
+    );
+    assert_eq!(t.reply["stopped"], "timeout", "{}", t.reply);
+
+    // The writer dies: the OS frees the lock.
+    drop(lock);
+    let t = hall_lines(&env, &env.repo, &["trace", &id, "--list"]);
+    assert_eq!(t.reply["runs"][0]["interrupted"], true, "{}", t.reply);
+}
+
+#[test]
 fn a_run_the_daemon_left_without_an_end_reads_as_interrupted() {
     let env = Env::initialized();
     let (id, _) = env.new_item("Usage page");

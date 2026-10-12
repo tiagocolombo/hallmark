@@ -77,8 +77,9 @@ pub struct RunFile {
 }
 
 /// Whether the run at `at` in `runs` is a stream that stopped without its end
-/// line: a newer run exists, or no live lease began before it (the test the
-/// now block uses). Sets `info.interrupted`.
+/// line: its writer's lock is free. A stream with no lock (older) falls back
+/// to: a newer run exists, or no live lease began before it. Sets
+/// `info.interrupted`.
 pub fn mark_interrupted(
     hall: &crate::journal::Hall,
     id: ItemId,
@@ -94,8 +95,15 @@ pub fn mark_interrupted(
     };
     // Run files are stamped to the second.
     let began = run.started + chrono::Duration::seconds(1);
-    info.interrupted =
-        at + 1 < runs.len() || crate::lease::current(hall, id).is_none_or(|l| l.acquired > began);
+    // The writer's lock decides when there is one: a run made without an
+    // item lease (resume, distill) is still going while it is held.
+    info.interrupted = match crate::runner::writer_gone(&run.path) {
+        Some(gone) => gone,
+        None => {
+            at + 1 < runs.len()
+                || crate::lease::current(hall, id).is_none_or(|l| l.acquired > began)
+        }
+    };
 }
 
 /// The runs of an item, oldest first. Prompts and stderr files are not runs.
