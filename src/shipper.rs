@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use crate::commands::record;
 use crate::error::Result;
 use crate::event::{Body, Event, VerdictKind, short};
-use crate::findings::{Ledger, Severity};
+use crate::findings::Ledger;
 use crate::git;
 use crate::item::{HoldKind, Item, ItemId, State};
 use crate::lease;
@@ -38,9 +38,14 @@ pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
     r
 }
 
-/// `items/<id>/pr-body.md`.
+/// `items/<id>/pr-body.md`: the PR description.
 pub fn body_path(repo: &Repo, id: ItemId) -> PathBuf {
     repo.hall.item_dir(id).join("pr-body.md")
+}
+
+/// `items/<id>/review.md`: the review, posted as a PR comment.
+pub fn review_path(repo: &Repo, id: ItemId) -> PathBuf {
+    repo.hall.item_dir(id).join("review.md")
 }
 
 fn ship(repo: &Repo, item: &Item, ctx_holder: &str) -> Result<Progress> {
@@ -162,9 +167,14 @@ fn ship(repo: &Repo, item: &Item, ctx_holder: &str) -> Result<Progress> {
     }
     let item = &repo.hall.load_item(id)?;
     let events = repo.hall.read_item(id)?;
-    let body = pr_body(repo, item, &events);
+    let body = pr_body(item, &events, &commit_subjects(&wt, &base, &head));
     let body_file = body_path(repo, id);
     std::fs::write(&body_file, &body)?;
+    let review_file = review_path(repo, id);
+    std::fs::write(
+        &review_file,
+        review_comment(item, &events, item.pr_url.is_some()),
+    )?;
     let title = pr_title(&wt, &base, &head, &item.title);
     let issue = item
         .issue
@@ -196,6 +206,7 @@ fn ship(repo: &Repo, item: &Item, ctx_holder: &str) -> Result<Progress> {
             ("base", base.as_str()),
             ("title", title.as_str()),
             ("body_file", &crate::paths::display(&body_file)),
+            ("review_file", &crate::paths::display(&review_file)),
             ("issue", &issue),
             ("pr", pr),
             ("pr_head", pr_head),
@@ -267,10 +278,77 @@ fn ship(repo: &Repo, item: &Item, ctx_holder: &str) -> Result<Progress> {
     if !shipped {
         return Ok(Progress::worked(format!("{id} was already {}", item.state)));
     }
+    // The review goes in a comment, never in the description (ADR 0039).
+    let posted = match &pr_url {
+        Some(url) => post_review(repo, &item, url, &base, &wt, &review_file, path.as_deref()),
+        None => String::new(),
+    };
     Ok(Progress::worked(format!(
-        "{id} shipped{}",
+        "{id} shipped{}{posted}",
         pr_url.map(|u| format!(": {u}")).unwrap_or_default()
     )))
+}
+
+/// Runs `review_comment` on the PR. A failure doesn't undo the ship: it is
+/// logged and said in the step, and the review stays in review.md.
+fn post_review(
+    repo: &Repo,
+    item: &Item,
+    pr: &str,
+    base: &str,
+    wt: &Path,
+    review_file: &Path,
+    path: Option<&str>,
+) -> String {
+    let template = repo.config.review_comment.trim();
+    if template.is_empty() {
+        return String::new();
+    }
+    let id = item.id;
+    let shown = crate::paths::display(review_file);
+    // The gh Hallmark is configured with (HALL_GH, `[tools] gh`), never
+    // another one that happens to be on PATH.
+    if crate::gate::words(template).first().map(String::as_str) == Some("gh")
+        && crate::gh::find().is_none()
+    {
+        repo.hall
+            .live(&format!("{id}: gh wasn't found; the review is in {shown}"));
+        return format!("; gh wasn't found, so the review is in {shown}");
+    }
+    let cmd = crate::commands::new::fill_shell(
+        template,
+        &[
+            ("pr", pr),
+            ("review_file", &crate::paths::display(review_file)),
+            ("branch", item.branch.as_str()),
+            ("id", &id.to_string()),
+            ("base", base),
+        ],
+    );
+    let mut env = vec![("HALL_ACTOR", ACTOR)];
+    if let Some(p) = path {
+        env.push(("PATH", p));
+    }
+    let run = crate::fixer::run_command(&cmd, wt, SHIP_TIMEOUT_SECS, &env);
+    let _ = std::fs::write(
+        repo.hall.item_runs(id).join(format!(
+            "{}-review-comment.log",
+            chrono::Utc::now().format("%Y%m%dT%H%M%S")
+        )),
+        format!("$ {cmd}\n{}\n{}", run.stdout, run.stderr),
+    );
+    match run.failure() {
+        None => {
+            repo.hall.live(&format!("{id}: the review is on {pr}"));
+            "; the review is in a comment".into()
+        }
+        Some(why) => {
+            repo.hall.live(&format!(
+                "{id}: the review comment command {why}; the review is in {shown}"
+            ));
+            format!("; the review comment command {why} (the review is in {shown})")
+        }
+    }
 }
 
 /// What the rebase before shipping decided.
@@ -569,27 +647,137 @@ pub fn pr_url(out: &str) -> Option<String> {
         .map(|u| u.to_string())
 }
 
-/// The PR body: the review summary, rounds, the open minors and nits that
-/// ride along, the checks, usage, the issue it closes, and where the full
-/// record is.
 /// The item's title as a conventional commit, typed by the commits it
 /// ships (ADR 0035): the squash merge of the PR is what release tooling
 /// reads. `freshen` just fetched the base, so this reads it locally.
 fn pr_title(wt: &Path, base: &str, head: &str, title: &str) -> String {
-    let remote = format!("refs/remotes/origin/{base}");
-    let from = if git::rev(wt, &remote).is_some() {
-        remote
-    } else {
-        format!("refs/heads/{base}")
-    };
-    let log =
-        git::run(wt, &["log", "--format=%B%x00", &format!("{from}..{head}")]).unwrap_or_default();
+    let log = git::run(
+        wt,
+        &[
+            "log",
+            "--format=%B%x00",
+            &format!("{}..{head}", base_ref(wt, base)),
+        ],
+    )
+    .unwrap_or_default();
     crate::conventional::pr_title(title, log.split('\0').map(str::trim))
 }
 
-pub fn pr_body(_repo: &Repo, item: &Item, events: &[Event]) -> String {
+/// The base as this checkout knows it: `origin/<base>` when fetched.
+fn base_ref(wt: &Path, base: &str) -> String {
+    let remote = format!("refs/remotes/origin/{base}");
+    if git::rev(wt, &remote).is_some() {
+        remote
+    } else {
+        format!("refs/heads/{base}")
+    }
+}
+
+/// The subjects of the commits the PR ships, oldest first, merges left out.
+fn commit_subjects(wt: &Path, base: &str, head: &str) -> Vec<String> {
+    git::run(
+        wt,
+        &[
+            "log",
+            "--reverse",
+            "--no-merges",
+            "--format=%s",
+            &format!("{}..{head}", base_ref(wt, base)),
+        ],
+    )
+    .unwrap_or_default()
+    .lines()
+    .map(str::trim)
+    .filter(|l| !l.is_empty())
+    .map(String::from)
+    .collect()
+}
+
+/// Marks Hallmark's review comment on a PR: the Delivery office never reads
+/// it as feedback.
+pub const REVIEW_MARK: &str = "<!-- hallmark:review -->";
+
+/// The PR description (ADR 0039): What, Why and How, and the issue it
+/// closes. No review: that goes in a comment ([`review_comment`]).
+///
+/// - What: the author's summary (`propose-ready --summary`), else the title.
+/// - Why: `propose-ready --why`, else the request, else the issue.
+/// - How: `propose-ready --how`, else the commits.
+pub fn pr_body(item: &Item, events: &[Event], commits: &[String]) -> String {
+    let proposed = events.iter().rev().find_map(|e| match &e.body {
+        Body::ProposedReady { why, how, .. } => Some((why.clone(), how.clone())),
+        _ => None,
+    });
+    let (why, how) = proposed.unwrap_or_default();
+    let request = events.iter().find_map(|e| match &e.body {
+        Body::Created { request, .. } => request.clone(),
+        _ => None,
+    });
+    let mut s = String::new();
+    let what = item
+        .summary
+        .as_deref()
+        .filter(|t| !t.trim().is_empty())
+        .unwrap_or(&item.title);
+    let _ = writeln!(s, "## What\n\n{}\n", what.trim());
+
+    let why = why
+        .or(request)
+        .filter(|w| !w.trim().is_empty())
+        .or_else(|| item.issue.as_ref().map(|i| format!("Issue #{}.", i.number)))
+        .unwrap_or_else(|| item.title.clone());
+    let _ = writeln!(s, "## Why\n\n{}\n", why.trim());
+
+    let _ = writeln!(s, "## How\n");
+    match how.filter(|h| !h.trim().is_empty()) {
+        Some(h) => {
+            let _ = writeln!(s, "{}", h.trim());
+        }
+        None if !commits.is_empty() => {
+            for c in commits {
+                let _ = writeln!(s, "- {c}");
+            }
+        }
+        None => {
+            let _ = writeln!(s, "See the commits.");
+        }
+    }
+    if let Some(i) = &item.issue {
+        let _ = writeln!(s, "\nCloses #{}", i.number);
+    }
+    let _ = writeln!(
+        s,
+        "\n---\n\nReviewed and hallmarked as {}: the review is in the comments.",
+        item.id
+    );
+    s
+}
+
+/// The review as a PR comment (ADR 0039): the verdict, every finding and
+/// how it was settled, the checks and the usage. On an update of a PR
+/// already shipped (`update: true`), it covers what happened since: why
+/// the item came back, and the findings raised or settled since.
+pub fn review_comment(item: &Item, events: &[Event], update: bool) -> String {
     let id = item.id;
     let mut s = String::new();
+    // Where the previous ship was, for an update.
+    let last_ship = update
+        .then(|| {
+            events
+                .iter()
+                .rposition(|e| matches!(e.body, Body::Shipped { .. }))
+        })
+        .flatten();
+    let shipped_round = last_ship.map_or(0, |i| {
+        events[..i]
+            .iter()
+            .filter_map(|e| match &e.body {
+                Body::Verdict { round, .. } => Some(*round),
+                _ => None,
+            })
+            .max()
+            .unwrap_or(0)
+    });
     let approval = events.iter().rev().find_map(|e| match &e.body {
         Body::Verdict {
             verdict: VerdictKind::Approve,
@@ -600,10 +788,17 @@ pub fn pr_body(_repo: &Repo, item: &Item, events: &[Event]) -> String {
         } => Some((summary.clone(), reviewer.clone(), *round)),
         _ => None,
     });
-    if let Some(sum) = &item.summary {
-        let _ = writeln!(s, "{}\n", sum.trim());
-    }
-    let _ = writeln!(s, "## Review\n");
+
+    let _ = writeln!(s, "{REVIEW_MARK}");
+    let _ = writeln!(
+        s,
+        "## Hallmark review{}: approved\n",
+        if last_ship.is_some() {
+            " of this update"
+        } else {
+            ""
+        }
+    );
     match &approval {
         Some((summary, reviewer, round)) => {
             if let Some(t) = summary {
@@ -640,47 +835,96 @@ pub fn pr_body(_repo: &Repo, item: &Item, events: &[Event]) -> String {
     }) {
         let _ = writeln!(
             s,
-            "Rebased onto `{onto}` before shipping: the patch is identical to the approved `{}` \
+            "\nRebased onto `{onto}` before shipping: the patch is identical to the approved `{}` \
              and the gates passed again.",
             short(&from)
         );
     }
-    let ledger = Ledger::from_events(events);
-    let settled: Vec<String> = ledger
-        .findings
-        .iter()
-        .filter(|t| t.status != crate::findings::Status::Open)
-        .map(|t| t.finding.id.clone())
-        .collect();
-    if !settled.is_empty() {
-        let _ = writeln!(s, "Findings settled on the way: {}.", settled.join(", "));
-    }
-    let riders: Vec<_> = crate::fixer::sorted_open(&ledger)
-        .into_iter()
-        .filter(|t| matches!(t.finding.severity, Severity::Minor | Severity::Nit))
-        .collect();
-    if !riders.is_empty() {
-        let _ = writeln!(s, "\n### Still open (minor and nit)\n");
-        for t in riders {
-            let f = &t.finding;
-            let _ = writeln!(
-                s,
-                "- **{}** {} · {} · `{}:{}` · {}",
-                f.id,
-                f.severity.as_str(),
-                f.lens.as_str(),
-                f.file,
-                f.line,
-                f.title.trim()
-            );
-            if !f.fix.trim().is_empty() {
-                let _ = writeln!(s, "  - Suggested: {}", crate::output::clip(&f.fix, 200));
-            }
-            if let Some(d) = &t.dispute {
-                let _ = writeln!(s, "  - Disputed: {}", crate::output::clip(d, 200));
+
+    if let Some(i) = last_ship {
+        let why = reasons(&events[i + 1..]);
+        if !why.is_empty() {
+            let _ = writeln!(s, "\n### Why it was reviewed again\n");
+            for w in why {
+                let _ = writeln!(s, "{w}");
             }
         }
     }
+
+    let ledger = Ledger::from_events(events);
+    let mut tracked: Vec<_> = ledger
+        .findings
+        .iter()
+        .filter(|t| {
+            t.finding.round > shipped_round
+                || t.settled_round.is_some_and(|r| r > shipped_round)
+                || t.status == crate::findings::Status::Open
+        })
+        .collect();
+    tracked.sort_by_key(|t| {
+        (
+            t.status != crate::findings::Status::Open,
+            t.finding.severity,
+        )
+    });
+    let _ = writeln!(s, "\n### Findings\n");
+    if tracked.is_empty() {
+        let _ = writeln!(s, "None.");
+    }
+    for t in tracked {
+        let f = &t.finding;
+        let _ = writeln!(
+            s,
+            "- **{}** {} · {} · `{}:{}` · {}",
+            f.id,
+            f.severity.as_str(),
+            f.lens.as_str(),
+            f.file,
+            f.line,
+            f.title.trim()
+        );
+        let note = t
+            .note
+            .as_deref()
+            .filter(|n| !n.trim().is_empty())
+            .map(|n| format!(" The reviewer: {}", crate::output::clip(n, 200)))
+            .unwrap_or_default();
+        let outcome = match t.status {
+            crate::findings::Status::Fixed => format!(
+                "Fixed{}{}.{note}",
+                t.claimed_by
+                    .as_deref()
+                    .map(|c| format!(" in `{}`", short(c)))
+                    .unwrap_or_default(),
+                t.settled_round
+                    .map(|r| format!(", confirmed in round {r}"))
+                    .unwrap_or_default()
+            ),
+            crate::findings::Status::Withdrawn => format!(
+                "Withdrawn{}.{note}",
+                t.settled_round
+                    .map(|r| format!(" in round {r}"))
+                    .unwrap_or_default()
+            ),
+            crate::findings::Status::Open => {
+                let fix = if f.fix.trim().is_empty() {
+                    String::new()
+                } else {
+                    format!(" Suggested: {}", crate::output::clip(&f.fix, 200))
+                };
+                format!("Still open ({} rides along).{fix}", f.severity.as_str())
+            }
+        };
+        let _ = writeln!(s, "  - {outcome}");
+        if let Some(d) = &t.dispute {
+            let _ = writeln!(
+                s,
+                "  - Disputed by the fixer: {}",
+                crate::output::clip(d, 200)
+            );
+        }
+    }
+
     let checks = events.iter().rev().find_map(|e| match &e.body {
         Body::Checks {
             passed: true, runs, ..
@@ -726,14 +970,58 @@ pub fn pr_body(_repo: &Repo, item: &Item, events: &[Event]) -> String {
             by.join(", ")
         );
     }
-    if let Some(i) = &item.issue {
-        let _ = writeln!(s, "\nCloses #{}", i.number);
-    }
     let _ = writeln!(
         s,
         "\n---\n\nThe full record stays local: `hall export {id}`."
     );
     s
+}
+
+/// Why a shipped item came back through review, from the events since it
+/// shipped: the PR comments it addressed, red CI, a conflict, or, when none
+/// of those, a person reopening it.
+fn reasons(events: &[Event]) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut reopened = false;
+    for e in events {
+        match &e.body {
+            Body::FeedbackRequested { comments, .. } => {
+                out.push(format!(
+                    "- It addressed {} PR comment{}:",
+                    comments.len(),
+                    if comments.len() == 1 { "" } else { "s" }
+                ));
+                for c in comments {
+                    let at = match (&c.path, c.line) {
+                        (Some(p), Some(l)) => format!(" on `{p}:{l}`"),
+                        (Some(p), None) => format!(" on `{p}`"),
+                        _ => String::new(),
+                    };
+                    out.push(format!(
+                        "  - @{}{at}: {}",
+                        c.author,
+                        crate::output::clip(&c.body, 160)
+                    ));
+                }
+            }
+            Body::CiFixRequested { failing, .. } => {
+                let names: Vec<String> = failing.iter().map(|f| format!("`{}`", f.name)).collect();
+                out.push(format!("- It fixed failing CI: {}.", names.join(", ")));
+            }
+            Body::RebaseRequested { onto, reason, .. } => {
+                out.push(format!(
+                    "- It was rebased onto `{onto}`: {}.",
+                    reason.trim().trim_end_matches('.')
+                ));
+            }
+            Body::Reopened { .. } => reopened = true,
+            _ => {}
+        }
+    }
+    if out.is_empty() && reopened {
+        out.push("- It was reopened for more work.".into());
+    }
+    out
 }
 
 #[cfg(test)]

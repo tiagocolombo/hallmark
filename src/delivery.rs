@@ -1219,10 +1219,11 @@ fn ci_next(
     )
 }
 
-/// Hallmark's own update comment (the shipper posts the PR body): never
-/// feedback.
+/// Hallmark's own review comment (the shipper posts it): never feedback.
+/// Older ones carry only the record line.
 fn is_ours(body: &str) -> bool {
-    body.contains("The full record stays local: `hall export")
+    body.contains(crate::shipper::REVIEW_MARK)
+        || body.contains("The full record stays local: `hall export")
 }
 
 /// Comments and reviews on the PR since the last ones handled (or since it

@@ -190,11 +190,34 @@ fn a_rebased_item_updates_its_pr_under_a_lease() {
         calls.contains(&format!("pr edit {URL} --base main")),
         "{calls}"
     );
+    // The update's review goes in a new comment; the description stays.
     assert!(
-        calls.contains(&format!("pr comment {URL} --body-file")),
+        calls.contains(&format!("pr comment {URL} --body-file")) && calls.contains("review.md"),
         "{calls}"
     );
+    assert!(
+        !calls.contains("pr-body.md"),
+        "the description isn't posted: {calls}"
+    );
     assert!(!calls.contains("pr create"), "{calls}");
+    // One review comment when the PR opened, one for the update.
+    assert_eq!(calls.matches("pr comment").count(), 2, "{calls}");
+    let review = std::fs::read_to_string(
+        env.repo
+            .join(".git/hallmark/items")
+            .join(&id)
+            .join("review.md"),
+    )
+    .unwrap();
+    assert!(
+        review.starts_with("<!-- hallmark:review -->\n## Hallmark review of this update: approved"),
+        "{review}"
+    );
+    assert!(
+        review.contains("### Why it was reviewed again\n\n- It was reopened for more work."),
+        "{review}"
+    );
+    assert!(review.contains("in round 2"), "{review}");
 }
 
 #[test]
