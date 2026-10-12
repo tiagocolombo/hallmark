@@ -126,33 +126,35 @@ Restart Claude Code so it loads the plugin.
 ### `hall update`
 
 ```sh
-hall update                 # install the latest release, unless this hall is it
-hall update --check         # only say whether a newer release exists
-hall update --branch main   # follow every commit on main instead
+hall update            # install the latest main, unless this hall is it
+hall update --check    # only say whether an update is available
 ```
 
-Releases are `vX.Y.Z` tags, versioned by semver from conventional commits
-([ADR 0035](decisions/0035-semver-from-conventional-commits.md)).
 `hall --version` shows the version and the commit this `hall` was built from.
-`hall update` reads the repository's tags with `git ls-remote`. When the
-highest release is newer than this `hall`, it runs `cargo install --git … --tag
-vX.Y.Z --locked --force` into the `bin` directory this `hall` runs from. When
-it isn't, it changes nothing and says so. Then it has the new `hall` rewrite
-the Claude Code plugin (if you installed it) and restarts a running daemon on
-the new binary. Restart Claude Code afterwards.
+`hall update` asks the repository for the latest commit on `main` with
+`git ls-remote`, and when that isn't the commit this `hall` was built from, it
+runs `cargo install --git … --rev <that commit> --locked --force` into the
+`bin` directory this `hall` runs from. When the commits match, it changes
+nothing and says so. Then it has the new `hall` rewrite the Claude Code plugin
+(if you installed it) and restarts a running daemon on the new binary.
+Restart Claude Code afterwards.
 
-`hall update` remembers what it found. When a newer release exists,
-`hall doctor` and the start of each Claude Code session say so. A session
-starts a background check at most once a day; `HALL_UPDATE_CHECK=off` turns
-that off.
+Main carries the releases: each one is a `vX.Y.Z` tag on it, versioned by
+semver from conventional commits
+([ADR 0035](decisions/0035-semver-from-conventional-commits.md)). `hall update`
+reads the tags too, and names your version, the latest release and the version
+it installed. It remembers the latest release, and when it is newer than your
+`hall`, `hall doctor` and the start of each Claude Code session say so. A
+session starts a background check at most once a day; `HALL_UPDATE_CHECK=off`
+turns that off.
 
 It needs `cargo` (or `tools.cargo` in your user config, or `HALL_CARGO`) and git access to the repository: git and
 cargo both use your git credentials, and never prompt for them. `--source`
 (or `HALL_UPDATE_SOURCE`) installs from another repository, such as a fork or
-an SSH URL. `--branch` installs the latest commit of a branch instead of a
-release, and a repository with no release yet is followed on `main`. A `hall`
-installed with Nix, or run from a build directory, is left to the tool that
-installed it.
+an SSH URL, and `--branch` from another branch. A `hall` installed with Nix,
+or run from a build directory, is left to the tool that installed it. A `hall`
+built without git (a crate tarball, the Nix package) doesn't know its commit,
+so `hall update` always installs.
 
 ### By hand
 

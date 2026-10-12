@@ -85,7 +85,7 @@ pub enum Cmd {
     /// config (tools, notifications) with --user. `hall config list` shows
     /// every key with its value and where it comes from.
     Config(ConfigArgs),
-    /// Install the latest hall release; does nothing when it's current.
+    /// Install the latest hall from main; does nothing when it's current.
     Update(UpdateArgs),
     /// Run the review loop in the background for every registered repo.
     Daemon(DaemonArgs),
@@ -435,10 +435,9 @@ pub struct UpdateArgs {
     /// The git repository to install from.
     #[arg(long, env = "HALL_UPDATE_SOURCE", default_value = commands::update::SOURCE)]
     pub source: String,
-    /// Install the latest commit on this branch instead of the latest
-    /// release (a `vX.Y.Z` tag).
-    #[arg(long)]
-    pub branch: Option<String>,
+    /// The branch whose latest commit is installed.
+    #[arg(long, default_value = "main")]
+    pub branch: String,
     /// Don't refresh the Claude Code plugin or restart the daemon afterwards.
     #[arg(long)]
     pub no_setup: bool,

@@ -7,7 +7,7 @@ Status: Accepted, 2026-10-12
 `Cargo.toml` has said `0.1.0` since the first commit. No tag was ever pushed,
 so the release workflow (ADR 0023) never ran. `hall update` compared commits
 on `main`, so it could only say "a different commit", never which version you
-had or which one was new.
+had or which one was new, and nothing told you an update existed.
 
 The repository asks for conventional commits (CLAUDE.md, CONTRIBUTING.md),
 but PRs are squash-merged, and the shipper titled PRs with the item's title
@@ -51,22 +51,25 @@ but PRs are squash-merged, and the shipper titled PRs with the item's title
   doesn't run until the tag is pushed again by someone else. Repository
   settings must also allow GitHub Actions to create pull requests.
 
-### `hall update` follows releases
+### `hall update` follows main, and names versions
 
-- **By default it installs the latest release:** the highest `vX.Y.Z` tag of
-  the source, read with `git ls-remote --tags`, with pre-releases left out.
-  It runs `cargo install --git <source> --tag vX.Y.Z`. The installed hall is
-  current when its version is that release's or newer: a build of `main`
-  after `v0.3.0` says `0.3.0` until the next release PR merges.
-- **`--branch <b>`** follows a branch's latest commit, as `hall update` did
-  before. A source with no release yet falls back to `main`.
-- **The reply names versions.** `installed_version` and `latest_version`,
-  plus `tag`, beside the commits. `branch` is null when following releases.
+- **It installs the latest commit on `main`**, as before (`--branch` picks
+  another branch). Main carries the releases: every release is a `vX.Y.Z`
+  tag on it, and the release PR that bumps `Cargo.toml` merges into it, so
+  following main never misses one.
+- **The reply names versions.** Beside the commits, `installed_version` is
+  this hall's version, `latest_version` and `tag` are the highest release
+  tagged in the source (read with `git ls-remote --tags`, pre-releases left
+  out), and after an update `new_version` is what the new hall reports.
+  Tags that can't be read don't stop the update; the version fields are
+  then null.
 - **A newer release is suggested.** Every release lookup is saved to
   `<user dir>/update.json`. The SessionStart hook and `hall doctor` read it
-  without touching the network, and say "hall X is available (this is Y):
-  run `hall update`". `hall doctor` adds `hall update` to `next`. Being
-  behind doesn't count as unhealthy.
+  without touching the network and, when the release is newer than this
+  hall, say "hall X is available (this is Y): run `hall update`". `hall
+  doctor` adds `hall update` to `next`. Being behind doesn't count as
+  unhealthy. Commits on main without a new release aren't announced; `hall
+  update --check` still reports them.
 - **Freshness.** When the saved lookup is a day old, the SessionStart hook
   starts a detached `hall update --check` to refresh it, so the next session
   knows. It marks the lookup as checked first, so an offline machine tries
@@ -77,9 +80,8 @@ but PRs are squash-merged, and the shipper titled PRs with the item's title
 
 - Version numbers move with every release PR merged, and `hall --version`,
   `hall update` and the GitHub Release agree.
-- Following releases is slower than following `main`: work reaches `hall
-  update` users only when the release PR merges. `--branch main` is still
-  there for people who want every commit.
+- `hall update` users get every commit on main, released or not. The
+  version they see is the last release until the next release PR merges.
 - Non-conventional commits already on `main` count as patch-level changes
   in the first release PR's changelog.
 - One more secret to keep (`RELEASE_PLZ_TOKEN`), and its expiry, if releases

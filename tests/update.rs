@@ -169,9 +169,10 @@ fn check_reports_a_newer_release_and_remembers_it() {
     assert_eq!(r.json["status"], "available");
     assert_eq!(r.json["latest_version"], "99.1.0");
     assert_eq!(r.json["tag"], "v99.1.0");
+    // Main is what installs; the release names its version.
     assert_eq!(r.json["latest"], sha.as_str());
+    assert_eq!(r.json["branch"], "main");
     assert_eq!(r.json["installed_version"], env!("CARGO_PKG_VERSION"));
-    assert!(r.json["branch"].is_null(), "{}", r.stdout);
     assert_eq!(cargo_log(&env), None, "--check must not install");
 
     // Remembered, so doctor says so without asking the source again.
@@ -204,63 +205,37 @@ fn check_reports_a_newer_release_and_remembers_it() {
 }
 
 #[test]
-fn installs_the_latest_release_by_its_tag() {
-    let env = Env::new();
-    let (src, _) = source(&env);
-    let sha = tag(&src, "v99.0.0");
-    let exe = installed(&env);
-    let cargo = fake_cargo(&env, &exe, 0);
-    let r = update(&env, &exe, &cargo, &["--source", &src, "--no-setup"]);
-    assert_eq!(r.code, 0, "{}", r.stdout);
-    assert_eq!(r.json["status"], "updated");
-    let log = cargo_log(&env).expect("cargo ran");
-    assert!(
-        log.contains(&format!(
-            "install --locked --force --git {src} --tag v99.0.0"
-        )),
-        "{log}"
-    );
-    assert!(log.contains(&format!("HALL_BUILD_COMMIT={sha}")), "{log}");
-    assert_eq!(
-        r.json["steps"][0]["command"],
-        format!("cargo install --git {src} --tag v99.0.0")
-    );
-}
-
-#[test]
-fn an_older_release_is_not_an_update() {
-    let env = Env::new();
-    let (src, _) = source(&env);
-    tag(&src, "v0.0.1");
-    let exe = installed(&env);
-    let cargo = fake_cargo(&env, &exe, 0);
-    let r = update(&env, &exe, &cargo, &["--source", &src]);
-    assert_eq!(r.code, 0, "{}", r.stdout);
-    assert_eq!(r.json["status"], "up_to_date");
-    assert_eq!(r.json["latest_version"], "0.0.1");
-    assert_eq!(r.json["next"], serde_json::json!(["hall doctor"]));
-    assert_eq!(cargo_log(&env), None, "nothing to install");
-}
-
-#[test]
-fn branch_follows_its_latest_commit_even_with_releases() {
+fn an_update_installs_main_and_says_which_version_it_got() {
     let env = Env::new();
     let (src, sha) = source(&env);
     tag(&src, "v99.0.0");
     let exe = installed(&env);
     let cargo = fake_cargo(&env, &exe, 0);
-    let r = update(
-        &env,
-        &exe,
-        &cargo,
-        &["--check", "--source", &src, "--branch", "main"],
-    );
+    let r = update(&env, &exe, &cargo, &["--source", &src, "--no-setup"]);
     assert_eq!(r.code, 0, "{}", r.stdout);
-    assert_eq!(r.json["branch"], "main");
-    assert!(r.json["tag"].is_null(), "{}", r.stdout);
+    assert_eq!(r.json["status"], "updated");
+    assert_eq!(r.json["latest_version"], "99.0.0");
+    let log = cargo_log(&env).expect("cargo ran");
+    assert!(
+        log.contains(&format!("install --locked --force --git {src} --rev {sha}")),
+        "{log}"
+    );
+    // The new hall (here a copy of this one) is asked for its version.
+    assert_eq!(r.json["new_version"], env!("CARGO_PKG_VERSION"));
+}
+
+#[test]
+fn a_source_without_releases_still_updates() {
+    let env = Env::new();
+    let (src, sha) = source(&env);
+    let exe = installed(&env);
+    let cargo = fake_cargo(&env, &exe, 0);
+    let r = update(&env, &exe, &cargo, &["--check", "--source", &src]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(r.json["status"], "available");
     assert_eq!(r.json["latest"], sha.as_str());
-    let next = r.json["next"][0].as_str().unwrap();
-    assert!(next.ends_with("--branch main"), "{next}");
+    assert!(r.json["latest_version"].is_null(), "{}", r.stdout);
+    assert!(r.json["tag"].is_null(), "{}", r.stdout);
 }
 
 #[test]
@@ -470,24 +445,17 @@ fn an_unreachable_source_is_an_error() {
     let exe = installed(&env);
     let cargo = fake_cargo(&env, &exe, 0);
     let missing = p(&env.root.join("missing.git"));
-    for (args, says) in [
-        (vec![], "could not read the releases of"),
-        (vec!["--branch", "main"], "could not read main from"),
-    ] {
-        let mut args = args;
-        args.extend(["--source", &missing]);
-        let r = update(&env, &exe, &cargo, &args);
-        assert_eq!(r.code, 1, "{}", r.stdout);
-        assert_eq!(r.json["error"]["code"], "COMMAND_FAILED");
-        assert!(
-            r.json["error"]["message"]
-                .as_str()
-                .unwrap()
-                .starts_with(says),
-            "{}",
-            r.stdout
-        );
-    }
+    let r = update(&env, &exe, &cargo, &["--source", &missing]);
+    assert_eq!(r.code, 1, "{}", r.stdout);
+    assert_eq!(r.json["error"]["code"], "COMMAND_FAILED");
+    assert!(
+        r.json["error"]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("could not read main from"),
+        "{}",
+        r.stdout
+    );
 }
 
 #[test]
