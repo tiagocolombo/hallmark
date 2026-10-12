@@ -420,6 +420,14 @@ impl Ctx {
             text.push(' ');
             text.push_str(&note);
         }
+        // A newer hall is out (as last seen; the lookup runs detached).
+        if headless_actor().is_none() {
+            if let Some(note) = crate::commands::update::notice() {
+                text.push(' ');
+                text.push_str(&note);
+            }
+            crate::commands::update::check_in_background();
+        }
         Ok(Some(context(HookEvent::SessionStart, text)))
     }
 

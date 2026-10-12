@@ -106,6 +106,45 @@ fn ship_reports_the_pr_url_and_closes_the_issue() {
     assert!(body.contains("Closes #212"), "{body}");
 }
 
+/// Ships an item whose commit says `message` and returns the PR title the
+/// ship command was given.
+#[cfg(unix)]
+fn shipped_title(message: Option<&str>, title: &str) -> String {
+    let env = Env::initialized();
+    bare_remote(&env);
+    let out = env.root.join("title.txt");
+    set_config(
+        &env,
+        "ship",
+        &toml(&format!("printf '%s' {{title}} > '{}'", p(&out))),
+    );
+    hallmarked_item_with(&env, title, message);
+    assert_eq!(ship_pass(&env)["progress"], "worked");
+    std::fs::read_to_string(out).unwrap()
+}
+
+#[cfg(unix)]
+#[test]
+fn the_pr_title_takes_the_conventional_type_of_its_commits() {
+    assert_eq!(
+        shipped_title(Some("feat(retry): retry webhooks"), "Retry webhooks"),
+        "feat: Retry webhooks"
+    );
+    assert_eq!(
+        shipped_title(
+            Some("fix: drop the old queue\n\nBREAKING CHANGE: no more v1"),
+            "Drop v1"
+        ),
+        "fix!: Drop v1"
+    );
+    // A title that is already conventional, and commits that aren't.
+    assert_eq!(
+        shipped_title(Some("feat: x"), "docs: say so"),
+        "docs: say so"
+    );
+    assert_eq!(shipped_title(None, "Retry webhooks"), "Retry webhooks");
+}
+
 #[test]
 fn a_branch_that_moved_past_the_hallmark_is_held() {
     let env = Env::initialized();

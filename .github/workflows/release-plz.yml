@@ -1,0 +1,65 @@
+name: Release-plz
+
+# Versions come from conventional commits (ADR 0035). On every push to main,
+# release-plz opens or refreshes the release PR (the next version, with its
+# changelog); merging that PR tags vX.Y.Z, and the tag runs release.yml.
+#
+# A tag pushed with the default GITHUB_TOKEN doesn't start other workflows,
+# so the release job pushes it with RELEASE_PLZ_TOKEN: a fine-grained token
+# with contents and pull-requests write on this repository. Without it the
+# tag is still made but release.yml doesn't run: delete the tag on GitHub
+# and push it again from a checkout.
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Tag a merged release PR
+    if: ${{ github.repository_owner == 'tiagocolombo' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: rustup toolchain install stable --profile minimal
+      - run: rustup default stable
+      - uses: release-plz/action@f393a7b38aca9d9b4c58447b291dbac963901df6 # v0.5.141
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
+
+  release-pr:
+    name: Open the release PR
+    if: ${{ github.repository_owner == 'tiagocolombo' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: release-plz-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: rustup toolchain install stable --profile minimal
+      - run: rustup default stable
+      - uses: release-plz/action@f393a7b38aca9d9b4c58447b291dbac963901df6 # v0.5.141
+        with:
+          command: release-pr
+        env:
+          # The release PR's own CI runs only when a token other than
+          # GITHUB_TOKEN opens it.
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}

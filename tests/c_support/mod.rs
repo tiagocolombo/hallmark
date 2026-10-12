@@ -116,8 +116,17 @@ pub fn counts(blocker: u32, major: u32, minor: u32, nit: u32) -> Counts {
 
 /// A new item, committed and sent to review: (id, worktree, sha).
 pub fn ready_item(env: &Env, title: &str) -> (String, PathBuf, String) {
+    ready_item_with(env, title, None)
+}
+
+/// [`ready_item`], its commit with `message` instead of `change retry.rs`.
+pub fn ready_item_with(env: &Env, title: &str, message: Option<&str>) -> (String, PathBuf, String) {
     let (id, wt) = env.new_item(title);
-    let sha = commit_file(&wt, "retry.rs", "fn retry() {\n    deliver();\n}\n");
+    let mut sha = commit_file(&wt, "retry.rs", "fn retry() {\n    deliver();\n}\n");
+    if let Some(m) = message {
+        git(&wt, &["commit", "-q", "--amend", "-m", m]);
+        sha = git(&wt, &["rev-parse", "HEAD"]);
+    }
     let r = env.hall(&wt, &["ready"]);
     assert_eq!(r.code, 0, "{}", r.stdout);
     (id, wt, sha)
@@ -233,7 +242,16 @@ pub fn approve(
 
 /// A hallmarked item after one approved round, with a minor riding along.
 pub fn hallmarked_item(env: &Env, title: &str) -> (String, PathBuf, String) {
-    let (id, wt, _) = ready_item(env, title);
+    hallmarked_item_with(env, title, None)
+}
+
+/// [`hallmarked_item`], its commit with `message`.
+pub fn hallmarked_item_with(
+    env: &Env,
+    title: &str,
+    message: Option<&str>,
+) -> (String, PathBuf, String) {
+    let (id, wt, _) = ready_item_with(env, title, message);
     let sha = git(&wt, &["rev-parse", "HEAD"]);
     append(env, &id, "assayer", checks(&sha, 1, true, vec![]));
     append(

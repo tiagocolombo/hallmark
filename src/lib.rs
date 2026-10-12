@@ -11,6 +11,7 @@ pub mod ci;
 pub mod cli;
 pub mod commands;
 pub mod config;
+pub mod conventional;
 pub mod daemon;
 pub mod delivery;
 pub mod detect;

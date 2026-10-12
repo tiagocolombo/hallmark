@@ -764,7 +764,7 @@ expression: v
       "usage": "hall config unset [OPTIONS] <KEY>"
     },
     {
-      "about": "Install the latest hall from main; does nothing when it's current",
+      "about": "Install the latest hall release; does nothing when it's current",
       "args": [
         {
           "default": "false",
@@ -783,8 +783,7 @@ expression: v
           "takes_value": true
         },
         {
-          "default": "main",
-          "help": "The branch whose latest commit is installed",
+          "help": "Install the latest commit on this branch instead of the latest release (a `vX.Y.Z` tag)",
           "name": "branch",
           "required": false,
           "syntax": "--branch <branch>",

@@ -1,13 +1,20 @@
-//! `hall update`: install the latest `hall` from the source repository's
-//! main branch with `cargo install`, unless the running one was built from
-//! that commit. Then refresh what the old binary left behind: the Claude
-//! Code plugin, whose hooks name this hall, and a running daemon.
+//! `hall update`: install the latest release of `hall` (the highest `vX.Y.Z`
+//! tag of the source repository, ADR 0035) with `cargo install`, unless the
+//! running one is that version or newer. `--branch` follows a branch's
+//! latest commit instead, and so does a source with no release yet. Then
+//! refresh what the old binary left behind: the Claude Code plugin, whose
+//! hooks name this hall, and a running daemon.
+//!
+//! Every release lookup is remembered in `<user dir>/update.json`, so the
+//! SessionStart hook and `hall doctor` can say a new version exists without
+//! touching the network; [`check_in_background`] refreshes it once a day.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::setup::{Step, step};
@@ -20,39 +27,96 @@ use crate::paths;
 /// Where `hall update` installs from, unless `--source` says otherwise.
 pub const SOURCE: &str = concat!(env!("CARGO_PKG_REPOSITORY"), ".git");
 
+/// The branch followed when the source has no release yet.
+const FALLBACK_BRANCH: &str = "main";
+
+/// How long a remembered release lookup stays fresh.
+const CHECK_EVERY_HOURS: i64 = 24;
+
 /// The commit this binary was built from, when its build knew it.
 pub fn commit() -> Option<&'static str> {
     let c = env!("HALL_COMMIT");
     (!c.is_empty()).then_some(c)
 }
 
+/// The version this binary was built as.
+pub fn version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
+}
+
+/// A release: a `vX.Y.Z` tag of the source repository.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Release {
+    /// The version, without the `v`: `0.2.0`.
+    pub version: String,
+    /// The tag: `v0.2.0`.
+    pub tag: String,
+    /// The commit the tag points at.
+    pub commit: String,
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct UpdateOut {
     /// up_to_date, available (with --check) or updated.
     pub status: String,
+    /// The version the running hall was built as.
+    pub installed_version: String,
     /// The commit the running hall was built from; null when its build
-    /// didn't know (built without git), which never counts as up to date.
+    /// didn't know (built without git).
     pub installed: Option<String>,
-    /// The latest commit on `branch`.
+    /// The latest release's version; null when following a branch.
+    pub latest_version: Option<String>,
+    /// The latest release's tag; null when following a branch.
+    pub tag: Option<String>,
+    /// The commit that is (or would be) installed: the release's, or the
+    /// latest on `branch`.
     pub latest: String,
     pub source: String,
-    pub branch: String,
+    /// The branch followed, with --branch or when the source has no
+    /// release yet; null when following releases.
+    pub branch: Option<String>,
     /// The hall binary that is (or would be) replaced.
     pub hall: String,
     /// What the update did: the install, the plugin, the daemon.
     pub steps: Vec<Step>,
 }
 
+impl UpdateOut {
+    /// `0.2.0 (abc1234)`, or `0.2.0` without a known commit.
+    fn installed_label(&self) -> String {
+        match self.installed.as_deref() {
+            Some(c) => format!("{} ({})", self.installed_version, short(c)),
+            None => self.installed_version.clone(),
+        }
+    }
+
+    /// `0.3.0`, or the short commit when following a branch.
+    fn latest_label(&self) -> String {
+        self.latest_version
+            .clone()
+            .unwrap_or_else(|| short(&self.latest).to_string())
+    }
+
+    /// `v0.3.0 of <source>`, or `main of <source>`.
+    fn from(&self) -> String {
+        let r = self.tag.as_deref().or(self.branch.as_deref()).unwrap_or("");
+        format!("{r} of {}", self.source)
+    }
+}
+
 impl Render for UpdateOut {
     fn render(&self) -> String {
-        let installed = self.installed.as_deref().map_or("an unknown commit", short);
-        let latest = short(&self.latest);
-        let from = format!("{} of {}", self.branch, self.source);
-        let mut s = match self.status.as_str() {
-            "up_to_date" => {
-                format!("hall is already up to date: {latest} is the latest on {from}.\n")
+        let (installed, latest, from) = (self.installed_label(), self.latest_label(), self.from());
+        let mut s = match (self.status.as_str(), &self.tag) {
+            ("up_to_date", Some(_)) => {
+                format!("hall {installed} is up to date: the latest release is {from}.\n")
             }
-            "available" => format!("An update is available: {installed} → {latest} ({from}).\n"),
+            ("up_to_date", None) => {
+                format!("hall {installed} is up to date: {latest} is the latest on {from}.\n")
+            }
+            ("available", _) => {
+                format!("hall {latest} is available ({from}); you have {installed}.\n")
+            }
             _ => format!("Updated {}: {installed} → {latest} ({from}).\n", self.hall),
         };
         if !self.steps.is_empty() {
@@ -70,17 +134,39 @@ impl Render for UpdateOut {
 
 pub fn update(cwd: &Path, a: UpdateArgs) -> Result<Response> {
     let exe = paths::normalize(&std::env::current_exe()?);
-    let latest = latest_commit(cwd, &a.source, &a.branch)?;
+    let release = match &a.branch {
+        Some(_) => None,
+        None => {
+            let r = latest_release(cwd, &a.source)?;
+            remember(&a.source, r.as_ref());
+            r
+        }
+    };
+    let (latest, branch) = match (&release, &a.branch) {
+        (Some(r), _) => (r.commit.clone(), None),
+        (None, b) => {
+            let b = b.as_deref().unwrap_or(FALLBACK_BRANCH);
+            (latest_commit(cwd, &a.source, b)?, Some(b.to_string()))
+        }
+    };
     let mut out = UpdateOut {
         status: "up_to_date".into(),
+        installed_version: version().into(),
         installed: commit().map(String::from),
+        latest_version: release.as_ref().map(|r| r.version.clone()),
+        tag: release.as_ref().map(|r| r.tag.clone()),
         latest,
         source: a.source.clone(),
-        branch: a.branch.clone(),
+        branch,
         hall: paths::display(&exe),
         steps: Vec::new(),
     };
-    if out.installed.as_deref() == Some(out.latest.as_str()) {
+    let current = match &release {
+        // A hall built from main after a release is as new as it.
+        Some(r) => !newer(&r.version, version()),
+        None => out.installed.as_deref() == Some(out.latest.as_str()),
+    };
+    if current {
         return Ok(Response::new(out, vec!["hall doctor".into()]));
     }
     if a.check {
@@ -94,17 +180,19 @@ pub fn update(cwd: &Path, a: UpdateArgs) -> Result<Response> {
     // for the renames in `swap_in`, not for the whole build.
     let staging = root.join(".hall-update");
     let _ = std::fs::remove_dir_all(&staging);
-    let installed = cargo_install(&cargo, cwd, &a, &out.latest, &staging)
+    // A release installs by its tag; a branch by the commit just read.
+    let (flag, rev) = match &out.tag {
+        Some(t) => ("--tag", t.as_str()),
+        None => ("--rev", out.latest.as_str()),
+    };
+    let installed = cargo_install(&cargo, cwd, &a, (flag, rev), &out.latest, &staging)
         .and_then(|()| swap_in(&staging, &exe, &a.source));
     let _ = std::fs::remove_dir_all(&staging);
     installed?;
     out.status = "updated".into();
+    let shown = if flag == "--rev" { short(rev) } else { rev };
     out.steps.push(step(
-        format!(
-            "cargo install --git {} --rev {}",
-            a.source,
-            short(&out.latest)
-        ),
+        format!("cargo install --git {} {flag} {shown}", a.source),
         "done",
         Some(format!("installed {}", paths::display(&exe))),
     ));
@@ -133,8 +221,8 @@ fn again(a: &UpdateArgs) -> String {
     if a.source != SOURCE {
         c.push_str(&format!(" --source {}", quote(&a.source)));
     }
-    if a.branch != "main" {
-        c.push_str(&format!(" --branch {}", quote(&a.branch)));
+    if let Some(b) = &a.branch {
+        c.push_str(&format!(" --branch {}", quote(b)));
     }
     c
 }
@@ -143,22 +231,201 @@ fn quote(s: &str) -> String {
     shlex::try_quote(s).map_or_else(|_| s.to_string(), |q| q.into_owned())
 }
 
-/// The commit `branch` points at in `source`, by `git ls-remote`, which
-/// uses your git credentials and never prompts for them.
-fn latest_commit(cwd: &Path, source: &str, branch: &str) -> Result<String> {
-    let refname = format!("refs/heads/{branch}");
+/// True when version `a` is newer than `b`. A version that doesn't parse
+/// is never newer, and nothing is newer than one that doesn't.
+pub fn newer(a: &str, b: &str) -> bool {
+    match (semver::Version::parse(a), semver::Version::parse(b)) {
+        (Ok(a), Ok(b)) => a > b,
+        _ => false,
+    }
+}
+
+/// `git ls-remote <flags> <source> <patterns>`, which uses your git
+/// credentials and never prompts for them.
+fn ls_remote(
+    cwd: &Path,
+    flags: &[&str],
+    source: &str,
+    patterns: &[&str],
+) -> Result<std::process::Output> {
     let mut c = Command::new("git");
     c.current_dir(cwd)
-        .args(["ls-remote", "--exit-code", source, &refname])
+        .arg("ls-remote")
+        .args(flags)
+        .arg(source)
+        .args(patterns)
         .env("GIT_TERMINAL_PROMPT", "0")
         .stdin(Stdio::null());
     for v in ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"] {
         c.env_remove(v);
     }
-    let out = c.output().map_err(|e| {
+    c.output().map_err(|e| {
         HallError::new(ErrorCode::CommandFailed, format!("could not run git: {e}"))
             .next(["hall doctor"])
-    })?;
+    })
+}
+
+/// The highest release tagged in `source`: `vX.Y.Z` tags, pre-releases
+/// left out. None when it has no release yet.
+pub fn latest_release(cwd: &Path, source: &str) -> Result<Option<Release>> {
+    let out = ls_remote(cwd, &["--tags"], source, &["v*"])?;
+    if !out.status.success() {
+        return Err(HallError::new(
+            ErrorCode::CommandFailed,
+            format!(
+                "could not read the releases of {source}: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            ),
+        )
+        .next([
+            format!("git ls-remote --tags {}", quote(source)),
+            "hall update --source <git url>".into(),
+        ]));
+    }
+    Ok(pick_release(&String::from_utf8_lossy(&out.stdout)))
+}
+
+/// The highest release in `git ls-remote --tags` output. An annotated
+/// tag's `^{}` line names the commit, which is what gets built.
+fn pick_release(ls_remote: &str) -> Option<Release> {
+    let mut found: Vec<(semver::Version, Release)> = Vec::new();
+    for line in ls_remote.lines() {
+        let Some((sha, name)) = line.split_once('\t') else {
+            continue;
+        };
+        let name = name.trim().trim_start_matches("refs/tags/");
+        let (tag, peeled) = match name.strip_suffix("^{}") {
+            Some(t) => (t, true),
+            None => (name, false),
+        };
+        let Some(v) = tag
+            .strip_prefix('v')
+            .and_then(|v| semver::Version::parse(v).ok())
+        else {
+            continue;
+        };
+        if !v.pre.is_empty() {
+            continue;
+        }
+        match found.iter_mut().find(|(_, r)| r.tag == tag) {
+            Some((_, r)) if peeled => r.commit = sha.trim().to_string(),
+            Some(_) => {}
+            None => found.push((
+                v.clone(),
+                Release {
+                    version: v.to_string(),
+                    tag: tag.to_string(),
+                    commit: sha.trim().to_string(),
+                },
+            )),
+        }
+    }
+    found
+        .into_iter()
+        .max_by(|a, b| a.0.cmp(&b.0))
+        .map(|(_, r)| r)
+}
+
+/// The last release lookup, in `<user dir>/update.json`.
+#[derive(Debug, Serialize, Deserialize)]
+struct Seen {
+    checked_at: DateTime<Utc>,
+    source: String,
+    latest: Option<Release>,
+}
+
+fn seen_path() -> PathBuf {
+    crate::repo::user_dir().join("update.json")
+}
+
+fn load_seen() -> Option<Seen> {
+    serde_json::from_slice(&std::fs::read(seen_path()).ok()?).ok()
+}
+
+/// Remembers a release lookup. Best effort: a notice is only a hint.
+fn remember(source: &str, latest: Option<&Release>) {
+    let seen = Seen {
+        checked_at: Utc::now(),
+        source: source.to_string(),
+        latest: latest.cloned(),
+    };
+    let path = seen_path();
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    if let Ok(json) = serde_json::to_vec_pretty(&seen) {
+        let _ = std::fs::write(path, json);
+    }
+}
+
+/// Where `hall update` looks by default: `HALL_UPDATE_SOURCE`, else
+/// [`SOURCE`].
+fn default_source() -> String {
+    std::env::var("HALL_UPDATE_SOURCE")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| SOURCE.to_string())
+}
+
+/// A newer release than this hall, as last seen (no network): the
+/// release, when there is one.
+pub fn available() -> Option<Release> {
+    let seen = load_seen()?;
+    let r = seen.latest.filter(|_| seen.source == default_source())?;
+    newer(&r.version, version()).then_some(r)
+}
+
+/// One line that says a newer release exists, for the SessionStart hook
+/// and `hall doctor`.
+pub fn notice() -> Option<String> {
+    let r = available()?;
+    Some(format!(
+        "hall {} is available (this is {}): run `hall update`.",
+        r.version,
+        version()
+    ))
+}
+
+/// Refreshes `update.json` with a detached `hall update --check` when the
+/// last lookup is a day old, so the next session can say what's new.
+/// `HALL_UPDATE_CHECK=off` turns it off (tests, offline machines).
+pub fn check_in_background() {
+    if matches!(
+        std::env::var("HALL_UPDATE_CHECK").as_deref(),
+        Ok("off" | "0" | "false")
+    ) {
+        return;
+    }
+    let source = default_source();
+    let fresh = load_seen().is_some_and(|s| {
+        s.source == source && Utc::now() - s.checked_at < chrono::Duration::hours(CHECK_EVERY_HOURS)
+    });
+    if fresh {
+        return;
+    }
+    // Mark it checked now, keeping what was seen, so a failing lookup
+    // (offline) is tried once a day, not on every session.
+    let last = load_seen()
+        .filter(|s| s.source == source)
+        .and_then(|s| s.latest);
+    remember(&source, last.as_ref());
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    let mut c = Command::new(exe);
+    c.args(["update", "--check", "--json"])
+        .current_dir(crate::repo::user_dir())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    crate::daemon::spawn::detach(&mut c);
+    let _ = c.spawn();
+}
+
+/// The commit `branch` points at in `source`.
+fn latest_commit(cwd: &Path, source: &str, branch: &str) -> Result<String> {
+    let refname = format!("refs/heads/{branch}");
+    let out = ls_remote(cwd, &["--exit-code"], source, &[&refname])?;
     let stdout = String::from_utf8_lossy(&out.stdout);
     let sha = stdout.lines().find_map(|l| {
         let (sha, name) = l.split_once('\t')?;
@@ -224,19 +491,27 @@ fn install_root(exe: &Path) -> Result<PathBuf> {
     }
 }
 
-/// Builds and installs `rev`. Cargo's progress goes to stderr, so stdout
-/// stays this command's reply.
-fn cargo_install(cargo: &str, cwd: &Path, a: &UpdateArgs, rev: &str, root: &Path) -> Result<()> {
+/// Builds and installs `--tag <tag>` or `--rev <commit>`, which is
+/// `commit`. Cargo's progress goes to stderr, so stdout stays this
+/// command's reply.
+fn cargo_install(
+    cargo: &str,
+    cwd: &Path,
+    a: &UpdateArgs,
+    (flag, rev): (&str, &str),
+    commit: &str,
+    root: &Path,
+) -> Result<()> {
     let mut c = Command::new(cargo);
     c.current_dir(cwd)
         .args([
-            "install", "--locked", "--force", "--git", &a.source, "--rev", rev,
+            "install", "--locked", "--force", "--git", &a.source, flag, rev,
         ])
         .arg("--root")
         .arg(root)
         // The new binary knows its commit, and cargo fetches with your git
         // and its credentials, never prompting for them.
-        .env("HALL_BUILD_COMMIT", rev)
+        .env("HALL_BUILD_COMMIT", commit)
         .env("CARGO_NET_GIT_FETCH_WITH_CLI", "true")
         .env("GIT_TERMINAL_PROMPT", "0")
         .stdin(Stdio::null())
@@ -387,13 +662,48 @@ fn run_new(exe: &Path, args: &[&str]) -> std::result::Result<Value, String> {
 mod tests {
     use super::*;
 
-    fn args(source: &str, branch: &str) -> UpdateArgs {
+    fn args(source: &str, branch: Option<&str>) -> UpdateArgs {
         UpdateArgs {
             check: false,
             source: source.into(),
-            branch: branch.into(),
+            branch: branch.map(String::from),
             no_setup: false,
         }
+    }
+
+    #[test]
+    fn picks_the_highest_release_and_its_commit() {
+        let out = "\
+aaa\trefs/tags/v0.2.0
+bbb\trefs/tags/v0.10.0
+ccc\trefs/tags/v0.10.0^{}
+ddd\trefs/tags/v1.0.0-rc.1
+eee\trefs/tags/v0.9.9
+fff\trefs/tags/vnext
+";
+        let r = pick_release(out).unwrap();
+        // 0.10 beats 0.9 (semver, not text); the rc is a pre-release; the
+        // annotated tag's peeled line is the commit.
+        assert_eq!(
+            r,
+            Release {
+                version: "0.10.0".into(),
+                tag: "v0.10.0".into(),
+                commit: "ccc".into(),
+            }
+        );
+        assert_eq!(pick_release(""), None);
+        assert_eq!(pick_release("aaa\trefs/tags/nightly\n"), None);
+    }
+
+    #[test]
+    fn compares_versions_by_semver() {
+        assert!(newer("0.10.0", "0.9.0"));
+        assert!(newer("1.0.0", "1.0.0-rc.1"));
+        assert!(!newer("0.1.0", "0.1.0"));
+        assert!(!newer("0.1.0", "0.2.0"));
+        assert!(!newer("garbage", "0.1.0"));
+        assert!(!newer("0.2.0", "garbage"));
     }
 
     #[test]
@@ -418,9 +728,9 @@ mod tests {
 
     #[test]
     fn repeats_only_the_flags_that_differ() {
-        assert_eq!(again(&args(SOURCE, "main")), "hall update");
+        assert_eq!(again(&args(SOURCE, None)), "hall update");
         assert_eq!(
-            again(&args("/tmp/my fork.git", "next")),
+            again(&args("/tmp/my fork.git", Some("next"))),
             "hall update --source '/tmp/my fork.git' --branch next"
         );
     }

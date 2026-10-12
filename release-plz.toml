@@ -1,0 +1,17 @@
+# release-plz turns conventional commits on main into versions (ADR 0035).
+# It keeps a release PR open that bumps Cargo.toml and CHANGELOG.md by
+# semver: `feat` → minor, `fix` and everything else → patch, `!` or
+# `BREAKING CHANGE` → major (minor while the version is 0.x). Merging that
+# PR tags `vX.Y.Z`; the tag runs release.yml, where dist builds the binaries
+# and creates the GitHub Release.
+[workspace]
+# Not on crates.io: the git tag is the release.
+publish = false
+# dist creates the GitHub Release from the tag (ADR 0023).
+git_release_enable = false
+git_tag_name = "v{{ version }}"
+# Tag only when the release PR merges, not on every push to main.
+release_always = false
+# A binary: there is no public API for cargo-semver-checks to compare.
+semver_check = false
+pr_labels = ["release"]
