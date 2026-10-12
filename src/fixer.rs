@@ -532,6 +532,14 @@ pub fn prompt(repo: &Repo, item: &Item, events: &[Event], ledger: &Ledger) -> St
             }
         }
     }
+    // The repo's own hallmark-fix skill (ADR 0037), from the base: the
+    // branch being fixed can't change how it is fixed.
+    if let Ok(base) = crate::assayer::base::Base::resolve(repo, &item.base)
+        && let Some(skill) = crate::skills::read(&repo.main_root, &base.sha, "hallmark-fix")
+    {
+        let origin = format!("{} at {}", base.name, short(&base.sha));
+        s.push_str(&format!("\n{}\n", crate::skills::section(&skill, &origin)));
+    }
     let gates: Vec<String> = repo.config.gates.iter().map(|g| format!("`{g}`")).collect();
     s.push_str("\n## When you are done\n\n");
     s.push_str(

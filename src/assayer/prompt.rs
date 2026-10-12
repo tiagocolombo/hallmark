@@ -137,8 +137,14 @@ pub fn prepare(
     )
     .unwrap_or_default();
 
-    // The method first: it is the same for every review, so it caches.
-    let mut p = method();
+    // The method first: it is the same for every review, so it caches. A
+    // repo's own skill (ADR 0037) comes from the base, like the rules.
+    let repo_skill = crate::skills::read(dir, &base.sha, "principal-review");
+    let mut p = crate::skills::compose(
+        &method(),
+        repo_skill.as_ref(),
+        &format!("{} at {}", base.name, short(&base.sha)),
+    );
     p.push_str("\n---\n\n");
     let b = &base.name;
     let _ = writeln!(
@@ -334,12 +340,7 @@ pub fn prepare(
 /// `--agent` run doesn't preload skills, so the prompt carries it.
 pub fn method() -> String {
     let skill = crate::plugin::file("skills/principal-review/SKILL.md");
-    let body = skill
-        .strip_prefix("---")
-        .and_then(|r| r.split_once("\n---"))
-        .map(|(_, b)| b)
-        .unwrap_or(skill);
-    format!("{}\n", body.trim())
+    format!("{}\n", crate::skills::body(skill).trim())
 }
 
 /// (files, lines added + removed) from `git diff --numstat`.

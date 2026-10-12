@@ -32,7 +32,9 @@ const REVIEW_STUB: &str = "# Review notes for Hallmark
 
 The principal engineer reads this file from the base branch before every
 review. Add what a reviewer new to this repo should know: sensitive paths,
-invariants, conventions that aren't written down elsewhere.
+invariants, conventions that aren't written down elsewhere. To change how the
+reviewer, the fixer or your sessions work here, add a skill under
+`.hallmark/skills/<name>/SKILL.md` (`hall doctor` lists them).
 
 ## Sensitive paths
 

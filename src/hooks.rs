@@ -391,6 +391,14 @@ impl Ctx {
             }
             None => repo_context(&self.repo, &self.items, inbox),
         };
+        // The repo's own hallmark skill (ADR 0037), from the base branch.
+        let base = item
+            .as_ref()
+            .map_or(self.repo.config.base.as_str(), |i| &i.base);
+        if let Some(skill) = repo_skill_context(&self.repo, base) {
+            text.push_str("\n\n");
+            text.push_str(&skill);
+        }
         // The fixer works on an item in the loop on purpose.
         if headless_actor().as_deref() == Some("fixer")
             && let Some(i) = &item
@@ -977,6 +985,27 @@ fn only_free_changes(repo: &Repo, dir: &Path) -> bool {
     }
     files.retain(|f| !f.trim().is_empty());
     !files.is_empty() && files.iter().all(|f| repo.config.is_free(f))
+}
+
+/// A session's context carries at most this much of a repo skill.
+const SKILL_CONTEXT_MAX: usize = 8_000;
+
+/// The repo's `hallmark` skill on `base`, as session context, cut to
+/// [`SKILL_CONTEXT_MAX`] with a pointer to the whole file.
+fn repo_skill_context(repo: &Repo, base: &str) -> Option<String> {
+    let base = crate::assayer::base::Base::resolve(repo, base).ok()?;
+    let skill = crate::skills::read(&repo.main_root, &base.sha, "hallmark")?;
+    let origin = format!("{} at {}", base.name, crate::event::short(&base.sha));
+    let text = crate::skills::section(&skill, &origin);
+    if text.len() <= SKILL_CONTEXT_MAX {
+        return Some(text);
+    }
+    Some(format!(
+        "{}\nRead the whole skill with `git show {}:{}`.",
+        crate::assayer::base::cut(&text, SKILL_CONTEXT_MAX),
+        base.name,
+        skill.path
+    ))
 }
 
 fn repo_context(repo: &Repo, items: &[Item], inbox: usize) -> String {

@@ -59,6 +59,45 @@ fn claude_version(claude: &str) -> Option<String> {
         .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
+/// The repo's skills (ADR 0037) as the reviewer and the fixer read them:
+/// from the base branch. None when the repo has none anywhere.
+fn skills_check(repo: &Repo) -> Option<Check> {
+    use crate::skills::{DIR, KNOWN, list};
+    let base = crate::assayer::base::Base::resolve(repo, &repo.config.base).ok()?;
+    let listing = list(&repo.main_root, &base.sha);
+    if listing.is_empty() {
+        return repo.main_root.join(DIR).is_dir().then(|| {
+            check(
+                "skills",
+                true,
+                format!("{DIR} isn't on {} yet; it applies once merged", base.name),
+                None,
+            )
+        });
+    }
+    let found: Vec<String> = listing
+        .found
+        .iter()
+        .map(|(n, m)| format!("{n} ({})", m.as_str()))
+        .collect();
+    let mut detail = if found.is_empty() {
+        format!("none in use on {}", base.name)
+    } else {
+        format!("{} on {}", found.join(", "), base.name)
+    };
+    if listing.problems.is_empty() {
+        return Some(check("skills", true, detail, None));
+    }
+    detail.push_str("; ");
+    detail.push_str(&listing.problems.join("; "));
+    let known: Vec<&str> = KNOWN.iter().map(|(k, _)| *k).collect();
+    let fix = format!(
+        "keep only {DIR}/<name>/SKILL.md, with <name> one of {}",
+        known.join(", ")
+    );
+    Some(check("skills", false, detail, Some(&fix)))
+}
+
 pub fn doctor(cwd: &Path) -> Result<Response> {
     let mut checks = Vec::new();
 
@@ -181,6 +220,7 @@ pub fn doctor(cwd: &Path) -> Result<Response> {
                         Some("add gates to .hallmark.toml"),
                     ));
                 }
+                checks.extend(skills_check(&repo));
             } else {
                 checks.push(check(
                     "repo",
