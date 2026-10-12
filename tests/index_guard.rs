@@ -157,11 +157,12 @@ fn a_row_an_older_hall_left_behind_its_offset_is_refolded() {
     // offset past it without changing the row or the fold mark.
     append_line(&env, &id, dropped(&id));
     let len = std::fs::metadata(journal_path(&env, &id)).unwrap().len() as i64;
-    let path = journal_path(&env, &id).to_string_lossy().to_string();
+    // The index keys files by the path hall resolved, which needn't spell the
+    // temp dir the way the test does (Windows short names, separators).
     let n = conn(&env)
         .execute(
-            "UPDATE files SET offset = ?1 WHERE path = ?2",
-            rusqlite::params![len, path],
+            "UPDATE files SET offset = ?1 WHERE path LIKE ?2",
+            rusqlite::params![len, format!("%{id}%events.jsonl")],
         )
         .unwrap();
     assert_eq!(n, 1);
