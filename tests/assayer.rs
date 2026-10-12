@@ -343,17 +343,27 @@ fn a_review_with_blockers_requests_changes() {
     assert!(report.contains("**Scenario.** two workers retry"));
     assert!(report.contains("### Minors"));
 
-    // The raw result and the prompt are kept for debugging; usage is booked.
+    // The run's stream and the prompt are kept; usage is booked. The stream
+    // is the only record of the result: no `.json` beside it (ADR 0039).
     let runs = env.repo.join(".git/hallmark/items").join(&id).join("runs");
     let names: Vec<String> = std::fs::read_dir(&runs)
         .unwrap()
         .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
         .collect();
     assert!(
-        names.iter().any(|n| n.ends_with("-reviewer.json")),
+        names.iter().any(|n| n.ends_with("-reviewer.jsonl")),
         "{names:?}"
     );
+    assert!(!names.iter().any(|n| n.ends_with(".json")), "{names:?}");
     assert!(names.iter().any(|n| n.ends_with(".prompt.md")), "{names:?}");
+    let run = hallmark::trace::runs_in(&runs).unwrap();
+    assert_eq!(run.len(), 1, "{run:?}");
+    let (steps, info) = hallmark::trace::read(&run[0].path).unwrap();
+    assert!(info.ended && info.failure.is_none(), "{info:?}");
+    assert_eq!(
+        steps.last().map(|s| s.kind),
+        Some(hallmark::trace::StepKind::End)
+    );
     let usage = events_of(&env, &id, "usage");
     assert_eq!(usage[0]["room"], "assay");
 

@@ -3,14 +3,21 @@
 //! the assayer, fixer, intake and librarian only build a [`RunRequest`].
 //!
 //! ```text
-//! claude -p --plugin-dir <dir> --agent <name> --model <m> --output-format json
-//!   --json-schema <schema> --max-budget-usd <n> -- "<prompt>"   (null stdin)
+//! claude -p --plugin-dir <dir> --agent <name> --model <m>
+//!   --output-format stream-json --verbose --json-schema <schema>
+//!   --max-budget-usd <n> -- "<prompt>"   (null stdin)
 //! ```
+//!
+//! A run with an item streams its stdout, line by line as it arrives, into
+//! `items/<id>/runs/<stamp>-<role>.jsonl`, and the runner appends one
+//! `hall_run_end` line once the process has exited (ADR 0039, `trace`).
+//! The result is the stream's last `result` line.
 //!
 //! Tests never spend model usage: `HALL_RUNNER=fake:<script.json>` swaps in
 //! [`FakeRunner`], which replays scripted results and side effects.
 
-use std::io::{Read, Write};
+use std::fs::{File, OpenOptions};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -73,6 +80,11 @@ pub struct RunRequest {
     /// Extra environment, such as `HALL_ACTOR=fixer`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub env: Vec<(String, String)>,
+    /// The file stdout streams into as it arrives, ending with a
+    /// `hall_run_end` line (ADR 0039). [`run_metered`] sets it for runs with
+    /// an item; none streams nowhere.
+    #[serde(skip)]
+    pub stream: Option<PathBuf>,
 }
 
 impl RunRequest {
@@ -100,7 +112,13 @@ impl RunRequest {
         if let Some(e) = &self.effort {
             a.extend(["--effort".into(), e.clone()]);
         }
-        a.extend(["--output-format".into(), "json".into()]);
+        // Line by line as it happens, for `hall trace`; the result is the
+        // last `result` line. stream-json needs --verbose with -p.
+        a.extend([
+            "--output-format".into(),
+            "stream-json".into(),
+            "--verbose".into(),
+        ]);
         if let Some(s) = &self.json_schema {
             a.extend(["--json-schema".into(), s.clone()]);
         }
@@ -193,6 +211,7 @@ pub fn request(
         plugin_dir: Some(crate::plugin::runtime_dir()?),
         extra_args,
         env,
+        stream: None,
     })
 }
 
@@ -239,7 +258,7 @@ impl Failure {
 #[derive(Debug, Clone)]
 pub struct RunOutcome {
     pub result: Option<PrintResult>,
-    /// stdout as printed, for the item's `runs/` directory.
+    /// stdout as printed: the stream-json lines, without the end line.
     pub raw: String,
     pub stderr: String,
     pub exit_code: Option<i32>,
@@ -254,6 +273,33 @@ impl RunOutcome {
 
     pub fn session_id(&self) -> Option<&str> {
         self.result.as_ref()?.session_id.as_deref()
+    }
+
+    /// The line the runner appends to the stream when the process has
+    /// exited (ADR 0039).
+    pub fn end(&self) -> crate::trace::RunEnd {
+        crate::trace::RunEnd::new(
+            self.duration_ms,
+            self.exit_code,
+            self.failure.as_ref().map(Failure::describe),
+        )
+    }
+
+    /// What follows `raw` in its stream file: a newline when stdout stopped
+    /// mid-line, then the end line.
+    pub fn end_text(&self) -> String {
+        let nl = if self.raw.is_empty() || self.raw.ends_with('\n') {
+            ""
+        } else {
+            "\n"
+        };
+        format!("{nl}{}", self.end().line())
+    }
+
+    /// The whole stream file for this run: stdout, then the end line. For a
+    /// run that streamed nowhere and is saved afterwards (intake).
+    pub fn stream_text(&self) -> String {
+        format!("{}{}", self.raw, self.end_text())
     }
 
     fn failed(failure: Failure, raw: String, stderr: String, ms: u64) -> RunOutcome {
@@ -293,6 +339,20 @@ pub struct ClaudeRunner {
 
 impl Runner for ClaudeRunner {
     fn run(&self, req: &RunRequest) -> RunOutcome {
+        let stream = open_stream(req);
+        let (mut outcome, stream) = self.exec(req, stream);
+        name_model(&mut outcome.failure, req.model.as_deref());
+        if let Some(f) = stream {
+            end_stream(f, &outcome);
+        }
+        outcome
+    }
+}
+
+impl ClaudeRunner {
+    /// Runs the process, teeing stdout into `stream` as it arrives; hands
+    /// the stream back for its end line.
+    fn exec(&self, req: &RunRequest, stream: Option<File>) -> (RunOutcome, Option<File>) {
         let start = Instant::now();
         let ms = |s: Instant| s.elapsed().as_millis() as u64;
         let mut cmd = Command::new(&self.bin);
@@ -314,7 +374,7 @@ impl Runner for ClaudeRunner {
         let mut child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
-                return RunOutcome::failed(
+                let o = RunOutcome::failed(
                     Failure::Error {
                         message: format!("could not run {}: {e}", self.bin),
                     },
@@ -322,6 +382,7 @@ impl Runner for ClaudeRunner {
                     String::new(),
                     ms(start),
                 );
+                return (o, stream);
             }
         };
         if req.prompt_via_stdin()
@@ -332,8 +393,8 @@ impl Runner for ClaudeRunner {
                 let _ = stdin.write_all(prompt.as_bytes());
             });
         }
-        let out = child.stdout.take().map(reader);
-        let err = child.stderr.take().map(reader);
+        let out = child.stdout.take().map(|o| tee(o, stream));
+        let err = child.stderr.take().map(|e| tee(e, None));
         let status = if req.timeout_secs == 0 {
             child.wait().ok()
         } else {
@@ -347,30 +408,84 @@ impl Runner for ClaudeRunner {
                 }
             }
         };
-        let raw = out.and_then(|h| h.join().ok()).unwrap_or_default();
-        let stderr = err.and_then(|h| h.join().ok()).unwrap_or_default();
+        let (raw, stream) = out.and_then(|h| h.join().ok()).unwrap_or_default();
+        let stderr = err
+            .and_then(|h| h.join().ok())
+            .map(|(s, _)| s)
+            .unwrap_or_default();
         let Some(status) = status else {
-            return RunOutcome::failed(Failure::Timeout, raw, stderr, ms(start));
+            return (
+                RunOutcome::failed(Failure::Timeout, raw, stderr, ms(start)),
+                stream,
+            );
         };
         let result = PrintResult::parse(&raw).ok();
         let failure = classify(result.as_ref(), &raw, &stderr, req.json_schema.is_some());
-        RunOutcome {
+        let o = RunOutcome {
             result,
             raw,
             stderr,
             exit_code: status.code(),
             duration_ms: ms(start),
             failure,
-        }
+        };
+        (o, stream)
     }
 }
 
-fn reader<R: Read + Send + 'static>(mut r: R) -> std::thread::JoinHandle<String> {
+/// Reads `r` to the end, a line at a time, writing each line to `file` as
+/// it arrives so another process can follow it. Returns all of it, and the
+/// file.
+fn tee<R: Read + Send + 'static>(
+    r: R,
+    mut file: Option<File>,
+) -> std::thread::JoinHandle<(String, Option<File>)> {
     std::thread::spawn(move || {
-        let mut s = Vec::new();
-        let _ = r.read_to_end(&mut s);
-        String::from_utf8_lossy(&s).into_owned()
+        let mut r = BufReader::new(r);
+        let mut all = Vec::new();
+        let mut line = Vec::new();
+        loop {
+            line.clear();
+            match r.read_until(b'\n', &mut line) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {
+                    // A stream that can't be written loses the trace, never
+                    // the run.
+                    if let Some(f) = file.as_mut()
+                        && f.write_all(&line).and_then(|_| f.flush()).is_err()
+                    {
+                        file = None;
+                    }
+                    all.extend_from_slice(&line);
+                }
+            }
+        }
+        (String::from_utf8_lossy(&all).into_owned(), file)
     })
+}
+
+/// The run's stream file, opened for appending. None when the run has no
+/// item, or the file can't be opened: the run goes on without a trace.
+fn open_stream(req: &RunRequest) -> Option<File> {
+    let p = req.stream.as_ref()?;
+    if let Some(d) = p.parent() {
+        let _ = std::fs::create_dir_all(d);
+    }
+    OpenOptions::new().create(true).append(true).open(p).ok()
+}
+
+/// Appends the `hall_run_end` line, on a line of its own.
+fn end_stream(mut f: File, o: &RunOutcome) {
+    let _ = f.write_all(o.end_text().as_bytes());
+}
+
+/// An unavailable model is the one the run asked for.
+fn name_model(failure: &mut Option<Failure>, asked: Option<&str>) {
+    if let Some(Failure::ModelUnavailable { model }) = failure
+        && model.is_empty()
+    {
+        *model = asked.unwrap_or_default().to_string();
+    }
 }
 
 /// Reads a finished run: rate limits, budget stops, errors, and schema runs
@@ -491,6 +606,11 @@ pub fn rate_limit(text: &str) -> Option<Option<DateTime<Utc>>> {
 /// {"role": "reviewer", "structured": {…}, "files": {"src/a.rs": "…"},
 ///  "run": ["git commit -qam fix", "{hall} fixed F1"], "fail": "timeout"}
 /// ```
+///
+/// Like the real runner, it writes the run's stream file when the request
+/// has one: the lines before the result (`stream`, else an init line and an
+/// assistant line) before the step's files and commands, so a command can
+/// see the run going, then the result line and the `hall_run_end` line.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct FakeStep {
@@ -502,8 +622,12 @@ pub struct FakeStep {
     pub result: Option<String>,
     /// A whole `claude -p` JSON result; overrides the two above.
     pub print: Option<serde_json::Value>,
-    /// A fixture file (relative to the script) holding a whole result.
+    /// A fixture file (relative to the script) holding a whole result, or
+    /// a whole stream-json run whose last line is the result.
     pub fixture: Option<String>,
+    /// stream-json lines printed before the result, in place of the
+    /// default init and assistant lines.
+    pub stream: Option<Vec<serde_json::Value>>,
     /// Files to write, relative to the run's cwd.
     pub files: std::collections::BTreeMap<String, String>,
     /// Shell commands run in the cwd after writing files. `{hall}` is this
@@ -580,17 +704,30 @@ impl Runner for FakeRunner {
             v["args"] = serde_json::json!(req.args());
             let _ = writeln!(f, "{v}");
         }
+        let mut stream = open_stream(req);
         let step = match self.take(&req.role) {
             Ok(s) => s,
             Err(message) => {
-                return RunOutcome::failed(
-                    Failure::Error { message },
-                    String::new(),
-                    String::new(),
-                    0,
-                );
+                let o =
+                    RunOutcome::failed(Failure::Error { message }, String::new(), String::new(), 0);
+                if let Some(f) = stream {
+                    end_stream(f, &o);
+                }
+                return o;
             }
         };
+        let (lead, result_line) = self.print(&step, req);
+        let mut raw = String::new();
+        let mut say = |stream: &mut Option<File>, line: &str| {
+            let line = format!("{line}\n");
+            if let Some(f) = stream.as_mut() {
+                let _ = f.write_all(line.as_bytes());
+            }
+            raw.push_str(&line);
+        };
+        for l in &lead {
+            say(&mut stream, l);
+        }
         for (rel, body) in &step.files {
             let p = req.cwd.join(rel);
             if let Some(d) = p.parent() {
@@ -613,37 +750,7 @@ impl Runner for FakeRunner {
             c.env_remove("CLAUDECODE");
             let _ = c.output();
         }
-        let print = if let Some(p) = &step.print {
-            p.clone()
-        } else if let Some(f) = &step.fixture {
-            let path = self.script.parent().unwrap_or(Path::new(".")).join(f);
-            std::fs::read_to_string(path)
-                .ok()
-                .and_then(|s| serde_json::from_str(&s).ok())
-                .unwrap_or_default()
-        } else {
-            let model = step
-                .model
-                .clone()
-                .unwrap_or_else(|| "claude-haiku-5-5".into());
-            let cost = step.cost_usd.unwrap_or(0.001);
-            let mut v = serde_json::json!({
-                "type": "result", "subtype": "success", "is_error": false,
-                "result": step.result.clone().unwrap_or_else(|| "done".into()),
-                "session_id": step.session_id.clone().unwrap_or_else(|| "fake-session".into()),
-                "num_turns": 3, "duration_ms": 1200, "total_cost_usd": cost,
-                "modelUsage": { model: {
-                    "inputTokens": 12, "outputTokens": 340,
-                    "cacheReadInputTokens": 2100, "cacheCreationInputTokens": 3700,
-                    "costUSD": cost, "costBasis": "list"
-                }}
-            });
-            if let Some(s) = &step.structured {
-                v["structured_output"] = s.clone();
-            }
-            v
-        };
-        let raw = print.to_string();
+        say(&mut stream, &result_line);
         let failure = match step.fail.as_deref() {
             Some("timeout") => Some(Failure::Timeout),
             Some("budget") => Some(Failure::Budget),
@@ -657,16 +764,97 @@ impl Runner for FakeRunner {
             None => None,
         };
         let result = PrintResult::parse(&raw).ok();
-        let failure =
+        let mut failure =
             failure.or_else(|| classify(result.as_ref(), &raw, "", req.json_schema.is_some()));
-        RunOutcome {
+        name_model(&mut failure, req.model.as_deref());
+        let o = RunOutcome {
             result,
             raw,
             stderr: String::new(),
             exit_code: Some(0),
             duration_ms: 1200,
             failure,
+        };
+        if let Some(f) = stream {
+            end_stream(f, &o);
         }
+        o
+    }
+}
+
+impl FakeRunner {
+    /// The step's stream: the lines before the result, and the result line.
+    fn print(&self, step: &FakeStep, req: &RunRequest) -> (Vec<String>, String) {
+        let model = step
+            .model
+            .clone()
+            .unwrap_or_else(|| "claude-haiku-5-5".into());
+        let print = if let Some(p) = &step.print {
+            p.clone()
+        } else if let Some(f) = &step.fixture {
+            let path = self.script.parent().unwrap_or(Path::new(".")).join(f);
+            let text = std::fs::read_to_string(path).unwrap_or_default();
+            match serde_json::from_str::<serde_json::Value>(&text) {
+                Ok(v) => v,
+                // A whole stream-json run: replayed as it is.
+                Err(_) => {
+                    let mut lines: Vec<String> = text
+                        .lines()
+                        .filter(|l| !l.trim().is_empty())
+                        .map(String::from)
+                        .collect();
+                    let last = lines.pop().unwrap_or_default();
+                    return (lines, last);
+                }
+            }
+        } else {
+            let cost = step.cost_usd.unwrap_or(0.001);
+            let mut v = serde_json::json!({
+                "type": "result", "subtype": "success", "is_error": false,
+                "result": step.result.clone().unwrap_or_else(|| "done".into()),
+                "session_id": step.session_id.clone().unwrap_or_else(|| "fake-session".into()),
+                "num_turns": 3, "duration_ms": 1200, "total_cost_usd": cost,
+                "modelUsage": { &model: {
+                    "inputTokens": 12, "outputTokens": 340,
+                    "cacheReadInputTokens": 2100, "cacheCreationInputTokens": 3700,
+                    "costUSD": cost, "costBasis": "list"
+                }}
+            });
+            if let Some(s) = &step.structured {
+                v["structured_output"] = s.clone();
+            }
+            v
+        };
+        let lead = match &step.stream {
+            Some(lines) => lines.iter().map(|l| l.to_string()).collect(),
+            None => {
+                let sid = print
+                    .get("session_id")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or("fake-session");
+                let said = print
+                    .get("result")
+                    .and_then(|s| s.as_str())
+                    .filter(|s| !s.trim().is_empty())
+                    .unwrap_or("done");
+                vec![
+                    serde_json::json!({
+                        "type": "system", "subtype": "init",
+                        "cwd": crate::paths::display(&req.cwd),
+                        "session_id": sid, "model": model,
+                    })
+                    .to_string(),
+                    serde_json::json!({
+                        "type": "assistant",
+                        "message": {"role": "assistant", "content": [{"type": "text", "text": said}]},
+                        "parent_tool_use_id": null, "session_id": sid,
+                        "timestamp": Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+                    })
+                    .to_string(),
+                ]
+            }
+        };
+        (lead, print.to_string())
     }
 }
 
@@ -688,8 +876,8 @@ pub enum Metered {
     Blocked(crate::budget::Stop),
 }
 
-/// Checks the budgets, runs, records usage and the raw result, and handles
-/// failures: one retry (the next tick), then a hold.
+/// Checks the budgets, runs (streaming into the item's `runs/`), records
+/// usage, and handles failures: one retry (the next tick), then a hold.
 pub fn run_metered(
     repo: &Repo,
     runner: &dyn Runner,
@@ -719,9 +907,22 @@ pub fn run_metered(
         }
         return Ok(Metered::Blocked(stop));
     }
+    // Each run streams into a file of its own in the item's `runs/`
+    // (ADR 0039); a run with no item streams nowhere.
+    let dir = match item {
+        Some(id) => {
+            let d = repo.hall.item_runs(id);
+            std::fs::create_dir_all(&d)?;
+            Some(d)
+        }
+        None => None,
+    };
+    let mut first = req.clone();
+    first.stream = dir.as_deref().and_then(|d| claim_stream(d, &req.role));
     repo.hall
         .live(&format!("{} {} run started", label(item), req.role));
-    let mut outcome = runner.run(req);
+    let mut outcome = runner.run(&first);
+    keep_stderr(&first, &outcome);
     // The role's model isn't available: retry once with its fallback.
     if matches!(outcome.failure, Some(Failure::ModelUnavailable { .. }))
         && let Some(fb) = req.fallback_model.clone()
@@ -733,27 +934,20 @@ pub fn run_metered(
             req.role,
             req.model.as_deref().unwrap_or("(default)")
         ));
+        // A second run, with its own session: it gets its own stream file,
+        // stamped after the first, so the first keeps its end line (and its
+        // failure) and the retry reads as the latest run.
         let mut again = req.clone();
         again.model = Some(fb);
         again.fallback_model = None;
+        again.stream = dir.as_deref().and_then(|d| claim_stream(d, &req.role));
         outcome = runner.run(&again);
+        keep_stderr(&again, &outcome);
     }
     if let Some(Failure::ModelUnavailable { model }) = &mut outcome.failure
         && model.is_empty()
     {
         *model = req.model.clone().unwrap_or_default();
-    }
-    if let Some(id) = item {
-        let dir = repo.hall.item_runs(id);
-        std::fs::create_dir_all(&dir)?;
-        let stamp = Utc::now().format("%Y%m%dT%H%M%S");
-        let _ = std::fs::write(dir.join(format!("{stamp}-{}.json", req.role)), &outcome.raw);
-        if !outcome.stderr.trim().is_empty() {
-            let _ = std::fs::write(
-                dir.join(format!("{stamp}-{}.stderr", req.role)),
-                &outcome.stderr,
-            );
-        }
     }
     if let Some(r) = &outcome.result {
         for u in r.usage(&req.room, &req.role) {
@@ -814,6 +1008,33 @@ pub fn run_metered(
         failure,
         held,
     })
+}
+
+/// Claims `<dir>/<stamp>-<role>.jsonl` for a run starting now: created
+/// empty, so the run is listed from its start. A name already taken (the
+/// fallback retry, within the same second) moves to the next free second,
+/// so runs sort in the order they ran. None when it can't be created.
+pub fn claim_stream(dir: &Path, role: &str) -> Option<PathBuf> {
+    let now = Utc::now();
+    (0..60).find_map(|s| {
+        let stamp = (now + chrono::Duration::seconds(s)).format("%Y%m%dT%H%M%S");
+        let p = dir.join(format!("{stamp}-{role}.jsonl"));
+        match OpenOptions::new().write(true).create_new(true).open(&p) {
+            Ok(_) => Some(Some(p)),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => None,
+            Err(_) => Some(None),
+        }
+    })?
+}
+
+/// The run's stderr, when there is any, next to its stream:
+/// `<stamp>-<role>.stderr`.
+fn keep_stderr(req: &RunRequest, o: &RunOutcome) {
+    if let Some(p) = &req.stream
+        && !o.stderr.trim().is_empty()
+    {
+        let _ = std::fs::write(p.with_extension("stderr"), &o.stderr);
+    }
 }
 
 /// `run_failed` events for `role` since the item last changed state, was
@@ -878,7 +1099,9 @@ mod tests {
         assert_eq!(a[0], "-p");
         let s = a.join(" ");
         assert!(s.contains("--plugin-dir /p --agent principal-engineer --model opus"));
-        assert!(s.contains("--output-format json --json-schema {} --max-budget-usd 3"));
+        assert!(
+            s.contains("--output-format stream-json --verbose --json-schema {} --max-budget-usd 3")
+        );
         // `--` comes after the variadic --allowedTools, then the prompt.
         assert!(s.ends_with("--allowedTools Read Bash(git diff:*) -- Review H-0042"));
         let long = RunRequest {
@@ -1084,5 +1307,304 @@ mod tests {
         events.push(fail());
         events.push(ev(Body::PulledBack { reason: None }));
         assert_eq!(failures_in_a_row(&events, "reviewer"), 0);
+    }
+
+    // --- streaming (ADR 0039) ---------------------------------------------
+
+    fn lines(p: &Path) -> Vec<serde_json::Value> {
+        std::fs::read_to_string(p)
+            .unwrap()
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap_or(serde_json::Value::String(l.into())))
+            .collect()
+    }
+
+    fn end_of(p: &Path) -> crate::trace::RunEnd {
+        let last = std::fs::read_to_string(p).unwrap();
+        let last = last.lines().last().unwrap().to_string();
+        let e: crate::trace::RunEnd = serde_json::from_str(&last).unwrap();
+        assert_eq!(e.kind, crate::trace::END);
+        e
+    }
+
+    /// A stand-in `claude`: a shell script that ignores its arguments.
+    #[cfg(unix)]
+    fn claude(dir: &Path, body: &str) -> ClaudeRunner {
+        use std::os::unix::fs::PermissionsExt;
+        let bin = dir.join("claude");
+        std::fs::write(&bin, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        ClaudeRunner {
+            bin: bin.to_string_lossy().into_owned(),
+        }
+    }
+
+    #[cfg(unix)]
+    fn streaming(dir: &Path, timeout_secs: u64) -> RunRequest {
+        RunRequest {
+            role: "reviewer".into(),
+            cwd: dir.to_path_buf(),
+            timeout_secs,
+            stream: Some(dir.join("runs/20261012T215146-reviewer.jsonl")),
+            env: vec![
+                (
+                    "FIX".into(),
+                    format!(
+                        "{}/tests/fixtures/claude/stream.jsonl",
+                        env!("CARGO_MANIFEST_DIR")
+                    ),
+                ),
+                ("GO".into(), dir.join("go").to_string_lossy().into_owned()),
+            ],
+            ..Default::default()
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_run_streams_line_by_line_while_it_runs() {
+        let dir = tempfile::tempdir().unwrap();
+        // One line, then wait for the test before the rest.
+        let runner = claude(
+            dir.path(),
+            "head -n 1 \"$FIX\"\nwhile [ ! -f \"$GO\" ]; do sleep 0.02; done\ntail -n +2 \"$FIX\"",
+        );
+        let req = streaming(dir.path(), 60);
+        let stream = req.stream.clone().unwrap();
+        let running = std::thread::spawn(move || runner.run(&req));
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while std::fs::read_to_string(&stream).map_or(true, |s| s.is_empty()) {
+            assert!(Instant::now() < deadline, "the first line never arrived");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        // The process is still running, and its first line is readable.
+        let fix = fixture("claude/stream.jsonl");
+        let first = format!("{}\n", fix.lines().next().unwrap());
+        assert_eq!(std::fs::read_to_string(&stream).unwrap(), first);
+        assert!(!running.is_finished());
+        let mut tail = crate::trace::Tail::default();
+        let steps = tail.poll(&stream).unwrap();
+        assert_eq!(steps[0].kind, crate::trace::StepKind::Start);
+        assert!(!tail.info.ended);
+
+        std::fs::write(dir.path().join("go"), "").unwrap();
+        let o = running.join().unwrap();
+        assert_eq!(o.failure, None, "{o:?}");
+        assert_eq!(o.raw, fix, "raw is stdout, without the end line");
+        assert_eq!(o.session_id(), Some("91aedf44-f4cd-4efa-8e74-768d46a9dc75"));
+        let text = std::fs::read_to_string(&stream).unwrap();
+        assert_eq!(text.lines().count(), fix.lines().count() + 1);
+        assert!(text.starts_with(&fix));
+        let e = end_of(&stream);
+        assert_eq!((e.exit_code, e.failure), (Some(0), None));
+        tail.poll(&stream).unwrap();
+        assert!(tail.info.ended);
+        assert!(tail.info.resume_command().is_some());
+        // Nothing else: no `.json` result, no stderr when it is empty.
+        let names: Vec<_> = std::fs::read_dir(dir.path().join("runs"))
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(names.len(), 1, "{names:?}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_run_ends_its_stream_on_a_line_of_its_own() {
+        let dir = tempfile::tempdir().unwrap();
+        let runner = claude(
+            dir.path(),
+            "printf '{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"s\"}\\nhalf a li'\necho oops >&2\nexit 3",
+        );
+        let req = streaming(dir.path(), 60);
+        let stream = req.stream.clone().unwrap();
+        let o = runner.run(&req);
+        assert!(matches!(o.failure, Some(Failure::Error { .. })), "{o:?}");
+        assert_eq!(o.stderr.trim(), "oops");
+        let l = lines(&stream);
+        assert_eq!(l.len(), 3, "{l:?}");
+        assert_eq!(l[0]["subtype"], "init");
+        assert_eq!(l[1], "half a li");
+        let e = end_of(&stream);
+        assert_eq!(e.exit_code, Some(3));
+        assert!(
+            e.failure
+                .as_deref()
+                .unwrap()
+                .starts_with("unreadable claude -p output"),
+            "{e:?}"
+        );
+        let (_, info) = crate::trace::read(&stream).unwrap();
+        assert!(info.ended && info.failure.is_some());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_timed_out_run_still_ends_its_stream() {
+        let dir = tempfile::tempdir().unwrap();
+        let runner = claude(
+            dir.path(),
+            "[ -n \"$WARM\" ] && exit 0\nhead -n 1 \"$FIX\"\nexec sleep 30",
+        );
+        // macOS checks a new executable on its first run, which can take
+        // longer than the time limit: run it once first.
+        Command::new(&runner.bin).env("WARM", "1").status().unwrap();
+        let req = streaming(dir.path(), 1);
+        let stream = req.stream.clone().unwrap();
+        let o = runner.run(&req);
+        assert_eq!(o.failure, Some(Failure::Timeout));
+        let l = lines(&stream);
+        assert_eq!(l.len(), 2, "{l:?}");
+        assert_eq!(l[0]["subtype"], "init");
+        let e = end_of(&stream);
+        assert_eq!(e.exit_code, None);
+        assert_eq!(e.failure.as_deref(), Some("timed out"));
+        assert!(e.duration_ms >= 1000);
+    }
+
+    #[test]
+    fn a_run_that_cannot_start_still_ends_its_stream() {
+        let dir = tempfile::tempdir().unwrap();
+        let stream = dir.path().join("runs/20261012T215146-fixer.jsonl");
+        let runner = ClaudeRunner {
+            bin: dir
+                .path()
+                .join("no-claude-here")
+                .to_string_lossy()
+                .into_owned(),
+        };
+        let o = runner.run(&RunRequest {
+            role: "fixer".into(),
+            cwd: dir.path().to_path_buf(),
+            stream: Some(stream.clone()),
+            ..Default::default()
+        });
+        assert!(matches!(o.failure, Some(Failure::Error { .. })));
+        assert_eq!(lines(&stream).len(), 1);
+        let e = end_of(&stream);
+        assert!(e.failure.unwrap().starts_with("could not run"));
+        // Without a stream path, a run writes nothing.
+        let quiet = tempfile::tempdir().unwrap();
+        runner.run(&RunRequest {
+            cwd: quiet.path().to_path_buf(),
+            ..Default::default()
+        });
+        assert_eq!(std::fs::read_dir(quiet.path()).unwrap().count(), 0);
+    }
+
+    fn fake(dir: &Path, steps: serde_json::Value) -> FakeRunner {
+        let script = dir.join("script.json");
+        std::fs::write(&script, serde_json::json!({ "steps": steps }).to_string()).unwrap();
+        FakeRunner::new(script)
+    }
+
+    fn fake_req(dir: &Path, n: u32) -> RunRequest {
+        RunRequest {
+            role: "reviewer".into(),
+            cwd: dir.to_path_buf(),
+            stream: Some(dir.join(format!("runs/20261012T21514{n}-reviewer.jsonl"))),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn the_fake_runner_streams_like_claude() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::copy(
+            format!(
+                "{}/tests/fixtures/claude/stream.jsonl",
+                env!("CARGO_MANIFEST_DIR")
+            ),
+            dir.path().join("stream.jsonl"),
+        )
+        .unwrap();
+        let r = fake(
+            dir.path(),
+            serde_json::json!([
+                {"role": "reviewer", "result": "Looks fine", "session_id": "s1"},
+                {"role": "reviewer", "stream": [
+                    {"type": "assistant", "message": {"content": [
+                        {"type": "tool_use", "name": "Bash", "input": {"command": "cargo test"}}
+                    ]}}
+                ]},
+                {"role": "reviewer", "fixture": "stream.jsonl"},
+                {"role": "reviewer", "fail": "timeout"}
+            ]),
+        );
+        use crate::trace::StepKind::*;
+        let kinds = |p: &Path| -> Vec<crate::trace::StepKind> {
+            crate::trace::read(p)
+                .unwrap()
+                .0
+                .iter()
+                .map(|s| s.kind)
+                .collect()
+        };
+
+        // A plausible stream: init, what it said, the result, the end.
+        let req = fake_req(dir.path(), 1);
+        let o = r.run(&req);
+        let stream = req.stream.unwrap();
+        assert_eq!(o.failure, None);
+        assert_eq!(o.session_id(), Some("s1"));
+        assert_eq!(o.raw.lines().count(), 3, "raw has no end line");
+        assert_eq!(kinds(&stream), [Start, Text, Done, End]);
+        let (steps, info) = crate::trace::read(&stream).unwrap();
+        assert_eq!(steps[1].text, "Looks fine");
+        assert_eq!(info.session_id.as_deref(), Some("s1"));
+        assert_eq!(info.cwd.as_deref(), Some(dir.path()));
+        assert!(info.ended && info.failure.is_none());
+
+        // The script's own lines before the result.
+        let req = fake_req(dir.path(), 2);
+        r.run(&req);
+        let stream = req.stream.unwrap();
+        assert_eq!(kinds(&stream), [Tool, Done, End]);
+        assert_eq!(crate::trace::read(&stream).unwrap().0[0].text, "cargo test");
+
+        // A recorded stream, replayed.
+        let req = fake_req(dir.path(), 3);
+        let o = r.run(&req);
+        let stream = req.stream.unwrap();
+        assert_eq!(o.failure, None);
+        assert_eq!(o.session_id(), Some("91aedf44-f4cd-4efa-8e74-768d46a9dc75"));
+        assert_eq!(
+            kinds(&stream),
+            [Start, Tool, Result, Tool, Result, Text, Done, End]
+        );
+
+        // A scripted failure ends the stream with it.
+        let req = fake_req(dir.path(), 4);
+        r.run(&req);
+        let e = end_of(req.stream.as_ref().unwrap());
+        assert_eq!(e.failure.as_deref(), Some("timed out"));
+
+        // No step left: the stream is only its end.
+        let req = fake_req(dir.path(), 5);
+        r.run(&req);
+        let stream = req.stream.unwrap();
+        assert_eq!(lines(&stream).len(), 1);
+        assert!(end_of(&stream).failure.unwrap().contains("no step left"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_fake_runner_streams_before_its_commands() {
+        // A step's commands see the run going: started, not ended.
+        let dir = tempfile::tempdir().unwrap();
+        let req = fake_req(dir.path(), 1);
+        let stream = req.stream.clone().unwrap();
+        let mid = dir.path().join("mid.jsonl");
+        let r = fake(
+            dir.path(),
+            serde_json::json!([{"role": "reviewer", "run": [
+                format!("cp '{}' '{}'", stream.display(), mid.display())
+            ]}]),
+        );
+        r.run(&req);
+        let (steps, info) = crate::trace::read(&mid).unwrap();
+        assert_eq!(steps.len(), 2, "{steps:?}");
+        assert!(!info.ended);
+        assert!(crate::trace::read(&stream).unwrap().1.ended);
     }
 }

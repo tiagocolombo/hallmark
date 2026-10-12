@@ -121,9 +121,16 @@ fn a_split_request_becomes_a_parent_and_children() {
     let child = env.journal("H-0002");
     assert_eq!(child[0]["event"], "created");
     assert_eq!(child[0]["parent"], "H-0001");
-    // The raw intake result is kept with the parent.
+    // The intake run is kept with the parent, as a stream that ended.
     let runs = env.repo.join(".git/hallmark/items/H-0001/runs");
-    assert_eq!(std::fs::read_dir(runs).unwrap().count(), 1);
+    assert_eq!(std::fs::read_dir(&runs).unwrap().count(), 1);
+    let run = hallmark::trace::runs_in(&runs).unwrap();
+    assert_eq!(run.len(), 1);
+    assert_eq!(run[0].role, "intake");
+    assert!(run[0].streamed, "{run:?}");
+    let (_, info) = hallmark::trace::read(&run[0].path).unwrap();
+    assert!(info.ended && info.failure.is_none(), "{info:?}");
+    assert_eq!(info.session_id.as_deref(), Some("fake-session"));
 
     // One headless run: the intake agent, its schema, read-only tools, no hooks.
     let calls = env.fake_calls();

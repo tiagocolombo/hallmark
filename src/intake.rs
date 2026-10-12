@@ -64,8 +64,9 @@ impl Plan {
     }
 }
 
-/// A plan and the raw `claude -p` output it came from, kept in the item's
-/// `runs/` directory once the item exists.
+/// A plan and the run it came from: its stream-json and end line, kept as
+/// `runs/<stamp>-intake.jsonl` once the item exists (the run itself had no
+/// item to stream into, ADR 0039).
 #[derive(Debug, Clone)]
 pub struct Outcome {
     pub plan: Plan,
@@ -128,7 +129,7 @@ pub fn plan(repo: &Repo, request: &str) -> Outcome {
             };
             Outcome {
                 plan,
-                raw: Some(o.raw),
+                raw: Some(o.stream_text()),
             }
         }
         Ok(Metered::Failed {
@@ -138,7 +139,7 @@ pub fn plan(repo: &Repo, request: &str) -> Outcome {
                 true,
                 format!("the Front Desk run failed: {}", failure.describe()),
             ),
-            raw: Some(outcome.raw).filter(|r| !r.trim().is_empty()),
+            raw: Some(outcome.stream_text()),
         },
         Ok(Metered::Blocked(stop)) => {
             skipped(format!("the Front Desk did not run: {}", stop.reason))
