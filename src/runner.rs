@@ -1445,7 +1445,10 @@ mod tests {
             e.failure.as_deref().unwrap().contains("oops"),
             "the failure says what stderr said: {e:?}"
         );
-        assert!(!e.failure.as_deref().unwrap().contains("session_id"), "{e:?}");
+        assert!(
+            !e.failure.as_deref().unwrap().contains("session_id"),
+            "{e:?}"
+        );
         let (_, info) = crate::trace::read(&stream).unwrap();
         assert!(info.ended && info.failure.is_some());
     }

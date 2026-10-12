@@ -176,7 +176,7 @@ pub fn trace(cwd: &Path, a: TraceArgs, mode: Mode) -> Result<Response> {
         let mut runs = Vec::new();
         for (n, f) in &numbered {
             let (_, mut info) = trace::read(&f.path)?;
-            trace::mark_interrupted(&repo.hall,id, &all, n - 1, &mut info);
+            trace::mark_interrupted(&repo.hall, id, &all, n - 1, &mut info);
             runs.push(RunView::new(*n, f, &info));
         }
         let next = match runs.last() {
@@ -243,7 +243,7 @@ pub fn trace(cwd: &Path, a: TraceArgs, mode: Mode) -> Result<Response> {
 
     if a.open {
         let (_, mut info) = trace::read(&file.path)?;
-        trace::mark_interrupted(&repo.hall,id, &all, n - 1, &mut info);
+        trace::mark_interrupted(&repo.hall, id, &all, n - 1, &mut info);
         let run = RunView::new(n, file, &info);
         let Some(cmd) = run.resume.clone() else {
             let (why, next) = if !run.ended {
@@ -304,7 +304,7 @@ pub fn trace(cwd: &Path, a: TraceArgs, mode: Mode) -> Result<Response> {
         if tail.info.ended {
             break Some("ended");
         }
-        trace::mark_interrupted(&repo.hall,id, &all, n - 1, &mut tail.info);
+        trace::mark_interrupted(&repo.hall, id, &all, n - 1, &mut tail.info);
         if tail.info.interrupted {
             break Some("interrupted");
         }
@@ -313,7 +313,7 @@ pub fn trace(cwd: &Path, a: TraceArgs, mode: Mode) -> Result<Response> {
         }
         crate::daemon::nap(interval);
     };
-    trace::mark_interrupted(&repo.hall,id, &all, n - 1, &mut tail.info);
+    trace::mark_interrupted(&repo.hall, id, &all, n - 1, &mut tail.info);
     let run = RunView::new(n, file, &tail.info);
     let mut next = Vec::new();
     if run.ended || run.interrupted {

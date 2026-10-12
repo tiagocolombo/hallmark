@@ -94,8 +94,8 @@ pub fn mark_interrupted(
     };
     // Run files are stamped to the second.
     let began = run.started + chrono::Duration::seconds(1);
-    info.interrupted = at + 1 < runs.len()
-        || crate::lease::current(hall, id).is_none_or(|l| l.acquired > began);
+    info.interrupted =
+        at + 1 < runs.len() || crate::lease::current(hall, id).is_none_or(|l| l.acquired > began);
 }
 
 /// The runs of an item, oldest first. Prompts and stderr files are not runs.

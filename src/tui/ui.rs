@@ -1519,7 +1519,7 @@ fn trace_view(f: &mut Frame, area: Rect, app: &App) {
     let info = t.info();
     let (state, c) = match (&info.ended, &info.failure) {
         (false, _) if info.interrupted => ("✗ interrupted".to_string(), STOP),
-        (false, _) =>("● running".to_string(), INFO),
+        (false, _) => ("● running".to_string(), INFO),
         (true, Some(why)) => (format!("✗ failed: {}", clip(why, 60)), STOP),
         (true, None) => ("■ ended".to_string(), OK),
     };
