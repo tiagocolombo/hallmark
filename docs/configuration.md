@@ -76,7 +76,9 @@ librarian_model = "haiku"
 
 [library]
 search         = "builtin"   # or "qmd"
+# collection   = "hallmark-<repo>"   # the qmd collection
 briefing_limit = "6k"
+auto_accept    = []          # kinds that skip your approval: rule, false-positive, map, decision
 retire_after   = "90d"
 # Learnings live in <git-common-dir>/hallmark/library/, never in the repo.
 # `hall library import` brings in ones committed by earlier versions.
@@ -160,16 +162,24 @@ daily    = "4M"     # whole review loop
 per_item = "800k"   # then it goes to you
 
 [budget.review]
-model   = "opus"
-effort  = "high"
-max_usd = 3.00      # per run
-daily   = "2M"
+model    = "opus"
+fallback = "sonnet"  # when model is unavailable or overloaded
+effort   = "high"
+max_usd  = 3.00      # per run
+daily    = "2M"
+timeout  = "20m"
 
 [budget.fix]
 model   = "sonnet"
 effort  = "medium"
 max_usd = 1.50
 ```
+
+Each role has a table with the same keys: `[budget.review]`, `[budget.fix]`,
+`[budget.intake]` (the Front Desk) and `[budget.librarian]`. A table's
+`model` wins over `<role>_model`, and its `fallback` is used when `model` is
+unavailable (a run that fails fast without tokens is retried once with it) or
+overloaded.
 
 ## Notifications
 
@@ -193,6 +203,7 @@ escalated = ["desktop", "phone"]
 stuck     = ["desktop", "phone"]
 ready     = ["desktop"]
 budget    = ["desktop"]
+session_waiting = ["desktop"]   # a Claude session waits for you
 learnings = ["digest"]
 ```
 
