@@ -8,11 +8,18 @@ use serde::Deserialize;
 
 use crate::error::{ErrorCode, HallError, Result};
 
-/// `HALL_GH`, then PATH, then the newest `/nix/store/*-gh-*/bin/gh`.
+/// `HALL_GH` or `[tools] gh`, then PATH, then the newest
+/// `/nix/store/*-gh-*/bin/gh`.
 pub fn find() -> Option<PathBuf> {
-    if let Some(p) = std::env::var_os("HALL_GH") {
+    if let Some(p) = crate::config::Tool::Gh.configured() {
         let p = PathBuf::from(p);
-        return p.is_file().then_some(p);
+        if p.is_file() {
+            return Some(p);
+        }
+        // A bare name, such as `gh-enterprise`, is looked up on PATH.
+        return (p.components().count() == 1)
+            .then(|| which(&p.to_string_lossy()))
+            .flatten();
     }
     if let Some(p) = which("gh") {
         return Some(p);
@@ -88,7 +95,7 @@ fn gh() -> Result<PathBuf> {
         )
         .next([
             "install gh: https://cli.github.com",
-            "set HALL_GH=/path/to/gh",
+            "hall config set --user tools.gh /path/to/gh",
             "hall doctor",
         ])
     })

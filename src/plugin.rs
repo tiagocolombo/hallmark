@@ -32,6 +32,10 @@ pub const FILES: &[(&str, &str)] = &[
         include_str!("../plugin/skills/hallmark-fix/SKILL.md"),
     ),
     (
+        "skills/hallmark-setup/SKILL.md",
+        include_str!("../plugin/skills/hallmark-setup/SKILL.md"),
+    ),
+    (
         "agents/principal-engineer.md",
         include_str!("../plugin/agents/principal-engineer.md"),
     ),

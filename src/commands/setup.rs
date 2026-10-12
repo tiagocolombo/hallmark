@@ -13,7 +13,7 @@ use serde_json::Value;
 
 use crate::cli::{SetupArgs, SetupTarget};
 use crate::error::{ErrorCode, HallError, Result};
-use crate::output::{Render, Response};
+use crate::output::{Mode, Render, Response};
 use crate::paths;
 use crate::plugin::{self, MARKETPLACE, PLUGIN};
 use crate::repo::user_dir;
@@ -31,6 +31,9 @@ pub struct SetupOut {
     /// With `--statusline`: the settings file and the command written to it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub statusline: Option<StatusLineOut>,
+    /// With `--interactive`: the settings written, as `key = value`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub settings: Vec<String>,
     pub steps: Vec<Step>,
 }
 
@@ -68,6 +71,12 @@ impl Render for SetupOut {
                 s.push_str(&format!("        {d}\n"));
             }
         }
+        if !self.settings.is_empty() {
+            s.push_str("\nSettings:\n");
+            for k in &self.settings {
+                s.push_str(&format!("  {k}\n"));
+            }
+        }
         s.push_str(&format!(
             "\nPlugin files ({}) in {}:\n",
             self.plugin_files.len(),
@@ -87,7 +96,7 @@ impl Render for SetupOut {
 }
 
 fn claude_bin() -> String {
-    std::env::var("HALL_CLAUDE").unwrap_or_else(|_| "claude".into())
+    crate::config::Tool::Claude.command()
 }
 
 pub(super) fn step(command: String, status: &str, detail: Option<String>) -> Step {
@@ -98,8 +107,12 @@ pub(super) fn step(command: String, status: &str, detail: Option<String>) -> Ste
     }
 }
 
-pub fn setup(cwd: &Path, a: SetupArgs) -> Result<Response> {
+pub fn setup(cwd: &Path, a: SetupArgs, mode: Mode) -> Result<Response> {
     match a.target {
+        Some(SetupTarget::Claude) if a.interactive => {
+            Err(HallError::usage("--interactive goes with `hall setup`")
+                .next(["hall setup --interactive"]))
+        }
         Some(SetupTarget::Claude) => {
             if a.force && !a.statusline {
                 return Err(HallError::usage("--force goes with --statusline")
@@ -107,7 +120,7 @@ pub fn setup(cwd: &Path, a: SetupArgs) -> Result<Response> {
             }
             claude(&a)
         }
-        None => all(cwd, &a),
+        None => all(cwd, &a, mode),
     }
 }
 
@@ -255,6 +268,7 @@ fn claude(a: &SetupArgs) -> Result<Response> {
         dry_run: a.dry_run,
         plugin_files,
         statusline,
+        settings: Vec::new(),
         steps,
     };
     let mut next: Vec<String> = Vec::new();
@@ -580,9 +594,33 @@ fn write_atomic(path: &Path, text: &str) -> Result<()> {
 
 /// `hall setup`: the plugin and status line, this repo, the daemon at
 /// login, a phone topic, then `hall doctor`. Every step is idempotent and
-/// reported; a failed step doesn't stop the others.
-fn all(cwd: &Path, a: &SetupArgs) -> Result<Response> {
+/// reported; a failed step doesn't stop the others. With `--interactive`,
+/// the wizard asks its questions first, and nothing happens if you cancel.
+fn all(cwd: &Path, a: &SetupArgs, mode: Mode) -> Result<Response> {
+    use super::wizard::{self, Phone};
     use crate::cli::{DaemonAction, DaemonArgs, InitArgs, NotifyAction, NotifyArgs};
+    let plan = if a.interactive {
+        use std::io::IsTerminal;
+        if mode == Mode::Json || !std::io::stdin().is_terminal() || !std::io::stderr().is_terminal()
+        {
+            return Err(HallError::usage(
+                "--interactive asks questions, so it runs only on a terminal",
+            )
+            .next([
+                "hall config list",
+                "hall config set <key> <value>",
+                "hall setup",
+            ]));
+        }
+        let ctx = wizard::context(cwd);
+        Some(wizard::run(
+            &ctx,
+            std::io::stdin().lock(),
+            std::io::stderr(),
+        )?)
+    } else {
+        None
+    };
     let exe = paths::normalize(&std::env::current_exe()?);
     let shown = paths::display(&exe);
     let planned = |command: &str| step(command.to_string(), "planned", None);
@@ -596,8 +634,8 @@ fn all(cwd: &Path, a: &SetupArgs) -> Result<Response> {
             "warn",
             Some(
                 "this is a build directory, and the plugin and the daemon will run this file. \
-                 Install hall (`dev install`, or `cargo install --path . --locked`) and run \
-                 `hall setup` from the installed copy."
+                 Install hall (`cargo install --path . --locked`) and run `hall setup` from \
+                 the installed copy."
                     .into(),
             ),
         ));
@@ -615,6 +653,7 @@ fn all(cwd: &Path, a: &SetupArgs) -> Result<Response> {
         no_statusline: a.no_statusline,
         no_daemon: a.no_daemon,
         no_notify: a.no_notify,
+        interactive: false,
     };
     let mut plugin_files = Vec::new();
     let mut statusline = None;
@@ -701,8 +740,47 @@ fn all(cwd: &Path, a: &SetupArgs) -> Result<Response> {
         },
     }
 
+    // 3b. The wizard's answers, written once `hall init` made the file.
+    let mut settings = Vec::new();
+    if let Some(plan) = &plan
+        && !plan.changes.is_empty()
+    {
+        let mut failed = Vec::new();
+        for c in &plan.changes {
+            let res = super::config::file_for(cwd, c.scope).and_then(|path| {
+                if a.dry_run {
+                    Ok(true)
+                } else {
+                    super::config::write(c.scope, &path, &c.key, c.value.clone())
+                }
+            });
+            match res {
+                Ok(_) => settings.push(c.shown()),
+                Err(e) => failed.push(format!("{}: {}", c.key, e.message)),
+            }
+        }
+        let keys: Vec<&str> = plan.changes.iter().map(|c| c.key.as_str()).collect();
+        steps.push(step(
+            "hall config set".into(),
+            if !failed.is_empty() {
+                "failed"
+            } else if a.dry_run {
+                "planned"
+            } else {
+                "done"
+            },
+            Some(if failed.is_empty() {
+                keys.join(", ")
+            } else {
+                failed.join("; ")
+            }),
+        ));
+    }
+    let no_daemon = a.no_daemon || plan.as_ref().is_some_and(|p| !p.daemon);
+    let no_notify = a.no_notify || plan.as_ref().is_some_and(|p| p.phone == Phone::Off);
+
     // 4. The daemon, at login; restarted when this hall is newer than it.
-    if a.no_daemon {
+    if no_daemon {
         steps.push(step("hall daemon start --at-login".into(), "skipped", None));
     } else if a.dry_run {
         steps.push(planned("hall daemon start --at-login"));
@@ -751,7 +829,7 @@ fn all(cwd: &Path, a: &SetupArgs) -> Result<Response> {
                 .and_then(|u| u.notify)
         })
         .is_some_and(|n| n.phone.is_some());
-    if a.no_notify || has_phone {
+    if no_notify || has_phone {
         steps.push(step(
             "hall notify test".into(),
             "skipped",
@@ -811,6 +889,7 @@ fn all(cwd: &Path, a: &SetupArgs) -> Result<Response> {
         dry_run: a.dry_run,
         plugin_files,
         statusline,
+        settings,
         steps,
     };
     Ok(Response::new(out, next))

@@ -6,6 +6,7 @@ use serde::Serialize;
 
 use super::ask::{AnswerOut, AskOut};
 use super::budget::BudgetOut;
+use super::config::ConfigOut;
 use super::daemon::DaemonOut;
 use super::doctor::DoctorOut;
 use super::fix::FixedOut;
@@ -23,7 +24,7 @@ use super::setup::SetupOut;
 use super::status::{InboxOut, LogOut, ReindexOut, StatusItem, StatusList, UsageOut};
 use super::update::UpdateOut;
 use crate::cli::{Cli, HelpArgs, SchemaArgs};
-use crate::config::Config;
+use crate::config::{Config, UserConfig};
 use crate::error::{EXIT_CODES, ErrorCode, ErrorEnvelope, HallError, Result};
 use crate::event::Event;
 use crate::hooks::HookOutput;
@@ -93,7 +94,7 @@ pub fn contract() -> Vec<String> {
         "Every reply has `next`: the commands that make sense now.".into(),
         "Errors are {\"error\":{\"code\",\"message\",\"next\"}} with a documented exit code."
             .into(),
-        "Commands never prompt; destructive ones need explicit flags such as --reason.".into(),
+        "Commands never prompt (only `hall setup --interactive` asks, on a terminal); destructive ones need explicit flags such as --reason.".into(),
         "Commands are idempotent: repeating one returns the current result.".into(),
         "Inside an item's worktree the item ID is optional.".into(),
         "`hall schema <command>` prints the JSON Schema of a command's output.".into(),
@@ -172,7 +173,11 @@ pub fn help(a: HelpArgs, _mode: Mode) -> Result<Response> {
         commands.push(CommandHelp {
             usage,
             about: sc.get_about().map(|s| s.to_string()).unwrap_or_default(),
-            schema: format!("hall schema {group}"),
+            schema: if group == "config" {
+                "hall schema config-reply".into()
+            } else {
+                format!("hall schema {group}")
+            },
             name,
             args,
         });
@@ -270,6 +275,7 @@ pub const SCHEMA_NAMES: &[&str] = &[
     "schema",
     "hook",
     "setup",
+    "config-reply",
     "update",
     "daemon",
     "next",
@@ -289,6 +295,7 @@ pub const SCHEMA_NAMES: &[&str] = &[
     "error",
     "event",
     "config",
+    "user-config",
     "item",
     "verdict-input",
 ];
@@ -314,6 +321,9 @@ pub fn schema_value(name: &str) -> Option<serde_json::Value> {
         "help" => schema_for!(Out<HelpOut>),
         "schema" => schema_for!(Out<SchemaOut>),
         "setup" => schema_for!(Out<SetupOut>),
+        // `hall schema config` describes .hallmark.toml; this is the reply
+        // of `hall config`.
+        "config-reply" => schema_for!(Out<ConfigOut>),
         "update" => schema_for!(Out<UpdateOut>),
         "hook" => schema_for!(HookOutput),
         "daemon" => schema_for!(Out<DaemonOut>),
@@ -334,6 +344,7 @@ pub fn schema_value(name: &str) -> Option<serde_json::Value> {
         "error" => schema_for!(ErrorEnvelope),
         "event" => schema_for!(Event),
         "config" => schema_for!(Config),
+        "user-config" => schema_for!(UserConfig),
         "item" => schema_for!(Item),
         _ => return None,
     };

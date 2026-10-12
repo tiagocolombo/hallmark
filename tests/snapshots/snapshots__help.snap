@@ -643,11 +643,125 @@ expression: v
           "required": false,
           "syntax": "--no-notify",
           "takes_value": false
+        },
+        {
+          "default": "false",
+          "help": "`hall setup`: ask about every setting first: base branch, gates and the shell they run in, how work is shipped, models, budget, tools and notifications. Needs a terminal; `hall config` sets the same keys without questions",
+          "name": "interactive",
+          "required": false,
+          "syntax": "--interactive",
+          "takes_value": false
         }
       ],
       "name": "setup",
       "schema": "hall schema setup",
       "usage": "hall setup [OPTIONS] [TARGET]"
+    },
+    {
+      "about": "Read and change settings: this repo's .hallmark.toml, or your user config (tools, notifications) with --user. `hall config list` shows every key with its value and where it comes from",
+      "args": [],
+      "name": "config",
+      "schema": "hall schema config-reply",
+      "usage": "hall config [OPTIONS] [COMMAND]"
+    },
+    {
+      "about": "Every key with its value and where it comes from (default, repo, user, env, path)",
+      "args": [
+        {
+          "help": "Only keys under this prefix, such as `budget` or `notify.route`",
+          "name": "prefix",
+          "required": false,
+          "syntax": "<prefix>",
+          "takes_value": true
+        },
+        {
+          "default": "false",
+          "help": "Your user config instead of the repo's",
+          "name": "user",
+          "required": false,
+          "syntax": "--user",
+          "takes_value": false
+        }
+      ],
+      "name": "config list",
+      "schema": "hall schema config-reply",
+      "usage": "hall config list [OPTIONS] [PREFIX]"
+    },
+    {
+      "about": "One key's value",
+      "args": [
+        {
+          "help": "A dotted key, such as `budget.daily`",
+          "name": "key",
+          "required": true,
+          "syntax": "<key>",
+          "takes_value": true
+        },
+        {
+          "default": "false",
+          "help": "Your user config instead of the repo's",
+          "name": "user",
+          "required": false,
+          "syntax": "--user",
+          "takes_value": false
+        }
+      ],
+      "name": "config get",
+      "schema": "hall schema config-reply",
+      "usage": "hall config get [OPTIONS] <KEY>"
+    },
+    {
+      "about": "Set a key; the file's comments and layout are kept. A list takes several values, or one TOML array ('[\"a\", \"b\"]')",
+      "args": [
+        {
+          "help": "A dotted key, such as `budget.daily` or `tools.gh`",
+          "name": "key",
+          "required": true,
+          "syntax": "<key>",
+          "takes_value": true
+        },
+        {
+          "help": "The value. Put `--` before values that start with `-`",
+          "name": "value",
+          "required": true,
+          "syntax": "<value>",
+          "takes_value": true
+        },
+        {
+          "default": "false",
+          "help": "Your user config instead of the repo's (`tools.*` is always there)",
+          "name": "user",
+          "required": false,
+          "syntax": "--user",
+          "takes_value": false
+        }
+      ],
+      "name": "config set",
+      "schema": "hall schema config-reply",
+      "usage": "hall config set [OPTIONS] <KEY> <VALUE>..."
+    },
+    {
+      "about": "Remove a key, so its default applies again",
+      "args": [
+        {
+          "help": "A dotted key",
+          "name": "key",
+          "required": true,
+          "syntax": "<key>",
+          "takes_value": true
+        },
+        {
+          "default": "false",
+          "help": "Your user config instead of the repo's",
+          "name": "user",
+          "required": false,
+          "syntax": "--user",
+          "takes_value": false
+        }
+      ],
+      "name": "config unset",
+      "schema": "hall schema config-reply",
+      "usage": "hall config unset [OPTIONS] <KEY>"
     },
     {
       "about": "Install the latest hall from main; does nothing when it's current",
@@ -1215,7 +1329,7 @@ expression: v
     "Output is JSON when stdout is not a terminal; --json forces it.",
     "Every reply has `next`: the commands that make sense now.",
     "Errors are {\"error\":{\"code\",\"message\",\"next\"}} with a documented exit code.",
-    "Commands never prompt; destructive ones need explicit flags such as --reason.",
+    "Commands never prompt (only `hall setup --interactive` asks, on a terminal); destructive ones need explicit flags such as --reason.",
     "Commands are idempotent: repeating one returns the current result.",
     "Inside an item's worktree the item ID is optional.",
     "`hall schema <command>` prints the JSON Schema of a command's output."

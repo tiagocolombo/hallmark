@@ -6,6 +6,33 @@ item can't change its own gate
 ([ADR 0012](decisions/0012-config-from-the-main-checkout.md)).
 `hall schema config` prints the full schema.
 
+## Changing settings
+
+You never need to edit the TOML by hand
+([ADR 0033](decisions/0033-configurable-setup.md)).
+
+- `hall setup --interactive` asks about the settings people change most, then
+  offers the rest. It writes nothing until you confirm.
+- `hall config` reads and writes any single key. It keeps the file's comments
+  and checks each value before writing.
+
+```sh
+hall config list                  # every key, its value, and where it comes from
+hall config list budget           # only keys under budget
+hall config get ship
+hall config set budget.daily 4M
+hall config set gates "make test" "make lint"   # a list takes several values
+hall config set claude_args -- --verbose        # `--` before values that start with -
+hall config unset budget.daily    # back to the default
+hall config set --user tools.gh /opt/homebrew/bin/gh
+```
+
+Repo keys go to the main checkout's `.hallmark.toml`. Commit them like any
+other change. `--user` keys go to your user config,
+`<user data dir>/hallmark/config.toml`, along with keys only it has, such as
+`tools.*`. In Claude Code, ask Claude to "set up Hallmark" and the
+`hallmark-setup` skill walks you through the same questions.
+
 ## Defaults
 
 ```toml
@@ -69,13 +96,54 @@ Commands run through `sh -c` on macOS and Linux and `cmd /C` on Windows.
 
 ## Your own tooling
 
-A repo with its own tooling overrides only the commands:
+A repo with its own tooling overrides only the commands. For example, with a
+task runner and a PR tool of your own:
 
 ```toml
-worktree = "rig wt new {branch}"
-ship     = "rig submit --pr"
-gates    = ["rig test", "rig run build"]
+worktree = "just worktree {branch}"
+ship     = "just submit {branch}"
+gates    = ["just test", "just lint"]
 ```
+
+### Gates that need a toolchain shell
+
+The daemon runs gates with `sh -c`, outside any shell you have entered. If
+your tools come from `nix develop`, devbox, mise or direnv, run each gate
+inside it. `hall setup --interactive` offers this when it sees `flake.nix`,
+`devbox.json`, `mise.toml` or `.envrc`.
+
+```toml
+gates = [
+  "nix develop --command cargo test",       # Nix flake
+  # "devbox run -- npm test",               # devbox
+  # "mise exec -- pytest",                  # mise
+  # "direnv exec . make test",              # direnv
+]
+```
+
+`hall setup --interactive` preselects a wrapper only when its program is on
+PATH, and never preselects direnv: direnv refuses an `.envrc` that wasn't
+allowed at the path it runs in, so `direnv allow` it in the main checkout and
+in every worktree path (or use direnv's whitelist prefix) before using it.
+
+## Your tools
+
+Hallmark runs `claude`, `gh`, and optionally `qmd` and `cargo`. It finds them
+on PATH. When they live elsewhere, say so in your user config. The daemon's
+login service starts with a bare PATH, so this is the dependable way to point
+it at them:
+
+```toml
+# <user data dir>/hallmark/config.toml
+[tools]
+claude = "/Users/me/.local/bin/claude"
+gh     = "/opt/homebrew/bin/gh"
+qmd    = "/usr/local/bin/qmd"     # for [library] search = "qmd"
+cargo  = "/Users/me/.cargo/bin/cargo"   # for hall update
+```
+
+`HALL_CLAUDE`, `HALL_GH`, `HALL_QMD` and `HALL_CARGO` override these. With
+neither, `gh` is also looked for in the Nix store.
 
 ## Budgets
 

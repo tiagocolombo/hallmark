@@ -312,9 +312,9 @@ pub mod qmd {
 
     use super::*;
 
-    /// The qmd binary: `HALL_QMD`, else `qmd` on PATH.
+    /// The qmd binary: `HALL_QMD`, `[tools] qmd`, else `qmd` on PATH.
     pub fn bin() -> String {
-        std::env::var("HALL_QMD").unwrap_or_else(|_| "qmd".into())
+        crate::config::Tool::Qmd.command()
     }
 
     /// `[library] collection`, else `hallmark-<repo>`.

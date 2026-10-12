@@ -208,7 +208,8 @@ fn ship(repo: &Repo, item: &Item, ctx_holder: &str) -> Result<Progress> {
             "updating its PR"
         }
     ));
-    // The ship command finds `gh` where Hallmark does (HALL_GH, PATH, Nix store).
+    // The ship command finds `gh` where Hallmark does (HALL_GH, `[tools] gh`,
+    // PATH, Nix store).
     let path = crate::gh::path_with_gh().map(|p| p.to_string_lossy().into_owned());
     let mut env = vec![("HALL_ACTOR", ACTOR)];
     if let Some(p) = &path {

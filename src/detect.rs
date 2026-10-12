@@ -89,6 +89,44 @@ fn make_like(root: &Path, g: &mut Vec<String>) {
     }
 }
 
+/// Tools that provide a repo's toolchain in a shell of their own: (name,
+/// the prefix that runs a command inside it). Gates run through `sh -c`
+/// from the daemon, outside any shell you have entered, so a repo whose
+/// tools come from one of these needs its gates wrapped.
+pub const WRAPPERS: &[(&str, &str)] = &[
+    ("nix", "nix develop --command"),
+    ("devbox", "devbox run --"),
+    ("mise", "mise exec --"),
+    ("direnv", "direnv exec ."),
+];
+
+/// The wrapper this repo appears to use, by the files it has.
+pub fn env_wrapper(root: &Path) -> Option<(&'static str, &'static str)> {
+    let has = |f: &str| root.join(f).is_file();
+    let name = if has("devbox.json") {
+        "devbox"
+    } else if has("flake.nix") {
+        "nix"
+    } else if has("mise.toml") || has(".mise.toml") || has(".tool-versions") {
+        "mise"
+    } else if has(".envrc") {
+        "direnv"
+    } else {
+        return None;
+    };
+    // Only a wrapper that works here: its program must be installed, and
+    // direnv refuses an `.envrc` that was never allowed at the gate's path,
+    // so it is offered but never preselected.
+    if name == "direnv" {
+        return None;
+    }
+    WRAPPERS
+        .iter()
+        .copied()
+        .find(|(n, _)| *n == name)
+        .filter(|(n, _)| crate::gh::which(n).is_some())
+}
+
 /// The repo-rules files that exist.
 pub fn rules(root: &Path) -> Vec<String> {
     ["CLAUDE.md", "AGENTS.md"]
@@ -102,6 +140,21 @@ pub fn rules(root: &Path) -> Vec<String> {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn wrapper_needs_its_file_and_program() {
+        let d = tempfile::tempdir().unwrap();
+        assert!(env_wrapper(d.path()).is_none());
+        fs::write(d.path().join(".envrc"), "use flake").unwrap();
+        assert!(env_wrapper(d.path()).is_none());
+        let d = tempfile::tempdir().unwrap();
+        fs::write(d.path().join(".tool-versions"), "rust 1.80").unwrap();
+        // Preselected only when mise is installed here.
+        assert_eq!(
+            env_wrapper(d.path()).is_some(),
+            crate::gh::which("mise").is_some()
+        );
+    }
 
     #[test]
     fn detects_common_stacks() {
@@ -130,6 +183,18 @@ mod tests {
         )
         .unwrap();
         assert_eq!(gates(d.path()), vec!["just lint", "just test"]);
+    }
+
+    #[test]
+    fn finds_the_toolchain_shell() {
+        let d = tempfile::tempdir().unwrap();
+        assert_eq!(env_wrapper(d.path()), None);
+        fs::write(d.path().join(".envrc"), "use flake\n").unwrap();
+        // direnv is offered, never preselected.
+        assert_eq!(env_wrapper(d.path()), None);
+        fs::write(d.path().join("flake.nix"), "{}").unwrap();
+        let want = crate::gh::which("nix").map(|_| ("nix", "nix develop --command"));
+        assert_eq!(env_wrapper(d.path()), want);
     }
 
     #[test]

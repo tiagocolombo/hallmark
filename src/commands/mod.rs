@@ -3,6 +3,7 @@
 
 pub mod ask;
 pub mod budget;
+pub mod config;
 pub mod daemon;
 pub mod doctor;
 pub mod fix;
@@ -21,6 +22,7 @@ pub mod setup;
 pub mod status;
 pub mod update;
 pub mod watch;
+pub mod wizard;
 
 use chrono::{DateTime, Utc};
 use schemars::JsonSchema;

@@ -378,7 +378,7 @@ pub fn new(cwd: &Path, a: NewArgs, mode: Mode) -> Result<Response> {
     if a.open && mode == Mode::Text {
         resp.print(mode);
         let prompt = request.unwrap_or(title);
-        let status = Command::new("claude")
+        let status = Command::new(crate::config::Tool::Claude.command())
             .arg(prompt)
             .current_dir(&item.worktree)
             .status();
