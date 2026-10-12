@@ -160,7 +160,9 @@ add a ruling to `prior`:
 
 - `fixed`: the code now handles the scenario, and for a correctness or
   evidence finding a test now fails without the fix. Check both; a claim is
-  not proof.
+  not proof. When no deterministic test can pin the behaviour (CI or config,
+  docs, prompt text, a refactor that keeps behaviour), check it by reading
+  and rule `fixed` with a `note` saying why there is no test.
 - `open`: still broken. Add a `note` saying what is still wrong.
 - `withdrawn`: the fixer's dispute is right, or the finding was wrong. Say
   why in the `note`.

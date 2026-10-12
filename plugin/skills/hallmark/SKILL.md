@@ -92,7 +92,9 @@ every part is in.
      absolute paths. Run git there with `git -C <worktree>`. Commit your work.
      Don't push and don't run `hall ready`. Write a test for each behaviour
      you add or change (main path, boundaries, error paths) and check each
-     one fails without your change. Run the repo's gates in the worktree.
+     one fails without your change (write the test before the code, or break
+     the covered line in place and restore it; never `git stash`, the stash is
+     shared by every worktree). Run the repo's gates in the worktree.
      Report what you did, the tests you added and what you checked."
 2. **As each subagent finishes**, check its report (send it back if a
    behaviour has no test), then merge the part into the parent's branch:
@@ -127,8 +129,9 @@ done, act as the change's test engineer:
    repeated, concurrent or interrupted runs where they can happen.
 2. Write a test for each case that asserts the outcome, not just that the
    code ran. For a bug fix, first write the test that reproduces the bug.
-3. Prove each new test can fail: run it against the old code, or break the
-   line it covers, and watch it go red. A test that can't fail is not
+3. Prove each new test can fail: write it before the code, or break the
+   line it covers in place and restore it, and watch it go red. Never
+   `git stash`: the stash is shared by every worktree. A test that can't fail is not
    evidence.
 4. Keep tests deterministic: no real sleeps, clocks, network or model runs,
    no shared temp paths, no order dependence. Use the repo's fakes and

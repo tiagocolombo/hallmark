@@ -73,8 +73,11 @@ checkout. `hall log <item>` shows the item's history; `hall library search
   an empty `findings` list and a summary that says so; that is a good outcome,
   not a lazy one. Never invent findings to look thorough.
 - **From round 2, rule on every open finding** in `prior`: `fixed` when the
-  code now handles the scenario and a test now fails without the fix (check
-  both; a fixer's claim is not proof),
+  code now handles the scenario and, for a correctness or evidence finding, a
+  test now fails without the fix (check both; a fixer's claim is not proof).
+  Where no deterministic test can pin the fix (CI or config, docs, prompt
+  text, a behaviour-preserving refactor), check it by reading and rule `fixed`
+  with a note saying why there is no test,
   `open` when it is still broken, `withdrawn` when the fixer's dispute is
   right or the finding was wrong. Don't repeat an open finding as a new one.
 - **Refute before you return.** Try to prove each finding wrong (the guard,
