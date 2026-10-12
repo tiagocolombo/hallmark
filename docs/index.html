@@ -519,8 +519,8 @@ footer a:hover { color: var(--ink); }
       <article class="card">
         <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg></div>
         <h3>Fits your toolchain</h3>
-        <p>Gates, worktree and ship commands come from <code>.hallmark.toml</code>, with defaults for plain git and gh. Gates can run inside <code>nix develop</code>, devbox, mise or direnv, and <code>hall config</code> changes any setting with checked values.</p>
-        <div class="proof">hall config set gates "make test" "make lint"</div>
+        <p>Gates, worktree and ship commands come from <code>.hallmark.toml</code>, with defaults for plain git and gh. Gates can run inside <code>nix develop</code>, devbox, mise or direnv.</p>
+        <div class="proof">hall budget --set daily=4M</div>
       </article>
       <article class="card">
         <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 018 0v3"/></svg></div>
@@ -626,9 +626,9 @@ footer a:hover { color: var(--ink); }
         <div class="num" aria-hidden="true"></div>
         <div>
           <h3>Set up your repository</h3>
-          <p>Installs the Claude Code plugin, detects your gates, starts the review daemon and runs <code>hall doctor</code>. Safe to run again. Add <code>--interactive</code> to choose as you go: your gates and the shell they run in (<code>nix develop</code>, devbox, mise, direnv), how work ships, models, budgets, tools and notifications. Nothing is written until you confirm.</p>
+          <p>Installs the Claude Code plugin, detects your gates, starts the review daemon and runs <code>hall doctor</code>. Safe to run again.</p>
           <div class="code"><pre>cd your-repo
-hall setup   <span class="d"># or: hall setup --interactive</span></pre><button class="copy" type="button" aria-label="Copy command"><svg aria-hidden="true"><use href="#i-copy"/></svg></button></div>
+hall setup</pre><button class="copy" type="button" aria-label="Copy command"><svg aria-hidden="true"><use href="#i-copy"/></svg></button></div>
         </div>
       </div>
       <div class="cmd">
@@ -642,7 +642,7 @@ hall setup   <span class="d"># or: hall setup --interactive</span></pre><button 
       </div>
     </div>
 
-    <p class="alt">Change any setting later with <code>hall config</code>, for example <code>hall config set budget.daily 4M</code>, or ask Claude to "set up Hallmark". You never need to edit the TOML by hand.</p>
+    <p class="alt">Change budgets later with <code>hall budget --set daily=4M</code>, and every other setting in <code>.hallmark.toml</code>, or ask Claude to "set up Hallmark".</p>
     <p class="alt" style="margin-top:10px">Prefer Nix or a prebuilt binary? See the <a href="https://github.com/tiagocolombo/hallmark/blob/main/docs/install.md">installation guide</a> for every option, upgrading with <code>hall update</code>, and notes for Windows.</p>
 
     <div class="note">
