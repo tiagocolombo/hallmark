@@ -215,7 +215,7 @@ section { padding-block: clamp(72px, 10vw, 120px); }
 
 /* name */
 .name { background: var(--term-bg); color: var(--term-fg); border-block: 1px solid var(--term-line); }
-.name .wrap { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 56px; align-items: center; }
+.name .intro { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 56px; align-items: center; }
 .name .seal { width: clamp(140px, 20vw, 220px); aspect-ratio: 1; height: auto; filter: drop-shadow(0 20px 40px rgba(0,0,0,.35)); }
 .name .eyebrow { color: var(--term-brass); }
 .name h2 { color: #fff; max-width: 18ch; }
@@ -224,7 +224,21 @@ section { padding-block: clamp(72px, 10vw, 120px); }
 .vocab { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 26px; }
 .vocab span { font-family: var(--mono); font-size: 0.8rem; border: 1px solid var(--term-line); border-radius: 999px; padding: 4px 12px; color: var(--term-dim); }
 .vocab b { color: var(--term-brass); font-weight: 600; }
-@media (max-width: 760px) { .name .wrap { grid-template-columns: minmax(0, 1fr); gap: 32px; } }
+@media (max-width: 760px) { .name .intro { grid-template-columns: minmax(0, 1fr); gap: 32px; } }
+.marks-head { margin-top: 64px; font-family: var(--display); color: #fff; font-size: 1.35rem; font-weight: 700; letter-spacing: -0.01em; }
+.marks-sub { color: #aeb8ba; max-width: 64ch; margin-top: 8px; }
+.marks { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; margin-top: 28px; }
+.mark { border: 1px solid var(--term-line); border-radius: 12px; padding: 20px 18px 18px; background: color-mix(in srgb, #fff 3%, transparent); min-width: 0; display: flex; flex-direction: column; }
+.mark .punch { width: 46px; height: 46px; border-radius: 10px; border: 2px solid var(--term-brass); color: var(--term-brass); display: grid; place-items: center; font-family: var(--display); font-weight: 800; font-size: 1.05rem; margin-bottom: 16px; }
+.mark h3 { color: #fff; }
+.mark .then { color: var(--term-dim); font-size: 0.92rem; margin: 0 0 12px; }
+.mark .now { color: var(--term-fg); font-size: 0.95rem; margin: 0 0 14px; }
+.mark code { margin-top: auto; display: block; background: var(--term-bg); color: var(--term-brass); border: 1px solid var(--term-line); border-radius: 8px; padding: 7px 10px; font-size: 0.78rem; overflow-wrap: anywhere; }
+.struck { margin-top: 28px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px; align-items: start; border-left: 3px solid var(--term-brass); background: color-mix(in srgb, var(--term-brass) 10%, transparent); padding: 16px 18px; border-radius: 0 10px 10px 0; color: #d7dcdb; max-width: 860px; }
+.struck svg { width: 22px; height: 22px; color: var(--term-brass); margin-top: 2px; }
+.struck p { margin: 0; font-size: 1rem; }
+.struck b { color: #fff; }
+.struck code { background: transparent; color: var(--term-brass); padding: 0; }
 
 /* agents */
 .agents .split { align-items: start; }
@@ -305,6 +319,7 @@ footer a:hover { color: var(--ink); }
       <a href="#problem">The problem</a>
       <a href="#how">How it works</a>
       <a href="#impact">What changes</a>
+      <a href="#name">Why Hallmark</a>
       <a href="#start">Get started</a>
       <a class="gh" href="https://github.com/tiagocolombo/hallmark"><svg aria-hidden="true"><use href="#i-gh"/></svg>GitHub</a>
     </nav>
@@ -391,6 +406,7 @@ footer a:hover { color: var(--ink); }
         <ul>
           <li><svg aria-hidden="true"><use href="#i-x"/></svg>You read every diff line by line, because nobody else did.</li>
           <li><svg aria-hidden="true"><use href="#i-x"/></svg>You re-run the tests and paste errors back into the chat.</li>
+          <li><svg aria-hidden="true"><use href="#i-x"/></svg>Green tests prove only the tests that exist, not that the change is tested.</li>
           <li><svg aria-hidden="true"><use href="#i-x"/></svg>Approval is a thumbs-up in a chat that no commit remembers.</li>
           <li><svg aria-hidden="true"><use href="#i-x"/></svg>Every agent ping pulls you out of what you were doing.</li>
           <li><svg aria-hidden="true"><use href="#i-x"/></svg>Cost is something you find out about later.</li>
@@ -402,6 +418,7 @@ footer a:hover { color: var(--ink); }
         <ul>
           <li><svg aria-hidden="true"><use href="#i-check"/></svg>An independent reviewer reads the diff first, with fresh context and your repo's rules.</li>
           <li><svg aria-hidden="true"><use href="#i-check"/></svg>Your gates run first. Failures go to a fixer and back, on their own.</li>
+          <li><svg aria-hidden="true"><use href="#i-check"/></svg>A changed behaviour no test would catch breaking blocks approval.</li>
           <li><svg aria-hidden="true"><use href="#i-check"/></svg>Approval is a git note on one exact SHA. Change a byte and it's gone.</li>
           <li><svg aria-hidden="true"><use href="#i-check"/></svg>Only escalations reach you. Everything else keeps moving.</li>
           <li><svg aria-hidden="true"><use href="#i-check"/></svg>Budgets per run, item, role and day stop the loop before it runs away.</li>
@@ -425,7 +442,7 @@ footer a:hover { color: var(--ink); }
       <div class="step">
         <span class="k">01 · Start</span>
         <h3>An item</h3>
-        <p>A prompt, a GitHub issue or an existing branch becomes <code>H-0042</code>, with its own branch and worktree.</p>
+        <p>A prompt, a GitHub issue, a branch or an open PR becomes <code>H-0042</code>, with its own branch and worktree.</p>
       </div>
       <div class="step">
         <span class="k">02 · Build</span>
@@ -442,7 +459,7 @@ footer a:hover { color: var(--ink); }
         <div class="step">
           <span class="k">04 · Review</span>
           <h3>Principal engineer</h3>
-          <p>Seven lenses, fresh context, your repo's rules. It reports only what it can show is broken.</p>
+          <p>Tests audited first, then seven lenses, with fresh context and your repo's rules. It reports only what it can show is broken.</p>
         </div>
         <div class="step">
           <span class="k">05 · Fix</span>
@@ -453,7 +470,7 @@ footer a:hover { color: var(--ink); }
       <div class="step ship">
         <span class="k">06 · Ship</span>
         <h3>Hallmarked</h3>
-        <p>Rebased onto the latest base, stamped, and opened as a PR, then watched until it merges.</p>
+        <p>Rebased onto the latest base, stamped, and opened as a PR. Conflicts, red CI and new comments come back through the loop until it merges.</p>
       </div>
     </div>
 
@@ -486,6 +503,12 @@ footer a:hover { color: var(--ink); }
         <p>A separate principal-engineer agent reviews a frozen commit against your base branch, headless, with fresh context. It never edits code, so it has no stake in what it's grading.</p>
       </article>
       <article class="card">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6M10 3v6l-5 9a2 2 0 001.7 3h10.6a2 2 0 001.7-3l-5-9V3"/><path d="M7.5 15h9"/></svg></div>
+        <h3>Untested means unfinished</h3>
+        <p>The reviewer audits the tests before anything else. For each changed behaviour it flips the logic like a mutation tool: if no test would fail, approval waits. A bug fix needs its regression test, and the fixer writes the test first.</p>
+        <div class="proof">major · retry.rs:48 · unpinned</div>
+      </article>
+      <article class="card">
         <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v5.5c0 4.4-3 7.7-7 9.5-4-1.8-7-5.1-7-9.5V6z"/><path d="M9.5 9v6M14.5 9v6M9.5 12h5"/></svg></div>
         <h3>Trust bound to a commit</h3>
         <p>The approval is a git note on that exact SHA. A push gate in Claude Code blocks anything without one, so "approved" can't drift from what actually ships.</p>
@@ -497,14 +520,20 @@ footer a:hover { color: var(--ink); }
         <p>Failing checks and findings go to a fixer and back to review until the commit is approved. Three rejections escalate to you, with the evidence attached. Independent parts of a larger request run as parallel items.</p>
       </article>
       <article class="card">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="2.2"/><circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="18" r="2.2"/><path d="M6 8.2v7.6M18 15.8V10a3 3 0 00-3-3h-4M13 4.5L10.5 7 13 9.5"/></svg></div>
+        <h3>Watched until it merges</h3>
+        <p>Shipping isn't the end. The Delivery Office watches each PR: a conflict gets rebased, red CI goes to a fixer, and new review comments go back through review. Already have a PR open? Hand it over.</p>
+        <div class="proof">hall adopt --pr 318</div>
+      </article>
+      <article class="card">
         <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 16V11a6 6 0 0112 0v5l1.5 2h-15z"/><path d="M10 21h4"/></svg></div>
         <h3>Interrupted only when it matters</h3>
-        <p>Questions, escalations and holds land in your office, and reach you in Claude Code, the terminal app, the desktop or your phone. Only that item waits. The rest of the building keeps working.</p>
+        <p>Questions, escalations and holds land in your office, and reach you in Claude Code's status line, the terminal app, the desktop, or your phone through ntfy, Telegram or Slack. Answer, and the agent's session picks up with its context. Only that item waits.</p>
       </article>
       <article class="card">
         <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19h16M7 15V9M12 15V5M17 15v-4"/></svg></div>
         <h3>Spend you decide in advance</h3>
-        <p>Every model run is measured. Caps per run, per item, per role and per day stop the loop before it runs away, and checks run before any review tokens are spent.</p>
+        <p>Every model run is measured. Caps per run, per item, per role and per day stop the loop before it runs away, and checks run before any review tokens are spent. A busy day? Grant more for today without changing the cap.</p>
         <div class="proof">hall budget --set per_item=800k</div>
       </article>
       <article class="card">
@@ -519,10 +548,16 @@ footer a:hover { color: var(--ink); }
         <p>When an item closes, the Library keeps what it taught and briefs the principal engineer before the next review. The same mistake gets cheaper to catch.</p>
       </article>
       <article class="card">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5M13.5 4.5l-3 15"/></svg></div>
+        <h3>A reviewer that knows your repo</h3>
+        <p>Add your own skills to extend or replace how the reviewer reviews, how the fixer fixes and what development sessions are told. Like your rules, they're read from the base branch, so a branch can't rewrite its own review.</p>
+        <div class="proof">.hallmark/skills/*/SKILL.md</div>
+      </article>
+      <article class="card">
         <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg></div>
         <h3>Fits your toolchain</h3>
-        <p>Gates, worktree and ship commands come from <code>.hallmark.toml</code>, with defaults for plain git and gh. Gates can run inside <code>nix develop</code>, devbox, mise or direnv.</p>
-        <div class="proof">hall budget --set daily=4M</div>
+        <p>Gates, worktree and ship commands, and the model for each role, come from <code>.hallmark.toml</code>, with defaults for plain git and gh. Gates can run inside <code>nix develop</code>, devbox, mise or direnv. Change any setting without editing TOML.</p>
+        <div class="proof">hall config set gates "make test"</div>
       </article>
       <article class="card">
         <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 018 0v3"/></svg></div>
@@ -532,7 +567,7 @@ footer a:hover { color: var(--ink); }
     </div>
 
     <div class="lenses" aria-label="The seven review lenses">
-      <span class="lbl">The seven lenses</span>
+      <span class="lbl">Tests first, then seven lenses</span>
       <span>first_principles</span><span>correctness</span><span>security_tenancy</span><span>data_migrations</span><span>evidence</span><span>operability</span><span>repo_rules</span>
     </div>
   </div>
@@ -548,6 +583,7 @@ footer a:hover { color: var(--ink); }
       <ul class="checks">
         <li><svg aria-hidden="true"><use href="#i-check"/></svg><div><b>Your office.</b> <span>Every entry says why it waits, shows the evidence and lists what you can do. One key to answer.</span></div></li>
         <li><svg aria-hidden="true"><use href="#i-check"/></svg><div><b>Findings with scenarios.</b> <span>Each one names its lens, file, line and the concrete way it breaks.</span></div></li>
+        <li><svg aria-hidden="true"><use href="#i-check"/></svg><div><b>What each item is doing now.</b> <span>Queued behind what, which gate is running, the reviewer's run, a hold. <code>hall watch</code> follows one live.</span></div></li>
         <li><svg aria-hidden="true"><use href="#i-check"/></svg><div><b>Usage and history.</b> <span>Tokens and cost by room, model or day, and every closed or dropped item.</span></div></li>
       </ul>
     </div>
@@ -558,13 +594,14 @@ footer a:hover { color: var(--ink); }
 </section>
 
 <!-- THE NAME -->
-<section class="name" aria-labelledby="name-h">
-  <div class="wrap">
+<section class="name" id="name" aria-labelledby="name-h">
+  <div class="wrap intro">
     <svg class="seal" aria-hidden="true"><use href="#hm-logo"/></svg>
     <div>
       <p class="eyebrow">Why "Hallmark"</p>
       <h2 id="name-h">Tested, then stamped. The old way to earn trust.</h2>
-      <p>At Goldsmiths' Hall in London, silver was <b>tested and stamped before it could be sold</b>. The stamp didn't say the smith was good. It said <b>this piece</b> had passed. Hallmark works the same way, and is laid out like the building: requests arrive at the Front Desk, get built in the Workshop, tested in the Assay Office, repaired in the Repair Shop, stamped, and sent from the Dispatch Dock.</p>
+      <p>For more than seven hundred years, English silver has had to be <b>tested before it could be sold</b>. A smith brought each piece to Goldsmiths' Hall in London, where an assayer scraped a sample and tested it. Only a piece that met the standard was struck with the Hall's marks. That is where the word comes from: a <b>hall mark</b> is the mark of the Hall.</p>
+      <p>The stamp never said the smith was good. It said <b>this piece</b> had passed, and the person who made it was not the one who tested it. That is the trust coding agents are missing, so Hallmark works the same way. It is even laid out like the building: requests arrive at the Front Desk, get built in the Workshop, tested in the Assay Office, repaired in the Repair Shop, stamped, and sent from the Dispatch Dock.</p>
       <div class="vocab">
         <span><b>item</b> one piece of work, prompt to PR</span>
         <span><b>journal</b> its full history</span>
@@ -572,6 +609,44 @@ footer a:hover { color: var(--ink); }
         <span><b>fixer</b> addresses findings, never approves</span>
         <span><b>hallmark</b> approval bound to a commit</span>
       </div>
+    </div>
+  </div>
+  <div class="wrap">
+    <h3 class="marks-head">Four marks, then and now.</h3>
+    <p class="marks-sub">A hallmark on silver is a set of small punches, each answering one question. The note Hallmark strikes on an approved commit answers the same four.</p>
+    <div class="marks">
+      <div class="mark">
+        <span class="punch" aria-hidden="true">M</span>
+        <h3>Maker's mark</h3>
+        <p class="then">Then: who made the piece.</p>
+        <p class="now">Now: the item it belongs to, with its journal of every prompt and commit.</p>
+        <code>"item": "H-0042"</code>
+      </div>
+      <div class="mark">
+        <span class="punch" aria-hidden="true">S</span>
+        <h3>Standard mark</h3>
+        <p class="then">Then: the silver is sterling, at least 92.5% pure.</p>
+        <p class="now">Now: the gates passed, and no blocker or major finding is open.</p>
+        <code>"findings": {"blocker":0,"major":0,…}</code>
+      </div>
+      <div class="mark">
+        <span class="punch" aria-hidden="true">A</span>
+        <h3>Assay office mark</h3>
+        <p class="then">Then: which hall tested it.</p>
+        <p class="now">Now: the reviewer that approved it, and in which round.</p>
+        <code>"reviewer": "opus", "round": 2</code>
+      </div>
+      <div class="mark">
+        <span class="punch" aria-hidden="true">D</span>
+        <h3>Date letter</h3>
+        <p class="then">Then: the year it was tested.</p>
+        <p class="now">Now: the moment the hallmark was struck.</p>
+        <code>"t": "2026-10-12T10:44:07Z"</code>
+      </div>
+    </div>
+    <div class="struck">
+      <svg aria-hidden="true"><use href="#i-check"/></svg>
+      <p><b>And it's struck on the piece itself.</b> A hallmark can't be moved to another spoon, and the note lives on one exact commit, <code>a19be3e</code>. Change a byte and you have a new commit with no mark, so it goes back to the Assay Office before it can leave.</p>
     </div>
   </div>
 </section>
@@ -587,6 +662,7 @@ footer a:hover { color: var(--ink); }
         <li>The CLI is an API: JSON whenever stdout isn't a terminal.</li>
         <li>Every reply includes <code>next</code>, the commands that make sense now.</li>
         <li>Errors are data, with documented exit codes.</li>
+        <li>With nothing left to confirm, the agent sends its own work to review. A judgement call waits for you.</li>
         <li>Commands never prompt, and are idempotent.</li>
         <li><code>hall schema</code> prints the JSON Schema of any output.</li>
       </ul>
@@ -628,7 +704,7 @@ footer a:hover { color: var(--ink); }
         <div class="num" aria-hidden="true"></div>
         <div>
           <h3>Set up your repository</h3>
-          <p>Installs the Claude Code plugin, detects your gates, starts the review daemon and runs <code>hall doctor</code>. Safe to run again.</p>
+          <p>Installs the Claude Code plugin, detects your gates, starts the review daemon and runs <code>hall doctor</code>. Safe to run again. Add <code>--interactive</code> to choose gates, models, budgets and notifications as you go.</p>
           <div class="code"><pre>cd your-repo
 hall setup</pre><button class="copy" type="button" aria-label="Copy command"><svg aria-hidden="true"><use href="#i-copy"/></svg></button></div>
         </div>
@@ -644,12 +720,12 @@ hall setup</pre><button class="copy" type="button" aria-label="Copy command"><sv
       </div>
     </div>
 
-    <p class="alt">Change budgets later with <code>hall budget --set daily=4M</code>, and every other setting in <code>.hallmark.toml</code>.</p>
+    <p class="alt">Change any setting later with <code>hall config</code>, such as <code>hall config set budget.daily 4M</code>, or ask Claude to "set up Hallmark".</p>
     <p class="alt" style="margin-top:10px">Prefer Nix or a prebuilt binary? See the <a href="https://github.com/tiagocolombo/hallmark/blob/main/docs/install.md">installation guide</a> for every option, upgrading with <code>hall update</code>, and notes for Windows.</p>
 
     <div class="note">
       <svg aria-hidden="true"><use href="#i-info"/></svg>
-      <p><b>Early and moving fast.</b> Hallmark is at <code>0.1</code>, and the full loop runs today: items and the journal, gates, checks, review, fixes, shipping, delivery tracking, parallel parts, budgets, notifications, the Library and the terminal app. Expect the configuration and CLI to change before <code>1.0</code>. Every model run goes through <code>claude -p</code> and counts toward your Claude plan or API usage.</p>
+      <p><b>Early and moving fast.</b> Hallmark is at <code>0.1</code>, and the full loop runs today: items and the journal, gates, checks, test-first review, fixes, shipping, delivery tracking, parallel parts, budgets, notifications, the Library, repo skills and the terminal app. Expect the configuration and CLI to change before <code>1.0</code>. Every model run goes through <code>claude -p</code> and counts toward your Claude plan or API usage.</p>
     </div>
   </div>
 </section>
