@@ -1414,3 +1414,54 @@ fn t_on_an_item_without_runs_says_so() {
     assert!(app.trace.as_ref().unwrap().steps.is_empty());
     assert!(screen(&env, &app, W, 12).contains("Waiting for the run's first step"));
 }
+
+#[test]
+fn now_block_actions_for_runs_open_in_the_app() {
+    let env = building();
+    let text = stream();
+    write_run(&env, 1, "20261012T215146-reviewer.jsonl", &text);
+    let mut app = load(&env, &env.repo);
+    select(&mut app, 2);
+    key(&mut app, KeyCode::Char('i'));
+
+    // Following a run opens the Trace view on its item, never blocks.
+    assert_eq!(app.run_command("hall trace H-0001 --follow"), Effect::None);
+    assert_eq!(app.view, View::Trace);
+    assert_eq!(app.selected, Some(ItemId(1)));
+    let t = app.trace.as_ref().unwrap();
+    assert_eq!((t.id, t.steps.len()), (ItemId(1), 7));
+    key(&mut app, KeyCode::Esc);
+    assert_eq!(app.view, View::Inbox, "back where it was run from");
+    assert_eq!(app.run_command("hall trace H-0099 --follow"), Effect::None);
+    assert!(app.status.as_ref().unwrap().error);
+    assert_eq!(app.view, View::Inbox);
+
+    // Resuming a failed run starts Claude Code where the run ran: here a
+    // folder that isn't the item's worktree, with a space in its name.
+    let dir = env.root.join("review H-0001");
+    std::fs::create_dir_all(&dir).unwrap();
+    let cmd = format!("cd \"{}\" && claude --resume 91aedf44", dir.display());
+    match app.run_command(&cmd) {
+        Effect::Run { program, args, cwd } => {
+            assert_eq!(program, "claude");
+            assert_eq!(args, ["--resume", "91aedf44"]);
+            assert_eq!(cwd, dir);
+        }
+        e => panic!("{e:?}"),
+    }
+    // A folder that is gone is shown for you to do.
+    let gone = format!(
+        "cd {} && claude --resume 91aedf44",
+        p(&env.root.join("gone"))
+    );
+    assert_eq!(app.run_command(&gone), Effect::None);
+    assert!(
+        app.status
+            .as_ref()
+            .unwrap()
+            .text
+            .starts_with("Do this yourself"),
+        "{:?}",
+        app.status
+    );
+}

@@ -1586,14 +1586,26 @@ impl App {
     }
 
     /// Runs an action's command: `hall …` in-process (asking first for any
-    /// `<placeholder>`), `claude …` with the terminal handed over, and
-    /// anything else is shown for you to do.
+    /// `<placeholder>`), `hall trace … --follow` in the Trace view,
+    /// `claude …` with the terminal handed over (`cd <dir> && claude …` in
+    /// that folder: where the run started), and anything else is shown for
+    /// you to do.
     pub fn run_command(&mut self, cmd: &str) -> Effect {
+        if let Some(e) = self.resume_in(cmd) {
+            return e;
+        }
         let Some(args) = shlex::split(cmd).filter(|a| !a.is_empty()) else {
             self.err(&format!("Can't read the command: {cmd}"));
             return Effect::None;
         };
         match args[0].as_str() {
+            // Following a run would block the app; the Trace view does it.
+            "hall"
+                if args.get(1).is_some_and(|a| a == "trace")
+                    && args.iter().any(|a| a == "--follow") =>
+            {
+                self.follow_run(args.get(2).filter(|a| !a.starts_with('-')));
+            }
             "hall" if args.get(1).is_some_and(|a| a == "watch") => {
                 self.info(&format!(
                     "`{cmd}` follows the item live: run it in a terminal."
@@ -1673,6 +1685,47 @@ impl App {
             args: args[1..].to_vec(),
             cwd,
         }
+    }
+
+    /// `hall trace [<id>] --follow`: the Trace view on that item, or the
+    /// selected one.
+    fn follow_run(&mut self, id: Option<&String>) {
+        if let Some(arg) = id {
+            match arg.parse::<ItemId>() {
+                Ok(id) if self.repo().is_some_and(|r| r.data.item(id).is_some()) => {
+                    self.select(Some(id))
+                }
+                _ => {
+                    self.err(&format!("No item {arg} here."));
+                    return;
+                }
+            }
+        }
+        if self.view == View::Trace {
+            self.close_trace();
+        }
+        self.open_trace();
+    }
+
+    /// `cd <dir> && claude …`: the terminal handed to Claude Code in `<dir>`
+    /// (a failed run's working directory, which can be a review worktree
+    /// rather than the item's). Read without shell parsing, so a Windows
+    /// path keeps its backslashes. `None` when `cmd` isn't one.
+    fn resume_in(&mut self, cmd: &str) -> Option<Effect> {
+        let (dir, rest) = cmd.strip_prefix("cd ")?.split_once(" && ")?;
+        let args = shlex::split(rest).filter(|a| a.first().is_some_and(|p| p == "claude"))?;
+        let dir = PathBuf::from(dir.trim().trim_matches('"'));
+        if !dir.is_dir() {
+            self.info(&format!(
+                "Do this yourself: {cmd} (that folder is gone here)"
+            ));
+            return Some(Effect::None);
+        }
+        Some(Effect::Run {
+            program: crate::config::Tool::Claude.command(),
+            args: args[1..].to_vec(),
+            cwd: dir,
+        })
     }
 
     /// Called by the runner when an [`Effect::Run`] is over.
