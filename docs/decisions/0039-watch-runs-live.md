@@ -23,7 +23,10 @@ which only arrived with the result.
   `{"type":"hall_run_end","t":…,"duration_ms":…,"exit_code":…,"failure":…}`
   (`trace::RunEnd`). It no longer writes `<stamp>-<role>.json`; the result
   is the stream's last `result` line, which `PrintResult::parse` already
-  reads. A run with no item streams nowhere, as before.
+  reads. A run with no item streams nowhere; intake, which runs before
+  its item exists, saves its whole stream to the new item afterwards. The
+  file is created empty when the run starts, so it is listed at once, and a
+  fallback-model retry is a run of its own.
 - **Hallmark owns the file.** Nothing reads `~/.claude/projects`: the
   stream is in the journal's directory, on every OS, and the fake runner
   writes the same file from its script.

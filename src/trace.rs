@@ -1,4 +1,4 @@
-//! A headless run, step by step (ADR 0038). The runner streams every
+//! A headless run, step by step (ADR 0039). The runner streams every
 //! `claude -p` run as stream-json into the item's `runs/` directory, one
 //! file per run, and appends one `hall_run_end` line when the process has
 //! exited. This module finds those files and turns their lines into steps:
