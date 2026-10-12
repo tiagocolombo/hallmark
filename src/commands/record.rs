@@ -4,7 +4,7 @@
 //!   and dropped items, newest first, with the blocker and major findings
 //!   behind each rejection.
 //! - `hall export` writes an item's whole record as Markdown. The shipper
-//!   writes one for every item it ships, and the PR body points to it.
+//!   writes one for every item it ships, and the review comment on the PR points to it.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;

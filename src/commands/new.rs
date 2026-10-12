@@ -1079,7 +1079,7 @@ fn orchestration_next(parent: &Item, children: &[(Item, Part)]) -> Vec<String> {
         n.push(format!("hall merge {} (when its subagent is done)", c.id));
     }
     n.push(format!(
-        "hall propose-ready {} --summary \"<what was done>\" (after every child is merged)",
+        "hall propose-ready {} --summary \"<what was done>\" --why \"<why>\" --how \"<how>\" (after every child is merged)",
         parent.id
     ));
     n.push(format!("hall ready {}", parent.id));
@@ -1160,7 +1160,8 @@ pub fn follow_up_request(
         ));
     }
     for c in &pr.comments {
-        if c.body.trim().is_empty() {
+        // Hallmark's own review comment is never feedback (ADR 0039).
+        if c.body.trim().is_empty() || crate::delivery::is_ours(&c.body) {
             continue;
         }
         lines.push(format!("- {}: {}", who(c), clip(c.body.trim(), 1500)));
@@ -1401,7 +1402,13 @@ mod tests {
                     ..comment("bob", "")
                 },
             ],
-            comments: vec![comment("carol", "Also log the attempt number.")],
+            comments: vec![
+                comment("carol", "Also log the attempt number."),
+                comment(
+                    "me",
+                    "<!-- hallmark:review -->\n## Hallmark review: approved",
+                ),
+            ],
             line_comments: vec![GhComment {
                 path: Some("src/retry.rs".into()),
                 line: Some(14),
@@ -1432,6 +1439,10 @@ mod tests {
         assert!(r.contains("- @alice on src/retry.rs:14: Use saturating_mul here."));
         assert!(r.contains("- @carol: Also log the attempt number."));
         assert!(!r.contains("@bob"), "empty approvals are skipped");
+        assert!(
+            !r.contains("Hallmark review"),
+            "our own review isn't feedback"
+        );
         let quiet = GhPr {
             reviews: vec![],
             comments: vec![],

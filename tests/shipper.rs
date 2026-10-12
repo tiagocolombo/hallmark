@@ -119,6 +119,9 @@ fn ship_reports_the_pr_url_and_closes_the_issue() {
     assert_eq!(status.json["pr_url"], "https://github.com/acme/app/pull/7");
     let body = std::fs::read_to_string(item_file(&env, &id, "pr-body.md")).unwrap();
     assert!(body.contains("Closes #212"), "{body}");
+    // `review_comment = ""` posts nothing, so the description doesn't claim it.
+    assert!(!body.contains("in the comments"), "{body}");
+    assert!(body.contains("the review stays local"), "{body}");
 }
 
 /// A hallmarked item whose author said what, why and how with

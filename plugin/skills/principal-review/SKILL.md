@@ -110,7 +110,7 @@ Apply only the lenses the prompt lists when it lists some.
 | `minor` | Worth fixing, but safe to ship: a rare edge case with a cheap workaround, an unpinned branch that only guards the impossible, a confusing name on a public API | no |
 | `nit` | Style and polish | no |
 
-Minors and nits ride along into the pull request body. List them when they
+Minors and nits ride along into the review comment on the pull request. List them when they
 help; never let them crowd out what matters.
 
 ## The evidence bar

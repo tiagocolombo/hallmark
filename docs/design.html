@@ -1015,7 +1015,7 @@ $ echo $?
 │  ├─ reviews/r1.md          full review reports
 │  └─ checks/r1.log          failing check output
 └─ queue/                    tickets waiting for the assayer</code></pre>
-      <p style="margin-top: 12px">A SQLite index, rebuilt from these files at any time, answers usage and history questions quickly. The journal lives in each repo's git directory, so it outlives worktrees and is never committed. A small registry in your user state directory lists which repos use Hallmark, so the terminal app can show them all. <code>hall export H-0042</code> writes the whole record as Markdown, and the PR body links to it.</p>
+      <p style="margin-top: 12px">A SQLite index, rebuilt from these files at any time, answers usage and history questions quickly. The journal lives in each repo's git directory, so it outlives worktrees and is never committed. A small registry in your user state directory lists which repos use Hallmark, so the terminal app can show them all. <code>hall export H-0042</code> writes the whole record as Markdown, and the review comment on the PR points to it.</p>
     </div>
     <div>
       <div class="dl-label">Three lines from H-0042</div>
@@ -1285,7 +1285,7 @@ rules    = ["CLAUDE.md",
       ev: [["10:24", "assayer", "review · changes · 1 blocker, 1 major, 1 minor · 148k tok"]],
       f: { F1: "open", F2: "open", F3: "open" } },
     { t: "10:38", s: "checks", round: "r3", sha: "2a9e771", title: "The fixer addresses the findings",
-      body: "<p>The fixer checks that the endpoint still exists before each retry, logs the final give-up, and commits <code>2a9e771</code> listing the findings it fixes. The minor rename is left for the PR body.</p>",
+      body: "<p>The fixer checks that the endpoint still exists before each retry, logs the final give-up, and commits <code>2a9e771</code> listing the findings it fixes. The minor rename is left to ride along in the review comment.</p>",
       logged: "commit, fixes F1 and F2",
       ev: [["10:38", "fixer", "commit 2a9e771 · fixes F1, F2 · 74k tok"]],
       f: { F1: "fixed 2a9e771", F2: "fixed 2a9e771", F3: "open" } },

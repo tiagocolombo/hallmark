@@ -167,7 +167,12 @@ fn ship(repo: &Repo, item: &Item, ctx_holder: &str) -> Result<Progress> {
     }
     let item = &repo.hall.load_item(id)?;
     let events = repo.hall.read_item(id)?;
-    let body = pr_body(item, &events, &commit_subjects(&wt, &base, &head));
+    let body = pr_body(
+        item,
+        &events,
+        &commit_subjects(&wt, &base, &head),
+        !repo.config.review_comment.trim().is_empty(),
+    );
     let body_file = body_path(repo, id);
     std::fs::write(&body_file, &body)?;
     let review_file = review_path(repo, id);
@@ -703,13 +708,22 @@ pub const REVIEW_MARK: &str = "<!-- hallmark:review -->";
 /// - What: the author's summary (`propose-ready --summary`), else the title.
 /// - Why: `propose-ready --why`, else the request, else the issue.
 /// - How: `propose-ready --how`, else the commits.
-pub fn pr_body(item: &Item, events: &[Event], commits: &[String]) -> String {
+///
+/// `review_posted` is whether a review comment will be posted; when it isn't,
+/// the footer says the review stays local.
+pub fn pr_body(item: &Item, events: &[Event], commits: &[String], review_posted: bool) -> String {
     let proposed = events.iter().rev().find_map(|e| match &e.body {
         Body::ProposedReady { why, how, .. } => Some((why.clone(), how.clone())),
         _ => None,
     });
     let (why, how) = proposed.unwrap_or_default();
+    // A follow-up's request is generated (PR feedback, CI logs): never the
+    // Why. It gets a one-line pointer to the PR instead.
     let request = events.iter().find_map(|e| match &e.body {
+        Body::Created {
+            follow_up: Some(url),
+            ..
+        } => Some(format!("Follow-up to {url}.")),
         Body::Created { request, .. } => request.clone(),
         _ => None,
     });
@@ -745,11 +759,19 @@ pub fn pr_body(item: &Item, events: &[Event], commits: &[String]) -> String {
     if let Some(i) = &item.issue {
         let _ = writeln!(s, "\nCloses #{}", i.number);
     }
-    let _ = writeln!(
-        s,
-        "\n---\n\nReviewed and hallmarked as {}: the review is in the comments.",
-        item.id
-    );
+    if review_posted {
+        let _ = writeln!(
+            s,
+            "\n---\n\nReviewed and hallmarked as {}: the review is in the comments.",
+            item.id
+        );
+    } else {
+        let _ = writeln!(
+            s,
+            "\n---\n\nReviewed and hallmarked as {0}: the review stays local (`hall export {0}`).",
+            item.id
+        );
+    }
     s
 }
 
@@ -821,7 +843,7 @@ pub fn review_comment(item: &Item, events: &[Event], update: bool) -> String {
         }
     }
     // The approval carried across a rebase onto the latest base.
-    if let Some((from, onto)) = events.iter().rev().find_map(|e| match &e.body {
+    let carried = events.iter().rev().find_map(|e| match &e.body {
         Body::Rebased {
             from,
             onto,
@@ -832,7 +854,10 @@ pub fn review_comment(item: &Item, events: &[Event], update: bool) -> String {
             Some((from.clone(), onto.clone()))
         }
         _ => None,
-    }) {
+    });
+    // After such a rebase the commits a fix claimed were never pushed.
+    let rebased_onto = carried.as_ref().map(|(_, onto)| onto.clone());
+    if let Some((from, onto)) = carried {
         let _ = writeln!(
             s,
             "\nRebased onto `{onto}` before shipping: the patch is identical to the approved `{}` \
@@ -892,10 +917,11 @@ pub fn review_comment(item: &Item, events: &[Event], update: bool) -> String {
         let outcome = match t.status {
             crate::findings::Status::Fixed => format!(
                 "Fixed{}{}.{note}",
-                t.claimed_by
-                    .as_deref()
-                    .map(|c| format!(" in `{}`", short(c)))
-                    .unwrap_or_default(),
+                match (&rebased_onto, t.claimed_by.as_deref()) {
+                    (Some(onto), _) => format!(" before the rebase onto `{onto}`"),
+                    (None, Some(c)) => format!(" in `{}`", short(c)),
+                    (None, None) => String::new(),
+                },
                 t.settled_round
                     .map(|r| format!(", confirmed in round {r}"))
                     .unwrap_or_default()
@@ -1027,6 +1053,147 @@ fn reasons(events: &[Event]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::{Value, json};
+
+    fn item(follow_up: Option<&str>) -> Item {
+        let now = chrono::Utc::now();
+        let mut v = json!({
+            "id": "H-0042", "title": "Retry webhooks", "state": "hallmarked",
+            "branch": "hm/H-0042-retry", "worktree": "/w", "base": "main",
+            "created_at": now, "updated_at": now, "state_since": now,
+            "round": 4, "rejects": 1, "hallmark_sha": "def5678def5678",
+            "adopted": false, "events": 0,
+            "pr_url": "https://github.com/acme/app/pull/12",
+        });
+        if let Some(u) = follow_up {
+            v["follow_up"] = json!(u);
+        }
+        serde_json::from_value(v).unwrap()
+    }
+
+    fn ev(body: Value) -> Event {
+        Event::new(
+            "test",
+            Some(ItemId(42)),
+            serde_json::from_value(body).unwrap(),
+        )
+    }
+
+    fn finding(id: &str, round: u32) -> Value {
+        json!({"id": id, "round": round, "lens": "correctness", "severity": "major",
+            "file": "a.rs", "line": 1, "title": format!("Title {id}"),
+            "scenario": "s", "fix": "f"})
+    }
+
+    fn verdict(round: u32, kind: &str, found: Vec<Value>, prior: Value) -> Event {
+        ev(
+            json!({"event": "verdict", "sha": "abc1234", "round": round, "verdict": kind,
+            "findings": found, "prior": prior,
+            "counts": {"blocker": 0, "major": 0, "minor": 0, "nit": 0}}),
+        )
+    }
+
+    /// F1 raised and fixed, shipped, then F2 raised and fixed after `since`.
+    fn updated(since: Value) -> Vec<Event> {
+        vec![
+            verdict(1, "changes", vec![finding("F1", 1)], json!([])),
+            verdict(
+                2,
+                "approve",
+                vec![],
+                json!([{"id": "F1", "status": "fixed"}]),
+            ),
+            ev(
+                json!({"event": "shipped", "sha": "abc1234", "pr_url": "https://github.com/acme/app/pull/12"}),
+            ),
+            ev(since),
+            verdict(3, "changes", vec![finding("F2", 3)], json!([])),
+            verdict(
+                4,
+                "approve",
+                vec![],
+                json!([{"id": "F2", "status": "fixed"}]),
+            ),
+        ]
+    }
+
+    #[test]
+    fn an_update_lists_only_the_findings_since_the_last_ship() {
+        let events = updated(json!({"event": "ci_fix_requested",
+            "pr_url": "https://github.com/acme/app/pull/12",
+            "failing": [{"name": "test"}]}));
+        let c = review_comment(&item(None), &events, true);
+        assert!(c.contains("- It fixed failing CI: `test`."), "{c}");
+        assert!(c.contains("**F2**"), "{c}");
+        assert!(!c.contains("**F1**"), "settled before the last ship:\n{c}");
+        // A first review lists everything.
+        let first = review_comment(&item(None), &events, false);
+        assert!(
+            first.contains("**F1**") && first.contains("**F2**"),
+            "{first}"
+        );
+    }
+
+    #[test]
+    fn an_update_after_a_rebase_says_so() {
+        let events = updated(json!({"event": "rebase_requested", "onto": "main",
+            "reason": "the branch conflicts with main."}));
+        let c = review_comment(&item(None), &events, true);
+        assert!(
+            c.contains("- It was rebased onto `main`: the branch conflicts with main."),
+            "{c}"
+        );
+    }
+
+    #[test]
+    fn a_fix_before_a_carried_rebase_isnt_named_by_its_old_sha() {
+        let mut events = updated(json!({"event": "reopened", "pr_url": "u", "pr_head": "h",
+            "base": "main", "worktree": "/w"}));
+        events.push(ev(
+            json!({"event": "fix_submitted", "sha": "abc1234", "fixes": ["F1"]}),
+        ));
+        events.push(ev(
+            json!({"event": "rebased", "from": "abc1234", "to": "def5678def5678",
+            "onto": "origin/main", "carried": true}),
+        ));
+        let c = review_comment(&item(None), &events, false);
+        assert!(
+            c.contains("Rebased onto `origin/main` before shipping"),
+            "{c}"
+        );
+        assert!(
+            c.contains("Fixed before the rebase onto `origin/main`"),
+            "{c}"
+        );
+        assert!(!c.contains("Fixed in `"), "{c}");
+    }
+
+    #[test]
+    fn a_follow_ups_why_is_a_pointer_not_the_generated_request() {
+        let events = vec![ev(json!({"event": "created", "title": "t", "branch": "b",
+            "worktree": "/w", "base": "main",
+            "request": "Follow-up to PR #12\nReview feedback:\n- @me: Hallmark review",
+            "follow_up": "https://github.com/acme/app/pull/12"}))];
+        let u = "https://github.com/acme/app/pull/12";
+        let b = pr_body(&item(Some(u)), &events, &[], true);
+        assert!(b.contains(&format!("## Why\n\nFollow-up to {u}.\n")), "{b}");
+        assert!(
+            !b.contains("Review feedback") && !b.contains("Hallmark review"),
+            "{b}"
+        );
+    }
+
+    #[test]
+    fn the_footer_says_when_no_review_is_posted() {
+        let b = pr_body(&item(None), &[], &[], false);
+        assert!(
+            b.contains("the review stays local (`hall export H-0042`)"),
+            "{b}"
+        );
+        assert!(!b.contains("in the comments"), "{b}");
+        let b = pr_body(&item(None), &[], &[], true);
+        assert!(b.contains("the review is in the comments"), "{b}");
+    }
 
     #[test]
     fn pr_urls() {

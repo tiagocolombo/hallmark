@@ -51,7 +51,7 @@ expression: "scrub(&env, j)"
     "H-0003 \"Web status banner\": [root]/app-H-0003",
     "hall merge H-0002 (when its subagent is done)",
     "hall merge H-0003 (when its subagent is done)",
-    "hall propose-ready H-0001 --summary \"<what was done>\" (after every child is merged)",
+    "hall propose-ready H-0001 --summary \"<what was done>\" --why \"<why>\" --how \"<how>\" (after every child is merged)",
     "hall ready H-0001",
     "hall status H-0001"
   ],

@@ -145,7 +145,9 @@ pub fn next_for(item: &Item) -> Vec<String> {
     let mut n: Vec<String> = match item.state {
         _ if child.is_some() => child.unwrap_or_default(),
         State::Development => vec![
-            format!("hall propose-ready {id} --summary \"<what was done>\""),
+            format!(
+                "hall propose-ready {id} --summary \"<what was done>\" --why \"<why>\" --how \"<how>\""
+            ),
             format!("hall ready {id}"),
             format!("hall drop {id} --reason \"<why>\""),
         ],

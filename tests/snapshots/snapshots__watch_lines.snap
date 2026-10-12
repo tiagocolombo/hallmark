@@ -14,7 +14,7 @@ expression: "scrub(&env, &json!(lines))"
     "changes": 1,
     "id": "H-0001",
     "next": [
-      "hall propose-ready H-0001 --summary \"<what was done>\"",
+      "hall propose-ready H-0001 --summary \"<what was done>\" --why \"<why>\" --how \"<how>\"",
       "hall ready H-0001",
       "hall drop H-0001 --reason \"<why>\"",
       "hall log H-0001"
@@ -22,7 +22,7 @@ expression: "scrub(&env, &json!(lines))"
     "now": {
       "actions": [
         {
-          "command": "hall propose-ready H-0001 --summary \"<what was done>\"",
+          "command": "hall propose-ready H-0001 --summary \"<what was done>\" --why \"<why>\" --how \"<how>\"",
           "does": "say it's done: straight to review when nothing is left to confirm"
         },
         {

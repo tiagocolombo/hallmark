@@ -317,7 +317,9 @@ fn now_with(
             } else {
                 vec![
                     act(
-                        format!("hall propose-ready {id} --summary \"<what was done>\""),
+                        format!(
+                            "hall propose-ready {id} --summary \"<what was done>\" --why \"<why>\" --how \"<how>\""
+                        ),
                         "say it's done: straight to review when nothing is left to confirm",
                     ),
                     act(
