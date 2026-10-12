@@ -1432,6 +1432,12 @@ fn now_block_actions_for_runs_open_in_the_app() {
     assert_eq!((t.id, t.steps.len()), (ItemId(1), 7));
     key(&mut app, KeyCode::Esc);
     assert_eq!(app.view, View::Inbox, "back where it was run from");
+    // Reading a run (the failed-run action) opens the same view; `hall
+    // trace` doesn't run inside the app.
+    assert_eq!(app.run_command("hall trace H-0001"), Effect::None);
+    assert_eq!(app.view, View::Trace);
+    key(&mut app, KeyCode::Esc);
+    assert_eq!(app.view, View::Inbox);
     assert_eq!(app.run_command("hall trace H-0099 --follow"), Effect::None);
     assert!(app.status.as_ref().unwrap().error);
     assert_eq!(app.view, View::Inbox);

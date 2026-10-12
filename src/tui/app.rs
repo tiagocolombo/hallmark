@@ -1599,11 +1599,9 @@ impl App {
             return Effect::None;
         };
         match args[0].as_str() {
-            // Following a run would block the app; the Trace view does it.
-            "hall"
-                if args.get(1).is_some_and(|a| a == "trace")
-                    && args.iter().any(|a| a == "--follow") =>
-            {
+            // `hall trace` prints straight to stdout and following would
+            // block the app; the Trace view reads and follows the run.
+            "hall" if args.get(1).is_some_and(|a| a == "trace") => {
                 self.follow_run(args.get(2).filter(|a| !a.starts_with('-')));
             }
             "hall" if args.get(1).is_some_and(|a| a == "watch") => {
