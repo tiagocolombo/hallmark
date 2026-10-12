@@ -227,7 +227,11 @@ Run `hall` with no arguments to watch the whole building live: your office
 what the daemon is doing. It updates as the journal changes, and closing it
 never stops work. The selected item says why it waits for you, and the key bar
 offers only the actions that fit its state: an escalated item offers retry,
-pull back and drop, never ready.
+pull back and drop, never ready. When the Live view says a reviewer or fixer
+run started, press <kbd>t</kbd> on the item to follow that run step by step:
+what the agent reads, runs and says, and how the run ended. <kbd>[</kbd> and
+<kbd>]</kbd> step through the item's earlier runs, and <kbd>?</kbd> lists every
+key.
 
 <img alt="The hall terminal app: items move from development through checks and review to a PR while the inbox fills and empties" src="docs/images/tui-board.gif">
 

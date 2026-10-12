@@ -691,6 +691,7 @@ Two outside tools fit at the edges:
    - the Library and the librarian
    - desktop and phone notifications
 3. **The terminal app and releases** (done; releases are dry-run only)
-   - views: board, journal, findings, history, live, usage and repos
+   - views: board, journal, findings, history, live, usage and repos, and
+     a run's trace on `t`, followed live (ADR 0039)
    - qmd as an option
    - dist releases and a Nix package

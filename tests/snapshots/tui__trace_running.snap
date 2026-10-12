@@ -1,0 +1,20 @@
+---
+source: tests/tui.rs
+expression: "screen(&env, &app, W, 16)"
+---
+hall · app (1 of 1 repo)   daemon ● running   ⚑ 3 waiting   rejected today 3 · review tokens 400k          trace · hh:mm
+┌ H-0001 · fixer run · started hh:mm ─────────────────────────────────────────────────────────────────────── ● running ┐
+│          ● claude-haiku-5-5 in /tmp/spike                                                                            │
+│hh:mm:ss  ▸ Read  /tmp/spike/note.txt                                                                                 │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+└───────────────────────────────────────────────────────────────────────────── run 2/2 · [ older · ] newer · following ┘
+
+↑↓ scroll  pgup pgdn page  end follow  [ ] older·newer run  esc t back  ? help  q quit

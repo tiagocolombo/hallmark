@@ -32,9 +32,9 @@ hall · app (1 of 1 repo)   daemon ● running   ⚑ 3 waiting   rejected today 
 │                                                                                                                      │
 │                                                                                                                      │
 └──────────────────────────────────────────────────────────────────────────────────── replay 5/8 · → forward · end now ┘
-┌ Findings · 2 open of 2 ──────────────────────────────────────────────────────────────────────────────────────────────┐
+┌ Findings ────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │F1   major   correctness      Retries can deliver twice              src/webhooks.rs:42     open                      │
 │F2   minor   evidence         No test for the backoff cap            src/webhooks.rs:42     open                      │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 
-↑↓ item enter journal i your office ←→ step f findings d diff p pull back x drop / filter w worktree o PR ? help q quit
+↑↓ item enter journal i your office ←→ step f findings d diff t trace r ready p pull back g go x drop ? help q quit
