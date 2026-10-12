@@ -99,7 +99,13 @@ pub fn plan(repo: &Repo, request: &str) -> Outcome {
         return skipped("the Front Desk did not run: claude was not found".into());
     }
     let max = max_parts(repo);
-    let prompt = prompt(request, &repo_map(repo), max);
+    let mut prompt = prompt(request, &repo_map(repo), max);
+    // Extensions turned on for the planner (ADR 0038).
+    if let Some(x) =
+        crate::extensions::prompt(&repo.config.extensions, crate::extensions::Role::Planner)
+    {
+        prompt.push_str(&format!("\n{x}"));
+    }
     let mut req = match runner::request(repo, Role::Intake, Some("intake"), prompt, &repo.main_root)
     {
         Ok(r) => r,
