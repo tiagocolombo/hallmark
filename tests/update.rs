@@ -5,6 +5,9 @@
 mod common;
 
 use std::path::{Path, PathBuf};
+use std::process::Output;
+
+use assert_cmd::Command;
 
 use common::{Env, Reply, git, p, reply};
 
@@ -28,6 +31,22 @@ fn installed(env: &Env) -> PathBuf {
     let exe = bin.join(Path::new(env!("CARGO_BIN_EXE_hall")).file_name().unwrap());
     std::fs::copy(env!("CARGO_BIN_EXE_hall"), &exe).unwrap();
     exe
+}
+
+/// Runs the copied `hall`. On Linux, exec fails with "Text file busy" while
+/// any process still holds the file open for writing: a test on another
+/// thread can fork just as [`installed`] writes the copy, and its child keeps
+/// that descriptor until it execs. It closes within moments, so try again.
+fn output(c: &mut Command) -> Output {
+    for _ in 0..50 {
+        match c.output() {
+            Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy => {
+                hallmark::daemon::nap(std::time::Duration::from_millis(100));
+            }
+            r => return r.unwrap(),
+        }
+    }
+    c.output().unwrap()
 }
 
 /// A fake `cargo` that appends its arguments and environment to
@@ -118,14 +137,13 @@ fn cargo_log(env: &Env) -> Option<String> {
 
 /// Runs `exe update <args>` with the fake cargo.
 fn update(env: &Env, exe: &Path, cargo: &Path, args: &[&str]) -> Reply {
-    let out = env
-        .cmd_exe(exe, &env.root)
-        .env("HALL_CARGO", cargo)
-        .env_remove("HALL_UPDATE_SOURCE")
-        .arg("update")
-        .args(args)
-        .output()
-        .unwrap();
+    let out = output(
+        env.cmd_exe(exe, &env.root)
+            .env("HALL_CARGO", cargo)
+            .env_remove("HALL_UPDATE_SOURCE")
+            .arg("update")
+            .args(args),
+    );
     reply(out)
 }
 
@@ -201,17 +219,15 @@ fn restarts_a_running_daemon_on_the_new_hall() {
     let cargo = fake_cargo(&env, &exe, 0);
     let script = env.script(serde_json::json!([]));
     let run = |args: &[&str]| {
-        reply(
+        reply(output(
             env.cmd_exe(&exe, &env.root)
                 .env("HALL_CARGO", &cargo)
                 .env("HALL_RUNNER", format!("fake:{}", script.display()))
                 .env("HALL_DAEMON_POLL", "200ms")
                 .env("HALL_DAEMON_SERVICE_DRY", "1")
                 .env_remove("HALL_UPDATE_SOURCE")
-                .args(args)
-                .output()
-                .unwrap(),
-        )
+                .args(args),
+        ))
     };
     let started = run(&["daemon", "start"]);
     let _stop = StopOnDrop(&run);
@@ -246,13 +262,12 @@ fn refreshes_an_installed_plugin_with_the_new_hall() {
     let exe = installed(&env);
     let cargo = fake_cargo(&env, &exe, 0);
     std::fs::create_dir_all(env.home.join("claude-plugin")).unwrap();
-    let out = env
-        .cmd_exe(&exe, &env.root)
-        .env("HALL_CARGO", &cargo)
-        .env("HALL_CLAUDE", noop(&env))
-        .args(["update", "--source", &src])
-        .output()
-        .unwrap();
+    let out = output(
+        env.cmd_exe(&exe, &env.root)
+            .env("HALL_CARGO", &cargo)
+            .env("HALL_CLAUDE", noop(&env))
+            .args(["update", "--source", &src]),
+    );
     let r = reply(out);
     assert_eq!(r.code, 0, "{}", r.stdout);
     assert_eq!(r.json["steps"][1]["command"], "hall setup claude");
