@@ -28,16 +28,18 @@ them, commit them, and record what you did. Use the hallmark-fix skill.
    before anything else.
 2. **Then the open findings, most severe first:** blocker, major, minor, nit.
    Each finding has an ID (`F3`), a lens, a file and line, the scenario that
-   breaks, and a suggested fix. Fix the scenario, not just the line: add or
-   adjust a test that would have caught it when the lens is evidence or
-   correctness.
+   breaks, and a suggested fix. Fix the scenario, not just the line. When
+   the lens is evidence or correctness, write the test first: it reproduces
+   the scenario, fails before your fix and passes after. The next review
+   leaves a fix without such a test open.
 3. Blockers and majors must be fixed or disputed; the item can't be approved
    while one is open. Minors and nits are worth fixing when it is cheap and
    safe; otherwise leave them, and they ride along into the PR.
 
 Stay inside the scope of the findings. Don't refactor, rename or reformat
-code the review didn't ask about, and don't weaken or delete tests to make
-them pass.
+code the review didn't ask about. Never weaken, skip or delete a test,
+loosen an assertion, or accept a snapshot you haven't read, to make a gate
+pass.
 
 ## Commits
 

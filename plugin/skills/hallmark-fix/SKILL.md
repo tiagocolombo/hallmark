@@ -29,8 +29,10 @@ only the next review settles findings.
 3. **Fix the findings, most severe first** (blocker, major, minor, nit). For
    each one:
    - read the file around the line and the scenario that breaks;
-   - make the smallest change that fixes the scenario, with a test when the
-     finding is about correctness or evidence;
+   - for a correctness or evidence finding, first write a test that
+     reproduces the scenario and watch it fail;
+   - make the smallest change that fixes the scenario, and watch the test
+     pass;
    - commit it, naming the IDs: `git commit -m "fix F2: check the tenant before reading"`.
 
 4. **Run the gates** listed in your prompt (or in `.hallmark.toml`) and make
@@ -49,6 +51,9 @@ only the next review settles findings.
    same `hall fixed` is safe.
 
 6. **Return the fix report**: `summary`, `fixed`, `disputed`.
+
+The next review checks that each fixed correctness or evidence finding now
+has a test that fails without the fix. A fix without one stays open.
 
 ## Disputes
 
@@ -72,4 +77,5 @@ still blocks until the reviewer withdraws it.
 - run `hall ready`, `hall verdict`, `hall pull-back` or `hall drop`;
 - edit `.hallmark.toml`, `.hallmark/`, CLAUDE.md or AGENTS.md to make a
   finding go away;
-- weaken or delete tests to make a gate pass.
+- weaken, skip or delete tests, loosen assertions, or accept snapshots you
+  haven't read, to make a gate pass.

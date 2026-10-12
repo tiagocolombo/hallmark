@@ -41,4 +41,5 @@ a decision, add a new record that supersedes the old one. Don't edit the old one
 | [0033](0033-configurable-setup.md) | Every setting has a command, and `hall setup --interactive` may ask | Accepted; amends 0002 |
 | [0034](0034-delivery-watches-closely.md) | The Delivery office watches PRs closely: its own worker, a base that moved makes its PRs due, `delivered` once | Accepted |
 | [0035](0035-index-fold-marks.md) | Each index row carries a fold mark; a row nobody vouches for is re-folded | Accepted; amends 0032 |
+| [0036](0036-test-first-review.md) | Test-first review: an unpinned behaviour blocks approval | Accepted |
 | [0037](0037-repo-skills.md) | Repo skills: `.hallmark/skills/<name>/SKILL.md`, read from the base branch, extends or replaces Hallmark's | Accepted |

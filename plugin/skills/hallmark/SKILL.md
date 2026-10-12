@@ -90,10 +90,14 @@ every part is in.
    - the child's id, its absolute `worktree` path and its `request`;
    - "Edit files only inside this worktree, with the Edit and Write tools and
      absolute paths. Run git there with `git -C <worktree>`. Commit your work.
-     Don't push and don't run `hall ready`. Run the repo's gates in the
-     worktree. Report what you did and what you checked."
-2. **As each subagent finishes**, check its report, then merge the part into
-   the parent's branch:
+     Don't push and don't run `hall ready`. Write a test for each behaviour
+     you add or change (main path, boundaries, error paths) and check each
+     one fails without your change (write the test before the code, or break
+     the covered line in place and restore it; never `git stash`, the stash is
+     shared by every worktree). Run the repo's gates in the worktree.
+     Report what you did, the tests you added and what you checked."
+2. **As each subagent finishes**, check its report (send it back if a
+   behaviour has no test), then merge the part into the parent's branch:
    ```
    hall merge H-0043
    ```
@@ -102,11 +106,11 @@ every part is in.
    conflicts, commit, and run `hall merge` again, as the error's `next` says.
    A part that turns out unnecessary: `hall drop H-0044 --reason "..."`.
 3. **When every part is merged or dropped**, run the gates in the parent's
-   worktree on the merged whole and fix anything that broke there (commit in
-   the parent's worktree). Summarise, run
-   `hall propose-ready <parent> --summary "..."`. With nothing left to confirm
-   it goes to review on its own; with `--ask` it waits, and when the human
-   says ready, `hall ready <parent>`.
+   worktree on the merged whole, add tests where the parts meet, and fix
+   anything that broke there (commit in the parent's worktree). Summarise,
+   run `hall propose-ready <parent> --summary "..."`. With nothing left to
+   confirm it goes to review on its own; with `--ask` it waits, and when the
+   human says ready, `hall ready <parent>`.
 
 `hall ready` on a parent with open parts fails with `CHILDREN_OPEN`; on a part
 it fails with `WRONG_STATE` (parts merge, they aren't reviewed alone). To add
@@ -116,10 +120,30 @@ a part by hand: `hall new "<request>" --parent <parent>`.
 the command in the denial's `next`, move into the worktree, and carry on. Don't
 try to work around the gate.
 
-**Looks done.** Commit everything, run the gates, then:
+**Tests before review.** The reviewer audits your tests before anything
+else, and rejects a change whose behaviour they don't pin. Before you call it
+done, act as the change's test engineer:
+
+1. List each behaviour the change adds or alters, and its cases: the main
+   path, boundaries (empty, one, many, the limit), each error path, and
+   repeated, concurrent or interrupted runs where they can happen.
+2. Write a test for each case that asserts the outcome, not just that the
+   code ran. For a bug fix, first write the test that reproduces the bug.
+3. Prove each new test can fail: write it before the code, or break the
+   line it covers in place and restore it, and watch it go red. Never
+   `git stash`: the stash is shared by every worktree. A test that can't fail is not
+   evidence.
+4. Keep tests deterministic: no real sleeps, clocks, network or model runs,
+   no shared temp paths, no order dependence. Use the repo's fakes and
+   fixtures.
+5. Never delete, skip or loosen a test to get green. If a test is wrong, fix
+   it and say why in the commit message. Review every changed snapshot.
+
+**Looks done.** Commit everything, run the gates, then send it with a
+summary that names the tests:
 
 ```
-hall propose-ready --summary "retries with jitter, 14 new tests"
+hall propose-ready --summary "retries with jitter; 14 new tests (give-up, jitter bounds, concurrent claim), each red without the change"
 ```
 
 When nothing is left to confirm (no open question, a clean worktree, no open

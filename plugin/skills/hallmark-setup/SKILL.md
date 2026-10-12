@@ -38,7 +38,14 @@ are happy with.
 1. **Base branch** (`base`): what reviews compare against.
 2. **Gates** (`gates`): the checks every change must pass before review, in
    order. Prefer the repo's own commands (`npm test`, `cargo test`,
-   `just lint`).
+   `just lint`). Offer a test-strength gate too, but only when its tool is
+   installed and the person accepts that it is slow: mutation testing of the
+   changed code (`git diff <base>...HEAD > mutants.diff && cargo mutants
+   --in-diff mutants.diff`, PIT's `scmMutationCoverage`), or a coverage floor
+   (`cargo llvm-cov --fail-under-lines 90`,
+   `pytest --cov=<package> --cov-fail-under=90`). Gates get no base branch or
+   diff, and are killed after `budget.review.timeout` (20 minutes by
+   default), so a mutation gate needs that timeout raised.
 3. **The gates' shell.** The daemon runs gates with `sh -c`, outside any shell
    the person entered. If the toolchain comes from `nix develop`, devbox, mise
    or direnv, wrap each gate:
