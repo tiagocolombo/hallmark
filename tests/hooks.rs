@@ -560,3 +560,49 @@ fn docs_and_markdown_need_no_item() {
     );
     assert_eq!(decision(&r.json).0, "deny");
 }
+
+#[test]
+fn session_start_carries_the_repo_hallmark_skill_from_the_base() {
+    let env = Env::initialized();
+    let ctx = |session: &str| {
+        let r = env.hook("session-start", &input("session_start", &env.repo, session));
+        r.json["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+    let skill = env.repo.join(".hallmark/skills/hallmark/SKILL.md");
+    std::fs::create_dir_all(skill.parent().unwrap()).unwrap();
+    std::fs::write(
+        &skill,
+        "HOOK_SKILL_MARKER: build test data with tests/factories.\n",
+    )
+    .unwrap();
+    assert!(
+        !ctx("k1").contains("HOOK_SKILL_MARKER"),
+        "only once it is on the base"
+    );
+
+    git(&env.repo, &["add", "."]);
+    git(&env.repo, &["commit", "-q", "-m", "skill"]);
+    let c = ctx("k2");
+    assert!(
+        c.contains("hall new --title"),
+        "the usual context stays: {c}"
+    );
+    let at = c
+        .find("## This repository's additions to the `hallmark` skill")
+        .unwrap_or_else(|| panic!("{c}"));
+    assert!(c[at..].contains("HOOK_SKILL_MARKER"));
+
+    // A long skill is cut, with a pointer to the whole file.
+    std::fs::write(&skill, "LONG_SKILL_LINE\n".repeat(1000)).unwrap();
+    git(&env.repo, &["commit", "-q", "-am", "long skill"]);
+    let c = ctx("k3");
+    let lines = c.matches("LONG_SKILL_LINE").count();
+    assert!(lines > 100 && lines < 1000, "{lines}");
+    assert!(
+        c.contains("git show main:.hallmark/skills/hallmark/SKILL.md"),
+        "{c}"
+    );
+}

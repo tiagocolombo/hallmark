@@ -767,3 +767,55 @@ fn proposing_ready_twice_is_a_no_op() {
     assert_eq!(again.code, 0, "{}", again.stdout);
     assert_eq!(again.json["changed"], false, "{}", again.stdout);
 }
+
+#[test]
+fn doctor_lists_repo_skills_from_the_base() {
+    let env = Env::initialized();
+    let skills = || {
+        let r = env.hall(&env.repo, &["doctor"]);
+        assert_eq!(r.code, 0);
+        let check = r.json["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["name"] == "skills")
+            .cloned();
+        (check, r.json["next"].clone())
+    };
+    assert_eq!(skills().0, None, "no check without repo skills");
+
+    let write = |name: &str, text: &str| {
+        let f = env.repo.join(format!(".hallmark/skills/{name}/SKILL.md"));
+        std::fs::create_dir_all(f.parent().unwrap()).unwrap();
+        std::fs::write(f, text).unwrap();
+    };
+    write("principal-review", "Flag N+1 queries.\n");
+    let (c, _) = skills();
+    let c = c.unwrap();
+    assert_eq!(c["ok"], true);
+    assert!(
+        c["detail"].as_str().unwrap().contains("isn't on main yet"),
+        "{c}"
+    );
+
+    write("hallmark-fix", "---\nmode: replace\n---\nOurs.\n");
+    write("review", "Misnamed.\n");
+    git(&env.repo, &["add", "."]);
+    git(&env.repo, &["commit", "-q", "-m", "skills"]);
+    let (c, next) = skills();
+    let c = c.unwrap();
+    let detail = c["detail"].as_str().unwrap();
+    assert_eq!(c["ok"], false, "{c}");
+    assert!(detail.contains("hallmark-fix (replaces)"), "{detail}");
+    assert!(detail.contains("principal-review (extends)"), "{detail}");
+    assert!(
+        detail.contains("`review` isn't a skill Hallmark uses"),
+        "{detail}"
+    );
+    let fix = c["fix"].as_str().unwrap();
+    assert!(
+        fix.contains("principal-review, hallmark-fix, hallmark"),
+        "{fix}"
+    );
+    assert!(next.as_array().unwrap().iter().any(|n| n == fix));
+}

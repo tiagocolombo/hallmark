@@ -38,6 +38,7 @@ pub mod resume;
 pub mod runner;
 pub mod settings;
 pub mod shipper;
+pub mod skills;
 pub mod stamp;
 pub mod state;
 pub mod tui;

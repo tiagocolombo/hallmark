@@ -96,6 +96,7 @@ src/
   intake.rs      the Front Desk's plan: parallel parts (ADR 0024)
   budget.rs      budget checks at four levels (ADR 0016)
   stamp.rs       the hallmark note
+  skills.rs      repo skills from .hallmark/skills on the base (ADR 0037)
   tui/           the terminal app (a reader)
   commands/      one module per group of commands; meta.rs has
                  `hall help --json` and `hall schema`

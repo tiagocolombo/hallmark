@@ -93,6 +93,23 @@ hall config unset budget.per_item                 # back to the default
 - `hall config set` refuses inside Hallmark's headless runs, such as the fixer
   and the reviewer.
 
+## Repo skills
+
+When the repo needs its own review or fix rules (N+1 queries, a migration
+policy, how its tests are run), write a skill in the repo. Hallmark reads it
+from the base branch, so it applies once merged:
+
+| File | Followed by |
+| --- | --- |
+| `.hallmark/skills/principal-review/SKILL.md` | the reviewer |
+| `.hallmark/skills/hallmark-fix/SKILL.md` | the fixer |
+| `.hallmark/skills/hallmark/SKILL.md` | development sessions |
+
+It adds to Hallmark's skill. To replace it instead, put `mode: replace` in
+the frontmatter. Keep additions concrete, with the severity each problem
+gets: "An N+1 query on a list endpoint is a major." It's development work:
+make it an item. `hall doctor` lists what the base branch has.
+
 ## Finish
 
 Run `hall doctor --json`, and follow its `next` for anything still missing. If

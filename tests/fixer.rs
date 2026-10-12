@@ -477,3 +477,34 @@ fn a_failing_engine_counts_as_a_failed_run() {
     assert_eq!(events(&env, &id, "run_failed")[0]["attempt"], 1);
     assert_eq!(state(&env, &id), "fixing");
 }
+
+#[test]
+fn the_repo_fix_skill_from_the_base_reaches_the_fixer() {
+    let env = Env::initialized();
+    let (_, _, _) = fixing_item(&env, "Retry webhooks");
+    // Committed on the base after the item started: read when the fixer runs.
+    let skill = env.repo.join(".hallmark/skills/hallmark-fix/SKILL.md");
+    std::fs::create_dir_all(skill.parent().unwrap()).unwrap();
+    std::fs::write(
+        &skill,
+        "---\nmode: replace\n---\n\nFIX_SKILL_MARKER: run `make db-test` before `hall fixed`.\n",
+    )
+    .unwrap();
+    git(&env.repo, &["add", "."]);
+    git(&env.repo, &["commit", "-q", "-m", "fix skill"]);
+
+    let script = env.script(json!([
+        {"role": "fixer", "structured": {"summary": "nothing", "fixed": [], "disputed": []}}
+    ]));
+    fixer_pass(&env, &script);
+    let prompt = env.fake_calls()[0]["prompt"].as_str().unwrap().to_string();
+    let at = prompt
+        .find("## This repository's `hallmark-fix` skill")
+        .unwrap_or_else(|| panic!("{prompt}"));
+    assert!(prompt.contains("replaces Hallmark's `hallmark-fix` skill"));
+    assert!(prompt[at..].contains("FIX_SKILL_MARKER"));
+    assert!(
+        at < prompt.find("## When you are done").unwrap(),
+        "before the closing steps"
+    );
+}
