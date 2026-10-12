@@ -17,6 +17,7 @@ pub mod delivery;
 pub mod detect;
 pub mod error;
 pub mod event;
+pub mod extensions;
 pub mod findings;
 pub mod fixer;
 pub mod gate;
