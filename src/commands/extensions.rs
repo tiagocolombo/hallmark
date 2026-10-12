@@ -100,7 +100,12 @@ impl Render for ExtensionsOut {
                 s.push('\n');
             }
             s.push_str(&format!("{}  {}\n  {}\n", e.id, e.name, e.credit));
-            let width = e.roles.iter().map(|r| r.role.as_str().len()).max().unwrap_or(0);
+            let width = e
+                .roles
+                .iter()
+                .map(|r| r.role.as_str().len())
+                .max()
+                .unwrap_or(0);
             for r in &e.roles {
                 s.push_str(&format!(
                     "  {:3}  {:width$}  {}\n",

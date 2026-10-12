@@ -518,16 +518,23 @@ fn an_extension_for_the_fixer_reaches_its_prompt() {
         &["extensions", "enable", "mattpocock", "--role", "fixer"],
     );
     assert_eq!(r.code, 0, "{}", r.stdout);
-    assert!(r.json["note"].is_null(), "only the reviewer waits for the base");
+    assert!(
+        r.json["note"].is_null(),
+        "only the reviewer waits for the base"
+    );
 
     let script = env.script(json!([
         {"role": "fixer", "structured": {"summary": "nothing", "fixed": [], "disputed": []}}
     ]));
     fixer_pass(&env, &script);
     let prompt = env.fake_calls()[0]["prompt"].as_str().unwrap().to_string();
-    let at = prompt.find("## Extensions\n").unwrap_or_else(|| panic!("{prompt}"));
+    let at = prompt
+        .find("## Extensions\n")
+        .unwrap_or_else(|| panic!("{prompt}"));
     assert!(prompt[at..].contains("for the fixer"));
-    assert!(prompt[at..].contains("name=\"tdd\"") && prompt[at..].contains("name=\"diagnosing-bugs\""));
+    assert!(
+        prompt[at..].contains("name=\"tdd\"") && prompt[at..].contains("name=\"diagnosing-bugs\"")
+    );
     assert!(prompt[at..].contains("How it fits your role: Fix test-first"));
     assert!(!prompt.contains("name=\"code-review\""));
     assert!(

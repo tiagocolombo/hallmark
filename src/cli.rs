@@ -704,18 +704,20 @@ pub enum ExtensionsAction {
         /// The extension: `hall extensions` lists them.
         name: String,
         /// Only this role (repeatable): planner, developer, reviewer, fixer.
-        #[arg(long = "role", value_enum)]
+        #[arg(long = "role", value_name = "ROLE", value_enum)]
         roles: Vec<crate::extensions::Role>,
     },
     /// Turn an extension off for every role, or only for --role.
     Disable {
+        /// The extension.
         name: String,
         /// Only this role (repeatable).
-        #[arg(long = "role", value_enum)]
+        #[arg(long = "role", value_name = "ROLE", value_enum)]
         roles: Vec<crate::extensions::Role>,
     },
     /// An extension's credits and license, or one of its skills as agents read it.
     Show {
+        /// The extension.
         name: String,
         /// The skill to print.
         skill: Option<String>,

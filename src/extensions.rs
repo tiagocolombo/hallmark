@@ -215,7 +215,9 @@ const MATT_POCOCK: Extension = Extension {
 
 /// The extension named `id`.
 pub fn find(id: &str) -> Option<&'static Extension> {
-    CATALOG.iter().find(|e| e.id.eq_ignore_ascii_case(id.trim()))
+    CATALOG
+        .iter()
+        .find(|e| e.id.eq_ignore_ascii_case(id.trim()))
 }
 
 /// The names of every extension, for messages.
@@ -349,7 +351,9 @@ pub fn session(cfg: &Extensions) -> Option<String> {
     if exts.is_empty() {
         return None;
     }
-    let mut s = String::from("## Extensions\n\nThis repository turned on these skills for development sessions (`hall extensions`).");
+    let mut s = String::from(
+        "## Extensions\n\nThis repository turned on these skills for development sessions (`hall extensions`).",
+    );
     for e in exts {
         s.push_str(&format!(
             "\n\n{}, {}. When the work matches one, read it with \
@@ -404,7 +408,8 @@ mod tests {
                 assert!(!s.description().is_empty(), "{}: a description", s.name);
                 assert!(!s.uses.is_empty(), "{}: some role follows it", s.name);
                 assert!(
-                    s.files[0].0 == "SKILL.md" && s.files[0].1.contains(&format!("name: {}", s.name)),
+                    s.files[0].0 == "SKILL.md"
+                        && s.files[0].1.contains(&format!("name: {}", s.name)),
                     "{}: SKILL.md first",
                     s.name
                 );
@@ -471,9 +476,14 @@ mod tests {
             "Matt Pocock's skills, by Matt Pocock, https://github.com/mattpocock/skills (MIT) at 49dd158."
         ));
         assert!(p.contains("How it fits your role: Apply both of its axes yourself"));
-        assert!(p.contains("<skill extension=\"mattpocock\" name=\"code-review\">\nTwo-axis review"));
+        assert!(
+            p.contains("<skill extension=\"mattpocock\" name=\"code-review\">\nTwo-axis review")
+        );
         assert!(p.contains("**Refused Bequest**"), "the whole skill");
-        assert!(!p.contains("description: \"Review the changes"), "no frontmatter");
+        assert!(
+            !p.contains("description: \"Review the changes"),
+            "no frontmatter"
+        );
         assert!(p.contains("decide, and say what you decided"));
 
         let f = prompt(&on(&[Role::Fixer]), Role::Fixer).unwrap();
@@ -488,7 +498,10 @@ mod tests {
     #[test]
     fn a_session_gets_an_index_not_the_text() {
         let s = session(&on(&[Role::Developer])).unwrap();
-        assert!(s.contains("`hall extensions show mattpocock <skill>`"), "{s}");
+        assert!(
+            s.contains("`hall extensions show mattpocock <skill>`"),
+            "{s}"
+        );
         assert!(s.contains("- `tdd`: building or fixing behaviour"));
         assert!(s.contains("- `codebase-design`:"));
         assert!(s.contains("by Matt Pocock"));

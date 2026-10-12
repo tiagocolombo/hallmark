@@ -1302,6 +1302,98 @@ expression: v
       "usage": "hall library export [OPTIONS]"
     },
     {
+      "about": "Skill packs by other authors, with their credits: which of Hallmark's roles follow them here. `hall extensions enable mattpocock` turns one on",
+      "args": [],
+      "name": "extensions",
+      "schema": "hall schema extensions",
+      "usage": "hall extensions [OPTIONS] [COMMAND]"
+    },
+    {
+      "about": "Every extension, its credits, and the roles it serves here (the default)",
+      "args": [],
+      "name": "extensions list",
+      "schema": "hall schema extensions",
+      "usage": "hall extensions list [OPTIONS]"
+    },
+    {
+      "about": "Turn an extension on for every role it serves, or only for --role",
+      "args": [
+        {
+          "help": "The extension: `hall extensions` lists them",
+          "name": "name",
+          "required": true,
+          "syntax": "<name>",
+          "takes_value": true
+        },
+        {
+          "help": "Only this role (repeatable): planner, developer, reviewer, fixer",
+          "name": "roles",
+          "required": false,
+          "syntax": "--role <roles>",
+          "takes_value": true,
+          "values": [
+            "planner",
+            "developer",
+            "reviewer",
+            "fixer"
+          ]
+        }
+      ],
+      "name": "extensions enable",
+      "schema": "hall schema extensions",
+      "usage": "hall extensions enable [OPTIONS] <NAME>"
+    },
+    {
+      "about": "Turn an extension off for every role, or only for --role",
+      "args": [
+        {
+          "help": "The extension",
+          "name": "name",
+          "required": true,
+          "syntax": "<name>",
+          "takes_value": true
+        },
+        {
+          "help": "Only this role (repeatable)",
+          "name": "roles",
+          "required": false,
+          "syntax": "--role <roles>",
+          "takes_value": true,
+          "values": [
+            "planner",
+            "developer",
+            "reviewer",
+            "fixer"
+          ]
+        }
+      ],
+      "name": "extensions disable",
+      "schema": "hall schema extensions",
+      "usage": "hall extensions disable [OPTIONS] <NAME>"
+    },
+    {
+      "about": "An extension's credits and license, or one of its skills as agents read it",
+      "args": [
+        {
+          "help": "The extension",
+          "name": "name",
+          "required": true,
+          "syntax": "<name>",
+          "takes_value": true
+        },
+        {
+          "help": "The skill to print",
+          "name": "skill",
+          "required": false,
+          "syntax": "<skill>",
+          "takes_value": true
+        }
+      ],
+      "name": "extensions show",
+      "schema": "hall schema extensions",
+      "usage": "hall extensions show [OPTIONS] <NAME> [SKILL]"
+    },
+    {
       "about": "Everything the Claude Code heads-up display shows, in one call",
       "args": [
         {

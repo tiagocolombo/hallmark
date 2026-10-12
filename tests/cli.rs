@@ -841,11 +841,17 @@ fn doctor_lists_extensions_with_their_credit() {
         "{d}"
     );
     git(&env.repo, &["commit", "-q", "-am", "extensions"]);
-    assert!(ext().unwrap().ends_with(": planner, developer, fixer, reviewer"));
+    assert!(
+        ext()
+            .unwrap()
+            .ends_with(": planner, developer, fixer, reviewer")
+    );
 
     env.hall(&env.repo, &["extensions", "disable", "mattpocock"]);
     assert!(
-        ext().unwrap().ends_with(": reviewer until .hallmark.toml is on main"),
+        ext()
+            .unwrap()
+            .ends_with(": reviewer until .hallmark.toml is on main"),
         "the reviewer still follows main's"
     );
 }

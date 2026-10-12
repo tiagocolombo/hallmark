@@ -308,7 +308,9 @@ pub fn edit(
     if let Some(t) = trailing
         && let Some(table) = doc.get_mut(tables[0]).and_then(|i| i.as_table_mut())
     {
-        table.decor_mut().set_prefix(format!("{}\n\n", t.trim_end()));
+        table
+            .decor_mut()
+            .set_prefix(format!("{}\n\n", t.trim_end()));
     }
     // An empty [notify] still replaces the user's channels as a whole.
     if removing
@@ -456,7 +458,10 @@ mod tests {
         // `hall init` ends [budget] with commented hints; toml_edit keeps
         // them as the document's trailing text.
         let text = crate::config::render_initial("main", &[], crate::config::CaptureMode::Gate);
-        assert!(text.trim_end().ends_with(r#"# per_item = "800k""#), "{text}");
+        assert!(
+            text.trim_end().ends_with(r#"# per_item = "800k""#),
+            "{text}"
+        );
         let roles = toml_edit::Value::Array(["reviewer"].into_iter().collect());
         let out = edit(Scope::Repo, &text, "extensions.mattpocock", Some(roles)).unwrap();
         let budget = out.find("[budget]").unwrap();

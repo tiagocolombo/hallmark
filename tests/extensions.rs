@@ -22,7 +22,11 @@ fn on(r: &Value) -> Vec<(String, bool)> {
 }
 
 fn roles_on(r: &Value) -> Vec<String> {
-    on(r).into_iter().filter(|(_, o)| *o).map(|(r, _)| r).collect()
+    on(r)
+        .into_iter()
+        .filter(|(_, o)| *o)
+        .map(|(r, _)| r)
+        .collect()
 }
 
 #[test]
@@ -45,7 +49,15 @@ fn enable_and_disable_by_role_are_idempotent() {
     let env = Env::initialized();
     let r = env.hall(
         &env.repo,
-        &["extensions", "enable", "mattpocock", "--role", "fixer", "--role", "reviewer"],
+        &[
+            "extensions",
+            "enable",
+            "mattpocock",
+            "--role",
+            "fixer",
+            "--role",
+            "reviewer",
+        ],
     );
     assert_eq!(r.code, 0, "{}", r.stdout);
     assert_eq!(r.json["changed"], true);
@@ -63,7 +75,10 @@ fn enable_and_disable_by_role_are_idempotent() {
     assert_eq!(g.json["entries"][0]["source"], "repo");
 
     let all = env.hall(&env.repo, &["extensions", "enable", "mattpocock"]);
-    assert_eq!(roles_on(&all.json), ["planner", "developer", "reviewer", "fixer"]);
+    assert_eq!(
+        roles_on(&all.json),
+        ["planner", "developer", "reviewer", "fixer"]
+    );
     let some = env.hall(
         &env.repo,
         &["extensions", "disable", "mattpocock", "--role", "planner"],
@@ -82,8 +97,18 @@ fn enable_and_disable_by_role_are_idempotent() {
 fn the_reviewer_note_goes_once_the_base_has_it() {
     let env = Env::initialized();
     let r = env.hall(&env.repo, &["extensions", "enable", "mattpocock"]);
-    assert!(r.json["note"].as_str().unwrap().contains("reads .hallmark.toml from main"));
-    assert!(r.json["next"].as_array().unwrap().contains(&json!("hall doctor")));
+    assert!(
+        r.json["note"]
+            .as_str()
+            .unwrap()
+            .contains("reads .hallmark.toml from main")
+    );
+    assert!(
+        r.json["next"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("hall doctor"))
+    );
     git(&env.repo, &["commit", "-q", "-am", "extensions"]);
 
     // Planner only: the reviewer's setting on main is unchanged.
@@ -119,7 +144,12 @@ fn show_prints_the_credits_and_license_or_one_skill() {
     assert_eq!(r.code, 0, "{}", r.stdout);
     let s = &r.json["skill"];
     assert_eq!(s["roles"], json!(["developer", "fixer"]));
-    assert!(s["description"].as_str().unwrap().starts_with("Test-driven development."));
+    assert!(
+        s["description"]
+            .as_str()
+            .unwrap()
+            .starts_with("Test-driven development.")
+    );
     let text = s["text"].as_str().unwrap();
     assert!(text.starts_with("# Test-Driven Development"), "{text}");
     assert!(text.contains("`tests.md`, which the skill links to:"));
@@ -132,13 +162,26 @@ fn mistakes_name_what_exists() {
     let r = env.hall(&env.repo, &["extensions", "enable", "nope"]);
     assert_eq!(r.code, 2, "{}", r.stdout);
     assert_eq!(r.json["error"]["code"], "USAGE");
-    assert!(r.json["error"]["message"].as_str().unwrap().contains("mattpocock"));
+    assert!(
+        r.json["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("mattpocock")
+    );
 
     let r = env.hall(&env.repo, &["extensions", "show", "mattpocock", "grill-me"]);
     assert_eq!(r.json["error"]["code"], "USAGE");
-    assert!(r.json["error"]["message"].as_str().unwrap().contains("code-review"));
+    assert!(
+        r.json["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("code-review")
+    );
 
-    let r = env.hall(&env.repo, &["extensions", "enable", "mattpocock", "--role", "librarian"]);
+    let r = env.hall(
+        &env.repo,
+        &["extensions", "enable", "mattpocock", "--role", "librarian"],
+    );
     assert_eq!(r.json["error"]["code"], "USAGE", "{}", r.stdout);
 
     // Headless runs work under the settings; they can't change them.
