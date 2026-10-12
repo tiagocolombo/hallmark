@@ -74,6 +74,10 @@ holds up:
   replace how the reviewer reviews, how the fixer fixes and what development
   sessions are told. They're read from the base branch, so a branch can't
   rewrite its own review.
+- **Extensions.** Turn on skills by other authors for the planner, the
+  developer, the reviewer and the fixer. [Matt Pocock's
+  skills](https://github.com/mattpocock/skills) are one command away:
+  `hall extensions enable mattpocock`.
 
 ## Quick start
 
@@ -205,6 +209,9 @@ hall drop H-0041 --reason "superseded by H-0044"
 hall usage --by model --since 7d
 hall budget --set per_item=800k
 hall history --rejected --since 7d
+
+hall extensions              # skills by other authors, with credits, per role
+hall extensions enable mattpocock   # Matt Pocock's skills for the planner, developer, reviewer and fixer
 ```
 
 On a terminal, commands print readable text. When an agent runs them, they
@@ -285,6 +292,7 @@ default, including models per role, notifications and the Library.
 | The Library | `<git-common-dir>/hallmark/library/`: learnings from closed items, kept locally |
 | The hallmark | A git note under `refs/notes/hallmark` on the approved commit |
 | Repo skills | `.hallmark/skills/<name>/SKILL.md`, read from the base branch |
+| Extensions | Embedded in `hall`; `[extensions]` in `.hallmark.toml` turns them on per role |
 | Your settings | `.hallmark.toml` in the repo, and `<user data dir>/hallmark/config.toml` for personal settings such as notifications |
 
 ## Project status
@@ -292,7 +300,7 @@ default, including models per role, notifications and the Library.
 Hallmark is in early, active development (`0.1`). The full loop runs today:
 items and the journal, the gates, checks, test-first review, fixes, shipping,
 delivery tracking, parallel parts, budgets, notifications, the Library, repo
-skills and the terminal app. Expect the configuration and the CLI to change before `1.0`. Breaking
+skills, extensions and the terminal app. Expect the configuration and the CLI to change before `1.0`. Breaking
 changes will be called out in the release notes.
 
 Hallmark currently drives [Claude Code](https://claude.com/claude-code). Every
@@ -322,3 +330,14 @@ follow [SECURITY.md](SECURITY.md) and don't open a public issue.
 ## License
 
 Hallmark is released under the [MIT License](LICENSE).
+
+## Credits
+
+Hallmark embeds skills by other authors as extensions, unchanged and under
+their own licenses. `hall extensions` lists them with their credits.
+
+| Extension | Author | License | Source |
+| --- | --- | --- | --- |
+| `mattpocock` | Matt Pocock | MIT ([text](extensions/mattpocock/LICENSE)) | [github.com/mattpocock/skills](https://github.com/mattpocock/skills) |
+
+Thank you to Matt Pocock for skills that made Hallmark's roles better.
