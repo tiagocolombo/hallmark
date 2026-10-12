@@ -11,14 +11,14 @@ a decision, add a new record that supersedes the old one. Don't edit the old one
 | [0003](0003-journal-jsonl-plus-sqlite-index.md) | JSONL journal, SQLite index | Accepted |
 | [0004](0004-hallmark-as-git-note.md) | The hallmark is a git note | Accepted |
 | [0005](0005-hooks-call-the-binary.md) | Hooks call `hall hook <event>` | Accepted |
-| [0006](0006-claude-p-for-every-model-run.md) | `claude -p` for every model run | Accepted |
+| [0006](0006-claude-p-for-every-model-run.md) | `claude -p` for every model run | Superseded in part by 0039 |
 | [0007](0007-own-reviewer-not-code-review.md) | Our own reviewer, not `/code-review` | Accepted |
 | [0008](0008-state-derived-from-journal.md) | Item state is folded from the journal | Accepted |
 | [0009](0009-plugin-install-via-local-marketplace.md) | Install the plugin through a local marketplace | Accepted |
 | [0010](0010-gate-scope.md) | Where the gates apply | Accepted |
 | [0011](0011-drop-any-time.md) | An item can be dropped at any time | Accepted |
 | [0012](0012-config-from-the-main-checkout.md) | `.hallmark.toml` is read from the main checkout | Accepted |
-| [0013](0013-one-runner-for-claude-p.md) | One runner for every `claude -p` run | Accepted |
+| [0013](0013-one-runner-for-claude-p.md) | One runner for every `claude -p` run | Superseded in part by 0039 |
 | [0014](0014-daemon-workers-and-leases.md) | The daemon is a loop of workers, with leases | Accepted |
 | [0015](0015-verdicts-findings-and-approval.md) | Verdicts, findings, and who decides approval | Accepted; amended by 0039 |
 | [0016](0016-budgets-holds-and-pauses.md) | Budgets, holds and pauses | Accepted |

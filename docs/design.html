@@ -668,7 +668,7 @@ lists every command.</code></pre>
       <div class="eyebrow">Measured</div>
       <h3>Every run, every turn</h3>
       <ul>
-        <li><b>Review and fix runs:</b> <code>claude -p --output-format json</code> reports input, output and cache tokens, turns, duration and a cost per model. Hallmark writes all of it to the journal.</li>
+        <li><b>Review and fix runs:</b> <code>claude -p --output-format stream-json</code> reports input, output and cache tokens, turns, duration and a cost per model. Hallmark writes all of it to the journal.</li>
         <li><b>Your Workshop session:</b> after each turn, the <code>Stop</code> hook reads the new usage from the session transcript, so development counts too.</li>
         <li><b>Checks, Post Room, stamping, shipping:</b> scripts, no tokens. Only their time is recorded.</li>
       </ul>
@@ -784,7 +784,8 @@ scenario. Approve when nothing blocks.</code></pre>
     <p>The daemon runs it headless with a fresh context. <code>--json-schema</code> makes Claude Code return a verdict that always matches the schema, so the daemon never has to parse prose.</p>
   </div>
 <pre><code>claude -p --plugin-dir "$HALLMARK_PLUGIN" --agent principal-engineer \
-  --json-schema "$HALLMARK_PLUGIN/schemas/verdict.json" --output-format json \
+  --json-schema "$HALLMARK_PLUGIN/schemas/verdict.json" \
+  --output-format stream-json --verbose \
   "Review H-0042 round 2: commit b81f3e4 against main"</code></pre>
   <p class="col" style="margin-top: 12px">This is a sketch; the exact flags will be checked when it's built. Everything the reviewer reads comes from the base branch, so a change can't edit its own review rules.</p>
 </section>
@@ -1013,7 +1014,8 @@ $ echo $?
 │  ├─ item.json              title, branch, state
 │  ├─ events.jsonl           the journal
 │  ├─ reviews/r1.md          full review reports
-│  └─ checks/r1.log          failing check output
+│  ├─ checks/r1.log          failing check output
+│  └─ runs/                  each headless run, streamed live
 └─ queue/                    tickets waiting for the assayer</code></pre>
       <p style="margin-top: 12px">A SQLite index, rebuilt from these files at any time, answers usage and history questions quickly. The journal lives in each repo's git directory, so it outlives worktrees and is never committed. A small registry in your user state directory lists which repos use Hallmark, so the terminal app can show them all. <code>hall export H-0042</code> writes the whole record as Markdown, and the review comment on the PR points to it.</p>
     </div>

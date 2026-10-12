@@ -135,7 +135,9 @@ Rules:
 $(git rev-parse --git-common-dir)/hallmark/   shared by every worktree, never committed
 ├─ items/H-0042/
 │  ├─ events.jsonl        the journal: append-only, source of truth
-│  └─ item.json           cached snapshot (title, branch, worktree, state)
+│  ├─ item.json           cached snapshot (title, branch, worktree, state)
+│  └─ runs/               each headless run, streamed as it happens:
+│                         <stamp>-<role>.jsonl, plus .stderr and prompts
 ├─ events.jsonl           repo-level events: prompts and notifications from
 │                         sessions with no item, gate denials
 ├─ sessions/<id>.json     session → item binding, transcript byte offset
@@ -154,6 +156,13 @@ $(git rev-parse --git-common-dir)/hallmark/   shared by every worktree, never co
   append, all as one step.
 - The SQLite index (rusqlite, bundled) catches up from the files on read.
   Usage, inbox and history queries use it. Deleting it loses nothing.
+- Each headless run with an item streams into `runs/<stamp>-<role>.jsonl`
+  as it happens: Claude's stream-json, line by line, then one
+  `{"type":"hall_run_end",…}` line from the runner once the process has
+  exited, with its duration, exit code and failure (ADR 0039). The result is
+  the stream's last `result` line; stderr, when there is any, sits beside it
+  as `<stamp>-<role>.stderr`. A fallback-model retry is a run of its own,
+  with its own file. Runs are debugging records, like `checks/`, not events.
 
 Every line is one event:
 
@@ -414,7 +423,8 @@ It runs headless with a fresh context:
 
 ```sh
 claude -p --plugin-dir "$PLUGIN" --agent principal-engineer \
-  --json-schema "$PLUGIN/schemas/verdict.json" --output-format json \
+  --json-schema "$PLUGIN/schemas/verdict.json" \
+  --output-format stream-json --verbose \
   --max-budget-usd 3 "Review H-0042 round 2: commit b81f3e4 against main" < /dev/null
 ```
 
@@ -473,7 +483,8 @@ write), turns, duration and list-price cost.
 
 **Sources.**
 
-- **Headless runs.** Usage comes from `claude -p --output-format json`.
+- **Headless runs.** Usage comes from the `result` line that ends
+  `claude -p --output-format stream-json --verbose`.
   - `modelUsage` is the source of truth; the top-level `usage` can be zero or
     partial.
   - `num_turns`, `duration_ms` and `session_id` come from the top level.

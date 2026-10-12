@@ -1,6 +1,10 @@
 # 0013. One runner for every `claude -p` run
 
-Status: Accepted, 2026-10-09
+Status: Accepted, 2026-10-09. Superseded in part by
+[ADR 0039](0039-watch-runs-live.md): the runner asks for
+`--output-format stream-json --verbose` and streams each run into
+`items/<id>/runs/<stamp>-<role>.jsonl`, ending it with a `hall_run_end` line,
+instead of saving the raw result. The rest stands.
 
 ## Context
 

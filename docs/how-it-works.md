@@ -88,7 +88,11 @@ From the replay in the design page:
    removes H-0042's worktree. The branch stays
    ([ADR 0040](decisions/0040-sweep-finished-worktrees.md)).
 
-Steps 5–9 are the daemon's work.
+Steps 5–9 are the daemon's work. Each model run in them (the review, a fix)
+is a headless `claude -p` run, and it streams into the item's `runs/`
+directory as it goes: one file per run, with what the agent read, ran and
+said, ended by a line saying how the run ended
+([ADR 0039](decisions/0039-watch-runs-live.md)).
 
 ## Parallel parts
 

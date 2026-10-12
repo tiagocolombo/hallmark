@@ -1,6 +1,9 @@
 # 0006. `claude -p` for every model run
 
-Status: Accepted, 2026-10-09
+Status: Accepted, 2026-10-09. Superseded in part by
+[ADR 0039](0039-watch-runs-live.md): runs ask for
+`--output-format stream-json --verbose`, and the result is the stream's last
+`result` line. The flags and the two rules below stand.
 
 ## Context
 
