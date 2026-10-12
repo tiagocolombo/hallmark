@@ -347,3 +347,201 @@ fn the_inbox_clears_and_entries_return_when_they_change() {
     assert_eq!(env.hall(&env.repo, &["inbox", "--dismiss"]).code, 2);
     assert_eq!(env.hall(&env.repo, &["inbox", "1", "--clear"]).code, 2);
 }
+
+// --- the now block and the run's trace (ADR 0039) ---------------------------
+
+/// The reviewer's session in `claude/stream.jsonl`, and where it ran.
+const SESSION: &str = "91aedf44-f4cd-4efa-8e74-768d46a9dc75";
+const RESUME: &str = "cd /tmp/spike && claude --resume 91aedf44-f4cd-4efa-8e74-768d46a9dc75";
+
+/// An item in review, after one assayer pass with no gates.
+fn in_review(env: &Env, title: &str) -> String {
+    let id = ready(env, title);
+    let r = env.hall_fake(
+        &env.repo,
+        &env.script(json!([])),
+        &["daemon", "run", "--once", "--only", "assayer"],
+    );
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(now(env, &id)["status"], "queued");
+    id
+}
+
+fn runs_dir(env: &Env, id: &str) -> std::path::PathBuf {
+    let hall = hallmark::journal::Hall::new(&env.repo.join(".git"));
+    let dir = hall.item_runs(id.parse().unwrap());
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+/// Writes a run's stream as the runner does, started at `started`: the
+/// fixture up to its `result` line while it runs, then the result and the
+/// runner's end line once it has `ended` (with `failure`, if any).
+fn run_file(
+    env: &Env,
+    id: &str,
+    role: &str,
+    started: chrono::DateTime<chrono::Utc>,
+    end: Option<Option<&str>>,
+) -> std::path::PathBuf {
+    let stream = fixture("claude/stream.jsonl");
+    let mut text: String = stream
+        .lines()
+        .filter(|l| end.is_some() || !l.contains(r#""type":"result""#))
+        .map(|l| format!("{l}\n"))
+        .collect();
+    if let Some(failure) = end {
+        let e = hallmark::trace::RunEnd::new(4_000, Some(0), failure.map(String::from));
+        text.push_str(&e.line());
+    }
+    let path = runs_dir(env, id).join(format!("{}-{role}.jsonl", started.format("%Y%m%dT%H%M%S")));
+    std::fs::write(&path, text).unwrap();
+    path
+}
+
+fn commands(n: &Value) -> Vec<String> {
+    n["actions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a["command"].as_str().unwrap().to_string())
+        .collect()
+}
+
+#[test]
+fn the_now_block_points_to_a_run_while_it_goes() {
+    let env = Env::initialized();
+    let id = in_review(&env, "Retry webhooks");
+    let follow = format!("hall trace {id} --follow");
+    let utc = chrono::Utc::now;
+
+    // A stream without an end, but nothing holds the item: not running.
+    let fresh = run_file(&env, &id, "reviewer", utc(), None);
+    let n = now(&env, &id);
+    assert_eq!(n["status"], "queued", "{n}");
+    assert!(!commands(&n).contains(&follow), "{n}");
+    assert!(n["log"].is_null(), "{n}");
+
+    // The assayer holds it, but the stream began before the lease: a run
+    // from a daemon that died, not the one going now.
+    std::fs::remove_file(fresh).unwrap();
+    run_file(
+        &env,
+        &id,
+        "reviewer",
+        utc() - chrono::Duration::hours(1),
+        None,
+    );
+    let r = env.hall(&env.repo, &["next", "--role", "assayer", "--holder", "t"]);
+    assert_eq!(r.json["work"]["id"], id.as_str(), "{}", r.stdout);
+    let n = now(&env, &id);
+    assert_eq!(n["status"], "running", "{n}");
+    assert!(!commands(&n).contains(&follow), "{n}");
+
+    // The reviewer's run starts under the lease: follow it, and see its
+    // last step.
+    let going = run_file(&env, &id, "reviewer", utc(), None);
+    let n = now(&env, &id);
+    assert_eq!(n["status"], "running", "{n}");
+    assert_eq!(n["actions"][0]["command"], follow.as_str(), "{n}");
+    assert_eq!(n["actions"][0]["does"], "watch the reviewer work, live");
+    let log: Vec<&str> = n["log"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| l.as_str().unwrap())
+        .collect();
+    assert_eq!(log.len(), 1, "{log:?}");
+    assert!(
+        log[0].contains("» ") && log[0].contains("6 bytes"),
+        "{log:?}"
+    );
+    // `hall status` points there too.
+    let st = env.hall(&env.repo, &["status", &id]);
+    assert_eq!(st.json["next"][0], follow.as_str(), "{}", st.stdout);
+
+    // It ends: nothing to follow, though the lease still holds it.
+    std::fs::write(
+        &going,
+        std::fs::read_to_string(&going).unwrap()
+            + &hallmark::trace::RunEnd::new(4_000, Some(0), None).line(),
+    )
+    .unwrap();
+    let n = now(&env, &id);
+    assert_eq!(n["status"], "running", "{n}");
+    assert!(!commands(&n).contains(&follow), "{n}");
+    assert!(n["log"].is_null(), "{n}");
+}
+
+#[test]
+fn a_run_failed_hold_offers_the_failed_run() {
+    let env = Env::initialized();
+    let id = ready(&env, "Retry webhooks");
+    let script = env.script(json!([
+        {"role": "reviewer", "fail": "timeout"},
+        {"role": "reviewer", "fail": "timeout"},
+    ]));
+    for _ in 0..3 {
+        let r = env.hall_fake(
+            &env.repo,
+            &script,
+            &["daemon", "run", "--once", "--only", "assayer"],
+        );
+        assert_eq!(r.code, 0, "{}", r.stdout);
+    }
+    let n = now(&env, &id);
+    assert_eq!(n["status"], "held", "{n}");
+    // The runs as a streaming runner leaves them (ADR 0039).
+    for f in std::fs::read_dir(runs_dir(&env, &id)).unwrap() {
+        std::fs::remove_file(f.unwrap().path()).unwrap();
+    }
+    let trace = format!("hall trace {id}");
+
+    // The last run hasn't ended: nothing to resume yet.
+    let path = run_file(&env, &id, "reviewer", chrono::Utc::now(), None);
+    let n = now(&env, &id);
+    let cmds = commands(&n);
+    assert!(!cmds.iter().any(|c| c.contains("claude --resume")), "{n}");
+    assert!(!cmds.contains(&trace), "{n}");
+
+    // It ended, timed out: open it in Claude Code, or read it.
+    std::fs::remove_file(path).unwrap();
+    run_file(
+        &env,
+        &id,
+        "reviewer",
+        chrono::Utc::now(),
+        Some(Some("timed out")),
+    );
+    let n = now(&env, &id);
+    let cmds = commands(&n);
+    assert!(cmds[0].starts_with("hall retry"), "{cmds:?}");
+    let resume = n["actions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["command"].as_str().unwrap().contains(SESSION))
+        .unwrap_or_else(|| panic!("no resume action: {n}"));
+    assert_eq!(resume["command"], RESUME);
+    assert_eq!(resume["does"], "open the failed run in Claude Code");
+    let read = n["actions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["command"] == trace.as_str())
+        .unwrap_or_else(|| panic!("no trace action: {n}"));
+    assert_eq!(read["does"], "read what the reviewer run did, step by step");
+    assert_eq!(cmds.last().unwrap(), &format!("hall log {id}"));
+
+    // The inbox entry offers them too.
+    let entry = env.hall(&env.repo, &["inbox", &id]);
+    assert_eq!(entry.json["kind"], "run_failed", "{}", entry.stdout);
+    let offered: Vec<&str> = entry.json["actions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a["command"].as_str().unwrap())
+        .collect();
+    assert!(offered.contains(&RESUME), "{offered:?}");
+    assert!(offered.contains(&trace.as_str()), "{offered:?}");
+}

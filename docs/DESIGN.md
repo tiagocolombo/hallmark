@@ -321,7 +321,7 @@ $ echo $?
 | `hall fixed <ids> [--dispute <id> --reason]` | fixer | Records what the commit fixes, resubmits. |
 | `hall verdict --file <json>` | assayer | Records a schema-checked verdict. |
 | `hall history [--rejected] [--lens] [--since]` | you | Closed and dropped items, and why things were rejected. |
-| `hall export [<id>]` | you, shipper | The whole record as Markdown. |
+| `hall export [<id>]` | you, shipper | The whole record as Markdown, with what each model run did, step by step. |
 | `hall budget [--set k=v] [--grant [<tokens>]]` | you | The caps and today's spend. `--grant` lets the loop go past the daily cap for today (default: another `daily`) and lifts the budget pause; the cap is unchanged. |
 | `hall notify test` | you | A test notification on every channel. |
 | `hall statusline` | Claude Code | One line for the status line. |
@@ -628,6 +628,18 @@ worktree is kept and said once in the live log. It never touches the main
 checkout, a worktree on another branch, or one a live item still uses. It
 records `worktree_removed`, and the branch and journal stay. `hall drop` and
 `hall merge` remove their own worktrees, unless `--keep-worktree`.
+
+**What an item is doing now.** `hall status <id>`, `hall watch`, the inbox,
+the hooks, the HUD and the terminal app read one derived **now** block: the
+item, its lease, the queue, the Live log, the check log, and the item's run
+streams (ADR 0039). While the loop holds the item's lease and the latest run
+began under it without its `hall_run_end` line, the block shows the run's last
+step and offers `hall trace <id> --follow`. A stream without an end line alone
+proves nothing, since a daemon that died mid-run never writes one. When an
+item is held after failed runs and its last run has ended, the block offers
+that run's `claude --resume` command (in the directory it ran in) and
+`hall trace <id>`. `hall export` lists every run's steps, so the record
+includes what the agents did.
 
 ## What we reuse
 

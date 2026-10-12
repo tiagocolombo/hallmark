@@ -148,6 +148,13 @@ the status line), in the terminal app, with a desktop notification, and on
 your phone through [ntfy](https://ntfy.sh), Telegram or Slack, plus an
 optional morning digest.
 
+`hall status <id>` says what an item is doing now and what you can do. While
+the reviewer, the fixer or the Delivery office's dev run is working, it shows
+the run's last step and offers `hall trace <id> --follow` to watch the agent
+work, live. When an item is held because its runs failed, it offers the
+`claude --resume` command that opens the failed run in Claude Code, once the
+run has ended. `hall export` keeps every run's steps in the item's record.
+
 Stuck items, Claude Code sessions waiting for permission, CI on merged PRs and
 proposed learnings are notices: `hall inbox --notices` lists them, and they are
 never notified.
