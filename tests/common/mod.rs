@@ -66,6 +66,8 @@ impl Env {
             .env("HALL_GH", self.root.join("no-gh-here"))
             // Desktop notifications go to a file, never to the screen.
             .env("HALL_NOTIFY_LOG", self.root.join("notify.log"))
+            // Sessions never look up hall's releases on the network.
+            .env("HALL_UPDATE_CHECK", "off")
             .env_remove("HALL_RUNNER")
             .env_remove("HALL_NO_HOOKS")
             .env_remove("HALL_HEADLESS")

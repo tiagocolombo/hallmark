@@ -55,13 +55,13 @@ pub fn launch() -> Result<Child> {
 }
 
 #[cfg(unix)]
-fn detach(cmd: &mut Command) {
+pub(crate) fn detach(cmd: &mut Command) {
     use std::os::unix::process::CommandExt;
     cmd.process_group(0);
 }
 
 #[cfg(windows)]
-fn detach(cmd: &mut Command) {
+pub(crate) fn detach(cmd: &mut Command) {
     use std::os::windows::process::CommandExt;
     const DETACHED_PROCESS: u32 = 0x0000_0008;
     const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
@@ -70,7 +70,7 @@ fn detach(cmd: &mut Command) {
 }
 
 #[cfg(not(any(unix, windows)))]
-fn detach(_cmd: &mut Command) {}
+pub(crate) fn detach(_cmd: &mut Command) {}
 
 /// The last `n` lines of the daemon log, for an error message.
 pub fn log_tail(n: usize) -> String {

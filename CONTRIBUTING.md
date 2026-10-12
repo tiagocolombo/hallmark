@@ -107,7 +107,15 @@ CI on Windows is the final check.
 ## Commits and pull requests
 
 - Use [Conventional Commits](https://www.conventionalcommits.org): `feat:`,
-  `fix:`, `docs:`, `test:`, `refactor:`, `chore:`, `ci:`.
+  `fix:`, `docs:`, `test:`, `refactor:`, `chore:`, `ci:`. Mark a breaking
+  change with `!` (`feat!:`) or a `BREAKING CHANGE:` footer.
+- **The PR title must be a conventional commit too.** PRs are squash-merged,
+  so the title becomes the commit on `main`, and CI checks it. Release
+  versions come from those commits: `feat` bumps the minor version, anything
+  else the patch, and a breaking change the major
+  ([ADR 0035](docs/decisions/0035-semver-from-conventional-commits.md)).
+- Don't bump the version in `Cargo.toml` or edit `CHANGELOG.md`: the release
+  PR that release-plz keeps open does both, and merging it tags the release.
 - Keep each pull request to one change, with tests that show it works.
 - Update the docs (`README.md`, `docs/`) when behaviour changes. For a larger
   design choice, add an ADR in `docs/decisions/`.

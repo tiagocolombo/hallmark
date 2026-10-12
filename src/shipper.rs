@@ -10,7 +10,7 @@
 //! parent (the lease candidates skip them).
 
 use std::fmt::Write as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::commands::record;
 use crate::error::Result;
@@ -165,6 +165,7 @@ fn ship(repo: &Repo, item: &Item, ctx_holder: &str) -> Result<Progress> {
     let body = pr_body(repo, item, &events);
     let body_file = body_path(repo, id);
     std::fs::write(&body_file, &body)?;
+    let title = pr_title(&wt, &base, &head, &item.title);
     let issue = item
         .issue
         .as_ref()
@@ -193,7 +194,7 @@ fn ship(repo: &Repo, item: &Item, ctx_holder: &str) -> Result<Progress> {
             ("branch", item.branch.as_str()),
             ("id", &id.to_string()),
             ("base", base.as_str()),
-            ("title", item.title.as_str()),
+            ("title", title.as_str()),
             ("body_file", &crate::paths::display(&body_file)),
             ("issue", &issue),
             ("pr", pr),
@@ -571,6 +572,21 @@ pub fn pr_url(out: &str) -> Option<String> {
 /// The PR body: the review summary, rounds, the open minors and nits that
 /// ride along, the checks, usage, the issue it closes, and where the full
 /// record is.
+/// The item's title as a conventional commit, typed by the commits it
+/// ships (ADR 0035): the squash merge of the PR is what release tooling
+/// reads. `freshen` just fetched the base, so this reads it locally.
+fn pr_title(wt: &Path, base: &str, head: &str, title: &str) -> String {
+    let remote = format!("refs/remotes/origin/{base}");
+    let from = if git::rev(wt, &remote).is_some() {
+        remote
+    } else {
+        format!("refs/heads/{base}")
+    };
+    let log =
+        git::run(wt, &["log", "--format=%B%x00", &format!("{from}..{head}")]).unwrap_or_default();
+    crate::conventional::pr_title(title, log.split('\0').map(str::trim))
+}
+
 pub fn pr_body(_repo: &Repo, item: &Item, events: &[Event]) -> String {
     let id = item.id;
     let mut s = String::new();

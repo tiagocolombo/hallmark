@@ -24,6 +24,11 @@ Status: Accepted, 2026-10-09
 > `allow-dirty`, run `dist generate`, then pin the actions by commit and
 > reapply the permissions edit marked in the file.
 
+> **Note, 2026-10-12:** amended by
+> [ADR 0035](0035-semver-from-conventional-commits.md). Tags are no longer
+> pushed by hand: release-plz tags `vX.Y.Z` when its release PR merges, and
+> that tag runs this workflow unchanged.
+
 ## Context
 
 ADR 0001 promised a single cargo-dist pipeline for all three operating

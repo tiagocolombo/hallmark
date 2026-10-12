@@ -1,0 +1,28 @@
+name: PR title
+
+# PRs are squash-merged, so the title becomes the commit on main that
+# release-plz reads (ADR 0035). It must be a conventional commit:
+# `type(scope)!: subject`.
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  conventional:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the title
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          types='feat|fix|perf|refactor|docs|test|build|ci|chore|style|revert'
+          if printf '%s' "$TITLE" | grep -Eq "^($types)(\([^()]+\))?!?: [^ ]"; then
+            echo "ok: $TITLE"
+          else
+            echo "::error::PR title isn't a conventional commit: \"$TITLE\". Use \`type(scope)!: subject\` with a type from: ${types//|/, }."
+            exit 1
+          fi

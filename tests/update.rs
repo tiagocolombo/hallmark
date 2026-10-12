@@ -147,6 +147,97 @@ fn update(env: &Env, exe: &Path, cargo: &Path, args: &[&str]) -> Reply {
     reply(out)
 }
 
+/// Tags `main` of the bare source `src` as an annotated `tag`, and returns
+/// the commit it points at.
+fn tag(src: &str, tag: &str) -> String {
+    let bare = Path::new(src);
+    git(bare, &["tag", "-a", tag, "-m", tag, "main"]);
+    git(bare, &["rev-parse", "main"]).trim().to_string()
+}
+
+#[test]
+fn check_reports_a_newer_release_and_remembers_it() {
+    let env = Env::new();
+    let (src, _) = source(&env);
+    tag(&src, "v0.0.1");
+    let sha = tag(&src, "v99.1.0");
+    tag(&src, "v100.0.0-rc.1");
+    let exe = installed(&env);
+    let cargo = fake_cargo(&env, &exe, 0);
+    let r = update(&env, &exe, &cargo, &["--check", "--source", &src]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(r.json["status"], "available");
+    assert_eq!(r.json["latest_version"], "99.1.0");
+    assert_eq!(r.json["tag"], "v99.1.0");
+    // Main is what installs; the release names its version.
+    assert_eq!(r.json["latest"], sha.as_str());
+    assert_eq!(r.json["branch"], "main");
+    assert_eq!(r.json["installed_version"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(cargo_log(&env), None, "--check must not install");
+
+    // Remembered, so doctor says so without asking the source again.
+    let seen: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(env.home.join("update.json")).unwrap()).unwrap();
+    assert_eq!(seen["latest"]["tag"], "v99.1.0");
+    let doctor = reply(output(
+        env.cmd_exe(&exe, &env.root)
+            .env("HALL_UPDATE_SOURCE", &src)
+            .arg("doctor"),
+    ));
+    let hall = &doctor.json["checks"][0];
+    assert_eq!(hall["name"], "hall");
+    assert!(
+        hall["detail"]
+            .as_str()
+            .unwrap()
+            .contains("hall 99.1.0 is available"),
+        "{}",
+        doctor.stdout
+    );
+    assert!(
+        doctor.json["next"]
+            .as_array()
+            .unwrap()
+            .contains(&"hall update".into()),
+        "{}",
+        doctor.stdout
+    );
+}
+
+#[test]
+fn an_update_installs_main_and_says_which_version_it_got() {
+    let env = Env::new();
+    let (src, sha) = source(&env);
+    tag(&src, "v99.0.0");
+    let exe = installed(&env);
+    let cargo = fake_cargo(&env, &exe, 0);
+    let r = update(&env, &exe, &cargo, &["--source", &src, "--no-setup"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(r.json["status"], "updated");
+    assert_eq!(r.json["latest_version"], "99.0.0");
+    let log = cargo_log(&env).expect("cargo ran");
+    assert!(
+        log.contains(&format!("install --locked --force --git {src} --rev {sha}")),
+        "{log}"
+    );
+    // The new hall (here a copy of this one) is asked for its version.
+    assert_eq!(r.json["new_version"], env!("CARGO_PKG_VERSION"));
+}
+
+#[test]
+fn a_source_without_releases_still_updates() {
+    let env = Env::new();
+    let (src, sha) = source(&env);
+    let exe = installed(&env);
+    let cargo = fake_cargo(&env, &exe, 0);
+    let r = update(&env, &exe, &cargo, &["--check", "--source", &src]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(r.json["status"], "available");
+    assert_eq!(r.json["latest"], sha.as_str());
+    assert!(r.json["latest_version"].is_null(), "{}", r.stdout);
+    assert!(r.json["tag"].is_null(), "{}", r.stdout);
+}
+
 #[test]
 fn check_reports_an_update_without_installing_it() {
     let env = Env::new();

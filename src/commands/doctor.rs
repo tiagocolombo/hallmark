@@ -101,6 +101,13 @@ fn skills_check(repo: &Repo) -> Option<Check> {
 pub fn doctor(cwd: &Path) -> Result<Response> {
     let mut checks = Vec::new();
 
+    // Being behind isn't unhealthy: the detail says what's newer.
+    let mut hall = env!("HALL_VERSION").to_string();
+    if let Some(note) = crate::commands::update::notice() {
+        hall = format!("{hall}; {note}");
+    }
+    checks.push(check("hall", true, hall, None));
+
     match git::version() {
         Some(v) => checks.push(check("git", true, v, None)),
         None => checks.push(check("git", false, "not found", Some("install git"))),
@@ -265,6 +272,9 @@ pub fn doctor(cwd: &Path) -> Result<Response> {
     ));
 
     let healthy = checks.iter().all(|c| c.ok);
-    let next: Vec<String> = checks.iter().filter_map(|c| c.fix.clone()).collect();
+    let mut next: Vec<String> = checks.iter().filter_map(|c| c.fix.clone()).collect();
+    if crate::commands::update::available().is_some() {
+        next.push("hall update".into());
+    }
     Ok(Response::new(DoctorOut { healthy, checks }, next))
 }

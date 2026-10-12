@@ -232,6 +232,32 @@ fn the_configured_ship_command_is_gated() {
 }
 
 #[test]
+fn session_start_says_a_newer_hall_is_out() {
+    let env = Env::initialized();
+    let seen = |version: &str| {
+        let v = json!({
+            "checked_at": chrono::Utc::now(),
+            "source": hallmark::commands::update::SOURCE,
+            "latest": {"version": version, "tag": format!("v{version}"), "commit": "abc"},
+        });
+        std::fs::write(env.home.join("update.json"), v.to_string()).unwrap();
+    };
+    let ctx = |session: &str| {
+        let r = env.hook("session-start", &input("session_start", &env.repo, session));
+        r.json["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+    seen("99.0.0");
+    let c = ctx("s20");
+    assert!(c.contains("hall 99.0.0 is available"), "{c}");
+    assert!(c.contains("hall update"), "{c}");
+    seen("0.0.1");
+    assert!(!ctx("s21").contains("is available"));
+}
+
+#[test]
 fn session_start_tells_claude_where_it_is() {
     let env = Env::initialized();
     let r = env.hook("session-start", &input("session_start", &env.repo, "s4"));
