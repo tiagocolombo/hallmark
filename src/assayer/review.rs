@@ -260,4 +260,15 @@ mod tests {
             assert!(m.contains(&format!("`{}`", lens.as_str())), "{lens:?}");
         }
     }
+
+    #[test]
+    fn the_method_audits_tests_before_the_lenses_and_refutes_last() {
+        // ADR 0036: the reviewer audits the tests first and tries to
+        // disprove its findings before returning them.
+        let m = super::super::prompt::method();
+        let at = |h: &str| m.find(h).unwrap_or_else(|| panic!("{h} missing"));
+        assert!(at("## The test audit") < at("## The seven lenses"));
+        assert!(at("## The seven lenses") < at("## The refutation pass"));
+        assert!(at("## The refutation pass") < at("## The verdict"));
+    }
 }

@@ -19,7 +19,7 @@
           },
           "severity": {
             "enum": ["blocker", "major", "minor", "nit"],
-            "description": "blocker: must not ship. major: a real defect that should be fixed first. minor: worth fixing, not blocking. nit: style."
+            "description": "blocker: must not ship. major: a real defect that should be fixed first, including a changed behaviour no test pins. minor: worth fixing, not blocking. nit: style."
           },
           "file": { "type": "string", "minLength": 1, "description": "Repo-relative path." },
           "line": { "type": "integer", "minimum": 0, "description": "1-based line; 0 for the whole file." },
