@@ -760,6 +760,9 @@ mod tests {
 
     #[test]
     fn a_long_stream_is_read_from_both_ends() {
+        // The fixture's run began here; a resume command cds only into a
+        // directory that exists.
+        std::fs::create_dir_all("/tmp/spike").unwrap();
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("20261012T215146-reviewer.jsonl");
         // The run's init, then a long conversation: more than both windows.

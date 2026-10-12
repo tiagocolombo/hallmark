@@ -1518,7 +1518,8 @@ fn trace_view(f: &mut Frame, area: Rect, app: &App) {
     };
     let info = t.info();
     let (state, c) = match (&info.ended, &info.failure) {
-        (false, _) => ("● running".to_string(), INFO),
+        (false, _) if info.interrupted => ("✗ interrupted".to_string(), STOP),
+        (false, _) =>("● running".to_string(), INFO),
         (true, Some(why)) => (format!("✗ failed: {}", clip(why, 60)), STOP),
         (true, None) => ("■ ended".to_string(), OK),
     };
@@ -1532,7 +1533,7 @@ fn trace_view(f: &mut Frame, area: Rect, app: &App) {
     }
     if t.scroll > 0 {
         bottom.push(format!("↑ {} · end follows", t.scroll));
-    } else if !info.ended {
+    } else if !info.ended && !info.interrupted {
         bottom.push("following".into());
     }
     let mut block = pane(format!(

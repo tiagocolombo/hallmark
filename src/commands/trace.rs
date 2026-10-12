@@ -35,6 +35,10 @@ pub struct RunView {
     /// The process exited. A run without it is still going, or the daemon
     /// died during it.
     pub ended: bool,
+    /// No end line, and nothing is writing it: the daemon stopped mid-run.
+    /// It can be opened, but has no more steps to follow.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub interrupted: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub failure: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -55,6 +59,7 @@ impl RunView {
             path: crate::paths::display(&f.path),
             streamed: f.streamed,
             ended: info.ended,
+            interrupted: info.interrupted,
             failure: info.failure.clone(),
             session_id: info.session_id.clone(),
             model: info.model.clone(),
@@ -64,6 +69,7 @@ impl RunView {
 
     fn status(&self) -> &'static str {
         match (self.ended, self.failure.is_some()) {
+            (false, _) if self.interrupted => "interrupted",
             (false, _) => "running",
             (true, true) => "failed",
             (true, false) => "ended",
@@ -82,7 +88,7 @@ pub struct TraceOut {
     pub total: usize,
     /// How many steps were printed before this reply.
     pub steps: usize,
-    /// With `--follow`: ended, or timeout.
+    /// With `--follow`: ended, interrupted, or timeout.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stopped: Option<String>,
     /// With `--list`: every run, oldest first.
@@ -135,6 +141,9 @@ impl Render for TraceOut {
         }
         let what = match self.stopped.as_deref() {
             Some("timeout") => "Stopped following (timeout); it is still going.".to_string(),
+            _ if r.interrupted => {
+                "It stopped without ending: the daemon was interrupted.".to_string()
+            }
             _ if !r.ended => "It is still going.".to_string(),
             _ => match &r.failure {
                 Some(f) => format!("It failed: {f}"),
@@ -166,7 +175,8 @@ pub fn trace(cwd: &Path, a: TraceArgs, mode: Mode) -> Result<Response> {
     if a.list {
         let mut runs = Vec::new();
         for (n, f) in &numbered {
-            let (_, info) = trace::read(&f.path)?;
+            let (_, mut info) = trace::read(&f.path)?;
+            trace::mark_interrupted(&repo.hall,id, &all, n - 1, &mut info);
             runs.push(RunView::new(*n, f, &info));
         }
         let next = match runs.last() {
@@ -232,7 +242,8 @@ pub fn trace(cwd: &Path, a: TraceArgs, mode: Mode) -> Result<Response> {
     };
 
     if a.open {
-        let (_, info) = trace::read(&file.path)?;
+        let (_, mut info) = trace::read(&file.path)?;
+        trace::mark_interrupted(&repo.hall,id, &all, n - 1, &mut info);
         let run = RunView::new(n, file, &info);
         let Some(cmd) = run.resume.clone() else {
             let (why, next) = if !run.ended {
@@ -293,14 +304,19 @@ pub fn trace(cwd: &Path, a: TraceArgs, mode: Mode) -> Result<Response> {
         if tail.info.ended {
             break Some("ended");
         }
+        trace::mark_interrupted(&repo.hall,id, &all, n - 1, &mut tail.info);
+        if tail.info.interrupted {
+            break Some("interrupted");
+        }
         if started.elapsed() >= limit {
             break Some("timeout");
         }
         crate::daemon::nap(interval);
     };
+    trace::mark_interrupted(&repo.hall,id, &all, n - 1, &mut tail.info);
     let run = RunView::new(n, file, &tail.info);
     let mut next = Vec::new();
-    if run.ended {
+    if run.ended || run.interrupted {
         if run.resume.is_some() {
             next.push(format!("hall trace {id} --run {n} --open"));
         }

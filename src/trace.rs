@@ -76,6 +76,28 @@ pub struct RunFile {
     pub streamed: bool,
 }
 
+/// Whether the run at `at` in `runs` is a stream that stopped without its end
+/// line: a newer run exists, or no live lease began before it (the test the
+/// now block uses). Sets `info.interrupted`.
+pub fn mark_interrupted(
+    hall: &crate::journal::Hall,
+    id: ItemId,
+    runs: &[RunFile],
+    at: usize,
+    info: &mut RunInfo,
+) {
+    if info.ended {
+        return;
+    }
+    let Some(run) = runs.get(at) else {
+        return;
+    };
+    // Run files are stamped to the second.
+    let began = run.started + chrono::Duration::seconds(1);
+    info.interrupted = at + 1 < runs.len()
+        || crate::lease::current(hall, id).is_none_or(|l| l.acquired > began);
+}
+
 /// The runs of an item, oldest first. Prompts and stderr files are not runs.
 pub fn runs(repo: &Repo, id: ItemId) -> Result<Vec<RunFile>> {
     runs_in(&repo.hall.item_runs(id))
@@ -212,6 +234,11 @@ pub struct RunInfo {
     /// The process exited: the runner's `hall_run_end`, or an older
     /// `.json` result. A run without it is still going, or the daemon died.
     pub ended: bool,
+    /// No end line, and nothing is writing the stream any more: the daemon
+    /// died or was stopped mid-run. Set by [`mark_interrupted`], not read
+    /// from the stream.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub interrupted: bool,
     /// The failure, when it ended with one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub failure: Option<String>,
@@ -221,12 +248,14 @@ impl RunInfo {
     /// The command that opens the run in Claude Code, once it has ended.
     pub fn resume_command(&self) -> Option<String> {
         let sid = self.session_id.as_deref()?;
-        if !self.ended {
+        if !self.ended && !self.interrupted {
             return None;
         }
         Some(match &self.cwd {
-            Some(c) => format!("cd {} && claude --resume {sid}", quote(c)),
-            None => format!("claude --resume {sid}"),
+            // A reviewer's checkout is removed when its run ends; Claude
+            // finds the session by ID from any directory.
+            Some(c) if c.is_dir() => format!("cd {} && claude --resume {sid}", quote(c)),
+            _ => format!("claude --resume {sid}"),
         })
     }
 
@@ -480,6 +509,9 @@ mod tests {
 
     #[test]
     fn a_tail_takes_whole_lines_and_learns_the_session() {
+        // The fixture's run began here; a resume command cds only into a
+        // directory that exists.
+        fs::create_dir_all("/tmp/spike").unwrap();
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("20261012T215146-reviewer.jsonl");
         let text = fixture();
@@ -501,6 +533,24 @@ mod tests {
         assert_eq!(
             tail.info.resume_command().as_deref(),
             Some("cd /tmp/spike && claude --resume 91aedf44-f4cd-4efa-8e74-768d46a9dc75")
+        );
+    }
+
+    #[test]
+    fn a_resume_command_only_enters_a_directory_that_exists() {
+        // A reviewer's checkout is removed once its run ends.
+        let dir = tempfile::tempdir().unwrap();
+        let mut info = RunInfo {
+            session_id: Some("s1".into()),
+            cwd: Some(dir.path().join("app-review-H-0042")),
+            ended: true,
+            ..RunInfo::default()
+        };
+        assert_eq!(info.resume_command().as_deref(), Some("claude --resume s1"));
+        info.cwd = Some(dir.path().to_path_buf());
+        assert!(
+            info.resume_command()
+                .is_some_and(|c| c.starts_with("cd ") && c.ends_with("&& claude --resume s1"))
         );
     }
 

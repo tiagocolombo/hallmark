@@ -20,11 +20,32 @@ fn runs_dir(env: &Env, id: &str) -> PathBuf {
 }
 
 fn write_run(env: &Env, id: &str, name: &str, body: &str) -> PathBuf {
+    // The fixture's run began here; a resume command cds only into a
+    // directory that exists.
+    std::fs::create_dir_all("/tmp/spike").unwrap();
     let dir = runs_dir(env, id);
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join(name);
     std::fs::write(&path, body).unwrap();
+    if name.ends_with(".jsonl") && !body.contains("hall_run_end") {
+        hold(env, id);
+    }
     path
+}
+
+/// The daemon holds the item, since before its runs began: a stream with no
+/// end line is going, not interrupted.
+fn hold(env: &Env, id: &str) {
+    let dir = env.repo.join(".git/hallmark/leases");
+    std::fs::create_dir_all(&dir).unwrap();
+    let lease = json!({
+        "item": id,
+        "role": "fixer",
+        "holder": "daemon:1",
+        "acquired": "2026-10-12T21:00:00Z",
+        "expires": "2099-01-01T00:00:00Z",
+    });
+    std::fs::write(dir.join(format!("{id}.json")), lease.to_string()).unwrap();
 }
 
 fn end_line(failure: Option<&str>) -> String {
@@ -321,6 +342,35 @@ fn follow_stops_at_the_timeout_while_the_run_is_going() {
     assert_eq!(t.reply["stopped"], "timeout");
     assert_eq!(t.reply["run"]["ended"], false);
     assert_eq!(kinds(&t.steps), ["start", "tool"]);
+}
+
+#[test]
+fn a_run_the_daemon_left_without_an_end_reads_as_interrupted() {
+    let env = Env::initialized();
+    let (id, _) = env.new_item("Usage page");
+    // No live lease, and no end line: nothing is writing it any more.
+    let dir = runs_dir(&env, &id);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("20261012T215146-fixer.jsonl"), running_stream()).unwrap();
+
+    let t = hall_lines(&env, &env.repo, &["trace", &id, "--follow"]);
+    assert_eq!(t.code, 0, "{}", t.reply);
+    assert_eq!(t.reply["stopped"], "interrupted", "it doesn't wait");
+    assert_eq!(t.reply["run"]["interrupted"], true);
+
+    let t = hall_lines(&env, &env.repo, &["trace", &id, "--list"]);
+    assert_eq!(t.reply["runs"][0]["interrupted"], true);
+
+    let t = hall_lines(&env, &env.repo, &["trace", &id, "--open"]);
+    assert_eq!(t.code, 0, "{}", t.reply);
+    assert!(
+        t.reply["run"]["resume"]
+            .as_str()
+            .unwrap()
+            .ends_with(&format!("claude --resume {SESSION}")),
+        "{}",
+        t.reply
+    );
 }
 
 #[test]

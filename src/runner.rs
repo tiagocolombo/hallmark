@@ -522,10 +522,17 @@ pub fn classify(
         }
     }
     let Some(r) = result else {
+        let detail = if !stderr.trim().is_empty() {
+            stderr.trim()
+        } else if !said.trim().is_empty() {
+            said.trim()
+        } else {
+            "no output"
+        };
         return Some(Failure::Error {
             message: format!(
                 "unreadable claude -p output: {}",
-                crate::output::clip(if raw.trim().is_empty() { stderr } else { raw }, 200)
+                crate::output::clip(detail, 200)
             ),
         });
     };
@@ -1434,6 +1441,11 @@ mod tests {
                 .starts_with("unreadable claude -p output"),
             "{e:?}"
         );
+        assert!(
+            e.failure.as_deref().unwrap().contains("oops"),
+            "the failure says what stderr said: {e:?}"
+        );
+        assert!(!e.failure.as_deref().unwrap().contains("session_id"), "{e:?}");
         let (_, info) = crate::trace::read(&stream).unwrap();
         assert!(info.ended && info.failure.is_some());
     }

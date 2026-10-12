@@ -1279,6 +1279,25 @@ fn write_run(env: &Env, id: u32, name: &str, text: &str) -> std::path::PathBuf {
     path
 }
 
+/// The daemon holds the item, since before its runs began: a stream with no
+/// end line is going, not interrupted.
+fn hold(env: &Env, id: u32) {
+    let hall = hall_of(env);
+    let lease = hallmark::lease::Lease {
+        item: ItemId(id),
+        role: "fixer".into(),
+        holder: "daemon:1".into(),
+        acquired: "2026-10-12T21:00:00Z".parse().unwrap(),
+        expires: "2099-01-01T00:00:00Z".parse().unwrap(),
+    };
+    std::fs::create_dir_all(hall.leases_dir()).unwrap();
+    std::fs::write(
+        hall.leases_dir().join(format!("{}.json", ItemId(id))),
+        serde_json::to_string(&lease).unwrap(),
+    )
+    .unwrap();
+}
+
 fn append(path: &Path, text: &str) {
     use std::io::Write;
     let mut f = std::fs::OpenOptions::new().append(true).open(path).unwrap();
@@ -1306,6 +1325,7 @@ fn t_follows_the_selected_items_latest_run() {
         "20261012T215146-fixer.jsonl",
         &format!("{}{half}", &text[..cut]),
     );
+    hold(&env, 1);
     let mut app = load(&env, &env.repo);
     select(&mut app, 1);
 

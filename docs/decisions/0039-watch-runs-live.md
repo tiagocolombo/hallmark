@@ -58,4 +58,6 @@ which only arrived with the result.
 - `rate_limit_event` lines are normal in a stream. Rate-limit detection
   must read the result and stderr, not every line.
 - If the daemon dies mid-run the stream has no end line; it reads as
-  still going until the item moves on.
+  still going while a live lease that began before it holds the item; once
+  a newer run exists or no such lease is live, it reads as interrupted and
+  can be opened.

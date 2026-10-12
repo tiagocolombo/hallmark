@@ -1422,8 +1422,8 @@ impl App {
         if self.view != View::Trace {
             return false;
         }
-        let dir = match (&self.trace, self.repo().and_then(|r| r.hall())) {
-            (Some(t), Some(h)) => h.item_runs(t.id),
+        let (dir, hall) = match (&self.trace, self.repo().and_then(|r| r.hall())) {
+            (Some(t), Some(h)) => (h.item_runs(t.id), Some(h.clone())),
             _ => return false,
         };
         let Some(t) = &mut self.trace else {
@@ -1453,7 +1453,13 @@ impl App {
         let Some(path) = t.run().map(|r| r.path.clone()) else {
             return changed;
         };
-        match t.tail.poll(&path) {
+        let polled = t.tail.poll(&path);
+        if let Some(h) = hall.as_ref() {
+            let was = t.tail.info.interrupted;
+            trace::mark_interrupted(h, t.id, &t.runs, t.at, &mut t.tail.info);
+            changed |= was != t.tail.info.interrupted;
+        }
+        match polled {
             Ok(new) => {
                 if !new.is_empty() {
                     // Scrolled up, the same steps stay in view.

@@ -384,6 +384,9 @@ fn run_file(
     started: chrono::DateTime<chrono::Utc>,
     end: Option<Option<&str>>,
 ) -> std::path::PathBuf {
+    // The fixture's run began here; a resume command cds only into a
+    // directory that exists.
+    std::fs::create_dir_all("/tmp/spike").unwrap();
     let stream = fixture("claude/stream.jsonl");
     let mut text: String = stream
         .lines()

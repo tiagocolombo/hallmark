@@ -653,6 +653,9 @@ fn export_includes_what_each_run_did() {
     let (id, _) = env.new_item("Retry webhooks");
     let runs = item_file(&env, &id, "runs");
     std::fs::create_dir_all(&runs).unwrap();
+    // The fixture's run began here; a resume command cds only into a
+    // directory that exists.
+    std::fs::create_dir_all("/tmp/spike").unwrap();
     // An older run's result, then a stream that timed out (ADR 0039).
     std::fs::write(
         runs.join("20261012T213749-reviewer.json"),
