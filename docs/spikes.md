@@ -25,6 +25,7 @@ The raw outputs are saved as test fixtures:
 | `tests/fixtures/transcript/session.jsonl` | spike 5, session transcript (trimmed) |
 | `tests/fixtures/claude/print_code_review.json` | spike 6 |
 | `tests/fixtures/claude/print_code_review_schema.json` | spike 6, with `--json-schema` |
+| `tests/fixtures/claude/stream.jsonl` | `--output-format stream-json --verbose` with two tool calls; hook lines dropped, paths made `/tmp/spike` (ADR 0039) |
 
 **Result: no decision turned out impossible.** Two findings change how Hallmark
 reads Claude's output (spikes 1, 2 and 5), and one confirms that the reviewer

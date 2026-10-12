@@ -1,0 +1,11 @@
+---
+source: src/trace.rs
+expression: "all.iter().map(|s| s.render_in(&Utc)).collect::<Vec<_>>().join(\"\\n\")"
+---
+          ● claude-haiku-5-5 in /tmp/spike
+21:51:46  ▸ Read  /tmp/spike/note.txt
+            ↳ 1 hello 2
+21:51:47  ▸ Bash  Count bytes in note.txt
+            ↳ 6 note.txt
+21:51:48  » `note.txt` contains just the word "hello" and a trailing newline, which `wc -c` confirms at 6 bytes.
+          ■ done in 3s, $0.01
