@@ -87,9 +87,9 @@ impl Render for ExtensionsOut {
         if let Some(s) = &self.skill {
             let e = &self.extensions[0];
             return format!(
-                "{} `{}` skill, {}\n\n{}\n",
-                e.name,
+                "`{}` from {}, {}\n\n{}\n",
                 s.name,
+                e.name,
                 e.credit,
                 s.text.trim()
             );
@@ -327,4 +327,52 @@ fn reviewer_note(repo: &Repo, e: &Extension, after: &[Role]) -> Option<String> {
         if want { "follows" } else { "stops following" },
         e.name
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn text_shows_each_role_on_or_off_with_the_credit() {
+        let e = extensions::find("mattpocock").unwrap();
+        let cfg = Extensions {
+            mattpocock: vec![Role::Reviewer],
+        };
+        let mut o = out("enable", None, vec![view(e, Some(&cfg))]);
+        o.changed = Some(false);
+        o.note = Some("NOTE".into());
+        assert_eq!(
+            o.render(),
+            "mattpocock  Matt Pocock's skills\n  \
+             by Matt Pocock, https://github.com/mattpocock/skills (MIT) at 49dd158\n  \
+             off  planner    to-tickets\n  \
+             off  developer  tdd, diagnosing-bugs, codebase-design\n  \
+             on   reviewer   code-review\n  \
+             off  fixer      tdd, diagnosing-bugs\n\
+             (unchanged)\n\nNOTE\n"
+        );
+    }
+
+    #[test]
+    fn text_of_a_skill_leads_with_its_credit() {
+        let e = extensions::find("mattpocock").unwrap();
+        let sk = e.skill("tdd").unwrap();
+        let mut o = out("show", None, vec![view(e, None)]);
+        o.skill = Some(SkillView {
+            extension: e.id.into(),
+            name: sk.name.into(),
+            description: sk.description(),
+            roles: vec![],
+            text: sk.text(),
+        });
+        let t = o.render();
+        assert!(
+            t.starts_with(
+                "`tdd` from Matt Pocock's skills, by Matt Pocock, \
+                 https://github.com/mattpocock/skills (MIT) at 49dd158\n\n# Test-Driven Development"
+            ),
+            "{t}"
+        );
+    }
 }

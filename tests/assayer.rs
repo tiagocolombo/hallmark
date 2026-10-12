@@ -911,3 +911,40 @@ fn a_repo_skill_can_replace_the_method() {
     assert!(prompt.contains(&format!("Review {id} round 1")));
     assert!(prompt.contains("+fn retry() {}"));
 }
+
+#[test]
+fn an_extension_on_the_base_reaches_the_reviewer() {
+    let env = Env::initialized();
+    // Turned on in the main checkout only: the reviewer reads the base.
+    let r = env.hall(
+        &env.repo,
+        &["extensions", "enable", "mattpocock", "--role", "reviewer"],
+    );
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert!(r.json["note"].as_str().unwrap().contains("once this change is committed"));
+    let (first, _, _) = ready_item(&env, "Retry webhooks", "retry.rs", "fn retry() {}\n");
+    let script = env.script(json!([
+        reviewer(verdict(vec![], json!([]))),
+        reviewer(verdict(vec![], json!([])))
+    ]));
+    tick(&env, &script);
+    tick(&env, &script);
+    assert_eq!(state(&env, &first), "hallmarked");
+    let calls = env.fake_calls();
+    assert!(!calls[0]["prompt"].as_str().unwrap().contains("<skill extension="));
+
+    git(&env.repo, &["commit", "-q", "-am", "turn on Matt Pocock's skills"]);
+    ready_item(&env, "Cap retries", "cap.rs", "fn cap() {}\n");
+    tick(&env, &script);
+    tick(&env, &script);
+    let calls = env.fake_calls();
+    let head = before_diff(calls[1]["prompt"].as_str().unwrap());
+    assert!(head.starts_with("# Principal review"), "the method stays first");
+    let ext = head.find("## Extensions\n").unwrap_or_else(|| panic!("{head}"));
+    assert!(head.find("## The verdict").unwrap() < ext, "after the method");
+    assert!(head[ext..].contains("for the reviewer"));
+    assert!(head[ext..].contains("<skill extension=\"mattpocock\" name=\"code-review\">"));
+    assert!(head[ext..].contains("by Matt Pocock, https://github.com/mattpocock/skills (MIT)"));
+    assert!(!head.contains("name=\"tdd\""), "only the reviewer's skills");
+    assert!(ext < head.find("# Review ").unwrap(), "before the item");
+}

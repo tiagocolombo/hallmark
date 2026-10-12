@@ -651,3 +651,25 @@ fn retry_releases_a_held_item() {
     let r = env.hall(&env.repo, &["retry", &id, "--reason", "again"]);
     assert_eq!(r.code, 4, "{}", r.stdout);
 }
+
+#[test]
+fn an_extension_for_the_planner_reaches_the_front_desk() {
+    let env = Env::initialized();
+    let r = env.hall(
+        &env.repo,
+        &["extensions", "enable", "mattpocock", "--role", "planner"],
+    );
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let script = env.script(json!([{"role": "intake", "structured": {
+        "parallel": false, "reason": "One change.", "parts": []
+    }}]));
+    let r = env.hall_fake(&env.repo, &script, &["new", REQUEST]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let calls = env.fake_calls();
+    let prompt = calls[0]["prompt"].as_str().unwrap();
+    let at = prompt.find("## Extensions\n").unwrap_or_else(|| panic!("{prompt}"));
+    assert!(prompt.find(REQUEST).unwrap() < at, "after the request");
+    assert!(prompt[at..].contains("for the Front Desk"));
+    assert!(prompt[at..].contains("<skill extension=\"mattpocock\" name=\"to-tickets\">"));
+    assert!(prompt[at..].contains("any edge"), "how it fits a plan of parts");
+}
