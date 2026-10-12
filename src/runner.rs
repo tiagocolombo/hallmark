@@ -391,10 +391,15 @@ pub fn classify(
                 .as_deref()
                 .is_some_and(|t| t != "completed")
     });
+    // Only the result and stderr: a stream's own events mention models and
+    // rate limits in every run (`rate_limit_event` … `"allowed"`, ADR 0039).
+    let said = said(raw);
     if failed {
         let text = format!(
             "{} {}",
-            result.and_then(|r| r.result.as_deref()).unwrap_or(raw),
+            result
+                .and_then(|r| r.result.as_deref())
+                .unwrap_or(said.as_str()),
             stderr
         );
         if let Some(until) = rate_limit(&text) {
@@ -413,7 +418,7 @@ pub fn classify(
     // ("[claude-code:unrecognized_model] …"). It costs nothing.
     if r.terminal_reason.as_deref() == Some("api_error")
         && r.model_usage.is_empty()
-        && format!("{raw} {stderr}")
+        && format!("{said} {stderr}")
             .to_ascii_lowercase()
             .contains("model")
     {
@@ -438,6 +443,20 @@ pub fn classify(
         return Some(Failure::NoStructuredOutput);
     }
     None
+}
+
+/// stdout without the stream's event lines (`system`, `assistant`, `user`,
+/// `rate_limit_event`, …): the result line and anything that isn't JSON.
+fn said(raw: &str) -> String {
+    raw.lines()
+        .filter(|l| {
+            let kind = serde_json::from_str::<serde_json::Value>(l.trim())
+                .ok()
+                .and_then(|v| v.get("type")?.as_str().map(String::from));
+            !kind.is_some_and(|k| crate::usage::STREAM_EVENTS.contains(&k.as_str()))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Claude's plan limit, as worded in its results: "Claude AI usage limit
@@ -890,6 +909,60 @@ mod tests {
         assert!(matches!(
             classify(Some(&failed), "", "", true),
             Some(Failure::RateLimited { .. })
+        ));
+    }
+
+    #[test]
+    fn a_streamed_run_is_no_rate_limit() {
+        // Every stream has `{"type":"rate_limit_event",…,"status":"allowed"}`
+        // lines (ADR 0039): only the result and stderr say a run hit a limit.
+        let raw = fixture("claude/stream.jsonl");
+        assert!(raw.contains("rate_limit_event"));
+        let ok = PrintResult::parse(&raw).unwrap();
+        assert_eq!(classify(Some(&ok), &raw, "", false), None);
+        // Killed before its result: a crash, not a rate limit.
+        let cut: String = raw
+            .lines()
+            .filter(|l| !l.contains("\"type\":\"result\""))
+            .map(|l| format!("{l}\n"))
+            .collect();
+        assert!(matches!(
+            classify(None, &cut, "", false),
+            Some(Failure::Error { .. })
+        ));
+        // An error result with no text of its own: still no rate limit.
+        let errored = |result: Option<&str>| {
+            let mut v: serde_json::Value =
+                serde_json::from_str(raw.lines().last().unwrap()).unwrap();
+            v["is_error"] = true.into();
+            v["subtype"] = "error_during_execution".into();
+            v["terminal_reason"] = "error".into();
+            match result {
+                Some(r) => v["result"] = r.into(),
+                None => {
+                    v.as_object_mut().unwrap().remove("result");
+                }
+            }
+            format!("{cut}{v}\n")
+        };
+        let text = errored(None);
+        let r = PrintResult::parse(&text).unwrap();
+        assert!(matches!(
+            classify(Some(&r), &text, "", false),
+            Some(Failure::Error { .. })
+        ));
+        // A real limit, in the result or on stderr, still pauses the daemon.
+        let text = errored(Some("Claude AI usage limit reached|1760000000"));
+        let r = PrintResult::parse(&text).unwrap();
+        match classify(Some(&r), &text, "", false) {
+            Some(Failure::RateLimited { until: Some(u) }) => assert_eq!(u.timestamp(), 1760000000),
+            other => panic!("{other:?}"),
+        }
+        let text = errored(None);
+        let r = PrintResult::parse(&text).unwrap();
+        assert!(matches!(
+            classify(Some(&r), &text, "You've hit your limit · resets 3pm", false),
+            Some(Failure::RateLimited { until: None })
         ));
     }
 
