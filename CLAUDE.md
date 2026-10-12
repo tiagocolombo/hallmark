@@ -43,6 +43,20 @@ Run all three checks before calling anything done, and report their real output.
     true.
 - **Snapshots pin the contract.** Update them deliberately and review every
   changed `.snap`. Never accept them blindly.
+- **Docs ship with the change.** A change that adds or changes behaviour
+  updates the docs in the same item, never in a follow-up. Docs that describe
+  the old behaviour are a defect.
+  - A command, subcommand or flag: `docs/commands.md`, and `README.md` when
+    it's in the quick start.
+  - A setting or default: `docs/configuration.md`.
+  - Rooms, workers, states or an item's life: `docs/how-it-works.md` and
+    `docs/DESIGN.md`.
+  - Install, setup or upgrading: `docs/install.md`.
+  - A design decision: a new ADR in `docs/decisions/`; update an old one only
+    to mark it superseded.
+  - What agents are told: the skill or agent under `plugin/`.
+  - `tests/docs.rs` fails when a command or setting is missing from the
+    reference docs. Everything else is checked in review.
 - **Nothing repo-specific is hardcoded.** Worktree, ship and gate commands come
   from `.hallmark.toml`, with generic defaults.
 - **Windows matters.**
