@@ -45,3 +45,4 @@ a decision, add a new record that supersedes the old one. Don't edit the old one
 | [0037](0037-repo-skills.md) | Repo skills: `.hallmark/skills/<name>/SKILL.md`, read from the base branch, extends or replaces Hallmark's | Accepted |
 | [0038](0038-extensions.md) | Extensions: skill packs by other authors (Matt Pocock's skills first), embedded unchanged and credited, turned on per role | Accepted |
 | [0035](0035-semver-from-conventional-commits.md) | Versions from conventional commits: typed PR titles, release-plz tags `vX.Y.Z` on main, `hall update` names versions and says when a release is out | Accepted; amends 0023 |
+| [0039](0039-pr-description-and-review-comments.md) | The PR description is What, Why and How; every review is a PR comment (`review_comment`) | Accepted; amends 0019, 0029 |

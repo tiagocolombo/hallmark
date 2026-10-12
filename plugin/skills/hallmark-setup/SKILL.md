@@ -64,8 +64,11 @@ are happy with.
 5. **Worktrees and shipping**, only if they use their own tooling:
    - `worktree`, with placeholders `{repo} {id} {branch} {slug} {base}`;
    - `branch`, with `{id} {slug}`;
-   - `ship`, with `{branch} {id} {base} {title} {body_file} {issue}`;
-   - `update`, with those of `ship`, plus `{pr}` and `{pr_head}`.
+   - `ship`, with `{branch} {id} {base} {title} {body_file} {review_file} {issue}`
+     (`{body_file}` is the What, Why and How description);
+   - `update`, with those of `ship`, plus `{pr}` and `{pr_head}`;
+   - `review_comment`, which posts each review as a PR comment, with `{pr}
+     {review_file} {branch} {id} {base}`; empty for none.
 6. **Models and budget**:
    - `budget.review_model`, `budget.fix_model`, `budget.intake_model` and
      `budget.librarian_model`;

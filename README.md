@@ -60,6 +60,8 @@ holds up:
 - **Watched until it merges.** The Delivery Office follows each PR: a
   conflict gets rebased, red CI goes to a fixer, and new review comments go
   back through review. `hall adopt --pr` takes over a PR that's already open.
+- **PRs that read well.** A shipped PR's description is What, Why and How;
+  every review, with its findings and how each was fixed, is a PR comment.
 - **A full record.** Every prompt, commit, check, verdict, fix and decision is
   appended to a journal. You can always see what was rejected, what was fixed
   and why.

@@ -1,6 +1,6 @@
 # 0029. Adopt open PRs: reopen shipped items, take over the rest
 
-Status: Accepted, 2026-10-10
+Status: Accepted, 2026-10-10. The update's comment is amended by 0039.
 
 ## Context
 
