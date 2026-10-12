@@ -42,3 +42,4 @@ a decision, add a new record that supersedes the old one. Don't edit the old one
 | [0034](0034-delivery-watches-closely.md) | The Delivery office watches PRs closely: its own worker, a base that moved makes its PRs due, `delivered` once | Accepted |
 | [0035](0035-index-fold-marks.md) | Each index row carries a fold mark; a row nobody vouches for is re-folded | Accepted; amends 0032 |
 | [0037](0037-repo-skills.md) | Repo skills: `.hallmark/skills/<name>/SKILL.md`, read from the base branch, extends or replaces Hallmark's | Accepted |
+| [0035](0035-semver-from-conventional-commits.md) | Versions from conventional commits: typed PR titles, release-plz tags `vX.Y.Z`, `hall update` follows releases and says when one is out | Accepted; amends 0023 |
