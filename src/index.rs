@@ -2,7 +2,7 @@
 //! reading each journal from the last indexed byte, and `hall reindex`
 //! rebuilds it from nothing.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use chrono::{DateTime, Utc};
@@ -43,6 +43,9 @@ CREATE TABLE IF NOT EXISTS notifications (
   item TEXT, session TEXT, t TEXT NOT NULL, message TEXT, kind TEXT, resolved_at TEXT
 );
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS folds (
+  id TEXT PRIMARY KEY, offset INTEGER NOT NULL, events INTEGER NOT NULL, complete INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS findings (
   item TEXT NOT NULL, id TEXT NOT NULL, round INTEGER NOT NULL, t TEXT NOT NULL, sha TEXT,
   lens TEXT NOT NULL, severity TEXT NOT NULL, file TEXT, line INTEGER, title TEXT, scenario TEXT,
@@ -337,11 +340,17 @@ impl Index {
                 clear_tables(&tx)?;
             }
         }
+        // Items whose journal this sync read, or whose row another writer
+        // changed since this build folded it: fold and write them.
         let mut touched: BTreeSet<ItemId> = BTreeSet::new();
+        // Items a build folded without reading every line: fold them, and
+        // write only a fold that read every line.
+        let mut partial: BTreeSet<ItemId> = BTreeSet::new();
+        let mut offsets: BTreeMap<ItemId, u64> = BTreeMap::new();
         let mut rebuild = false;
         for (item, path) in &files {
             let key = path.to_string_lossy().to_string();
-            let offset: u64 = tx
+            let mut offset: u64 = tx
                 .query_row("SELECT offset FROM files WHERE path = ?1", [&key], |r| {
                     r.get::<_, i64>(0)
                 })
@@ -352,24 +361,36 @@ impl Index {
                 rebuild = true;
                 break;
             }
-            if len == offset {
-                continue;
+            let mut read = false;
+            if len > offset {
+                let text = journal::read_locked(path, offset)?;
+                if !text.is_empty() {
+                    for e in journal::parse_lines(&text) {
+                        index_event(&tx, *item, &e)?;
+                    }
+                    offset += text.len() as u64;
+                    tx.execute(
+                        "INSERT INTO files(path, offset) VALUES (?1, ?2)
+                         ON CONFLICT(path) DO UPDATE SET offset = excluded.offset",
+                        params![key, offset as i64],
+                    )?;
+                    read = true;
+                }
             }
-            let text = journal::read_locked(path, offset)?;
-            if text.is_empty() {
-                continue;
-            }
-            for e in journal::parse_lines(&text) {
-                index_event(&tx, *item, &e)?;
-            }
-            let new_offset = offset + text.len() as u64;
-            tx.execute(
-                "INSERT INTO files(path, offset) VALUES (?1, ?2)
-                 ON CONFLICT(path) DO UPDATE SET offset = excluded.offset",
-                params![key, new_offset as i64],
-            )?;
-            if let Some(id) = item {
-                touched.insert(*id);
+            let Some(id) = item else { continue };
+            offsets.insert(*id, offset);
+            match if read {
+                Fold::Foreign
+            } else {
+                fold_mark(&tx, *id, offset)?
+            } {
+                Fold::Current => {}
+                Fold::Foreign => {
+                    touched.insert(*id);
+                }
+                Fold::Partial => {
+                    partial.insert(*id);
+                }
             }
         }
         if rebuild {
@@ -378,17 +399,33 @@ impl Index {
             self.clear()?;
             return self.sync_rows(hall);
         }
-        if owned {
-            // A newer hall owns the item format: this one folds items without
-            // the fields it doesn't know. Update the rows (so state is never
-            // stale) but keep the unknown fields already in each row's JSON
-            // (ADR 0032). The owner re-folds everything on its next sync.
-            for id in &touched {
-                if let Ok(item) = hall.load_item(*id) {
-                    upsert_item_merged(&tx, &item, &mine)?;
-                }
+        let mut wrote = false;
+        for (id, complete_only) in touched
+            .iter()
+            .map(|id| (*id, false))
+            .chain(partial.iter().map(|id| (*id, true)))
+        {
+            let Ok((item, complete)) = hall.fold_item(id) else {
+                continue;
+            };
+            if complete_only && !complete {
+                continue;
             }
-            if !touched.is_empty() {
+            if owned {
+                // A newer hall owns the item format: this one folds items
+                // without the fields it doesn't know. Update the rows (so
+                // state is never stale) but keep the unknown fields already
+                // in each row's JSON (ADR 0032). The owner re-folds
+                // everything on its next sync.
+                upsert_item_merged(&tx, &item, &mine)?;
+            } else {
+                upsert_item(&tx, &item)?;
+            }
+            mark_fold(&tx, &item, offsets[&id], complete)?;
+            wrote = true;
+        }
+        if owned {
+            if wrote {
                 tx.execute(
                     "INSERT INTO meta(key, value) VALUES ('items_stale', '1')
                      ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -396,11 +433,6 @@ impl Index {
                 )?;
             }
         } else {
-            for id in touched {
-                if let Ok(item) = hall.load_item(id) {
-                    upsert_item(&tx, &item)?;
-                }
-            }
             tx.execute("DELETE FROM meta WHERE key = 'items_stale'", [])?;
             mark_writer(&tx, &mine, Utc::now())?;
         }
@@ -909,7 +941,8 @@ fn question_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<QuestionRow> {
 fn clear_tables(c: &Connection) -> Result<()> {
     c.execute_batch(
         "DELETE FROM files; DELETE FROM items; DELETE FROM events; DELETE FROM usage;
-         DELETE FROM questions; DELETE FROM notifications; DELETE FROM findings;",
+         DELETE FROM questions; DELETE FROM notifications; DELETE FROM findings;
+         DELETE FROM folds;",
     )?;
     Ok(())
 }
@@ -948,6 +981,65 @@ fn mark_writer(c: &Connection, fields: &[String], now: DateTime<Utc>) -> Result<
         "INSERT INTO meta(key, value) VALUES ('item_fields', ?1), ('item_fields_at', ?2)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value",
         params![serde_json::to_string(fields)?, now.to_rfc3339()],
+    )?;
+    Ok(())
+}
+
+/// How an item's row stands against its journal (ADR 0035).
+enum Fold {
+    /// This build, or one like it, folded the row from every line up to the
+    /// indexed offset.
+    Current,
+    /// Someone else wrote the row or moved the offset: a hall from before
+    /// fold marks, which folds and advances the offset without recording it.
+    Foreign,
+    /// A build folded it without reading every line.
+    Partial,
+}
+
+/// Compares an item's row with the mark left by the build that folded it:
+/// the journal offset, the event count it wrote, and whether every line
+/// parsed. An offset alone can't vouch for a row: an older hall advances it
+/// past events it can't parse.
+fn fold_mark(tx: &rusqlite::Transaction<'_>, id: ItemId, offset: u64) -> Result<Fold> {
+    let mark = tx
+        .query_row(
+            "SELECT f.offset, f.events, f.complete, json_extract(i.json, '$.events')
+             FROM folds f LEFT JOIN items i ON i.id = f.id WHERE f.id = ?1",
+            [id.to_string()],
+            |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, bool>(2)?,
+                    r.get::<_, Option<i64>>(3)?,
+                ))
+            },
+        )
+        .optional()?;
+    Ok(match mark {
+        Some((at, events, complete, Some(row))) if at as u64 == offset && events == row => {
+            if complete {
+                Fold::Current
+            } else {
+                Fold::Partial
+            }
+        }
+        _ => Fold::Foreign,
+    })
+}
+
+fn mark_fold(
+    tx: &rusqlite::Transaction<'_>,
+    item: &Item,
+    offset: u64,
+    complete: bool,
+) -> Result<()> {
+    tx.execute(
+        "INSERT INTO folds(id, offset, events, complete) VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(id) DO UPDATE SET offset = excluded.offset, events = excluded.events,
+           complete = excluded.complete",
+        params![item.id.to_string(), offset as i64, item.events, complete],
     )?;
     Ok(())
 }

@@ -109,3 +109,132 @@ fn reindex_force_takes_the_index_over() {
     assert_eq!(fields, item_fields());
     assert_eq!(row_state(&env, &id), "development");
 }
+
+// ADR 0035: a row is trusted only if the fold mark of the build that wrote
+// it still matches. A hall from before fold marks (a terminal app left
+// running) folds without the events it can't parse and advances the offset
+// anyway; H-0038 stayed in Delivery after its PR merged.
+
+fn journal_path(env: &Env, id: &str) -> std::path::PathBuf {
+    env.repo
+        .join(".git/hallmark/items")
+        .join(id)
+        .join("events.jsonl")
+}
+
+fn append_line(env: &Env, id: &str, line: serde_json::Value) {
+    use std::io::Write;
+    let mut f = std::fs::OpenOptions::new()
+        .append(true)
+        .open(journal_path(env, id))
+        .unwrap();
+    writeln!(f, "{line}").unwrap();
+}
+
+fn dropped(id: &str) -> serde_json::Value {
+    serde_json::json!({
+        "v": 1, "t": chrono::Utc::now().to_rfc3339(), "actor": "you", "item": id,
+        "event": "dropped", "reason": "not needed", "worktree_removed": false
+    })
+}
+
+fn fold_complete(env: &Env, id: &str) -> bool {
+    conn(env)
+        .query_row("SELECT complete FROM folds WHERE id = ?1", [id], |r| {
+            r.get(0)
+        })
+        .unwrap()
+}
+
+#[test]
+fn a_row_an_older_hall_left_behind_its_offset_is_refolded() {
+    let env = Env::initialized();
+    let (id, _) = env.new_item("Retry webhooks");
+    assert_eq!(env.hall(&env.repo, &["status", "--all"]).code, 0);
+    assert_eq!(row_state(&env, &id), "development");
+
+    // The event lands, and an older hall that can't parse it moves the
+    // offset past it without changing the row or the fold mark.
+    append_line(&env, &id, dropped(&id));
+    let len = std::fs::metadata(journal_path(&env, &id)).unwrap().len() as i64;
+    // The index keys files by the path hall resolved, which needn't spell the
+    // temp dir the way the test does (Windows short names, separators).
+    let n = conn(&env)
+        .execute(
+            "UPDATE files SET offset = ?1 WHERE path LIKE ?2",
+            rusqlite::params![len, format!("%{id}%events.jsonl")],
+        )
+        .unwrap();
+    assert_eq!(n, 1);
+
+    assert_eq!(env.hall(&env.repo, &["status", "--all"]).code, 0);
+    assert_eq!(row_state(&env, &id), "dropped");
+}
+
+#[test]
+fn a_row_an_older_hall_rewrote_is_refolded() {
+    let env = Env::initialized();
+    let (id, _) = env.new_item("Retry webhooks");
+    let r = env.hall(&env.repo, &["drop", &id, "--reason", "not needed"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(env.hall(&env.repo, &["status", "--all"]).code, 0);
+    assert_eq!(row_state(&env, &id), "dropped");
+
+    // An older hall re-folded every journal (a reindex), skipping the line it
+    // can't read: the offsets match, the row has one event fewer.
+    let mut v = row_json(&env, &id);
+    v["state"] = "development".into();
+    v["events"] = (v["events"].as_i64().unwrap() - 1).into();
+    conn(&env)
+        .execute(
+            "UPDATE items SET json = ?1 WHERE id = ?2",
+            rusqlite::params![v.to_string(), id],
+        )
+        .unwrap();
+
+    assert_eq!(env.hall(&env.repo, &["status", "--all"]).code, 0);
+    assert_eq!(row_state(&env, &id), "dropped");
+}
+
+#[test]
+fn a_fold_that_skipped_a_line_is_redone_by_a_build_that_reads_it() {
+    let env = Env::initialized();
+    let (id, _) = env.new_item("Retry webhooks");
+
+    // This build can't read an event from the future: it still folds the
+    // rest, and marks the fold partial.
+    append_line(
+        &env,
+        &id,
+        serde_json::json!({
+            "v": 1, "t": chrono::Utc::now().to_rfc3339(), "actor": "hall", "item": id,
+            "event": "from_a_newer_hall"
+        }),
+    );
+    append_line(&env, &id, dropped(&id));
+    assert_eq!(env.hall(&env.repo, &["status", "--all"]).code, 0);
+    assert_eq!(row_state(&env, &id), "dropped");
+    assert!(!fold_complete(&env, &id));
+    // Folding again can't do better, so the row is left alone.
+    assert_eq!(env.hall(&env.repo, &["status", "--all"]).code, 0);
+    assert_eq!(row_state(&env, &id), "dropped");
+
+    // A build that reads every line redoes a partial fold.
+    let (other, _) = env.new_item("Rate limits");
+    let r = env.hall(&env.repo, &["drop", &other, "--reason", "not needed"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(env.hall(&env.repo, &["status", "--all"]).code, 0);
+    let mut v = row_json(&env, &other);
+    v["state"] = "development".into();
+    let c = conn(&env);
+    c.execute(
+        "UPDATE items SET json = ?1 WHERE id = ?2",
+        rusqlite::params![v.to_string(), other],
+    )
+    .unwrap();
+    c.execute("UPDATE folds SET complete = 0 WHERE id = ?1", [&other])
+        .unwrap();
+    assert_eq!(env.hall(&env.repo, &["status", "--all"]).code, 0);
+    assert_eq!(row_state(&env, &other), "dropped");
+    assert!(fold_complete(&env, &other));
+}
