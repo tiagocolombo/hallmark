@@ -47,12 +47,19 @@ holds up:
   agent reviews a frozen commit against your base branch with fresh context.
   Its approval is a git note on that exact SHA. Change one byte and the
   approval no longer applies.
+- **Untested means unfinished.** The reviewer audits the tests before
+  anything else. A changed behaviour that no test would catch breaking, or a
+  bug fix without a regression test, blocks approval, and the fixer writes
+  the missing test first.
 - **A fix loop that runs on its own.** Failing checks and review findings go to
   a fixer agent and back to review until the commit is approved, or until it
   needs your judgement.
 - **Nothing reaches GitHub without a hallmark.** A gate in Claude Code blocks
   pushes from an item's worktree. The shipper opens the PR, and only for a
   hallmarked commit.
+- **Watched until it merges.** The Delivery Office follows each PR: a
+  conflict gets rebased, red CI goes to a fixer, and new review comments go
+  back through review. `hall adopt --pr` takes over a PR that's already open.
 - **A full record.** Every prompt, commit, check, verdict, fix and decision is
   appended to a journal. You can always see what was rejected, what was fixed
   and why.
@@ -61,7 +68,12 @@ holds up:
 - **Local and private.** No server, no account. Model runs go through your own
   Claude Code. The journal lives in your git directory and is never committed.
 - **Works with your tooling.** Worktree, gate and ship commands come from
-  `.hallmark.toml`, with defaults for plain `git` and `gh`.
+  `.hallmark.toml`, with defaults for plain `git` and `gh`. `hall config`
+  changes any setting without editing TOML.
+- **A reviewer that knows your repo.** Skills in `.hallmark/skills/` extend or
+  replace how the reviewer reviews, how the fixer fixes and what development
+  sessions are told. They're read from the base branch, so a branch can't
+  rewrite its own review.
 
 ## Quick start
 
@@ -102,31 +114,45 @@ flowchart LR
     review -.->|3rd rejection| you
 ```
 
-1. **Start.** A prompt, a GitHub issue or an existing branch becomes an
+1. **Start.** A prompt, a GitHub issue, a branch or an open PR becomes an
    **item** (`H-0042`) with its own branch and worktree. Independent parts of a
    larger request become parallel child items.
 2. **Build.** You and the dev agent iterate in Claude Code. Hooks record each
    prompt, turn and commit.
 3. **Check.** When you say it's ready, the commit is frozen and your gates run
    first. A red build never spends review tokens.
-4. **Review.** The principal engineer reviews the diff through seven lenses,
-   using your repo's rules from the base branch and what the Library learned
-   from earlier items. It reports only what it can show is broken.
+4. **Review.** The principal engineer audits the tests first, then reviews the
+   diff through seven lenses, using your repo's rules and skills from the base
+   branch and what the Library learned from earlier items. It reports only
+   what it can show is broken.
 5. **Fix.** A fixer agent addresses the findings, or disputes them with a
    reason, and the loop repeats. Re-reviews read only what changed.
 6. **Ship.** The approved commit is rebased onto the latest base and gets its
    hallmark. The shipper opens the PR, and the Delivery Office watches it until
-   it merges.
+   it merges: conflicts, red CI and new review comments come back through the
+   loop.
 
 When something needs a person (a question, an escalation, an exhausted budget),
 it goes to **your inbox**. You hear about it in Claude Code, in the terminal
 app, on the desktop or on your phone. Only that item waits; everything else
 keeps moving.
 
-Hallmark is named after Goldsmiths' Hall in London, where silver was tested
-and stamped before it could be sold. The design is laid out the same way, as a
-building with rooms. See [How it works](docs/how-it-works.md) for the rooms,
-the state machine and one item's full life.
+### Why "Hallmark"
+
+For more than seven hundred years, English silver has had to be tested before
+it could be sold. At Goldsmiths' Hall in London, an assayer tested each piece,
+and only one that met the standard was struck with the Hall's marks: a
+*hall mark*. The stamp never said the smith was good. It said this piece had
+passed, and the one who made it wasn't the one who tested it.
+
+Hallmark works the same way. Its note on an approved commit answers the
+questions the old marks did: who made it (the item), what standard it met
+(the open findings), who tested it (the reviewer and round) and when (the
+time). Like a mark struck on silver, it can't move to another commit. The
+design is laid out the same way too, as a building with rooms. See
+[How it works](docs/how-it-works.md) for the rooms, the state machine and one
+item's full life, and the [website](https://hallmark.colombo.dev/#name) for the
+four marks.
 
 ## Install
 
@@ -258,14 +284,15 @@ default, including models per role, notifications and the Library.
 | The index | SQLite next to the journal. It's a cache, so `hall reindex` rebuilds it. |
 | The Library | `<git-common-dir>/hallmark/library/`: learnings from closed items, kept locally |
 | The hallmark | A git note under `refs/notes/hallmark` on the approved commit |
+| Repo skills | `.hallmark/skills/<name>/SKILL.md`, read from the base branch |
 | Your settings | `.hallmark.toml` in the repo, and `<user data dir>/hallmark/config.toml` for personal settings such as notifications |
 
 ## Project status
 
 Hallmark is in early, active development (`0.1`). The full loop runs today:
-items and the journal, the gates, checks, review, fixes, shipping, delivery
-tracking, parallel parts, budgets, notifications, the Library and the terminal
-app. Expect the configuration and the CLI to change before `1.0`. Breaking
+items and the journal, the gates, checks, test-first review, fixes, shipping,
+delivery tracking, parallel parts, budgets, notifications, the Library, repo
+skills and the terminal app. Expect the configuration and the CLI to change before `1.0`. Breaking
 changes will be called out in the release notes.
 
 Hallmark currently drives [Claude Code](https://claude.com/claude-code). Every
