@@ -161,6 +161,10 @@ pub fn run<R: BufRead, W: Write>(ctx: &Context, input: R, out: W) -> Result<Plan
             "budget.per_item",
             Some("Cap per item (800k); '-' for none"),
         )?;
+        w.say("\n── Extensions: skills by other authors ──")?;
+        for e in crate::extensions::CATALOG {
+            w.extension(e)?;
+        }
     }
 
     w.say("\n── Your tools (your user config) ──")?;
@@ -376,6 +380,33 @@ impl<R: BufRead, W: Write> Wizard<'_, R, W> {
                 value,
             });
         }
+    }
+
+    /// Asks whether to use an extension (ADR 0038): yes turns it on for
+    /// every role it serves, no turns it off. A repo that has it on for
+    /// some roles keeps them on Enter.
+    fn extension(&mut self, e: &crate::extensions::Extension) -> Result<()> {
+        let key = format!("extensions.{}", e.id);
+        self.asked.insert((Scope::Repo, key.clone()));
+        let on = self
+            .current(Scope::Repo, &key)
+            .as_array()
+            .is_some_and(|a| !a.is_empty());
+        let roles: Vec<&str> = e.roles().iter().map(|r| r.as_str()).collect();
+        let yes = self.yes(
+            &format!(
+                "Use {} ({}) for the {}? `hall extensions` shows what each role gets.",
+                e.name,
+                e.credit(),
+                roles.join(", ")
+            ),
+            on,
+        )?;
+        if yes != on {
+            let value = yes.then(|| toml_edit::Value::Array(roles.iter().copied().collect()));
+            self.record(Scope::Repo, &key, value);
+        }
+        Ok(())
     }
 
     /// Asks for one key by its kind.
@@ -738,6 +769,7 @@ mod tests {
                 "lots",            // daily: refused
                 "4M",              // daily
                 "-",               // per item: none (already none)
+                "y",               // Matt Pocock's skills
                 "",                // claude
                 "",                // gh
                 "n",               // desktop
@@ -760,6 +792,7 @@ mod tests {
                 r#"branch = "feat/{slug}""#,
                 r#"ship = "rig submit --pr""#,
                 r#"budget.daily = "4M""#,
+                r#"extensions.mattpocock = ["planner", "developer", "reviewer", "fixer"]"#,
                 "notify.desktop = false",
             ]
         );

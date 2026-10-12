@@ -819,3 +819,33 @@ fn doctor_lists_repo_skills_from_the_base() {
     );
     assert!(next.as_array().unwrap().iter().any(|n| n == fix));
 }
+
+#[test]
+fn doctor_lists_extensions_with_their_credit() {
+    let env = Env::initialized();
+    let ext = || {
+        let r = env.hall(&env.repo, &["doctor"]);
+        r.json["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["name"] == "extensions")
+            .map(|c| c["detail"].as_str().unwrap().to_string())
+    };
+    assert_eq!(ext(), None, "no check without extensions");
+
+    env.hall(&env.repo, &["extensions", "enable", "mattpocock"]);
+    let d = ext().unwrap();
+    assert!(
+        d.starts_with("mattpocock (by Matt Pocock, https://github.com/mattpocock/skills (MIT) at 49dd158): planner, developer, fixer, reviewer once .hallmark.toml is on main"),
+        "{d}"
+    );
+    git(&env.repo, &["commit", "-q", "-am", "extensions"]);
+    assert!(ext().unwrap().ends_with(": planner, developer, fixer, reviewer"));
+
+    env.hall(&env.repo, &["extensions", "disable", "mattpocock"]);
+    assert!(
+        ext().unwrap().ends_with(": reviewer until .hallmark.toml is on main"),
+        "the reviewer still follows main's"
+    );
+}
