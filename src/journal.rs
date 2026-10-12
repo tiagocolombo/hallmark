@@ -269,6 +269,20 @@ impl Hall {
         event::fold(id, &self.read_item(id)?)
     }
 
+    /// Folds an item and says whether every line of its journal parsed. A
+    /// line this build can't read (an event kind a newer hall added) is
+    /// skipped by the fold, so the item may lack what that event did.
+    pub fn fold_item(&self, id: ItemId) -> Result<(Item, bool)> {
+        let p = self.item_events(id);
+        if !p.is_file() {
+            return Err(not_found(id));
+        }
+        let text = read_locked(&p, 0)?;
+        let events = parse_lines(&text);
+        let lines = text.lines().filter(|l| !l.trim().is_empty()).count();
+        Ok((event::fold(id, &events)?, events.len() == lines))
+    }
+
     pub fn refresh_item_json(&self, id: ItemId) -> Result<Item> {
         let item = self.load_item(id)?;
         self.write_item_json(&item)?;

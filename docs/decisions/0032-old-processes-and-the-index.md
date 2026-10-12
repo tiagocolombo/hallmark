@@ -1,6 +1,7 @@
 # 0032. An older hall never rewrites a newer one's index; the terminal app restarts on update
 
-Status: Accepted, 2026-10-11
+Status: Accepted, 2026-10-11; amended by 0035 (fold marks catch writers this
+mark can't)
 
 ## Context
 
