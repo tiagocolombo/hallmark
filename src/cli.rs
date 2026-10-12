@@ -273,9 +273,18 @@ pub struct ContinueArgs {
 #[derive(Debug, Args)]
 pub struct ProposeReadyArgs {
     pub id: Option<String>,
-    /// What was done, for the human deciding.
+    /// What was done, for the human deciding. It becomes the What of the PR
+    /// description.
     #[arg(long)]
     pub summary: String,
+    /// Why the change is needed: the PR description's Why. Without it, the
+    /// request (or the issue) is used.
+    #[arg(long)]
+    pub why: Option<String>,
+    /// How it was done: the approach and the notable choices, for the PR
+    /// description's How. Without it, the commits are listed.
+    #[arg(long)]
+    pub how: Option<String>,
     /// Something needs the human's confirmation: wait for their call
     /// instead of going straight to review.
     #[arg(long)]

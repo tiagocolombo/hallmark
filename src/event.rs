@@ -154,6 +154,12 @@ pub enum Body {
     },
     ProposedReady {
         summary: String,
+        /// Why the change is needed: the PR description's Why.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        why: Option<String>,
+        /// How it was done: the PR description's How.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        how: Option<String>,
     },
     Ready {
         sha: String,
@@ -591,7 +597,7 @@ impl Body {
                     c(subject, 50)
                 )
             }
-            Body::ProposedReady { summary } => {
+            Body::ProposedReady { summary, .. } => {
                 format!("proposes ready · \"{}\"", c(summary, 60))
             }
             Body::Ready { sha, round, note } => match note {
@@ -894,7 +900,7 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
         }
         ledger.apply(&e.body);
         match &e.body {
-            Body::ProposedReady { summary } => item.summary = Some(summary.clone()),
+            Body::ProposedReady { summary, .. } => item.summary = Some(summary.clone()),
             Body::Ready { sha, round, .. } => {
                 item.frozen_sha = Some(sha.clone());
                 item.round = *round;
@@ -1053,6 +1059,8 @@ mod tests {
             created(),
             ev(Body::ProposedReady {
                 summary: "done".into(),
+                why: None,
+                how: None,
             }),
             ev(Body::Ready {
                 sha: "aaa".into(),

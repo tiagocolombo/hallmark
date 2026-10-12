@@ -9,6 +9,10 @@ use crate::error::Result;
 
 pub const FILE_NAME: &str = ".hallmark.toml";
 
+/// `update` as `hall init` wrote it before the review moved to its own
+/// comment (ADR 0039). Read as today's default.
+const OLD_UPDATE: &str = "git push --force-with-lease={branch}:{pr_head} origin {branch} && gh pr edit {pr} --base {base} && gh pr comment {pr} --body-file {body_file}";
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(default)]
 pub struct Config {
@@ -19,7 +23,9 @@ pub struct Config {
     /// The item's branch name. Placeholders: {id} {slug}.
     pub branch: String,
     /// Ships a hallmarked commit. Placeholders: {branch} {id} {base}
-    /// {title} {body_file} (the PR body the shipper writes) {issue}.
+    /// {title} {body_file} (the PR description the shipper writes: What,
+    /// Why and How) {review_file} (the review, which `review_comment` posts)
+    /// {issue}.
     pub ship: String,
     /// Updates the open PR of an item that already has one (an adopted PR,
     /// or a shipped item reopened for a rebase or a conflict fix), instead
@@ -27,6 +33,11 @@ pub struct Config {
     /// and {pr_head} (the commit the PR's head was at when the item took it
     /// over: the push replaces exactly that).
     pub update: String,
+    /// Posts the review on the PR as a comment, after `ship` opens it and
+    /// after every `update`: the description keeps only What, Why and How.
+    /// Runs when the PR's URL is known. Placeholders: {pr} (the PR's URL)
+    /// {review_file} {branch} {id} {base}. Empty: no comment.
+    pub review_comment: String,
     /// The repo's checks, run in order at the frozen commit.
     pub gates: Vec<String>,
     /// Commands the headless dev runs (the fixer, the Delivery office) may
@@ -90,7 +101,8 @@ impl Default for Config {
             worktree: "git worktree add ../{repo}-{id} -b {branch}".into(),
             branch: "hm/{id}-{slug}".into(),
             ship: "git push -u origin {branch} && gh pr create --base {base} --head {branch} --title {title} --body-file {body_file}".into(),
-            update: "git push --force-with-lease={branch}:{pr_head} origin {branch} && gh pr edit {pr} --base {base} && gh pr comment {pr} --body-file {body_file}".into(),
+            update: "git push --force-with-lease={branch}:{pr_head} origin {branch} && gh pr edit {pr} --base {base}".into(),
+            review_comment: "gh pr comment {pr} --body-file {review_file}".into(),
             gates: Vec::new(),
             dev_commands: Vec::new(),
             reviewer: "claude -p".into(),
@@ -656,7 +668,13 @@ pub struct RoleBudget {
 
 impl Config {
     pub fn parse(text: &str) -> Result<Config> {
-        Ok(toml::from_str(text)?)
+        let mut c: Config = toml::from_str(text)?;
+        // `hall init` wrote the old default, which posted the PR body as a
+        // comment; the review comment does that job now (ADR 0039).
+        if c.update == OLD_UPDATE {
+            c.update = Config::default().update;
+        }
+        Ok(c)
     }
 
     /// Reads the first `.hallmark.toml` among `dirs`, or the defaults.
@@ -746,6 +764,7 @@ worktree = {worktree}
 branch   = {branch}
 ship     = {ship}
 update   = {update}
+review_comment = {review_comment}   # the review goes in a PR comment
 {gates_toml}
 max_rejects = 3
 auto_ready  = true   # done, with nothing left to confirm: straight to review
@@ -767,6 +786,7 @@ intake_model = "haiku"
         branch = toml_str(&d.branch),
         ship = toml_str(&d.ship),
         update = toml_str(&d.update),
+        review_comment = toml_str(&d.review_comment),
         capture = toml_str(capture.as_str()),
     )
 }
@@ -867,6 +887,23 @@ mode = "ask"
             vec!["cargo test".to_string(), "make \"lint\"".to_string()]
         );
         assert_eq!(c.worktree, Config::default().worktree);
+        assert_eq!(c.review_comment, Config::default().review_comment);
+    }
+
+    #[test]
+    fn the_update_init_used_to_write_reads_as_todays() {
+        // It posted the PR body as a comment; the review comment does now.
+        let c = Config::parse(&format!("update = {}\n", toml_str(OLD_UPDATE))).unwrap();
+        assert_eq!(c.update, Config::default().update);
+        assert!(!c.update.contains("gh pr comment"), "{}", c.update);
+        assert_eq!(
+            c.review_comment,
+            "gh pr comment {pr} --body-file {review_file}"
+        );
+        // A changed one is kept as written.
+        let own = format!("{OLD_UPDATE} && notify-team");
+        let c = Config::parse(&format!("update = {}\n", toml_str(&own))).unwrap();
+        assert_eq!(c.update, own);
     }
 
     #[test]

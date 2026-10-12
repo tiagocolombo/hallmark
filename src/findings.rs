@@ -179,7 +179,7 @@ pub struct LearningUse {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ModelVerdict {
-    /// Two or three sentences for the PR body and the journal.
+    /// Two or three sentences for the review comment and the journal.
     pub summary: String,
     /// New findings in this round.
     pub findings: Vec<ModelFinding>,

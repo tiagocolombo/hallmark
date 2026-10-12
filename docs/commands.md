@@ -71,7 +71,7 @@ The extensions, and what each role gets:
 | `hall adopt [--pr] [--base]` | Turns the current branch and worktree, or an open PR, into an item. A shipped item whose PR is still open is reopened: rebase it, resolve conflicts or change it, and the shipper updates the PR after review ([ADR 0029](decisions/0029-adopt-open-prs.md)). |
 | `hall merge [<child>]` | Merges a parallel part into its parent's branch and closes it. |
 | `hall ready [<id>]` | Freezes the commit and queues the item for review. |
-| `hall propose-ready [<id>] --summary <s> [--ask]` | The agent says the work is done. With nothing left to confirm (no open question, a clean worktree, no open parts) it goes straight to review; `--ask` (or `auto_ready = false`) waits for your call. |
+| `hall propose-ready [<id>] --summary <s> [--why <w>] [--how <h>] [--ask]` | The agent says the work is done. With nothing left to confirm (no open question, a clean worktree, no open parts) it goes straight to review; `--ask` (or `auto_ready = false`) waits for your call. `--summary`, `--why` and `--how` become the PR description's What, Why and How ([ADR 0039](decisions/0039-pr-description-and-review-comments.md)). |
 | `hall pull-back [<id>]` | Returns the item to development. |
 | `hall drop [<id>] --reason <r>` | Abandons the item. The branch and journal stay. `--keep-worktree` |
 | `hall retry [<id>] --reason <r> [--tokens <n>]` | Allows an escalated item one more round, or releases a held item. A budget hold also grants that item another `per_item` (or `--tokens`); the budget is unchanged. |

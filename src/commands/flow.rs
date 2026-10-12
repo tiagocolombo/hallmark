@@ -474,6 +474,8 @@ pub fn propose_ready(cwd: &Path, a: ProposeReadyArgs) -> Result<Response> {
                 Some(item.id),
                 Body::ProposedReady {
                     summary: a.summary.clone(),
+                    why: a.why.clone().filter(|w| !w.trim().is_empty()),
+                    how: a.how.clone().filter(|h| !h.trim().is_empty()),
                 },
             )];
             if let Some(sha) = &head {

@@ -1,6 +1,7 @@
 # 0030. The Delivery office, rebasing before shipping, what becomes an item, a clean inbox, auto-ready, and a daemon that doesn't die in its sleep
 
-Status: Accepted, 2026-10-11
+Status: Accepted, 2026-10-11. Amended by 0039: an update of the PR doesn't
+rewrite its description; the review goes in a new comment.
 
 ## Context
 

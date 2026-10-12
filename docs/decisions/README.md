@@ -20,7 +20,7 @@ a decision, add a new record that supersedes the old one. Don't edit the old one
 | [0012](0012-config-from-the-main-checkout.md) | `.hallmark.toml` is read from the main checkout | Accepted |
 | [0013](0013-one-runner-for-claude-p.md) | One runner for every `claude -p` run | Accepted |
 | [0014](0014-daemon-workers-and-leases.md) | The daemon is a loop of workers, with leases | Accepted |
-| [0015](0015-verdicts-findings-and-approval.md) | Verdicts, findings, and who decides approval | Accepted |
+| [0015](0015-verdicts-findings-and-approval.md) | Verdicts, findings, and who decides approval | Accepted; amended by 0039 |
 | [0016](0016-budgets-holds-and-pauses.md) | Budgets, holds and pauses | Accepted |
 | [0017](0017-daemon-process-and-pauses.md) | The daemon process: one instance, stop by file, pauses for everyone | Accepted |
 | [0018](0018-the-assay-office.md) | The Assay Office: checks, then an isolated review | Accepted |
@@ -35,7 +35,7 @@ a decision, add a new record that supersedes the old one. Don't edit the old one
 | [0027](0027-the-library-stays-local.md) | The Library stays local: learnings live next to the journal | Accepted |
 | [0028](0028-grant-the-daily-budget.md) | Grant the daily budget for today, without changing the cap | Accepted |
 | [0029](0029-adopt-open-prs.md) | Adopt open PRs: reopen shipped items, take over the rest | Accepted |
-| [0030](0030-delivery-and-rebase-before-shipping.md) | The Delivery office (conflicts and PR comments), rebasing before shipping, what becomes an item, a clean inbox, auto-ready, a wrapped timeline, and a daemon that doesn't die in its sleep | Accepted |
+| [0030](0030-delivery-and-rebase-before-shipping.md) | The Delivery office (conflicts and PR comments), rebasing before shipping, what becomes an item, a clean inbox, auto-ready, a wrapped timeline, and a daemon that doesn't die in its sleep | Accepted; amended by 0039 |
 | [0031](0031-only-escalations-reach-you.md) | Only escalations reach you; the Delivery office fixes red CI; new items start from the latest base | Accepted |
 | [0032](0032-old-processes-and-the-index.md) | An older hall never rewrites a newer one's index; the terminal app restarts on update | Accepted |
 | [0033](0033-configurable-setup.md) | Every setting has a command, and `hall setup --interactive` may ask | Accepted; amends 0002 |
@@ -45,3 +45,4 @@ a decision, add a new record that supersedes the old one. Don't edit the old one
 | [0037](0037-repo-skills.md) | Repo skills: `.hallmark/skills/<name>/SKILL.md`, read from the base branch, extends or replaces Hallmark's | Accepted |
 | [0038](0038-extensions.md) | Extensions: skill packs by other authors (Matt Pocock's skills first), embedded unchanged and credited, turned on per role | Accepted |
 | [0035](0035-semver-from-conventional-commits.md) | Versions from conventional commits: typed PR titles, release-plz tags `vX.Y.Z` on main, `hall update` names versions and says when a release is out | Accepted; amends 0023 |
+| [0039](0039-pr-description-and-review-comments.md) | The PR description is What, Why and How; every review is a PR comment (`review_comment`) | Accepted; amends 0019, 0029 |

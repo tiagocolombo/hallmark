@@ -902,8 +902,10 @@ fn item_context(i: &Item, inbox: usize) -> String {
         State::Development => {
             "Edit files only inside that worktree, with the Edit and Write tools, and run git \
              there with `git -C <worktree>`. When the work looks done, commit and run \
-             `hall propose-ready --summary \"<what was done>\"`: with nothing left to confirm it \
-             goes straight to review; add `--ask` when the human must decide something. "
+             `hall propose-ready --summary \"<what was done>\" --why \"<why it's needed>\" \
+             --how \"<the approach>\"` (the PR's What, Why and How): with nothing left to \
+             confirm it goes straight to review; add `--ask` when the human must decide \
+             something. "
         }
         State::AwaitingYou => "It is waiting for the human's call: `hall ready` or `hall pull-back`. ",
         s if s.in_loop() => "It is in the review loop; don't edit it. Offer `hall pull-back` if the human wants changes. ",
@@ -960,7 +962,8 @@ fn family_context(i: &Item, children: &[Item]) -> String {
     if open.is_empty() {
         s.push_str(&format!(
             "Every part is merged or dropped: run the gates in {}'s worktree, summarise, \
-             `hall propose-ready {}`: it goes to review on its own unless something is left \
+             `hall propose-ready {} --summary … --why … --how …`: it goes to review on its own \
+             unless something is left \
              to confirm (then `--ask`, and `hall ready {}` when the human says so).",
             i.id, i.id, i.id
         ));

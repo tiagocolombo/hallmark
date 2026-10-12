@@ -77,7 +77,9 @@ pub fn child_next(item: &Item) -> Option<Vec<String>> {
     let n = match item.state {
         State::Development => vec![
             format!("hall merge {id}"),
-            format!("hall propose-ready {id} --summary \"<what was done>\""),
+            format!(
+                "hall propose-ready {id} --summary \"<what was done>\" --why \"<why>\" --how \"<how>\""
+            ),
             format!("hall drop {id} --reason \"<why>\""),
         ],
         State::AwaitingYou => vec![format!("hall merge {id}"), format!("hall pull-back {id}")],
@@ -335,7 +337,7 @@ fn reply(
             parent.worktree
         ));
         next.push(format!(
-            "hall propose-ready {} --summary \"<what was done>\"",
+            "hall propose-ready {} --summary \"<what was done>\" --why \"<why>\" --how \"<how>\"",
             parent.id
         ));
         next.push(format!("hall ready {}", parent.id));

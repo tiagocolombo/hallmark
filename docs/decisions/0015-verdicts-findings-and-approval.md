@@ -1,6 +1,7 @@
 # 0015. Verdicts, findings, and who decides approval
 
-Status: Accepted, 2026-10-09
+Status: Accepted, 2026-10-09. Amended by 0039: minors and nits ride along in
+the review comment on the PR, not its description.
 
 ## Context
 

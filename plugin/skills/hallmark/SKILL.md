@@ -108,7 +108,8 @@ every part is in.
 3. **When every part is merged or dropped**, run the gates in the parent's
    worktree on the merged whole, add tests where the parts meet, and fix
    anything that broke there (commit in the parent's worktree). Summarise,
-   run `hall propose-ready <parent> --summary "..."`. With nothing left to
+   run `hall propose-ready <parent> --summary "..." --why "..." --how "..."`
+   for the whole change. With nothing left to
    confirm it goes to review on its own; with `--ask` it waits, and when the
    human says ready, `hall ready <parent>`.
 
@@ -140,11 +141,21 @@ done, act as the change's test engineer:
    it and say why in the commit message. Review every changed snapshot.
 
 **Looks done.** Commit everything, run the gates, then send it with a
-summary that names the tests:
+summary that names the tests, and why and how, for the PR:
 
 ```
-hall propose-ready --summary "retries with jitter; 14 new tests (give-up, jitter bounds, concurrent claim), each red without the change"
+hall propose-ready \
+  --summary "retries with jitter; 14 new tests (give-up, jitter bounds, concurrent claim), each red without the change" \
+  --why "receivers that blip for a second lose the event today; #88 lost a day of orders" \
+  --how "a retry loop around deliver(), backoff with full jitter capped at 5 tries; the claim is a row lock so two workers can't send twice"
 ```
+
+The PR description is `## What` (the summary), `## Why` and `## How`, and
+nothing else: the review goes in PR comments. Write `--why` as the reason
+the change is needed (the problem, who it hurts), and `--how` as the
+approach and the choices a reader of the diff should know. Leave out the
+review and the tests' details. Without `--why`, the request is used; without
+`--how`, the commit subjects.
 
 When nothing is left to confirm (no open question, a clean worktree, no open
 parts), it goes **straight to review** on its own: the reply's `state` is

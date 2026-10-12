@@ -1,6 +1,6 @@
 # 0019. The fixer, the shipper, and the record
 
-Status: Accepted, 2026-10-09
+Status: Accepted, 2026-10-09. The PR body is amended by 0039.
 
 ## Context
 

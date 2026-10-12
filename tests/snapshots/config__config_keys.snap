@@ -70,6 +70,7 @@ expression: keys
   "repo parallel.fix integer",
   "repo parallel.review integer",
   "repo parallel.ship integer",
+  "repo review_comment string",
   "repo reviewer string",
   "repo rules list",
   "repo ship string",

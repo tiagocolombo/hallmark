@@ -40,7 +40,8 @@ base        = "main"
 worktree    = "git worktree add ../{repo}-{id} -b {branch}"
 branch      = "hm/{id}-{slug}"
 ship        = "git push -u origin {branch} && gh pr create --base {base} --head {branch} --title {title} --body-file {body_file}"
-update      = "git push --force-with-lease={branch}:{pr_head} origin {branch} && gh pr edit {pr} --base {base} && gh pr comment {pr} --body-file {body_file}"
+update      = "git push --force-with-lease={branch}:{pr_head} origin {branch} && gh pr edit {pr} --base {base}"
+review_comment = "gh pr comment {pr} --body-file {review_file}"   # every review is a PR comment; "" for none
 gates       = []
 reviewer    = "claude -p"
 fixer       = "claude -p"   # or another fix engine, run in the worktree
@@ -114,11 +115,31 @@ and follow it at once.
 | --- | --- |
 | `worktree` | `{repo}` `{id}` `{branch}` `{slug}` `{base}` |
 | `branch` | `{id}` `{slug}` |
-| `ship` | `{branch}` `{id}` `{base}` `{title}` `{body_file}` (the PR body the shipper writes) `{issue}` |
+| `ship` | `{branch}` `{id}` `{base}` `{title}` `{body_file}` (the PR description: What, Why and How) `{review_file}` (the review) `{issue}` |
 | `update` | those of `ship`, plus `{pr}` (the PR's URL) and `{pr_head}` (the commit the PR's head was at when the item took it over) |
+| `review_comment` | `{pr}` (the PR's URL) `{review_file}` `{branch}` `{id}` `{base}` |
 | `fixer` | `{id}` `{worktree}` `{findings_file}` (JSON from `hall findings`) |
 
 Commands run through `sh -c` on macOS and Linux and `cmd /C` on Windows.
+
+## PR descriptions and review comments
+
+The PR the shipper opens has a description with three sections, `## What`,
+`## Why` and `## How`, and nothing of the review
+([ADR 0039](decisions/0039-pr-description-and-review-comments.md)). The
+author gives them with `hall propose-ready --summary … --why … --how …`;
+without `--why` the request is used, without `--how` the commit subjects.
+
+Each review is a PR comment: `review_comment` posts `{review_file}` once the
+PR is open, and again after every `update` (PR comments addressed, CI fixed,
+a rebase), saying why the PR came back. The description isn't touched on an
+update. `review_comment = ""` posts nothing; the review stays in
+`<git-common-dir>/hallmark/items/<id>/review.md`. On another host, use its
+command, such as `glab mr note {pr} --message "$(cat {review_file})"`.
+
+An `update` that `hall init` wrote before this change posted the PR body as
+a comment; Hallmark reads it as today's default. If your own `ship` or
+`update` comments `{body_file}`, drop that step.
 
 ## Your own tooling
 

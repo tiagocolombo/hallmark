@@ -389,10 +389,24 @@ expression: v
           "takes_value": true
         },
         {
-          "help": "What was done, for the human deciding",
+          "help": "What was done, for the human deciding. It becomes the What of the PR description",
           "name": "summary",
           "required": true,
           "syntax": "--summary <summary>",
+          "takes_value": true
+        },
+        {
+          "help": "Why the change is needed: the PR description's Why. Without it, the request (or the issue) is used",
+          "name": "why",
+          "required": false,
+          "syntax": "--why <why>",
+          "takes_value": true
+        },
+        {
+          "help": "How it was done: the approach and the notable choices, for the PR description's How. Without it, the commits are listed",
+          "name": "how",
+          "required": false,
+          "syntax": "--how <how>",
           "takes_value": true
         },
         {

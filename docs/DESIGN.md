@@ -71,7 +71,7 @@ The docs and the terminal app describe Hallmark as a building.
 | Assay Office | The test bench (checks) and the principal engineer (review) | Checks, Review |
 | Repair Shop | The fixer | Fixing |
 | Stamping Room | The hallmark is struck | Hallmarked |
-| Dispatch Dock | Rebases onto the latest base; the ship command opens the PR; `update` updates an adopted or reopened one. If that PR already merged with the hallmarked work in it, the item closes with nothing pushed | Closed |
+| Dispatch Dock | Rebases onto the latest base; the ship command opens the PR, whose description is What, Why and How; `update` updates an adopted or reopened one. Each review is posted as a PR comment (`review_comment`, ADR 0039). If that PR already merged with the hallmarked work in it, the item closes with nothing pushed | Closed |
 | Delivery Office | Watches each shipped PR until it merges; a headless dev run rebases conflicting ones, addresses new review comments (ADR 0030) and fixes red CI (ADR 0031) | Closed, Development (rebasing, addressing comments) |
 
 A **watchman** patrols the corridor. It flags any item with no new event for
@@ -299,7 +299,7 @@ $ echo $?
 | `hall pull-back [<id>] [--reason]` | Returns the item to development. |
 | `hall drop [<id>] --reason [--keep-worktree]` | Abandons the item. The branch and journal stay. |
 | `hall retry [<id>] --reason [--tokens <n>]` | Allows an escalated item one more round, or releases a held item. A budget hold also grants that item another `per_item` (or `--tokens`); the budget is unchanged. |
-| `hall propose-ready [<id>] --summary [--ask]` | The agent says the work is done: straight to review when nothing is left to confirm, else (or with `--ask`) it waits for you. |
+| `hall propose-ready [<id>] --summary [--why] [--how] [--ask]` | The agent says the work is done: straight to review when nothing is left to confirm, else (or with `--ask`) it waits for you. |
 | `hall ask <q> [--item] [--options] [--default] [--wait] [--session]` | Records a question. |
 | `hall answer <qid> <answer>` | Records the answer; the daemon resumes the asking session with it. |
 | `hall usage [--by item\|room\|role\|model\|day] [--since] [--item]` | Shows tokens and list-price cost. |
@@ -336,6 +336,7 @@ base        = "main"            # hall init detects origin/HEAD
 worktree    = "git worktree add ../{repo}-{id} -b {branch}"
 branch      = "hm/{id}-{slug}"
 ship        = "git push -u origin {branch} && gh pr create --base {base} --head {branch} --title {title} --body-file {body_file}"
+review_comment = "gh pr comment {pr} --body-file {review_file}"   # each review is a PR comment
 gates       = []                # hall init fills these
 dev_commands = []               # what headless dev runs may run besides the gates
 reviewer    = "claude -p"

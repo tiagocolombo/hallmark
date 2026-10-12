@@ -52,19 +52,33 @@ fn ships_to_a_local_remote() {
     let remote_sha = git(&remote, &["rev-parse", &format!("refs/heads/{branch}")]);
     assert_eq!(remote_sha, sha);
 
-    // The PR body: the review summary, the minor riding along, the record.
+    // The description: What, Why and How, and nothing of the review.
     let body = std::fs::read_to_string(item_file(&env, &id, "pr-body.md")).unwrap();
+    assert_eq!(
+        body,
+        format!(
+            "## What\n\nRetry webhooks\n\n## Why\n\nRetry webhooks\n\n## How\n\n\
+             - change retry.rs\n\n---\n\nReviewed and hallmarked as {id}: the review is in \
+             the comments.\n"
+        )
+    );
+    // The review, for the PR comment: the summary, each finding and how it
+    // stands, the checks, the record.
+    let review = std::fs::read_to_string(item_file(&env, &id, "review.md")).unwrap();
     for s in [
+        "<!-- hallmark:review -->\n## Hallmark review: approved",
         "Round 1: retries are safe with the row lock.",
         "Hallmarked at",
         "reviewed by claude-opus-5-5",
-        "### Still open (minor and nit)",
-        "**F1** minor · evidence · `retry.rs:3` · No retry test",
-        &format!("hall export {id}"),
+        "### Findings",
+        "- **F1** minor · evidence · `retry.rs:3` · No retry test\n  - Still open (minor rides along).",
+        &format!("The full record stays local: `hall export {id}`."),
     ] {
-        assert!(body.contains(s), "{s} in\n{body}");
+        assert!(review.contains(s), "{s} in\n{review}");
     }
-    assert!(!body.contains("Closes #"));
+    assert!(!review.contains("Why it was reviewed again"));
+    // No PR URL came back, so there was nothing to comment on.
+    assert!(!step["what"].as_str().unwrap().contains("review"), "{step}");
     // And the export, written after shipping.
     let export = std::fs::read_to_string(item_file(&env, &id, "export.md")).unwrap();
     assert!(export.contains("shipped"), "{export}");
@@ -83,6 +97,7 @@ fn ship_reports_the_pr_url_and_closes_the_issue() {
             "git push -q origin {branch} && echo Opened https://github.com/acme/app/pull/7 for {issue}",
         ),
     );
+    set_config(&env, "review_comment", &toml(""));
     let (id, _, _) = hallmarked_item(&env, "Retry webhooks");
     // Give the item an issue, as `hall new --issue 212` would have.
     let events_path = item_file(&env, &id, "events.jsonl");
@@ -104,6 +119,197 @@ fn ship_reports_the_pr_url_and_closes_the_issue() {
     assert_eq!(status.json["pr_url"], "https://github.com/acme/app/pull/7");
     let body = std::fs::read_to_string(item_file(&env, &id, "pr-body.md")).unwrap();
     assert!(body.contains("Closes #212"), "{body}");
+    // `review_comment = ""` posts nothing, so the description doesn't claim it.
+    assert!(!body.contains("in the comments"), "{body}");
+    assert!(body.contains("the review stays local"), "{body}");
+}
+
+/// A hallmarked item whose author said what, why and how with
+/// `propose-ready`, on two commits.
+fn proposed_item(env: &Env) -> (String, std::path::PathBuf) {
+    let (id, wt) = env.new_item("Retry webhooks");
+    commit_file(&wt, "retry.rs", "fn retry() {}\n");
+    commit_file(&wt, "backoff.rs", "fn backoff() {}\n");
+    let r = env.hall(
+        &wt,
+        &[
+            "propose-ready",
+            "--summary",
+            "Failed webhook deliveries are retried with backoff.",
+            "--why",
+            "Receivers that blip lose events today; #88 lost a day of orders.",
+            "--how",
+            "A retry loop around `deliver`, with jittered backoff capped at 5 tries.",
+        ],
+    );
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let sha = git(&wt, &["rev-parse", "HEAD"]);
+    append(env, &id, "assayer", checks(&sha, 1, true, vec![]));
+    append(
+        env,
+        &id,
+        "assayer",
+        verdict(&sha, 1, vec![], vec![], counts(0, 0, 0, 0)),
+    );
+    let repo = hallmark::repo::Repo::discover(&env.repo).unwrap();
+    hallmark::stamp::strike(
+        &repo,
+        id.parse().unwrap(),
+        &sha,
+        1,
+        None,
+        counts(0, 0, 0, 0),
+    )
+    .unwrap();
+    (id, wt)
+}
+
+#[test]
+fn the_description_takes_what_why_and_how_from_the_author() {
+    let env = Env::initialized();
+    bare_remote(&env);
+    set_config(&env, "ship", &toml("git push -q -u origin {branch}"));
+    let (id, _) = proposed_item(&env);
+    assert_eq!(ship_pass(&env)["progress"], "worked");
+    let body = std::fs::read_to_string(item_file(&env, &id, "pr-body.md")).unwrap();
+    assert!(
+        body.starts_with(
+            "## What\n\nFailed webhook deliveries are retried with backoff.\n\n\
+             ## Why\n\nReceivers that blip lose events today; #88 lost a day of orders.\n\n\
+             ## How\n\nA retry loop around `deliver`, with jittered backoff capped at 5 tries.\n"
+        ),
+        "{body}"
+    );
+    assert!(
+        !body.contains("Hallmarked at") && !body.contains("### Checks"),
+        "{body}"
+    );
+}
+
+#[test]
+fn without_the_authors_how_the_commits_are_listed_and_the_request_is_why() {
+    let env = Env::initialized();
+    bare_remote(&env);
+    set_config(&env, "ship", &toml("git push -q -u origin {branch}"));
+    let r = env.hall(
+        &env.repo,
+        &[
+            "new",
+            "--no-split",
+            "--title",
+            "Retry webhooks",
+            "Receivers lose events when they blip",
+        ],
+    );
+    let id = r.json["id"].as_str().unwrap().to_string();
+    let wt = std::path::PathBuf::from(r.json["worktree"].as_str().unwrap());
+    commit_file(&wt, "retry.rs", "fn retry() {}\n");
+    commit_file(&wt, "backoff.rs", "fn backoff() {}\n");
+    assert_eq!(env.hall(&wt, &["ready"]).code, 0);
+    let sha = git(&wt, &["rev-parse", "HEAD"]);
+    append(&env, &id, "assayer", checks(&sha, 1, true, vec![]));
+    append(
+        &env,
+        &id,
+        "assayer",
+        verdict(&sha, 1, vec![], vec![], counts(0, 0, 0, 0)),
+    );
+    let repo = hallmark::repo::Repo::discover(&env.repo).unwrap();
+    hallmark::stamp::strike(
+        &repo,
+        id.parse().unwrap(),
+        &sha,
+        1,
+        None,
+        counts(0, 0, 0, 0),
+    )
+    .unwrap();
+    assert_eq!(ship_pass(&env)["progress"], "worked");
+    let body = std::fs::read_to_string(item_file(&env, &id, "pr-body.md")).unwrap();
+    assert!(
+        body.starts_with(
+            "## What\n\nRetry webhooks\n\n## Why\n\nReceivers lose events when they blip\n\n\
+             ## How\n\n- change retry.rs\n- change backoff.rs\n"
+        ),
+        "{body}"
+    );
+}
+
+#[test]
+fn the_review_is_posted_as_a_comment_once_the_pr_is_known() {
+    let env = Env::initialized();
+    bare_remote(&env);
+    set_config(
+        &env,
+        "ship",
+        &toml("git push -q origin {branch} && echo Opened https://github.com/acme/app/pull/7"),
+    );
+    // Portable: the comment command echoes what it was given.
+    set_config(
+        &env,
+        "review_comment",
+        &toml("echo posted {pr} {review_file}"),
+    );
+    let (id, _, _) = hallmarked_item(&env, "Retry webhooks");
+    let step = ship_pass(&env);
+    assert_eq!(
+        step["what"],
+        format!("{id} shipped: https://github.com/acme/app/pull/7; the review is in a comment"),
+        "{step}"
+    );
+    let runs = item_file(&env, &id, "runs");
+    let log = std::fs::read_dir(&runs)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .find(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .ends_with("-review-comment.log")
+        })
+        .map(|e| std::fs::read_to_string(e.path()).unwrap())
+        .expect("the review comment ran");
+    assert!(
+        log.contains("posted https://github.com/acme/app/pull/7"),
+        "{log}"
+    );
+    assert!(log.contains("review.md"), "{log}");
+}
+
+#[test]
+fn a_failed_review_comment_doesnt_undo_the_ship() {
+    let env = Env::initialized();
+    bare_remote(&env);
+    set_config(
+        &env,
+        "ship",
+        &toml("git push -q origin {branch} && echo Opened https://github.com/acme/app/pull/7"),
+    );
+    set_config(
+        &env,
+        "review_comment",
+        &toml("git ls-files missing-file --error-unmatch"),
+    );
+    let (id, _, _) = hallmarked_item(&env, "Retry webhooks");
+    let step = ship_pass(&env);
+    let what = step["what"].as_str().unwrap();
+    assert!(what.contains("the review comment command"), "{what}");
+    assert!(what.contains("review.md"), "{what}");
+    assert_eq!(state(&env, &id), "closed");
+
+    // Empty: no comment at all.
+    let env = Env::initialized();
+    bare_remote(&env);
+    set_config(
+        &env,
+        "ship",
+        &toml("git push -q origin {branch} && echo Opened https://github.com/acme/app/pull/7"),
+    );
+    set_config(&env, "review_comment", &toml(""));
+    let (id, _, _) = hallmarked_item(&env, "Retry webhooks");
+    assert_eq!(
+        ship_pass(&env)["what"],
+        format!("{id} shipped: https://github.com/acme/app/pull/7")
+    );
 }
 
 /// Ships an item whose commit says `message` and returns the PR title the
@@ -369,4 +575,74 @@ fn findings_from_both_rounds_are_tracked_for_history() {
         row["reasons"],
         json!(["F4 blocker security_tenancy: Reads another tenant's webhook"])
     );
+}
+
+#[test]
+fn a_gh_hallmark_cant_find_is_never_run() {
+    // The tests point HALL_GH at a missing file: the default comment
+    // command must not reach for another gh on PATH.
+    let env = Env::initialized();
+    bare_remote(&env);
+    set_config(
+        &env,
+        "ship",
+        &toml("git push -q origin {branch} && echo Opened https://github.com/acme/app/pull/7"),
+    );
+    let (id, _, _) = hallmarked_item(&env, "Retry webhooks");
+    let what = ship_pass(&env)["what"].as_str().unwrap().to_string();
+    assert!(
+        what.contains("gh wasn't found, so the review is in"),
+        "{what}"
+    );
+    assert_eq!(state(&env, &id), "closed");
+}
+
+#[test]
+fn the_review_comment_says_how_each_finding_was_settled() {
+    let env = Env::initialized();
+    bare_remote(&env);
+    set_config(&env, "ship", &toml("git push -q -u origin {branch}"));
+    let (id, wt, _) = fixing_item(&env, "Retry webhooks");
+    commit_file(&wt, "retry.rs", "fn retry() { lock(); }\n");
+    let fixed = git(&wt, &["rev-parse", "HEAD"]);
+    let r = env.hall(
+        &wt,
+        &[
+            "fixed",
+            "F1",
+            "--dispute",
+            "F3",
+            "--reason",
+            "The name follows the module's convention",
+        ],
+    );
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    approve(
+        &env,
+        &id,
+        &wt,
+        2,
+        vec![("F1", PriorStatus::Fixed), ("F3", PriorStatus::Withdrawn)],
+        counts(0, 0, 1, 0),
+    );
+    assert_eq!(ship_pass(&env)["progress"], "worked");
+    let review = std::fs::read_to_string(item_file(&env, &id, "review.md")).unwrap();
+    let short = &fixed[..7];
+    for s in [
+        "after 1 rejected review",
+        // Open first, then the settled ones by severity.
+        "- **F2** minor · evidence · `retry.rs:3` · No retry test\n  - Still open (minor rides along).",
+        &format!(
+            "- **F1** major · correctness · `retry.rs:3` · Double delivery\n  - Fixed in `{short}`, confirmed in round 2."
+        ),
+        "- **F3** nit · repo_rules · `retry.rs:3` · Name the constant\n  - Withdrawn in round 2.\n  - Disputed by the fixer: The name follows the module's convention",
+        "- `cargo test` passed (3.1s)",
+    ] {
+        assert!(review.contains(s), "{s}\nin\n{review}");
+    }
+    assert!(review.find("**F2**").unwrap() < review.find("**F1**").unwrap());
+    let body = std::fs::read_to_string(item_file(&env, &id, "pr-body.md")).unwrap();
+    for s in ["F1", "F2", "F3", "Hallmarked", "cargo test"] {
+        assert!(!body.contains(s), "{s} in the description:\n{body}");
+    }
 }
