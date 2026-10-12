@@ -202,6 +202,7 @@ hall adopt --pr 7            # take over an open PR
 hall status                  # items by state, and what each one is doing now
 hall inbox                   # what only you can settle
 hall log H-0042              # the item's journal
+hall trace H-0042 --follow   # the reviewer or fixer at work, step by step
 hall export H-0042           # the whole record as Markdown
 
 hall ready H-0042            # freeze HEAD and queue it for review

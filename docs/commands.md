@@ -84,7 +84,8 @@ The extensions, and what each role gets:
 | `hall` | Opens the terminal app on a TTY; prints the status as JSON otherwise. |
 | `hall status [<id>]` | Lists items by state, or shows one item with a **now** block: queued (and what is ahead), the gate running, the reviewer's run, the fixer, a hold, and what you can do. `--all` includes closed and dropped items. |
 | `hall log [<id>]` | Prints the journal. `--kind <event>`, `--limit <n>` |
-| `hall watch [<id>]` | Follows an item live until it leaves the loop or needs you. |
+| `hall watch [<id>]` | Follows an item live until it leaves the loop or needs you. `--timeout` (default 30m); `--trace` also prints the steps of the item's run while one is going. |
+| `hall trace [<id>]` | A headless run (reviewer, fixer, intake, librarian, resume) step by step: what the agent read, ran and said, and how it ended. The latest run by default; `--role <role>` takes that role's latest, `--run <n>` the n-th (1 = oldest), and `--list` numbers them. `--follow` keeps printing until the run ends or `--timeout` (default 30m) passes. `--open` prints the `claude --resume` command for an ended run; it never starts anything, and a run still going is `WRONG_STATE`. Off a terminal each step is a JSON line (`hall schema trace-line`) and the reply is the last line ([ADR 0039](decisions/0039-watch-runs-live.md)). |
 | `hall history` | Closed and dropped items, and why things were rejected. `--rejected`, `--lens`, `--since`, `--all` |
 | `hall export [<id>]` | The item's whole record as Markdown. `--out` |
 | `hall usage` | Tokens and list-price cost. `--by item\|room\|role\|model\|day`, `--since`, `--item` |

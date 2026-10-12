@@ -1,10 +1,11 @@
 //! `hall watch <id>`: follow an item live. A line each time what it is
 //! doing changes; it stops when the item leaves the loop, needs you, or the
 //! timeout passes. Off a terminal each line is a JSON object, and the reply
-//! is the last line, as for every command.
+//! is the last line, as for every command. With `--trace`, the steps of the
+//! item's run while one is going print under the changes (ADR 0039).
 
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use chrono::Utc;
@@ -17,6 +18,7 @@ use crate::item::{ItemId, State};
 use crate::now::{self, Now};
 use crate::output::{Mode, Render, Response};
 use crate::repo::Repo;
+use crate::trace::{self, Step, Tail};
 
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct WatchOut {
@@ -53,6 +55,37 @@ pub struct Change<'a> {
     /// The tail of what is running (a gate's output).
     #[serde(skip_serializing_if = "<[String]>::is_empty")]
     pub log: &'a [String],
+    /// With `--trace`: the new steps of the run that is going.
+    #[serde(skip_serializing_if = "<[Step]>::is_empty")]
+    pub steps: &'a [Step],
+}
+
+/// Follows the item's latest run for `--trace`. A run that had already
+/// ended when watching began is not shown.
+#[derive(Default)]
+struct Tracer {
+    run: Option<(PathBuf, Tail)>,
+    started: bool,
+}
+
+impl Tracer {
+    fn poll(&mut self, repo: &Repo, id: ItemId) -> Result<Vec<Step>> {
+        let first = !std::mem::replace(&mut self.started, true);
+        let Some(latest) = trace::runs(repo, id)?.pop() else {
+            return Ok(Vec::new());
+        };
+        if self.run.as_ref().is_none_or(|(p, _)| *p != latest.path) {
+            let mut tail = Tail::default();
+            let steps = tail.poll(&latest.path)?;
+            let old = first && tail.info.ended;
+            self.run = Some((latest.path, tail));
+            return Ok(if old { Vec::new() } else { steps });
+        }
+        match &mut self.run {
+            Some((p, tail)) if !tail.info.ended => tail.poll(p),
+            _ => Ok(Vec::new()),
+        }
+    }
 }
 
 pub fn watch(cwd: &Path, a: WatchArgs, mode: Mode) -> Result<Response> {
@@ -71,6 +104,7 @@ pub fn watch(cwd: &Path, a: WatchArgs, mode: Mode) -> Result<Response> {
     let mut last = String::new();
     let mut changes = 0;
     let mut seen_log: Vec<String> = Vec::new();
+    let mut tracer = a.trace.then(Tracer::default);
     loop {
         let item = repo.hall.load_item(id)?;
         let events = repo.hall.read_item(id)?;
@@ -83,7 +117,11 @@ pub fn watch(cwd: &Path, a: WatchArgs, mode: Mode) -> Result<Response> {
             .filter(|l| !seen_log.contains(l))
             .cloned()
             .collect();
-        if key != last || !fresh.is_empty() {
+        let steps = match &mut tracer {
+            Some(t) => t.poll(&repo, id)?,
+            None => Vec::new(),
+        };
+        if key != last || !fresh.is_empty() || !steps.is_empty() {
             let mut out = std::io::stdout().lock();
             if mode == Mode::Json {
                 let line = Change {
@@ -93,6 +131,7 @@ pub fn watch(cwd: &Path, a: WatchArgs, mode: Mode) -> Result<Response> {
                     status: &now.status,
                     doing: &now.doing,
                     log: &fresh,
+                    steps: &steps,
                 };
                 let _ = writeln!(out, "{}", serde_json::to_string(&line)?);
             } else {
@@ -107,6 +146,9 @@ pub fn watch(cwd: &Path, a: WatchArgs, mode: Mode) -> Result<Response> {
                 }
                 for l in &fresh {
                     let _ = writeln!(out, "             │ {l}");
+                }
+                for st in &steps {
+                    let _ = writeln!(out, "             ┊ {}", st.render());
                 }
             }
             let _ = out.flush();

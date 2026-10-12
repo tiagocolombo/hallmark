@@ -1,0 +1,67 @@
+---
+source: tests/trace.rs
+expression: "scrub(&env, &json!(lines))"
+---
+[
+  {
+    "kind": "start",
+    "text": "claude-haiku-5-5 in /tmp/spike"
+  },
+  {
+    "kind": "tool",
+    "name": "Read",
+    "t": "2026-10-12T21:51:46.707Z",
+    "text": "/tmp/spike/note.txt"
+  },
+  {
+    "kind": "result",
+    "t": "2026-10-12T21:51:46.719Z",
+    "text": "1 hello 2"
+  },
+  {
+    "kind": "tool",
+    "name": "Bash",
+    "t": "2026-10-12T21:51:47.078Z",
+    "text": "Count bytes in note.txt"
+  },
+  {
+    "kind": "result",
+    "t": "2026-10-12T21:51:47.320Z",
+    "text": "6 note.txt"
+  },
+  {
+    "kind": "text",
+    "t": "2026-10-12T21:51:48.755Z",
+    "text": "`note.txt` contains just the word \"hello\" and a trailing newline, which `wc -c` confirms at 6 bytes."
+  },
+  {
+    "kind": "done",
+    "text": "done in 3s, $0.01"
+  },
+  {
+    "kind": "end",
+    "t": "2026-10-12T21:51:52Z",
+    "text": "run ended after 4s"
+  },
+  {
+    "id": "H-0001",
+    "next": [
+      "hall trace H-0001 --run 2 --open",
+      "hall trace H-0001 --list",
+      "hall status H-0001"
+    ],
+    "run": {
+      "ended": true,
+      "model": "claude-haiku-5-5",
+      "n": 2,
+      "path": "[root]/app/.git/hallmark/items/H-0001/runs/20261012T215146-fixer.jsonl",
+      "resume": "cd /tmp/spike && claude --resume 91aedf44-f4cd-4efa-8e74-768d46a9dc75",
+      "role": "fixer",
+      "session_id": "91aedf44-f4cd-4efa-8e74-768d46a9dc75",
+      "started": "2026-10-12T21:51:46Z",
+      "streamed": true
+    },
+    "steps": 8,
+    "total": 2
+  }
+]

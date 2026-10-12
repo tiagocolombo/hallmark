@@ -50,6 +50,9 @@ pub enum Cmd {
     Inbox(InboxArgs),
     /// Follow an item live until it leaves the loop or needs you.
     Watch(WatchArgs),
+    /// A headless run of an item, step by step: what the agent read, ran
+    /// and said. The latest run unless --role or --run picks another.
+    Trace(TraceArgs),
     /// Freeze the commit and send the item to review.
     Ready(ReadyArgs),
     /// Stop review and return the item to development.
@@ -221,6 +224,36 @@ pub struct InboxArgs {
 pub struct WatchArgs {
     pub id: Option<String>,
     /// Stop watching after this long, such as 30m.
+    #[arg(long, default_value = "30m")]
+    pub timeout: String,
+    /// Also print the steps of the item's run while one is going
+    /// (`hall trace`).
+    #[arg(long)]
+    pub trace: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct TraceArgs {
+    pub id: Option<String>,
+    /// The latest run of this role: reviewer, fixer, intake, librarian,
+    /// resume…
+    #[arg(long, conflicts_with = "run")]
+    pub role: Option<String>,
+    /// The n-th run, 1 = oldest; `hall trace --list` numbers them.
+    #[arg(long)]
+    pub run: Option<usize>,
+    /// List the item's runs (with --role, only that role's) instead of
+    /// printing one.
+    #[arg(long, conflicts_with_all = ["run", "follow", "open"])]
+    pub list: bool,
+    /// Keep printing the run's steps until it ends or --timeout passes.
+    #[arg(long, conflicts_with = "open")]
+    pub follow: bool,
+    /// Print the `claude --resume` command that opens the run in Claude
+    /// Code. Only once the run has ended; nothing is started.
+    #[arg(long)]
+    pub open: bool,
+    /// With --follow: stop after this long, such as 30m.
     #[arg(long, default_value = "30m")]
     pub timeout: String,
 }
@@ -849,6 +882,7 @@ fn dispatch(cmd: Option<Cmd>, cwd: &std::path::Path, mode: Mode) -> Result<Respo
         Some(Cmd::Log(a)) => status::log(cwd, a),
         Some(Cmd::Inbox(a)) => status::inbox(cwd, a),
         Some(Cmd::Watch(a)) => watch::watch(cwd, a, mode),
+        Some(Cmd::Trace(a)) => trace::trace(cwd, a, mode),
         Some(Cmd::Ready(a)) => flow::ready(cwd, a),
         Some(Cmd::PullBack(a)) => flow::pull_back(cwd, a),
         Some(Cmd::Drop(a)) => flow::drop(cwd, a),
