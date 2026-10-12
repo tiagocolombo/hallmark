@@ -1375,7 +1375,7 @@ mod tests {
         let deadline = Instant::now() + Duration::from_secs(20);
         while std::fs::read_to_string(&stream).map_or(true, |s| s.is_empty()) {
             assert!(Instant::now() < deadline, "the first line never arrived");
-            std::thread::sleep(Duration::from_millis(20));
+            crate::daemon::nap(Duration::from_millis(20));
         }
         // The process is still running, and its first line is readable.
         let fix = fixture("claude/stream.jsonl");
