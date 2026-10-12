@@ -44,12 +44,14 @@ but PRs are squash-merged, and the shipper titled PRs with the item's title
   as before: dist builds the binaries and creates the GitHub Release.
   release-plz creates no GitHub Release itself (`git_release_enable =
   false`) and publishes nothing to crates.io (`publish = false`).
-- **The tag needs a token.** A tag pushed with the default `GITHUB_TOKEN`
-  doesn't start other workflows. The jobs use the `RELEASE_PLZ_TOKEN` secret
-  when it exists: a fine-grained token with contents and pull-requests write
-  on this repository. Without it, the tag is still made, but `release.yml`
-  doesn't run until the tag is pushed again by someone else. Repository
-  settings must also allow GitHub Actions to create pull requests.
+- **release-plz needs a token.** Both jobs run with the `RELEASE_PLZ_TOKEN`
+  secret: a fine-grained token, made by a repository admin, with contents
+  and pull-requests write on this repository. The default `GITHUB_TOKEN`
+  can't stand in for it: the repository doesn't let GitHub Actions open pull
+  requests, a release PR it opened wouldn't run CI (so the required checks
+  never pass), the "Protect release tags" ruleset lets only admins create
+  tags, and a tag it pushed wouldn't start `release.yml`. Without the
+  secret, the jobs stop with an error that names it.
 
 ### `hall update` follows main, and names versions
 
@@ -84,5 +86,6 @@ but PRs are squash-merged, and the shipper titled PRs with the item's title
   version they see is the last release until the next release PR merges.
 - Non-conventional commits already on `main` count as patch-level changes
   in the first release PR's changelog.
-- One more secret to keep (`RELEASE_PLZ_TOKEN`), and its expiry, if releases
-  should build on their own.
+- One more secret to keep (`RELEASE_PLZ_TOKEN`), and its expiry: until it
+  is set, and whenever it expires, the Release-plz workflow fails on every
+  push to `main`.
