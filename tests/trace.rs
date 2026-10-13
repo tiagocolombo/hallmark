@@ -484,3 +484,55 @@ fn watch_trace_prints_the_running_runs_steps() {
     let lines = watch(false);
     assert!(lines[0].get("steps").is_none(), "only with --trace");
 }
+
+#[test]
+fn watch_trace_prints_each_step_once() {
+    let env = Env::initialized();
+    let (id, wt) = env.new_item("Usage page");
+    assert_eq!(env.hall(&wt, &["ready"]).code, 0);
+    write_run(
+        &env,
+        &id,
+        "20261012T220000-reviewer.jsonl",
+        &running_stream(),
+    );
+    // The assayer holds it: the now block follows the run.
+    let lease = env.repo.join(format!(".git/hallmark/leases/{id}.json"));
+    let held = std::fs::read_to_string(&lease).unwrap();
+    std::fs::write(&lease, held.replace("\"fixer\"", "\"assayer\"")).unwrap();
+    let t = hall_lines(
+        &env,
+        &env.repo,
+        &["watch", id.as_str(), "--trace", "--timeout", "1s"],
+    );
+    assert_eq!(t.code, 0, "{}", t.reply);
+    // Without --trace the now block's log carries the run's last steps.
+    let plain = hall_lines(&env, &env.repo, &["watch", id.as_str(), "--timeout", "1s"]);
+    let logged: Vec<&Value> = plain
+        .steps
+        .iter()
+        .flat_map(|l| l["log"].as_array().into_iter().flatten())
+        .collect();
+    assert!(
+        logged.iter().any(|l| l.as_str().unwrap().contains("Read")),
+        "the log shows the run: {logged:?}"
+    );
+    // With it, the steps print as steps and the log leaves them out.
+    let steps: Vec<&Value> = t
+        .steps
+        .iter()
+        .flat_map(|l| l["steps"].as_array().into_iter().flatten())
+        .collect();
+    assert_eq!(
+        kinds(&steps.into_iter().cloned().collect::<Vec<_>>()),
+        ["start", "tool"]
+    );
+    for l in &t.steps {
+        for line in l["log"].as_array().into_iter().flatten() {
+            assert!(
+                !line.as_str().unwrap().contains("Read"),
+                "a step printed twice: {line}"
+            );
+        }
+    }
+}

@@ -66,10 +66,23 @@ pub struct Change<'a> {
 struct Tracer {
     run: Option<(PathBuf, Tail)>,
     started: bool,
+    /// Each step printed, as the now block's log renders it: the log
+    /// leaves them out, so a step prints once.
+    shown: std::collections::HashSet<String>,
 }
 
 impl Tracer {
     fn poll(&mut self, repo: &Repo, id: ItemId) -> Result<Vec<Step>> {
+        let steps = self.next_steps(repo, id)?;
+        self.shown.extend(
+            steps
+                .iter()
+                .map(|s| crate::output::clip(&s.render(), now::STEP_CLIP)),
+        );
+        Ok(steps)
+    }
+
+    fn next_steps(&mut self, repo: &Repo, id: ItemId) -> Result<Vec<Step>> {
         let first = !std::mem::replace(&mut self.started, true);
         let Some(latest) = trace::runs(repo, id)?.pop() else {
             return Ok(Vec::new());
@@ -111,16 +124,17 @@ pub fn watch(cwd: &Path, a: WatchArgs, mode: Mode) -> Result<Response> {
         let live = repo.index()?.items(false)?;
         let now = now::now(&repo, &item, &live, &events);
         let key = format!("{}|{}|{}", item.state, now.status, now.doing);
-        let fresh: Vec<String> = now
-            .log
-            .iter()
-            .filter(|l| !seen_log.contains(l))
-            .cloned()
-            .collect();
         let steps = match &mut tracer {
             Some(t) => t.poll(&repo, id)?,
             None => Vec::new(),
         };
+        let fresh: Vec<String> = now
+            .log
+            .iter()
+            .filter(|l| !seen_log.contains(l))
+            .filter(|l| tracer.as_ref().is_none_or(|t| !t.shown.contains(*l)))
+            .cloned()
+            .collect();
         if key != last || !fresh.is_empty() || !steps.is_empty() {
             let mut out = std::io::stdout().lock();
             if mode == Mode::Json {

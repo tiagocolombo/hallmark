@@ -522,6 +522,9 @@ fn glance(path: &std::path::Path) -> Option<(Vec<Step>, RunInfo)> {
     Some((steps, tail.info))
 }
 
+/// How wide a step is in the log.
+pub const STEP_CLIP: usize = 160;
+
 /// What the agent is doing: its last call or words, and the result that
 /// came back, if one did. At most two lines.
 fn last_steps(steps: &[Step]) -> Vec<String> {
@@ -534,7 +537,7 @@ fn last_steps(steps: &[Step]) -> Vec<String> {
     steps[i..]
         .iter()
         .take(2)
-        .map(|s| crate::output::clip(&s.render(), 160))
+        .map(|s| crate::output::clip(&s.render(), STEP_CLIP))
         .collect()
 }
 
