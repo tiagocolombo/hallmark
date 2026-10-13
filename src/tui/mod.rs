@@ -7,7 +7,7 @@
 //! Its actions (`r`, `p`, `x`, and each inbox entry's actions in your
 //! office) run the same commands as the CLI, in-process. Closing it never
 //! stops work. `t` follows the selected item's latest headless run, read
-//! a whole line at a time from its stream in `runs/` (ADR 0039).
+//! a whole line at a time from its stream in `runs/` (ADR 0041).
 //!
 //! [`App`] holds the state and handles keys; [`ui::draw`] renders it.
 //! Neither needs a terminal, so tests drive them with ratatui's

@@ -159,7 +159,7 @@ $(git rev-parse --git-common-dir)/hallmark/   shared by every worktree, never co
 - Each headless run with an item streams into `runs/<stamp>-<role>.jsonl`
   as it happens: Claude's stream-json, line by line, then one
   `{"type":"hall_run_end",…}` line from the runner once the process has
-  exited, with its duration, exit code and failure (ADR 0039). The result is
+  exited, with its duration, exit code and failure (ADR 0041). The result is
   the stream's last `result` line; stderr, when there is any, sits beside it
   as `<stamp>-<role>.stderr`. A fallback-model retry is a run of its own,
   with its own file. Runs are debugging records, like `checks/`, not events.
@@ -643,7 +643,7 @@ records `worktree_removed`, and the branch and journal stay. `hall drop` and
 **What an item is doing now.** `hall status <id>`, `hall watch`, the inbox,
 the hooks, the HUD and the terminal app read one derived **now** block: the
 item, its lease, the queue, the Live log, the check log, and the item's run
-streams (ADR 0039). While the loop holds the item's lease and the latest run
+streams (ADR 0041). While the loop holds the item's lease and the latest run
 began under it without its `hall_run_end` line, the block shows the run's last
 step and offers `hall trace <id> --follow`. A stream without an end line alone
 proves nothing, since a daemon that died mid-run never writes one. When an
@@ -703,6 +703,6 @@ Two outside tools fit at the edges:
    - desktop and phone notifications
 3. **The terminal app and releases** (done; releases are dry-run only)
    - views: board, journal, findings, history, live, usage and repos, and
-     a run's trace on `t`, followed live (ADR 0039)
+     a run's trace on `t`, followed live (ADR 0041)
    - qmd as an option
    - dist releases and a Nix package

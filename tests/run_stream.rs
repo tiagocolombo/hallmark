@@ -1,4 +1,4 @@
-//! Every headless run streams into the item's `runs/` (ADR 0039): one
+//! Every headless run streams into the item's `runs/` (ADR 0041): one
 //! `<stamp>-<role>.jsonl` per run, ended by the runner's `hall_run_end`
 //! line, read back through `hallmark::trace`. The fake runner stands in for
 //! `claude`, except where a shell script does (Unix).

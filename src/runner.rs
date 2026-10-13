@@ -10,7 +10,7 @@
 //!
 //! A run with an item streams its stdout, line by line as it arrives, into
 //! `items/<id>/runs/<stamp>-<role>.jsonl`, and the runner appends one
-//! `hall_run_end` line once the process has exited (ADR 0039, `trace`).
+//! `hall_run_end` line once the process has exited (ADR 0041, `trace`).
 //! The result is the stream's last `result` line.
 //!
 //! Tests never spend model usage: `HALL_RUNNER=fake:<script.json>` swaps in
@@ -81,7 +81,7 @@ pub struct RunRequest {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub env: Vec<(String, String)>,
     /// The file stdout streams into as it arrives, ending with a
-    /// `hall_run_end` line (ADR 0039). [`run_metered`] sets it for runs with
+    /// `hall_run_end` line (ADR 0041). [`run_metered`] sets it for runs with
     /// an item; none streams nowhere.
     #[serde(skip)]
     pub stream: Option<PathBuf>,
@@ -276,7 +276,7 @@ impl RunOutcome {
     }
 
     /// The line the runner appends to the stream when the process has
-    /// exited (ADR 0039).
+    /// exited (ADR 0041).
     pub fn end(&self) -> crate::trace::RunEnd {
         crate::trace::RunEnd::new(
             self.duration_ms,
@@ -554,7 +554,7 @@ pub fn classify(
                 .is_some_and(|t| t != "completed")
     });
     // Only the result and stderr: a stream's own events mention models and
-    // rate limits in every run (`rate_limit_event` … `"allowed"`, ADR 0039).
+    // rate limits in every run (`rate_limit_event` … `"allowed"`, ADR 0041).
     let said = said(raw);
     if failed {
         let text = format!(
@@ -962,7 +962,7 @@ pub fn run_metered(
         return Ok(Metered::Blocked(stop));
     }
     // Each run streams into a file of its own in the item's `runs/`
-    // (ADR 0039); a run with no item streams nowhere.
+    // (ADR 0041); a run with no item streams nowhere.
     let dir = match item {
         Some(id) => {
             let d = repo.hall.item_runs(id);
@@ -1192,7 +1192,7 @@ mod tests {
     #[test]
     fn a_streamed_run_is_no_rate_limit() {
         // Every stream has `{"type":"rate_limit_event",…,"status":"allowed"}`
-        // lines (ADR 0039): only the result and stderr say a run hit a limit.
+        // lines (ADR 0041): only the result and stderr say a run hit a limit.
         let raw = fixture("claude/stream.jsonl");
         assert!(raw.contains("rate_limit_event"));
         let ok = PrintResult::parse(&raw).unwrap();
@@ -1363,7 +1363,7 @@ mod tests {
         assert_eq!(failures_in_a_row(&events, "reviewer"), 0);
     }
 
-    // --- streaming (ADR 0039) ---------------------------------------------
+    // --- streaming (ADR 0041) ---------------------------------------------
 
     fn lines(p: &Path) -> Vec<serde_json::Value> {
         std::fs::read_to_string(p)

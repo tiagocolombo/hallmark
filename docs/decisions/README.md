@@ -11,14 +11,14 @@ a decision, add a new record that supersedes the old one. Don't edit the old one
 | [0003](0003-journal-jsonl-plus-sqlite-index.md) | JSONL journal, SQLite index | Accepted |
 | [0004](0004-hallmark-as-git-note.md) | The hallmark is a git note | Accepted |
 | [0005](0005-hooks-call-the-binary.md) | Hooks call `hall hook <event>` | Accepted |
-| [0006](0006-claude-p-for-every-model-run.md) | `claude -p` for every model run | Superseded in part by 0039 |
+| [0006](0006-claude-p-for-every-model-run.md) | `claude -p` for every model run | Superseded in part by 0041 |
 | [0007](0007-own-reviewer-not-code-review.md) | Our own reviewer, not `/code-review` | Accepted |
 | [0008](0008-state-derived-from-journal.md) | Item state is folded from the journal | Accepted |
 | [0009](0009-plugin-install-via-local-marketplace.md) | Install the plugin through a local marketplace | Accepted |
 | [0010](0010-gate-scope.md) | Where the gates apply | Accepted |
 | [0011](0011-drop-any-time.md) | An item can be dropped at any time | Accepted |
 | [0012](0012-config-from-the-main-checkout.md) | `.hallmark.toml` is read from the main checkout | Accepted |
-| [0013](0013-one-runner-for-claude-p.md) | One runner for every `claude -p` run | Superseded in part by 0039 |
+| [0013](0013-one-runner-for-claude-p.md) | One runner for every `claude -p` run | Superseded in part by 0041 |
 | [0014](0014-daemon-workers-and-leases.md) | The daemon is a loop of workers, with leases | Accepted |
 | [0015](0015-verdicts-findings-and-approval.md) | Verdicts, findings, and who decides approval | Accepted; amended by 0039 |
 | [0016](0016-budgets-holds-and-pauses.md) | Budgets, holds and pauses | Accepted |
@@ -44,9 +44,9 @@ a decision, add a new record that supersedes the old one. Don't edit the old one
 | [0036](0036-test-first-review.md) | Test-first review: an unpinned behaviour blocks approval | Accepted |
 | [0037](0037-repo-skills.md) | Repo skills: `.hallmark/skills/<name>/SKILL.md`, read from the base branch, extends or replaces Hallmark's | Accepted |
 | [0038](0038-extensions.md) | Extensions: skill packs by other authors (Matt Pocock's skills first), embedded unchanged and credited, turned on per role | Accepted |
-| [0039](0039-watch-runs-live.md) | Watch headless runs live: each run streams into `runs/<stamp>-<role>.jsonl`, `hall trace` and the terminal app read it | Accepted |
 | [0035](0035-semver-from-conventional-commits.md) | Versions from conventional commits: typed PR titles, release-plz tags `vX.Y.Z` on main, `hall update` names versions and says when a release is out | Accepted; amends 0023 |
 | [0039](0039-pr-description-and-review-comments.md) | The PR description is What, Why and How; every review is a PR comment (`review_comment`) | Accepted; amends 0019, 0029 |
 | [0040](0040-a-version-for-every-merge.md) | A version for every merge: release-plz reads tags, its release PR merges at once; a GitHub Release is published by hand | Accepted; amends 0023, 0035 |
 | [0040](0040-sweep-finished-worktrees.md) | The sweeper removes the worktree of each item that is done with it: its PR merged or closed, or it shipped with no PR to watch | Accepted |
+| [0041](0041-watch-runs-live.md) | Watch headless runs live: each run streams into `runs/<stamp>-<role>.jsonl`, `hall trace` and the terminal app read it | Accepted |
 | [0042](0042-an-update-that-pushed-and-failed.md) | An update that pushed and then failed doesn't stick its item: the lease is the remote head when this item hallmarked it | Accepted; amends 0029 |

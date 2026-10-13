@@ -344,7 +344,7 @@ fn a_review_with_blockers_requests_changes() {
     assert!(report.contains("### Minors"));
 
     // The run's stream and the prompt are kept; usage is booked. The stream
-    // is the only record of the result: no `.json` beside it (ADR 0039).
+    // is the only record of the result: no `.json` beside it (ADR 0041).
     let runs = env.repo.join(".git/hallmark/items").join(&id).join("runs");
     let names: Vec<String> = std::fs::read_dir(&runs)
         .unwrap()
@@ -980,7 +980,7 @@ fn an_extension_on_the_base_reaches_the_reviewer() {
     assert!(ext < head.find("# Review ").unwrap(), "before the item");
 }
 
-/// Where the parts of ADR 0039 meet: a real metered review streams into
+/// Where the parts of ADR 0041 meet: a real metered review streams into
 /// `runs/`, and while it runs `hall status` offers to follow it and
 /// `hall trace` reads it as still going; afterwards it reads as ended.
 #[test]

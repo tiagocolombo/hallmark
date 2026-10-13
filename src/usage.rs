@@ -190,7 +190,7 @@ pub const STREAM_EVENTS: &[&str] = &[
 ];
 
 /// The result printed by `claude -p`: the last `result` line of
-/// `--output-format stream-json --verbose` (ADR 0039), or the one object of
+/// `--output-format stream-json --verbose` (ADR 0041), or the one object of
 /// `--output-format json`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -241,7 +241,7 @@ impl PrintResult {
             return Ok(r);
         }
         // stream-json prints a line per event, the result last of Claude's;
-        // a run file then ends with the runner's `hall_run_end` (ADR 0039).
+        // a run file then ends with the runner's `hall_run_end` (ADR 0041).
         // Take the last `result` line, else the last JSON line that is no
         // stream event (older output, such as an API error's).
         let objects: Vec<serde_json::Value> = text
@@ -526,7 +526,7 @@ mod tests {
     #[test]
     fn a_stream_parses_as_its_result_line_never_the_end_line() {
         // A run file: stream-json, then the runner's `hall_run_end`, which
-        // is also the last JSON line (ADR 0039).
+        // is also the last JSON line (ADR 0041).
         let end = crate::trace::RunEnd::new(3_100, Some(0), None).line();
         let text = format!("{}{end}", fixture("claude/stream.jsonl"));
         let r = PrintResult::parse(&text).unwrap();

@@ -1,4 +1,4 @@
-//! `hall trace` and `hall watch --trace` (ADR 0039): a run's stream read
+//! `hall trace` and `hall watch --trace` (ADR 0041): a run's stream read
 //! back as steps. The runs are written here by hand, as the runner writes
 //! them: stream-json lines, then one `hall_run_end` line once it exits.
 

@@ -69,7 +69,7 @@ pub enum View {
     /// The reply of a command run from the app (`hall log`, …).
     Output,
     /// The selected item's latest headless run, step by step, followed
-    /// while it grows (ADR 0039).
+    /// while it grows (ADR 0041).
     Trace,
 }
 

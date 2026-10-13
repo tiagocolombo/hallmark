@@ -2,7 +2,7 @@
 //! doing changes; it stops when the item leaves the loop, needs you, or the
 //! timeout passes. Off a terminal each line is a JSON object, and the reply
 //! is the last line, as for every command. With `--trace`, the steps of the
-//! item's run while one is going print under the changes (ADR 0039).
+//! item's run while one is going print under the changes (ADR 0041).
 
 use std::io::Write;
 use std::path::{Path, PathBuf};

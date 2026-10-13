@@ -1,4 +1,4 @@
-//! `hall trace [<id>]`: a headless run, step by step (ADR 0039). It prints
+//! `hall trace [<id>]`: a headless run, step by step (ADR 0041). It prints
 //! the item's latest run, or the one `--role` or `--run` picks; `--follow`
 //! keeps printing until the run ends, `--list` lists the runs and `--open`
 //! gives the `claude --resume` command for an ended run. Off a terminal

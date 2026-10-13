@@ -2,7 +2,7 @@
 //! `hall status <id>`, `hall watch`, `hall inbox <entry>`, the hooks, the
 //! HUD and the terminal app all read it. It is derived, never stored: from
 //! the item, its lease, the review queue, the daemon's Live log, the
-//! check log being written and the item's run streams (ADR 0039).
+//! check log being written and the item's run streams (ADR 0041).
 
 use chrono::{DateTime, Utc};
 use schemars::JsonSchema;

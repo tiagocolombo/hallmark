@@ -348,7 +348,7 @@ fn the_inbox_clears_and_entries_return_when_they_change() {
     assert_eq!(env.hall(&env.repo, &["inbox", "1", "--clear"]).code, 2);
 }
 
-// --- the now block and the run's trace (ADR 0039) ---------------------------
+// --- the now block and the run's trace (ADR 0041) ---------------------------
 
 /// The reviewer's session in `claude/stream.jsonl`, and where it ran.
 const SESSION: &str = "91aedf44-f4cd-4efa-8e74-768d46a9dc75";
@@ -494,7 +494,7 @@ fn a_run_failed_hold_offers_the_failed_run() {
     }
     let n = now(&env, &id);
     assert_eq!(n["status"], "held", "{n}");
-    // The runs as a streaming runner leaves them (ADR 0039).
+    // The runs as a streaming runner leaves them (ADR 0041).
     for f in std::fs::read_dir(runs_dir(&env, &id)).unwrap() {
         std::fs::remove_file(f.unwrap().path()).unwrap();
     }

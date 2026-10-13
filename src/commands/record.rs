@@ -650,7 +650,7 @@ const RUN_HEAD: usize = 10;
 const RUN_TAIL: usize = 150;
 
 /// What the agents did: every headless run of the item, step by step
-/// (ADR 0039), in UTC like the rest of the record.
+/// (ADR 0041), in UTC like the rest of the record.
 fn runs(repo: &Repo, id: ItemId, s: &mut String) {
     let runs = crate::trace::runs(repo, id).unwrap_or_default();
     if runs.is_empty() {

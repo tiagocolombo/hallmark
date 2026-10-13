@@ -66,7 +66,7 @@ impl Plan {
 
 /// A plan and the run it came from: its stream-json and end line, kept as
 /// `runs/<stamp>-intake.jsonl` once the item exists (the run itself had no
-/// item to stream into, ADR 0039).
+/// item to stream into, ADR 0041).
 #[derive(Debug, Clone)]
 pub struct Outcome {
     pub plan: Plan,

@@ -1,4 +1,4 @@
-# 0039. Watch headless runs live: a stream per run, read by `hall trace`
+# 0041. Watch headless runs live: a stream per run, read by `hall trace`
 
 Status: Accepted, 2026-10-12
 

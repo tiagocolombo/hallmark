@@ -92,7 +92,7 @@ Steps 5–9 are the daemon's work. Each model run in them (the review, a fix)
 is a headless `claude -p` run, and it streams into the item's `runs/`
 directory as it goes: one file per run, with what the agent read, ran and
 said, ended by a line saying how the run ended
-([ADR 0039](decisions/0039-watch-runs-live.md)).
+([ADR 0041](decisions/0041-watch-runs-live.md)).
 
 ## Parallel parts
 
