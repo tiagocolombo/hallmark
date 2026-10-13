@@ -3,9 +3,9 @@
 //! that commit. Then refresh what the old binary left behind: the Claude
 //! Code plugin, whose hooks name this hall, and a running daemon.
 //!
-//! Main carries the releases (ADR 0035): each one is a `vX.Y.Z` tag on it,
-//! so the reply names the installed version and the latest release beside
-//! the commits. Every release lookup is remembered in
+//! Main carries the versions (ADR 0035, ADR 0040): every merge is tagged
+//! `vX.Y.Z` on it, so the reply names the installed version and the latest
+//! one beside the commits. Every version lookup is remembered in
 //! `<user dir>/update.json`, so the SessionStart hook and `hall doctor` can
 //! say a new version exists without touching the network;
 //! [`check_in_background`] refreshes it once a day.
@@ -64,10 +64,10 @@ pub struct UpdateOut {
     pub installed: Option<String>,
     /// The latest commit on `branch`: what is (or would be) installed.
     pub latest: String,
-    /// The highest release tagged in the source, without the `v`; null when
+    /// The highest version tagged in the source, without the `v`; null when
     /// there is none yet, or the tags couldn't be read.
     pub latest_version: Option<String>,
-    /// That release's tag: `v0.3.0`.
+    /// That version's tag: `v0.3.0`.
     pub tag: Option<String>,
     /// The version the newly installed hall reports, after an update.
     pub new_version: Option<String>,
@@ -96,7 +96,7 @@ impl Render for UpdateOut {
             (Some(v), Some(t)) if newer(v, &self.installed_version) => {
                 format!(" Version {v} ({t}) is out.")
             }
-            (Some(v), _) => format!(" The latest release is {v}."),
+            (Some(v), _) => format!(" The latest version is {v}."),
             _ => String::new(),
         };
         let mut s = match self.status.as_str() {
@@ -648,6 +648,37 @@ mod tests {
             branch: branch.into(),
             no_setup: false,
         }
+    }
+
+    fn available(latest_version: &str) -> UpdateOut {
+        UpdateOut {
+            status: "available".into(),
+            installed_version: "0.2.0".into(),
+            installed: Some("a".repeat(40)),
+            latest: "b".repeat(40),
+            latest_version: Some(latest_version.into()),
+            tag: Some(format!("v{latest_version}")),
+            new_version: None,
+            source: "https://github.com/tiagocolombo/hallmark".into(),
+            branch: "main".into(),
+            hall: "/bin/hall".into(),
+            steps: vec![],
+        }
+    }
+
+    #[test]
+    fn names_the_latest_version_tagged_on_main() {
+        // Every merge is tagged (ADR 0040): a tag is a version, not a release.
+        assert_eq!(
+            available("0.2.0").render(),
+            "An update is available: 0.2.0 (aaaaaaa) → bbbbbbb (main of \
+             https://github.com/tiagocolombo/hallmark). The latest version is 0.2.0.\n"
+        );
+        assert_eq!(
+            available("0.3.0").render(),
+            "An update is available: 0.2.0 (aaaaaaa) → bbbbbbb (main of \
+             https://github.com/tiagocolombo/hallmark). Version 0.3.0 (v0.3.0) is out.\n"
+        );
     }
 
     #[test]

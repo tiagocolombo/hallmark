@@ -114,8 +114,12 @@ CI on Windows is the final check.
   versions come from those commits: `feat` bumps the minor version, anything
   else the patch, and a breaking change the major
   ([ADR 0035](docs/decisions/0035-semver-from-conventional-commits.md)).
-- Don't bump the version in `Cargo.toml` or edit `CHANGELOG.md`: the release
-  PR that release-plz keeps open does both, and merging it tags the release.
+- Don't bump the version in `Cargo.toml` or edit `CHANGELOG.md`: after each
+  merge, release-plz opens a release PR that does both, the workflow merges
+  it, and the merge tags `vX.Y.Z`. A tag isn't a GitHub Release: a
+  maintainer publishes one, with its binaries and installers, by running
+  `gh workflow run release.yml --ref vX.Y.Z`
+  ([ADR 0040](docs/decisions/0040-a-version-for-every-merge.md)).
 - Keep each pull request to one change, with tests that show it works.
 - Update the docs (`README.md`, `docs/`) when behaviour changes. For a larger
   design choice, add an ADR in `docs/decisions/`.
