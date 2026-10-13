@@ -495,7 +495,7 @@ pub fn adopt(cwd: &Path, a: AdoptArgs) -> Result<Response> {
                 follow_up: None,
                 pr_url: pr.as_ref().map(|p| p.url.clone()),
                 pr_head: pr.as_ref().map(|p| p.head_oid.clone()),
-                own_worktree: false,
+                own_worktree: Some(false),
             },
         );
         repo.hall.append_item(id, &created)?;
@@ -1043,7 +1043,7 @@ fn create(repo: &Repo, spec: Spec) -> Result<Item> {
             follow_up: spec.follow_up,
             pr_url: spec.pr.as_ref().map(|p| p.0.clone()),
             pr_head: spec.pr.map(|p| p.1),
-            own_worktree: true,
+            own_worktree: Some(true),
         },
     );
     repo.hall.append_item(id, &created)?;

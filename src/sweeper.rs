@@ -195,7 +195,7 @@ mod tests {
                 follow_up: None,
                 pr_url: None,
                 pr_head: None,
-                own_worktree: own,
+                own_worktree: Some(own),
             },
         );
         let mut i = crate::event::fold(ItemId(1), &[e]).unwrap();

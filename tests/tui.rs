@@ -230,7 +230,7 @@ fn building() -> Env {
             follow_up: None,
             pr_url: None,
             pr_head: None,
-            own_worktree: true,
+            own_worktree: Some(true),
         },
     );
     add(

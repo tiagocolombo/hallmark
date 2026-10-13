@@ -1,7 +1,8 @@
 //! ADR 0040: the sweeper removes the worktree of each item that is done with
 //! it: its PR merged or closed, or it closed without a PR to watch. The
 //! branch and the journal stay.
-#![cfg(unix)]
+// The no-PR cases need only git and a local bare remote, so they run on every
+// OS; the cases with a fake `gh` are unix-only.
 
 mod c_support;
 mod common;
@@ -11,11 +12,15 @@ use std::path::{Path, PathBuf};
 use c_support::*;
 use common::{Env, git, p};
 use hallmark::event::Body;
-use serde_json::{Value, json};
+use serde_json::Value;
+#[cfg(unix)]
+use serde_json::json;
 
+#[cfg(unix)]
 const URL: &str = "https://github.com/acme/app/pull/1";
 
 /// A fake `gh` whose `pr view` says the PR is `state`.
+#[cfg(unix)]
 fn fake_gh(env: &Env, state: &str, oid: &str) -> PathBuf {
     use std::os::unix::fs::PermissionsExt;
     let dir = env.root.join("gh-fake");
@@ -34,6 +39,7 @@ fn fake_gh(env: &Env, state: &str, oid: &str) -> PathBuf {
     gh
 }
 
+#[cfg(unix)]
 fn pr(gh: &Path, state: &str, oid: &str) {
     let dir = gh.parent().unwrap();
     std::fs::write(dir.join("state.txt"), state).unwrap();
@@ -69,7 +75,18 @@ fn remote_shipping(env: &Env, prints: &str) {
     );
 }
 
+/// An item shipped with no PR to watch: closed. No `gh` is needed.
+fn shipped_no_pr(env: &Env) -> (String, PathBuf, PathBuf) {
+    remote_shipping(env, "shipped");
+    let (id, wt, _sha) = hallmarked_item(env, "Retry webhooks");
+    let gh = env.root.join("no-gh");
+    pass(env, &gh, "shipper");
+    assert_eq!(c_support::state(env, &id), "closed");
+    (id, wt, gh)
+}
+
 /// A hallmarked item, shipped: closed, its PR `state` on GitHub.
+#[cfg(unix)]
 fn shipped(env: &Env, prints: &str, state: &str) -> (String, PathBuf, PathBuf) {
     remote_shipping(env, prints);
     let (id, wt, sha) = hallmarked_item(env, "Retry webhooks");
@@ -84,6 +101,7 @@ fn live_log(env: &Env) -> String {
     std::fs::read_to_string(env.repo.join(".git/hallmark/live.log")).unwrap_or_default()
 }
 
+#[cfg(unix)]
 #[test]
 fn a_worktree_stays_while_its_pr_is_open_and_goes_once_it_merges() {
     let env = Env::initialized();
@@ -127,7 +145,7 @@ fn a_worktree_stays_while_its_pr_is_open_and_goes_once_it_merges() {
 #[test]
 fn an_item_closed_without_a_pr_to_watch_loses_its_worktree_at_once() {
     let env = Env::initialized();
-    let (id, wt, gh) = shipped(&env, "shipped", "OPEN");
+    let (id, wt, gh) = shipped_no_pr(&env);
     assert!(env.journal(&id).iter().all(|e| e["pr_url"].is_null()));
 
     let step = pass(&env, &gh, "sweeper");
@@ -138,7 +156,7 @@ fn an_item_closed_without_a_pr_to_watch_loses_its_worktree_at_once() {
 #[test]
 fn a_dirty_worktree_is_kept_and_said_once() {
     let env = Env::initialized();
-    let (id, wt, gh) = shipped(&env, "shipped", "OPEN");
+    let (id, wt, gh) = shipped_no_pr(&env);
     std::fs::write(wt.join("notes.txt"), "half a thought\n").unwrap();
 
     assert_eq!(pass(&env, &gh, "sweeper")["progress"], "idle");
@@ -166,7 +184,7 @@ fn a_dirty_worktree_is_kept_and_said_once() {
 #[test]
 fn a_worktree_moved_to_another_branch_is_kept() {
     let env = Env::initialized();
-    let (_id, wt, gh) = shipped(&env, "shipped", "OPEN");
+    let (_id, wt, gh) = shipped_no_pr(&env);
     git(&wt, &["switch", "-q", "-c", "other-work"]);
 
     assert_eq!(pass(&env, &gh, "sweeper")["progress"], "idle");
@@ -176,7 +194,7 @@ fn a_worktree_moved_to_another_branch_is_kept() {
 #[test]
 fn a_dirty_worktree_is_not_retried_on_every_pass() {
     let env = Env::initialized();
-    let (_id, wt, gh) = shipped(&env, "shipped", "OPEN");
+    let (_id, wt, gh) = shipped_no_pr(&env);
     std::fs::write(wt.join("notes.txt"), "half a thought\n").unwrap();
     assert_eq!(pass(&env, &gh, "sweeper")["progress"], "idle");
 
@@ -189,7 +207,7 @@ fn a_dirty_worktree_is_not_retried_on_every_pass() {
 #[test]
 fn a_worktree_a_live_item_still_uses_is_kept() {
     let env = Env::initialized();
-    let (id, wt, gh) = shipped(&env, "shipped", "OPEN");
+    let (id, wt, gh) = shipped_no_pr(&env);
     let branch = git(&wt, &["rev-parse", "--abbrev-ref", "HEAD"]);
     // A new item on the same branch and worktree, as `hall adopt` there makes.
     let next: u32 = id[2..].parse::<u32>().unwrap() + 1;
@@ -210,7 +228,7 @@ fn a_worktree_a_live_item_still_uses_is_kept() {
             follow_up: None,
             pr_url: None,
             pr_head: None,
-            own_worktree: true,
+            own_worktree: Some(true),
         },
     );
     env.hall(&env.repo, &["reindex"]);
@@ -228,8 +246,22 @@ fn a_dropped_item_kept_with_keep_worktree_is_left_alone() {
         &["drop", &id, "--reason", "not needed", "--keep-worktree"],
     );
     assert_eq!(r.code, 0, "{}", r.stdout);
-    let gh = fake_gh(&env, "OPEN", "");
+    let gh = env.root.join("no-gh");
 
     assert_eq!(pass(&env, &gh, "sweeper")["progress"], "idle");
     assert!(wt.is_dir());
+}
+
+#[test]
+fn an_item_adopted_in_the_main_checkout_is_never_swept() {
+    let env = Env::initialized();
+    git(&env.repo, &["switch", "-q", "-c", "my-work"]);
+    let r = env.hall(&env.repo, &["adopt"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let id = r.json["id"].as_str().unwrap().to_string();
+    // Hallmark did not make this checkout: the journal says so.
+    assert_eq!(env.journal(&id)[0]["own_worktree"], false);
+    let gh = env.root.join("no-gh");
+    assert_eq!(pass(&env, &gh, "sweeper")["progress"], "idle");
+    assert!(env.repo.join(".git").exists());
 }

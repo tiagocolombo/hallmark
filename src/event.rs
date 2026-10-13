@@ -92,14 +92,6 @@ impl Usage {
     }
 }
 
-fn yes() -> bool {
-    true
-}
-
-fn is_true(b: &bool) -> bool {
-    *b
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum Body {
@@ -133,9 +125,10 @@ pub enum Body {
         pr_head: Option<String>,
         /// False when the item lives in a checkout the user made (`hall
         /// adopt` in the current checkout). The sweeper only removes
-        /// worktrees Hallmark made.
-        #[serde(default = "yes", skip_serializing_if = "is_true")]
-        own_worktree: bool,
+        /// worktrees Hallmark made. Absent in older journals: an adopted
+        /// item is then taken to live in the user's own checkout.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        own_worktree: Option<bool>,
     },
     /// A shipped item came back to development through its open PR
     /// (`hall adopt`), to rebase it, resolve conflicts or change it. When it
@@ -890,7 +883,7 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
         ci_fixes: 0,
         ci_declined: None,
         delivered: None,
-        own_worktree: *own_worktree,
+        own_worktree: own_worktree.unwrap_or(!*adopted),
         swept: false,
     };
     let mut ledger = Ledger::default();
@@ -1053,8 +1046,27 @@ mod tests {
             follow_up: None,
             pr_url: None,
             pr_head: None,
-            own_worktree: true,
+            own_worktree: Some(true),
         })
+    }
+
+    #[test]
+    fn a_legacy_adopted_created_event_is_not_the_sweepers() {
+        let line = r#"{"v":1,"t":"2026-01-01T00:00:00Z","actor":"you","item":"H-0001","event":"created","title":"T","branch":"b","worktree":"/home/me/app","base":"main","adopted":true}"#;
+        let e: Event = serde_json::from_str(line).unwrap();
+        assert!(matches!(
+            &e.body,
+            Body::Created {
+                own_worktree: None,
+                adopted: true,
+                ..
+            }
+        ));
+        assert!(!fold(ItemId(1), &[e]).unwrap().own_worktree);
+        // A legacy item made by `hall new` is Hallmark's.
+        let line = line.replace("\"adopted\":true", "\"adopted\":false");
+        let e: Event = serde_json::from_str(&line).unwrap();
+        assert!(fold(ItemId(1), &[e]).unwrap().own_worktree);
     }
 
     #[test]
