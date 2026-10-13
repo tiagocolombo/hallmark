@@ -423,6 +423,11 @@ pub enum Body {
         pr_url: String,
         outcome: String,
     },
+    /// The sweeper removed the worktree of an item that is done with it
+    /// (ADR 0040). Its branch and journal are kept.
+    WorktreeRemoved {
+        path: String,
+    },
     /// You dismissed inbox entries (`hall inbox --dismiss`, `--clear`):
     /// each stays hidden until it changes. Kept in its own journal file.
     InboxDismissed {
@@ -515,6 +520,7 @@ impl Body {
             Body::CiFixRequested { .. } => "ci_fix_requested",
             Body::CiFixDeclined { .. } => "ci_fix_declined",
             Body::Delivered { .. } => "delivered",
+            Body::WorktreeRemoved { .. } => "worktree_removed",
             Body::FeedbackRequested { .. } => "feedback_requested",
         }
     }
@@ -783,6 +789,7 @@ impl Body {
                 format!("CI fix declined · {pr_url} · {reason}")
             }
             Body::Delivered { pr_url, outcome } => format!("PR {outcome} · {pr_url}"),
+            Body::WorktreeRemoved { path } => format!("worktree removed · {path}"),
             Body::FeedbackRequested { comments, .. } => format!(
                 "{} new PR comment{} to address",
                 comments.len(),

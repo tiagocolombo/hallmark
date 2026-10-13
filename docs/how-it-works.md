@@ -21,7 +21,7 @@ macOS, `xdg-open` on Linux, `start` on Windows).
 | Repair Shop | A fixer addresses failing checks and findings | the fixer |
 | Stamping Room | The approved commit gets its hallmark, a git note | the assayer |
 | Dispatch Dock | Rebases onto the latest base, then the ship command opens the PR with a What, Why and How description (or `update` updates an adopted one), posts the review as a PR comment, and the item closes | the shipper |
-| Delivery Office | Watches each PR until it merges. A conflict or new review comments send it back to development, where a headless dev run rebases it or addresses them and sends it to review | the delivery and delivery-watch workers, the CI watch |
+| Delivery Office | Watches each PR until it merges. A conflict or new review comments send it back to development, where a headless dev run rebases it or addresses them and sends it to review. Once the PR merges or closes, the item's worktree is removed; its branch and journal stay | the delivery and delivery-watch workers, the CI watch, the sweeper |
 
 ## An item's states
 
@@ -84,8 +84,11 @@ From the replay in the design page:
 7. **10:46** The review approves, and the commit gets its hallmark.
 8. **10:47** The shipper opens PR #191 and the item closes. The whole record
    stays in the journal.
+9. **11:30** PR #191 merges. The Delivery office records it, and the sweeper
+   removes H-0042's worktree. The branch stays
+   ([ADR 0040](decisions/0040-sweep-finished-worktrees.md)).
 
-Steps 5–8 are the daemon's work.
+Steps 5–9 are the daemon's work.
 
 ## Parallel parts
 

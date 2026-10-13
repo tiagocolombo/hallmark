@@ -47,3 +47,4 @@ a decision, add a new record that supersedes the old one. Don't edit the old one
 | [0035](0035-semver-from-conventional-commits.md) | Versions from conventional commits: typed PR titles, release-plz tags `vX.Y.Z` on main, `hall update` names versions and says when a release is out | Accepted; amends 0023 |
 | [0039](0039-pr-description-and-review-comments.md) | The PR description is What, Why and How; every review is a PR comment (`review_comment`) | Accepted; amends 0019, 0029 |
 | [0040](0040-a-version-for-every-merge.md) | A version for every merge: release-plz reads tags, its release PR merges at once; a GitHub Release is published by hand | Accepted; amends 0023, 0035 |
+| [0040](0040-sweep-finished-worktrees.md) | The sweeper removes the worktree of each item that is done with it: its PR merged or closed, or it shipped with no PR to watch | Accepted |

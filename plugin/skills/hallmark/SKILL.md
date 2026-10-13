@@ -226,3 +226,5 @@ option letter, `a`).
 the PR opens; `dropped` at any time. You work only in `development`. A
 parallel part goes `development` → `closed` when `hall merge` merges it into
 its parent. Later PR feedback starts a new item (`hall new --follow-up`).
+Once a closed item's PR merges or closes, the daemon removes its worktree
+(the branch and journal stay), so never leave work there.
