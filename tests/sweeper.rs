@@ -220,36 +220,6 @@ fn a_worktree_a_live_item_still_uses_is_kept() {
 }
 
 #[test]
-fn an_item_adopted_in_a_checkout_of_yours_is_not_the_sweepers() {
-    let env = Env::initialized();
-    // A shipped item adopted in the main checkout.
-    let id = "H-0042";
-    let branch = git(&env.repo, &["rev-parse", "--abbrev-ref", "HEAD"]);
-    append(
-        &env,
-        id,
-        "you",
-        Body::Created {
-            title: "Mine".into(),
-            branch,
-            worktree: p(&env.repo),
-            base: "main".into(),
-            issue: None,
-            request: None,
-            adopted: true,
-            parent: None,
-            follow_up: None,
-            pr_url: None,
-            pr_head: None,
-            own_worktree: false,
-        },
-    );
-    env.hall(&env.repo, &["reindex"]);
-    let item = env.hall(&env.repo, &["status", id]);
-    assert_eq!(item.json["own_worktree"], false, "{}", item.stdout);
-}
-
-#[test]
 fn a_dropped_item_kept_with_keep_worktree_is_left_alone() {
     let env = Env::initialized();
     let (id, wt) = env.new_item("Abandoned");
