@@ -1383,8 +1383,27 @@ mod tests {
     fn claude(dir: &Path, body: &str) -> ClaudeRunner {
         use std::os::unix::fs::PermissionsExt;
         let bin = dir.join("claude");
-        std::fs::write(&bin, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::write(
+            &bin,
+            format!("#!/bin/sh\n[ -n \"$WARM\" ] && exit 0\n{body}\n"),
+        )
+        .unwrap();
         std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        // On Linux, exec fails with "Text file busy" while any process still
+        // holds the script open for writing: a test on another thread can
+        // fork just as it is written, and its child keeps that descriptor
+        // until it execs. Run it once, doing nothing, until that has passed.
+        for _ in 0..50 {
+            match Command::new(&bin).env("WARM", "1").status() {
+                Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy => {
+                    crate::daemon::nap(Duration::from_millis(100));
+                }
+                r => {
+                    r.unwrap();
+                    break;
+                }
+            }
+        }
         ClaudeRunner {
             bin: bin.to_string_lossy().into_owned(),
         }
@@ -1512,13 +1531,9 @@ mod tests {
     #[test]
     fn a_timed_out_run_still_ends_its_stream() {
         let dir = tempfile::tempdir().unwrap();
-        let runner = claude(
-            dir.path(),
-            "[ -n \"$WARM\" ] && exit 0\nhead -n 1 \"$FIX\"\nexec sleep 30",
-        );
-        // macOS checks a new executable on its first run, which can take
-        // longer than the time limit: run it once first.
-        Command::new(&runner.bin).env("WARM", "1").status().unwrap();
+        let runner = claude(dir.path(), "head -n 1 \"$FIX\"\nexec sleep 30");
+        // (`claude` has run it once already: macOS checks a new executable on
+        // its first run, which can take longer than the time limit.)
         let req = streaming(dir.path(), 1);
         let stream = req.stream.clone().unwrap();
         let o = runner.run(&req);
