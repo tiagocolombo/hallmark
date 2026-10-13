@@ -188,8 +188,12 @@ fn ship(repo: &Repo, item: &Item, ctx_holder: &str) -> Result<Progress> {
         .unwrap_or_default();
     // An item that already has a PR (adopted, or reopened for a rebase)
     // updates it; anything else opens one.
+    let lease;
     let (template, pr, pr_head) = match (&item.pr_url, &item.pr_head) {
-        (Some(pr), Some(head)) => (&repo.config.update, pr.as_str(), head.as_str()),
+        (Some(pr), Some(known)) => {
+            lease = update_lease(repo, item, &events, &wt, known);
+            (&repo.config.update, pr.as_str(), lease.as_str())
+        }
         (Some(pr), None) => {
             return held(
                 repo,
@@ -292,6 +296,33 @@ fn ship(repo: &Repo, item: &Item, ctx_holder: &str) -> Result<Progress> {
         "{id} shipped{}{posted}",
         pr_url.map(|u| format!(": {u}")).unwrap_or_default()
     )))
+}
+
+/// The commit an update push replaces: the PR's head as last recorded, or
+/// where the branch is on `origin` when Hallmark itself put it there. An
+/// update can push and then fail (`gh pr edit` losing the network); the
+/// recorded head is then behind, and leasing on it would be rejected on
+/// every try. A head Hallmark hallmarked for this item is its own work, so
+/// it may be replaced; anyone else's push still stops the update.
+fn update_lease(repo: &Repo, item: &Item, events: &[Event], wt: &Path, known: &str) -> String {
+    let Some(remote) = git::remote_head(wt, "origin", &item.branch) else {
+        return known.to_string();
+    };
+    if remote == known {
+        return remote;
+    }
+    let ours = events
+        .iter()
+        .any(|e| matches!(&e.body, Body::Hallmarked { sha, .. } if *sha == remote));
+    if !ours {
+        return known.to_string();
+    }
+    repo.hall.live(&format!(
+        "{}: the PR is at {}, which Hallmark pushed for it; the update replaces that",
+        item.id,
+        short(&remote)
+    ));
+    remote
 }
 
 /// Runs `review_comment` on the PR. A failure doesn't undo the ship: it is
