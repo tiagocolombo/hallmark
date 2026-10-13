@@ -3,7 +3,8 @@
 Status: Accepted, 2026-10-09. Amended 2026-10-10: your office shows each
 inbox entry in full and runs its actions. Amended 2026-10-11: your office
 drops the entry's item, or every item waiting; the board has a Delivery
-lane.
+lane. Amended 2026-10-13: the action keys show and run only in the states
+their commands accept; the item pane explains what waits.
 
 ## Context
 
@@ -51,6 +52,17 @@ Windows.
   `hall pull-back`, `hall retry` and `hall drop`. The reply's note, or
   the error code and message, shows in the status bar. `x` asks for the
   reason in the app; `esc` cancels.
+  - Each key shows in the key bar only when it fits the selected item's
+    state (`tui::app::Act::fits`): `r` in development or awaiting you,
+    and never on a parallel part; `p` when it isn't in development and
+    isn't closed or dropped; `g` when it is escalated or held; `x` until
+    it is closed or dropped. `g` reads `retry` on an escalated item and
+    `go on` on a held one.
+  - A key that doesn't fit runs nothing. The status bar says why, and
+    which keys do: "H-0054 is escalated, so it can't be sent to review:
+    p pulls it back to development · g allows one more fix round · x
+    drops it." The command still checks the state; the app's check only
+    keeps a key you can't use from looking like one you can.
 - **Your office runs each entry's actions** (`i`). It lists the inbox and
   explains the selected entry with `commands::status::explain`, the same
   text as `hall inbox <n>`: the full text, why it waits, the evidence and
@@ -76,7 +88,11 @@ Windows.
   - A question about a closed or dropped item leaves the inbox, in the
     app and in `hall inbox`: nobody waits for its answer.
 - The item's journal pane starts with what waits for you about it, in
-  full. Nothing else writes.
+  full: the entry, why it waits and its evidence (the open findings of an
+  escalation, a question's options), each from `explain` as in your
+  office, then the keys that fit the item. The board's findings pane
+  lists open findings first and counts them in its title, so its few
+  rows show what still stands. Nothing else writes.
 - **Opening is never blocking.** `w` opens the worktree and `o` the PR
   with the system opener (`open`, `xdg-open`, `explorer`), spawned and
   reaped in the background; if the opener can't start, the status bar

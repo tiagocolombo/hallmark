@@ -7,7 +7,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Clear, Paragraph, Row, Table, TableState};
 
-use super::app::{App, COLUMNS, Input, Tone, UsageGroup, View, placeholder, tone};
+use super::app::{Act, App, COLUMNS, Input, Tone, UsageGroup, View, fitting, placeholder, tone};
 use super::data::{RepoStatus, room_label, room_role};
 use crate::budget::{Cap, Spent};
 use crate::event::short;
@@ -21,6 +21,12 @@ const OK: Color = Color::Green;
 const STOP: Color = Color::Red;
 const INFO: Color = Color::Cyan;
 const DIM: Color = Color::DarkGray;
+
+/// Where the text of what waits for you starts in the item pane, past the
+/// widest lead (`⚑ escalated `).
+const WAIT_INDENT: usize = 12;
+/// The most evidence lines the item pane shows for one entry.
+const WAIT_EVIDENCE: usize = 4;
 
 fn fg(c: Color) -> Style {
     Style::new().fg(c)
@@ -296,7 +302,7 @@ fn status_line(f: &mut Frame, area: Rect, app: &App) {
 }
 
 fn key_bar(f: &mut Frame, area: Rect, app: &App) {
-    let keys: &[(&str, &str)] = match app.view {
+    let all: &[(&str, &str)] = match app.view {
         View::Board | View::Journal => &[
             ("↑↓", "item"),
             ("enter", "journal"),
@@ -379,6 +385,21 @@ fn key_bar(f: &mut Frame, area: Rect, app: &App) {
             ("q", "quit"),
         ],
     };
+    // An action key shows only when it fits the selected item, in its
+    // word for that item (`g retry` on an escalated item, `g go on` on a
+    // held one).
+    let keys: Vec<(&str, &str)> = all
+        .iter()
+        .filter_map(
+            |&(k, w)| match Act::ALL.into_iter().find(|a| a.key() == k) {
+                Some(act) if matches!(app.view, View::Board | View::Journal | View::Findings) => {
+                    let item = app.item()?;
+                    act.fits(item).then(|| (k, act.label(item)))
+                }
+                _ => Some((k, w)),
+            },
+        )
+        .collect();
     // Two spaces between keys when they all fit, else one. The last two
     // (help, quit) always show; the others while they fit.
     let full: usize = keys
@@ -422,6 +443,7 @@ fn help(f: &mut Frame, area: Rect) {
         ("p", "pull back to development"),
         ("g", "go on: lift a hold, or retry (hall retry)"),
         ("x", "drop, with a reason (in your office: its item)"),
+        ("", "r p g x show only when they fit the item's state"),
         ("X", "your office: drop every item, one reason"),
         ("w", "open the item's worktree"),
         ("o", "open the PR"),
@@ -867,21 +889,61 @@ fn journal_pane(f: &mut Frame, area: Rect, app: &App, full: bool) {
             .into_iter()
             .filter(|e| e.item == Some(item.id))
             .collect();
+        let w = inner.width as usize;
+        let explained = app.selection.as_ref().map(|s| s.waiting.as_slice());
         for e in &waiting {
             let (label, c) = kind_label(&e.kind);
             lines.extend(wrap_lines(
                 &entry_text(app, e),
-                inner.width as usize,
-                &format!("⚑ {label}"),
-                11,
+                w,
+                &format!("⚑ {label} "),
+                WAIT_INDENT,
                 fg(c),
             ));
+            let Some(d) = explained.and_then(|x| {
+                x.iter()
+                    .find(|d| d.entry.kind == e.kind && d.entry.item == e.item)
+            }) else {
+                continue;
+            };
+            lines.extend(wrap_lines(&d.why, w, "why", WAIT_INDENT, Style::new()));
+            // The `now:` line is already at the top of the pane.
+            let evidence: Vec<&String> = d
+                .evidence
+                .iter()
+                .filter(|ev| !ev.starts_with("now: "))
+                .collect();
+            for (i, ev) in evidence.iter().take(WAIT_EVIDENCE).enumerate() {
+                let first = if i == 0 { "evidence" } else { "" };
+                lines.extend(wrap_lines(
+                    &app.show_text(ev),
+                    w,
+                    first,
+                    WAIT_INDENT,
+                    fg(STOP),
+                ));
+            }
+            if evidence.len() > WAIT_EVIDENCE {
+                lines.push(Line::from(Span::styled(
+                    format!(
+                        "{:WAIT_INDENT$}… {} more · i shows it all",
+                        "",
+                        evidence.len() - WAIT_EVIDENCE
+                    ),
+                    fg(DIM),
+                )));
+            }
         }
         if !waiting.is_empty() {
-            lines.push(Line::from(Span::styled(
-                "           i opens your office: why it waits, and what you can do",
-                fg(DIM),
-            )));
+            let mut keys = fitting(item);
+            keys.push("i your office".into());
+            lines.extend(wrap_lines(
+                &keys.join(" · "),
+                w,
+                "keys",
+                WAIT_INDENT,
+                fg(BRASS),
+            ));
         }
     }
     if full {
@@ -1031,13 +1093,23 @@ fn sev_color(s: crate::findings::Severity) -> Color {
     if s.blocks() { STOP } else { DIM }
 }
 
+/// The board's findings: open ones first, so the pane's few rows show what
+/// still stands.
 fn findings_pane(f: &mut Frame, area: Rect, app: &App) {
-    let block = pane("Findings");
     let ledger = app.shown_ledger();
+    let open = ledger.map(|l| l.open().len()).unwrap_or(0);
+    let total = ledger.map(|l| l.findings.len()).unwrap_or(0);
+    let block = if total == 0 {
+        pane("Findings")
+    } else {
+        pane(format!("Findings · {open} open of {total}"))
+    };
     let rows: Vec<Row> = ledger
         .map(|l| {
-            l.findings
-                .iter()
+            let mut sorted: Vec<&Tracked> = l.findings.iter().collect();
+            sorted.sort_by_key(|t| t.status != FStatus::Open);
+            sorted
+                .into_iter()
                 .map(|t| {
                     let (st, c) = finding_status(t);
                     Row::new(vec![

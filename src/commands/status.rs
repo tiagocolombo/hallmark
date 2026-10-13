@@ -442,7 +442,7 @@ fn find_entry(entries: &[InboxEntry], which: &str) -> Result<usize> {
 }
 
 /// One inbox entry, explained.
-#[derive(Debug, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct InboxDetail {
     /// Its place in `hall inbox` (1 is the oldest).
     pub number: usize,
