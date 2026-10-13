@@ -474,14 +474,17 @@ fn open_stream(req: &RunRequest) -> Option<Stream> {
     let file = OpenOptions::new().create(true).append(true).open(p).ok()?;
     // The writer holds a lock on a sidecar for as long as it lives; the OS
     // frees it if the process dies. Readers tell a stream still being
-    // written from an abandoned one by whether they can take it.
+    // written from an abandoned one by whether they can take it. A reader
+    // holds it only for the instant of its check, and each run has its own
+    // name (`claim_stream`), so waiting for it is brief; giving up on the
+    // first try would leave the run reading as interrupted for its life.
     let lock = OpenOptions::new()
         .create(true)
         .truncate(false)
         .write(true)
         .open(lock_path(p))
         .ok()
-        .filter(|l| fs4::FileExt::try_lock(l).is_ok());
+        .filter(|l| fs4::FileExt::lock(l).is_ok());
     Some(Stream { file, _lock: lock })
 }
 
