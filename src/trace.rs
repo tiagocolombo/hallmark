@@ -98,7 +98,18 @@ pub fn mark_interrupted(
     // The writer's lock decides when there is one: a run made without an
     // item lease (resume, distill) is still going while it is held.
     info.interrupted = match crate::runner::writer_gone(&run.path) {
-        Some(gone) => gone,
+        Some(true) => {
+            // The end line is written before the lock is freed, so a run
+            // that ended after the caller last read shows its end now.
+            let mut tail = Tail::default();
+            if tail.poll(&run.path).is_ok() && tail.info.ended {
+                *info = tail.info;
+                false
+            } else {
+                true
+            }
+        }
+        Some(false) => false,
         None => {
             at + 1 < runs.len()
                 || crate::lease::current(hall, id).is_none_or(|l| l.acquired > began)

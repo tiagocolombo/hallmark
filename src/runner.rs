@@ -1437,6 +1437,8 @@ mod tests {
         let steps = tail.poll(&stream).unwrap();
         assert_eq!(steps[0].kind, crate::trace::StepKind::Start);
         assert!(!tail.info.ended);
+        // The runner holds the writer's lock for as long as the run goes.
+        assert_eq!(writer_gone(&stream), Some(false));
 
         std::fs::write(dir.path().join("go"), "").unwrap();
         let o = running.join().unwrap();

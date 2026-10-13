@@ -137,7 +137,7 @@ $(git rev-parse --git-common-dir)/hallmark/   shared by every worktree, never co
 │  ├─ events.jsonl        the journal: append-only, source of truth
 │  ├─ item.json           cached snapshot (title, branch, worktree, state)
 │  └─ runs/               each headless run, streamed as it happens:
-│                         <stamp>-<role>.jsonl, plus .stderr and prompts
+│                         <stamp>-<role>.jsonl, plus .lock, .stderr and prompts
 ├─ events.jsonl           repo-level events: prompts and notifications from
 │                         sessions with no item, gate denials
 ├─ sessions/<id>.json     session → item binding, transcript byte offset
