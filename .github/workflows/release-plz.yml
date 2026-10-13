@@ -24,6 +24,12 @@ on:
 permissions:
   contents: read
 
+# Whole runs queue one at a time, so the tag for a release PR's merge exists
+# before the next run opens another release PR.
+concurrency:
+  group: release-plz
+  cancel-in-progress: false
+
 jobs:
   release:
     name: Tag a merged release PR
@@ -63,9 +69,6 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-    concurrency:
-      group: release-plz-${{ github.ref }}
-      cancel-in-progress: false
     steps:
       - name: Check for RELEASE_PLZ_TOKEN
         env:
@@ -75,8 +78,11 @@ jobs:
             echo "::error title=RELEASE_PLZ_TOKEN is missing::Add a fine-grained token with contents and pull-requests write on this repository as the RELEASE_PLZ_TOKEN secret (ADR 0035)."
             exit 1
           fi
+      # The tip of main, not the pushed commit: a queued run must not build a
+      # release PR from a commit that a newer release already passed.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: main
           fetch-depth: 0
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
@@ -95,4 +101,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
           PR_NUMBER: ${{ fromJSON(steps.release-plz.outputs.pr).number }}
-        run: gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --squash --admin
+        run: |
+          # --admin skips the up-to-date check, so check it here: a PR whose
+          # base isn't main's current head is stale; a newer run replaces it.
+          base=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json baseRefOid --jq .baseRefOid)
+          head=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          if [ "$base" != "$head" ]; then
+            echo "Release PR #$PR_NUMBER is based on $base but main is at $head; leaving it to the newer run."
+            exit 0
+          fi
+          gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --squash --admin
