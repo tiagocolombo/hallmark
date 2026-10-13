@@ -9,7 +9,9 @@
 //! live in the git common dir, never in a worktree.
 //!
 //! It runs `git worktree remove` without `--force`, so a worktree with
-//! uncommitted or untracked changes is kept and said once in the live log.
+//! uncommitted or untracked changes is kept and said once in the live log; it
+//! is tried again after half an hour. Only checkouts Hallmark made are swept:
+//! one the user made and adopted is theirs.
 //! It never removes the main checkout, a worktree that has another branch,
 //! or one a live item still uses (an adopted branch). Parts merged into their
 //! parent and dropped items are left to `hall merge` and `hall drop`, which
@@ -35,7 +37,15 @@ pub const ACTOR: &str = "sweeper";
 struct Kept {
     #[serde(default)]
     noted: BTreeMap<String, String>,
+    /// When each kept worktree was last tried (unix seconds): git scans the
+    /// whole checkout before it refuses, so a kept one is retried only after
+    /// [`RETRY_AFTER`].
+    #[serde(default)]
+    tried: BTreeMap<String, i64>,
 }
+
+/// How long a kept worktree waits before the next attempt, in seconds.
+const RETRY_AFTER: i64 = 30 * 60;
 
 impl Kept {
     fn path(repo: &Repo) -> PathBuf {
@@ -59,7 +69,11 @@ impl Kept {
 /// A shipped item that nothing can reopen: its PR merged or closed, or it
 /// had no PR to watch. Parts and dropped items are not the sweeper's.
 pub fn done_with_worktree(i: &Item) -> bool {
-    i.state == State::Closed && i.parent.is_none() && !crate::delivery::is_watched(i)
+    i.state == State::Closed
+        && i.parent.is_none()
+        && i.own_worktree
+        && !i.swept
+        && !crate::delivery::is_watched(i)
 }
 
 /// The finished items whose worktree is still on disk, oldest first.
@@ -96,6 +110,10 @@ pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
     let mut out = Progress::Idle;
     for (item, wt) in due {
         let key = item.id.to_string();
+        let now = chrono::Utc::now().timestamp();
+        if kept.tried.get(&key).is_some_and(|t| now - t < RETRY_AFTER) {
+            continue;
+        }
         // Only the item's own checkout: a path that now has another branch,
         // or isn't a worktree at all, isn't ours to remove.
         let ours = worktrees
@@ -117,6 +135,8 @@ pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
             }
         };
         if let Some(why) = why {
+            kept.tried.insert(key.clone(), now);
+            changed = true;
             if kept.noted.get(&key) != Some(&why) {
                 repo.hall.live(&format!(
                     "{key}: kept its worktree {}: {why}",
@@ -127,7 +147,7 @@ pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
             }
             continue;
         }
-        changed |= kept.noted.remove(&key).is_some();
+        changed |= kept.noted.remove(&key).is_some() | kept.tried.remove(&key).is_some();
         repo.hall.append_item(
             item.id,
             &Event::new(
@@ -152,4 +172,42 @@ pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
         kept.save(repo);
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::item::ItemId;
+
+    fn closed(own: bool, swept: bool) -> Item {
+        let e = Event::new(
+            "you",
+            Some(ItemId(1)),
+            Body::Created {
+                title: "t".into(),
+                branch: "b".into(),
+                worktree: "/tmp/w".into(),
+                base: "main".into(),
+                issue: None,
+                request: None,
+                adopted: !own,
+                parent: None,
+                follow_up: None,
+                pr_url: None,
+                pr_head: None,
+                own_worktree: own,
+            },
+        );
+        let mut i = crate::event::fold(ItemId(1), &[e]).unwrap();
+        i.state = State::Closed;
+        i.swept = swept;
+        i
+    }
+
+    #[test]
+    fn only_unswept_worktrees_hallmark_made_are_due() {
+        assert!(done_with_worktree(&closed(true, false)));
+        assert!(!done_with_worktree(&closed(false, false)));
+        assert!(!done_with_worktree(&closed(true, true)));
+    }
 }

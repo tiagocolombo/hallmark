@@ -25,7 +25,13 @@ that worktree to rebase, address review comments or fix red CI (ADR 0030,
   (`delivered`), or a ship that opened no PR to watch.
 - **It runs `git worktree remove` without `--force`.** A worktree with
   uncommitted or untracked changes is kept, and the live log says why once.
-  It goes on a later pass, after you clean it up.
+  It is tried again every half an hour (git scans the whole checkout before
+  it refuses), and goes once you clean it up.
+- **It removes only checkouts Hallmark made.** An item adopted in a checkout
+  you made (`hall adopt` in the current checkout, or a reopening that points
+  the item at one) records `own_worktree: false`, and the sweeper leaves that
+  directory alone. A swept item is not swept again, and a reopened item is
+  watched, and keeps its worktree, until its PR ends again.
 - **It removes only the item's own checkout.** It never removes the main
   checkout or a worktree that now has another branch. It also never removes a
   worktree that a live item, or a shipped one whose PR is still open, still
@@ -47,6 +53,6 @@ that worktree to rebase, address review comments or fix red CI (ADR 0030,
 - A shipped PR keeps its worktree until it merges or closes, so the Delivery
   office can still work in it.
 - With no daemon running, nothing is swept. `hall daemon run --once --only
-  sweeper` sweeps by hand.
+  sweeper` sweeps by hand, one worktree per run: repeat it.
 - Removal uses `git worktree remove`, like `hall drop` and `hall merge`,
   whatever the `worktree` command that made it.

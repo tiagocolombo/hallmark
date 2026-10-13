@@ -153,10 +153,37 @@ fn a_dirty_worktree_is_kept_and_said_once() {
         live_log(&env)
     );
 
-    // Cleaned up by hand: it goes on the next pass.
+    // Kept ones are retried after a back-off, not on every pass.
+    assert!(env.repo.join(".git/hallmark/sweeper.json").is_file());
+
+    // Cleaned up by hand: it goes on the next attempt (the back-off over).
     std::fs::remove_file(wt.join("notes.txt")).unwrap();
+    std::fs::remove_file(env.repo.join(".git/hallmark/sweeper.json")).unwrap();
     assert_eq!(pass(&env, &gh, "sweeper")["progress"], "worked");
     assert!(!wt.exists());
+}
+
+#[test]
+fn a_worktree_moved_to_another_branch_is_kept() {
+    let env = Env::initialized();
+    let (_id, wt, gh) = shipped(&env, "shipped", "OPEN");
+    git(&wt, &["switch", "-q", "-c", "other-work"]);
+
+    assert_eq!(pass(&env, &gh, "sweeper")["progress"], "idle");
+    assert!(wt.is_dir());
+}
+
+#[test]
+fn a_dirty_worktree_is_not_retried_on_every_pass() {
+    let env = Env::initialized();
+    let (_id, wt, gh) = shipped(&env, "shipped", "OPEN");
+    std::fs::write(wt.join("notes.txt"), "half a thought\n").unwrap();
+    assert_eq!(pass(&env, &gh, "sweeper")["progress"], "idle");
+
+    // Clean now, but the back-off hasn't passed: no attempt.
+    std::fs::remove_file(wt.join("notes.txt")).unwrap();
+    assert_eq!(pass(&env, &gh, "sweeper")["progress"], "idle");
+    assert!(wt.is_dir());
 }
 
 #[test]
@@ -183,12 +210,43 @@ fn a_worktree_a_live_item_still_uses_is_kept() {
             follow_up: None,
             pr_url: None,
             pr_head: None,
+            own_worktree: true,
         },
     );
     env.hall(&env.repo, &["reindex"]);
 
     assert_eq!(pass(&env, &gh, "sweeper")["progress"], "idle");
     assert!(wt.is_dir());
+}
+
+#[test]
+fn an_item_adopted_in_a_checkout_of_yours_is_not_the_sweepers() {
+    let env = Env::initialized();
+    // A shipped item adopted in the main checkout.
+    let id = "H-0042";
+    let branch = git(&env.repo, &["rev-parse", "--abbrev-ref", "HEAD"]);
+    append(
+        &env,
+        id,
+        "you",
+        Body::Created {
+            title: "Mine".into(),
+            branch,
+            worktree: p(&env.repo),
+            base: "main".into(),
+            issue: None,
+            request: None,
+            adopted: true,
+            parent: None,
+            follow_up: None,
+            pr_url: None,
+            pr_head: None,
+            own_worktree: false,
+        },
+    );
+    env.hall(&env.repo, &["reindex"]);
+    let item = env.hall(&env.repo, &["status", id]);
+    assert_eq!(item.json["own_worktree"], false, "{}", item.stdout);
 }
 
 #[test]

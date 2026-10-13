@@ -68,7 +68,7 @@ The extensions, and what each role gets:
 | Command | Does |
 | --- | --- |
 | `hall new [<request>]` | Creates an item and its worktree; splits into parallel parts when it can. `--title`, `--issue <n>`, `--no-split`, `--parent <id>`, `--follow-up <pr>`, `--open`, `--branch` |
-| `hall adopt [--pr] [--base]` | Turns the current branch and worktree, or an open PR, into an item. A shipped item whose PR is still open is reopened: rebase it, resolve conflicts or change it, and the shipper updates the PR after review ([ADR 0029](decisions/0029-adopt-open-prs.md)). |
+| `hall adopt [--pr] [--base]` | Turns the current branch and worktree, or an open PR, into an item. A shipped item whose PR is still open is reopened: rebase it, resolve conflicts or change it, and the shipper updates the PR after review ([ADR 0029](decisions/0029-adopt-open-prs.md)). A checkout you made yourself is never removed when the item closes; only worktrees Hallmark made are swept ([ADR 0040](decisions/0040-sweep-finished-worktrees.md)). |
 | `hall merge [<child>]` | Merges a parallel part into its parent's branch and closes it. |
 | `hall ready [<id>]` | Freezes the commit and queues the item for review. |
 | `hall propose-ready [<id>] --summary <s> [--why <w>] [--how <h>] [--ask]` | The agent says the work is done. With nothing left to confirm (no open question, a clean worktree, no open parts) it goes straight to review; `--ask` (or `auto_ready = false`) waits for your call. `--summary`, `--why` and `--how` become the PR description's What, Why and How ([ADR 0039](decisions/0039-pr-description-and-review-comments.md)). |

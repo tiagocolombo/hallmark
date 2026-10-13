@@ -92,6 +92,14 @@ impl Usage {
     }
 }
 
+fn yes() -> bool {
+    true
+}
+
+fn is_true(b: &bool) -> bool {
+    *b
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum Body {
@@ -123,6 +131,11 @@ pub enum Body {
         /// The commit that PR's head was at when the item took it over.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pr_head: Option<String>,
+        /// False when the item lives in a checkout the user made (`hall
+        /// adopt` in the current checkout). The sweeper only removes
+        /// worktrees Hallmark made.
+        #[serde(default = "yes", skip_serializing_if = "is_true")]
+        own_worktree: bool,
     },
     /// A shipped item came back to development through its open PR
     /// (`hall adopt`), to rebase it, resolve conflicts or change it. When it
@@ -835,6 +848,7 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
         follow_up,
         pr_url,
         pr_head,
+        own_worktree,
         ..
     } = &first.body
     else {
@@ -876,6 +890,8 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
         ci_fixes: 0,
         ci_declined: None,
         delivered: None,
+        own_worktree: *own_worktree,
+        swept: false,
     };
     let mut ledger = Ledger::default();
     for e in it {
@@ -964,6 +980,11 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
                 base,
                 worktree,
             } => {
+                // Another checkout is the user's; and the PR is watched
+                // again, with its worktree, until it ends again.
+                item.own_worktree &= item.worktree == *worktree;
+                item.swept = false;
+                item.delivered = None;
                 item.worktree = worktree.clone();
                 item.pr_url = Some(pr_url.clone());
                 item.pr_head = Some(pr_head.clone());
@@ -989,6 +1010,7 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
             }
             Body::CiFixDeclined { reason, .. } => item.ci_declined = Some(reason.clone()),
             Body::Delivered { outcome, .. } => item.delivered = Some(outcome.clone()),
+            Body::WorktreeRemoved { .. } => item.swept = true,
             Body::FeedbackRequested { comments, .. } => {
                 item.feedback = Some(crate::item::FeedbackRequest {
                     comments: comments.clone(),
@@ -1031,6 +1053,7 @@ mod tests {
             follow_up: None,
             pr_url: None,
             pr_head: None,
+            own_worktree: true,
         })
     }
 
@@ -1215,6 +1238,46 @@ mod tests {
         assert_eq!(item.pr_url.as_deref(), Some(url));
         assert_eq!(item.pr_head.as_deref(), Some("bbb"));
         assert_eq!(item.hallmark_sha.as_deref(), Some("bbb"));
+    }
+
+    #[test]
+    fn a_reopened_item_is_watched_again_and_keeps_only_worktrees_hallmark_made() {
+        let url = "https://github.com/acme/app/pull/7";
+        let mut events = vec![created()];
+        events.extend(through_review("aaa", 1, Some(url)));
+        events.push(ev(Body::Delivered {
+            pr_url: url.into(),
+            outcome: "closed".into(),
+        }));
+        events.push(ev(Body::WorktreeRemoved {
+            path: "/tmp/repo-H-0001".into(),
+        }));
+        let item = fold(ItemId(1), &events).unwrap();
+        assert!(item.swept && item.own_worktree);
+        assert_eq!(item.delivered.as_deref(), Some("closed"));
+
+        // Back in the same worktree path: still Hallmark's, watched again.
+        events.push(ev(Body::Reopened {
+            pr_url: url.into(),
+            pr_head: "aaa".into(),
+            base: "main".into(),
+            worktree: "/tmp/repo-H-0001".into(),
+        }));
+        let item = fold(ItemId(1), &events).unwrap();
+        assert!(!item.swept && item.own_worktree);
+        assert_eq!(item.delivered, None);
+
+        // Reopened in a checkout the user made: not the sweeper's.
+        events.push(ev(Body::Reopened {
+            pr_url: url.into(),
+            pr_head: "aaa".into(),
+            base: "main".into(),
+            worktree: "/home/me/app".into(),
+        }));
+        let mut events2 = events[..events.len() - 1].to_vec();
+        events2.extend(through_review("bbb", 2, None));
+        events2.push(events[events.len() - 1].clone());
+        assert!(!fold(ItemId(1), &events2).unwrap().own_worktree);
     }
 
     #[test]
