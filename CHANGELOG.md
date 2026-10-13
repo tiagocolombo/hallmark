@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1](https://github.com/tiagocolombo/hallmark/compare/v0.1.0...v0.1.1) - 2026-10-13
+
+### Added
+
+- terminal app explains what waits and offers only the actions that fit ([#53](https://github.com/tiagocolombo/hallmark/pull/53))
+- PR descriptions: What, Why and How; the review goes in comments ([#52](https://github.com/tiagocolombo/hallmark/pull/52))
+- Extensions: Matt Pocock's skills for Hallmark's roles ([#51](https://github.com/tiagocolombo/hallmark/pull/51))
+
+### Fixed
+
+- Auto-release every merge to main ([#54](https://github.com/tiagocolombo/hallmark/pull/54))
+
 ## [0.1.0](https://github.com/tiagocolombo/hallmark/releases/tag/v0.1.0) - 2026-10-12
 
 ### Added
