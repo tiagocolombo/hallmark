@@ -40,10 +40,14 @@ permissions:
 #
 # If there's a prerelease-style suffix to the version, then the release(s)
 # will be marked as a prerelease.
+#
+# Edited by hand (ADR 0040): every merge to main tags a version, so a tag
+# doesn't run this. Run it on the tag to publish:
+#   gh workflow run release.yml --ref vX.Y.Z
+# (or Actions → Release → Run workflow, and pick the tag). github.ref_name is
+# then the tag, as it was on a tag push.
 on:
-  push:
-    tags:
-      - '**[0-9]+.[0-9]+.[0-9]+*'
+  workflow_dispatch:
 
 jobs:
   # Run 'dist plan' (or host) to determine what tasks we need to do
@@ -57,6 +61,15 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
+      # Edited by hand (ADR 0040): only a version tag is released.
+      - name: Check the ref is a version tag
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          if ! [[ "$REF" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "::error title=Not a version tag::Run this workflow on a vX.Y.Z tag: gh workflow run release.yml --ref vX.Y.Z (this ran on $REF)."
+            exit 1
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false

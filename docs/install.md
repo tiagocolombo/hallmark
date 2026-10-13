@@ -11,9 +11,11 @@ installs for you. You need `git` and [Claude Code](https://claude.com/claude-cod
 
 ### From a release
 
-> No release has been published yet, so these URLs return 404 until the first
-> tag is cut. Until then, [build from source](#from-source). Homebrew
-> publishing is off (ADR 0023), so there is no `brew` formula.
+Every merge to `main` gets a version, but only some versions are published
+as releases, so the latest release can be behind `main`
+([ADR 0040](decisions/0040-a-version-for-every-merge.md)); `hall update`
+then brings you up to date. Homebrew publishing is off (ADR 0023), so there
+is no `brew` formula.
 
 Each release has archives for macOS (Apple silicon and Intel), Linux (x86_64
 and arm64, glibc; x86_64 musl) and Windows (x86_64), each with a `.sha256`
@@ -139,11 +141,12 @@ nothing and says so. Then it has the new `hall` rewrite the Claude Code plugin
 (if you installed it) and restarts a running daemon on the new binary.
 Restart Claude Code afterwards.
 
-Main carries the releases: each one is a `vX.Y.Z` tag on it, versioned by
-semver from conventional commits
-([ADR 0035](decisions/0035-semver-from-conventional-commits.md)). `hall update`
-reads the tags too, and names your version, the latest release and the version
-it installed. It remembers the latest release, and when it is newer than your
+Main carries the versions: every merge is tagged `vX.Y.Z` on it, versioned
+by semver from conventional commits
+([ADR 0035](decisions/0035-semver-from-conventional-commits.md),
+[ADR 0040](decisions/0040-a-version-for-every-merge.md)). `hall update`
+reads the tags too, and names your version, the latest version and the version
+it installed. It remembers the latest version, and when it is newer than your
 `hall`, `hall doctor` and the start of each Claude Code session say so. A
 session starts a background check at most once a day; `HALL_UPDATE_CHECK=off`
 turns that off.

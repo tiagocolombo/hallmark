@@ -1,16 +1,19 @@
 name: Release-plz
 
-# Versions come from conventional commits (ADR 0035). On every push to main,
-# release-plz opens or refreshes the release PR (the next version, with its
-# changelog); merging that PR tags vX.Y.Z, and the tag runs release.yml.
+# Every merge to main moves the version (ADR 0035, ADR 0040). On a push to
+# main, release-plz opens the release PR (the next version, with its
+# changelog) and this workflow merges it at once; that merge is another push
+# to main, where release-plz tags vX.Y.Z. A tag doesn't publish anything:
+# release.yml builds the binaries and the GitHub Release only when it's run
+# on a tag by hand.
 #
 # Both jobs need RELEASE_PLZ_TOKEN: a fine-grained token, made by a
 # repository admin, with contents and pull-requests write on this repository.
 # The default GITHUB_TOKEN can't do the job:
 # - the repository doesn't let GitHub Actions open pull requests;
-# - a release PR it opened wouldn't run CI, so the required checks never pass;
-# - the "Protect release tags" ruleset lets only admins create tags;
-# - a tag it pushed wouldn't start release.yml.
+# - the "Protect main" ruleset wants an approving review, which only an
+#   admin's bypass (`gh pr merge --admin`) skips;
+# - the "Protect release tags" ruleset lets only admins create tags.
 # Without the secret, the jobs stop with an error that says so.
 
 on:
@@ -20,6 +23,12 @@ on:
 
 permissions:
   contents: read
+
+# Whole runs queue one at a time, so the tag for a release PR's merge exists
+# before the next run opens another release PR.
+concurrency:
+  group: release-plz
+  cancel-in-progress: false
 
 jobs:
   release:
@@ -51,15 +60,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
 
   release-pr:
-    name: Open the release PR
+    name: Open and merge the release PR
+    # After the tag: on the push of a merged release PR, the tag must exist
+    # before release-plz looks for commits since the last version.
+    needs: release
     if: ${{ github.repository_owner == 'tiagocolombo' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
-    concurrency:
-      group: release-plz-${{ github.ref }}
-      cancel-in-progress: false
     steps:
       - name: Check for RELEASE_PLZ_TOKEN
         env:
@@ -69,14 +78,36 @@ jobs:
             echo "::error title=RELEASE_PLZ_TOKEN is missing::Add a fine-grained token with contents and pull-requests write on this repository as the RELEASE_PLZ_TOKEN secret (ADR 0035)."
             exit 1
           fi
+      # The tip of main, not the pushed commit: a queued run must not build a
+      # release PR from a commit that a newer release already passed.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: main
           fetch-depth: 0
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
       - run: rustup default stable
       - uses: release-plz/action@f393a7b38aca9d9b4c58447b291dbac963901df6 # v0.5.141
+        id: release-plz
         with:
           command: release-pr
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
+      # The release PR changes only Cargo.toml, Cargo.lock and CHANGELOG.md,
+      # and main's CI runs again on the merge. Nobody can approve a PR their
+      # own token opened, so the admin bypass merges it (ADR 0040).
+      - name: Merge the release PR
+        if: ${{ steps.release-plz.outputs.prs_created == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
+          PR_NUMBER: ${{ fromJSON(steps.release-plz.outputs.pr).number }}
+        run: |
+          # --admin skips the up-to-date check, so check it here: a PR whose
+          # base isn't main's current head is stale; a newer run replaces it.
+          base=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json baseRefOid --jq .baseRefOid)
+          head=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          if [ "$base" != "$head" ]; then
+            echo "Release PR #$PR_NUMBER is based on $base but main is at $head; leaving it to the newer run."
+            exit 0
+          fi
+          gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --squash --admin

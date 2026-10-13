@@ -29,6 +29,12 @@ Status: Accepted, 2026-10-09
 > pushed by hand: release-plz tags `vX.Y.Z` when its release PR merges, and
 > that tag runs this workflow unchanged.
 
+> **Note, 2026-10-13:** amended by
+> [ADR 0040](0040-a-version-for-every-merge.md). Every merge to `main` is
+> tagged, so a tag no longer runs `release.yml`. It runs by hand on a tag
+> (`gh workflow run release.yml --ref vX.Y.Z`); its trigger and a first step
+> that checks the ref are edited by hand, like its permissions.
+
 ## Context
 
 ADR 0001 promised a single cargo-dist pipeline for all three operating

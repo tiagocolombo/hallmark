@@ -44,7 +44,7 @@ Agents are the main users of `hall`, so every command follows these rules
 | `hall setup claude` | Installs only the Claude Code plugin. `--statusline`, `--dry-run` |
 | `hall init` | Sets up a repo. `--capture gate\|ask\|off`, `--base`, `--no-claude-md` |
 | `hall doctor` | Checks the install. Each failed check names the command that fixes it. |
-| `hall update` | Installs the latest `hall` from main, or says it's already current, naming the installed version and the latest release ([ADR 0035](decisions/0035-semver-from-conventional-commits.md)). `--check`, `--source`, `--branch`, `--no-setup` |
+| `hall update` | Installs the latest `hall` from main, or says it's already current, naming the installed version and the latest version tagged on main ([ADR 0035](decisions/0035-semver-from-conventional-commits.md), [ADR 0040](decisions/0040-a-version-for-every-merge.md)). `--check`, `--source`, `--branch`, `--no-setup` |
 
 ## Extensions
 

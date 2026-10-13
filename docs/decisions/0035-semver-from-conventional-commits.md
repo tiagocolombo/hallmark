@@ -2,6 +2,12 @@
 
 Status: Accepted, 2026-10-12
 
+> **Note, 2026-10-13:** superseded in part by
+> [ADR 0040](0040-a-version-for-every-merge.md). Versions are read from
+> tags (`git_only`), the workflow merges each release PR as soon as it
+> opens, so every merge to `main` gets a version, and a tag no longer runs
+> `release.yml`: a GitHub Release is published by hand.
+
 ## Context
 
 `Cargo.toml` has said `0.1.0` since the first commit. No tag was ever pushed,
