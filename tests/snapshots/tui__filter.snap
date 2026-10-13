@@ -14,20 +14,20 @@ hall · app (1 of 1 repo)   daemon ● running   ⚑ 3 waiting   rejected today 
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌ H-0002 · Export tenant usage ────────────────────────────────────────────────────────────────────────── awaiting you ┐
 │now The agent says it looks done; it waits for your call (–)                                                          │
-│⚑ ready?   Export tenant usage looks done: CSV export with 14 tests                                                   │
-│⚑ question Billed usage or raw events? [a] billed [b] raw                                                             │
-│           i opens your office: why it waits, and what you can do                                                     │
+│⚑ ready?    Export tenant usage looks done: CSV export with 14 tests                                                  │
+│why         The agent says the work looks done. It goes to review only when you say so.                               │
+│evidence    summary: CSV export with 14 tests                                                                         │
+│⚑ question  Billed usage or raw events? [a] billed [b] raw                                                            │
+│why         An agent asked you this and waits for the answer; its session resumes once you answer.                    │
+│evidence    question: Billed usage or raw events?                                                                     │
+│            [a] billed                                                                                                │
+│            [b] raw                                                                                                   │
+│            default: billed, used if nobody answers                                                                   │
+│            … 1 more · i shows it all                                                                                 │
+│keys        r sends it to review · p pulls it back to development · x drops it · i your office                        │
 │hh:mm  you       created · "Export tenant usage"                                                                      │
 │hh:mm  you       proposes ready · "CSV export with 14 tests"                                                          │
 │hh:mm  you       question Q-1 · "Billed usage or raw events?"                                                         │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
@@ -37,4 +37,4 @@ hall · app (1 of 1 repo)   daemon ● running   ⚑ 3 waiting   rejected today 
 │no findings yet                                                                                                       │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 / export▏  enter keep · esc clear
-↑↓ item enter journal i your office ←→ step f findings d diff t trace r ready p pull back g go x drop ? help q quit
+↑↓ item enter journal i your office ←→ step f findings d diff t trace r ready p pull back x drop / filter ? help q quit

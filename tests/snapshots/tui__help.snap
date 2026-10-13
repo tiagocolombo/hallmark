@@ -20,9 +20,10 @@ hall · app (1 of 3 repos)   daemon ● running   ⚑ 3 waiting   rejected today
 │hh:mm  assayer   checks pas│  p         pull back to development                          │                           │
 │hh:mm  assayer   usage · op│  g         go on: lift a hold, or retry (hall retry)         │                           │
 │hh:mm  assayer   review · c│  x         drop, with a reason (in your office: its item)    │                           │
-│hh:mm  fixer     fix submit│  X         your office: drop every item, one reason          │                           │
-│hh:mm  fixer     usage · so│  w         open the item's worktree                          │                           │
-│hh:mm  assayer   checks pas│  o         open the PR                                       │                           │
+│hh:mm  fixer     fix submit│            r p g x show only when they fit the item's state  │                           │
+│hh:mm  fixer     usage · so│  X         your office: drop every item, one reason          │                           │
+│hh:mm  assayer   checks pas│  w         open the item's worktree                          │                           │
+│                           │  o         open the PR                                       │                           │
 │                           │  b         board                                             │                           │
 │                           │  h         history: closed and dropped                       │                           │
 │                           │  u         usage (then b i m d to group)                     │                           │
@@ -30,11 +31,10 @@ hall · app (1 of 3 repos)   daemon ● running   ⚑ 3 waiting   rejected today
 │                           │  R         repositories                                      │                           │
 │                           │  tab       next repository                                   │                           │
 │                           │  /         filter by ID, title or state                      │                           │
-│                           │  esc       back · stop replaying · clear filter              │                           │
-└───────────────────────────│  q         quit (work carries on)                            │───────────────────────────┘
-┌ Findings ─────────────────│                                                              │───────────────────────────┐
-│F1   major   correctness   └ any key closes ──────────────────────────────────────────────┘ open · fix claimed #######│
-│F2   minor   evidence         No test for the backoff cap            src/webhooks.rs:42     open                      │
+└───────────────────────────│  esc       back · stop replaying · clear filter              │───────────────────────────┘
+┌ Findings · 2 open of 2 ───│  q         quit (work carries on)                            │───────────────────────────┐
+│F1   major   correctness   │                                                              │ open · fix claimed #######│
+│F2   minor   evidence      └ any key closes ──────────────────────────────────────────────┘ open                      │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 
-↑↓ item enter journal i your office ←→ step f findings d diff t trace r ready p pull back g go x drop ? help q quit
+↑↓ item enter journal i your office ←→ step f findings d diff t trace p pull back x drop / filter ? help q quit

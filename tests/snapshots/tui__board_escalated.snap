@@ -37,4 +37,4 @@ hall · app (1 of 1 repo)   daemon ● running   ⚑ 3 waiting   rejected today 
 │F1   blocker data_migrations  Migration isn't reversible             src/webhooks.rs:42     open                      │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 
-↑↓ item enter journal i your office ←→ step f findings d diff p pull back g retry x drop / filter ? help q quit
+↑↓ item enter journal i your office ←→ step f findings d diff t trace p pull back g retry x drop / filter ? help q quit
