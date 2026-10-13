@@ -882,7 +882,7 @@ expression: v
           "takes_value": false
         },
         {
-          "help": "Only these workers (comma-separated): watchman, resume, assayer, fixer, shipper, delivery, delivery-watch, ci, librarian, notify",
+          "help": "Only these workers (comma-separated): watchman, resume, assayer, fixer, shipper, delivery, delivery-watch, ci, sweeper, librarian, notify",
           "name": "only",
           "required": false,
           "syntax": "--only <only>",

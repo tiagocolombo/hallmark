@@ -72,7 +72,7 @@ The docs and the terminal app describe Hallmark as a building.
 | Repair Shop | The fixer | Fixing |
 | Stamping Room | The hallmark is struck | Hallmarked |
 | Dispatch Dock | Rebases onto the latest base; the ship command opens the PR, whose description is What, Why and How; `update` updates an adopted or reopened one. Each review is posted as a PR comment (`review_comment`, ADR 0039). If that PR already merged with the hallmarked work in it, the item closes with nothing pushed | Closed |
-| Delivery Office | Watches each shipped PR until it merges; a headless dev run rebases conflicting ones, addresses new review comments (ADR 0030) and fixes red CI (ADR 0031) | Closed, Development (rebasing, addressing comments) |
+| Delivery Office | Watches each shipped PR until it merges; a headless dev run rebases conflicting ones, addresses new review comments (ADR 0030) and fixes red CI (ADR 0031). Once the PR merges or closes, the sweeper removes the item's worktree (ADR 0040) | Closed, Development (rebasing, addressing comments) |
 
 A **watchman** patrols the corridor. It flags any item with no new event for
 `stuck_after` (30 minutes by default), and a daemon that has stopped.
@@ -145,7 +145,9 @@ $(git rev-parse --git-common-dir)/hallmark/   shared by every worktree, never co
 ```
 
 - The journal lives in the git common directory, so it outlives worktrees and
-  every worktree sees the same journal.
+  every worktree sees the same journal. So does the Library. A worktree holds
+  only the item's checkout, and the sweeper removes it once the item is done
+  (ADR 0040).
 - It is private, because it includes your prompts, and it is never committed.
 - Writes take an exclusive file lock (fs4) and append one line each.
 - State changes lock the item's file, fold its events, check the transition and
@@ -612,11 +614,20 @@ doubt makes one item.
 One process (`hall daemon start`, optionally at login) runs passes over every
 registered repo; every repo, worker and slot is scheduled on its own (ADR
 0026): watchman, resume, assayer, fixer, shipper, delivery, delivery-watch,
-ci, librarian, notify. Leases
+ci, sweeper, librarian, notify. Leases
 keep one worker per item and count per phase against `[parallel]` (checks,
 review, fix, ship), not one assayer per repo. A rate limit or the daily budget
 pauses the model workers until the reset, recorded as `paused`. Stopping is a
 flag in the state file, so it works the same on every OS.
+
+The **sweeper** removes the worktree of each item that is done with it
+(ADR 0040): closed, not a part, and its PR merged or closed (`delivered`), or
+shipped with no PR to watch. While the PR is open the worktree stays for the
+Delivery office. It runs `git worktree remove` without `--force`, so a dirty
+worktree is kept and said once in the live log. It never touches the main
+checkout, a worktree on another branch, or one a live item still uses. It
+records `worktree_removed`, and the branch and journal stay. `hall drop` and
+`hall merge` remove their own worktrees, unless `--keep-worktree`.
 
 ## What we reuse
 

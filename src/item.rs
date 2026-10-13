@@ -261,6 +261,21 @@ pub struct Item {
     /// Delivery office watches it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub delivered: Option<String>,
+    /// False when the worktree is a checkout the user made and adopted; the
+    /// sweeper leaves it alone.
+    #[serde(default = "own_default")]
+    pub own_worktree: bool,
+    /// The sweeper removed the worktree; cleared when the item reopens.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub swept: bool,
+}
+
+fn own_default() -> bool {
+    true
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 /// PR comments the Delivery office's dev run should address.

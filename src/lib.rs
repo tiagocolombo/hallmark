@@ -43,6 +43,7 @@ pub mod shipper;
 pub mod skills;
 pub mod stamp;
 pub mod state;
+pub mod sweeper;
 pub mod tui;
 pub mod usage;
 pub mod watchman;
