@@ -224,7 +224,9 @@ print JSON. See the [command reference](docs/commands.md) for every command.
 Run `hall` with no arguments to watch the whole building live: your office
 (everything waiting for you), the board, each item's journal and findings, and
 what the daemon is doing. It updates as the journal changes, and closing it
-never stops work.
+never stops work. The selected item says why it waits for you, and the key bar
+offers only the actions that fit its state: an escalated item offers retry,
+pull back and drop, never ready.
 
 <img alt="The hall terminal app: items move from development through checks and review to a PR while the inbox fills and empties" src="docs/images/tui-board.gif">
 

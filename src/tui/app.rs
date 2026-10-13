@@ -121,6 +121,101 @@ pub enum Input {
     RetryReason(ItemId),
 }
 
+/// The keys that change an item: each is offered, and runs, only in the
+/// states its command accepts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Act {
+    /// `r`: `hall ready`.
+    Ready,
+    /// `p`: `hall pull-back`.
+    PullBack,
+    /// `g`: `hall retry`.
+    Go,
+    /// `x`: `hall drop`.
+    Drop,
+}
+
+impl Act {
+    pub const ALL: [Act; 4] = [Act::Ready, Act::PullBack, Act::Go, Act::Drop];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Act::Ready => "r",
+            Act::PullBack => "p",
+            Act::Go => "g",
+            Act::Drop => "x",
+        }
+    }
+
+    /// Whether its command takes the item as it is now.
+    pub fn fits(self, item: &Item) -> bool {
+        match self {
+            // A parallel part merges into its parent; it isn't reviewed alone.
+            Act::Ready => {
+                matches!(item.state, State::Development | State::AwaitingYou)
+                    && item.parent.is_none()
+            }
+            Act::PullBack => item.state != State::Development && !item.state.is_terminal(),
+            Act::Go => item.state == State::Escalated || item.hold.is_some(),
+            Act::Drop => !item.state.is_terminal(),
+        }
+    }
+
+    /// Its word in the key bar, for this item.
+    pub fn label(self, item: &Item) -> &'static str {
+        match self {
+            Act::Ready => "ready",
+            Act::PullBack => "pull back",
+            Act::Go if item.state == State::Escalated => "retry",
+            Act::Go => "go on",
+            Act::Drop => "drop",
+        }
+    }
+
+    /// Its key and what it does to this item: `g allows one more fix
+    /// round`.
+    pub fn does(self, item: &Item) -> String {
+        let what = match self {
+            Act::Ready => "sends it to review",
+            Act::PullBack => "pulls it back to development",
+            Act::Go if item.state == State::Escalated => "allows one more fix round",
+            Act::Go => "lifts the hold",
+            Act::Drop => "drops it",
+        };
+        format!("{} {what}", self.key())
+    }
+
+    /// Why it doesn't fit the item.
+    fn refused(self, item: &Item) -> String {
+        let state = match item.state {
+            State::Development => "in development".to_string(),
+            s => s.label().to_lowercase(),
+        };
+        let id = item.id;
+        match (self, item.parent) {
+            (Act::Ready, Some(parent)) if !item.state.is_terminal() => {
+                format!("{id} is a parallel part: it merges into {parent}, which goes to review")
+            }
+            (Act::Ready, _) => format!("{id} is {state}, so it can't be sent to review"),
+            (Act::PullBack, _) if item.state == State::Development => {
+                format!("{id} is already in development")
+            }
+            (Act::PullBack, _) => format!("{id} is {state}, so it can't come back"),
+            (Act::Go, _) => format!("{id} is {state}, with nothing to retry or lift"),
+            (Act::Drop, _) => format!("{id} is {state}, so it can't be dropped"),
+        }
+    }
+}
+
+/// The action keys that fit the item, each with what it does.
+pub fn fitting(item: &Item) -> Vec<String> {
+    Act::ALL
+        .into_iter()
+        .filter(|a| a.fits(item))
+        .map(|a| a.does(item))
+        .collect()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Status {
     pub text: String,
@@ -155,6 +250,9 @@ pub struct Selection {
     pub ledger: Ledger,
     /// The item and its findings folded up to the replay cursor.
     pub at: Option<(Item, Ledger)>,
+    /// What waits for you about this item, explained as `hall inbox <n>`
+    /// does.
+    pub waiting: Vec<InboxDetail>,
 }
 
 /// A scrollable page of text: a diff, or a command's reply.
@@ -512,13 +610,35 @@ impl App {
             self.cursor = None;
         }
         let ledger = Ledger::from_events(&events);
+        let waiting = self.explain_waiting(id);
         self.selection = Some(Selection {
             id,
             events,
             ledger,
             at: None,
+            waiting,
         });
         self.refold();
+    }
+
+    /// The item's inbox entries, each with why it waits and its evidence.
+    fn explain_waiting(&self, id: ItemId) -> Vec<InboxDetail> {
+        let inbox = self.inbox();
+        if !inbox.iter().any(|e| e.item == Some(id)) {
+            return vec![];
+        }
+        let Some(repo) = self.repo().and_then(|r| Repo::discover(&r.path).ok()) else {
+            return vec![];
+        };
+        let Ok(ix) = repo.index() else {
+            return vec![];
+        };
+        inbox
+            .into_iter()
+            .enumerate()
+            .filter(|(_, e)| e.item == Some(id))
+            .filter_map(|(i, e)| explain(&repo, &ix, e, i + 1).ok())
+            .collect()
     }
 
     /// Folds the selected item up to the replay cursor.
@@ -712,22 +832,21 @@ impl App {
             }
             (_, KeyCode::Char('b')) => self.view = View::Board,
             (_, KeyCode::Char('d')) => self.open_diff(),
-            (_, KeyCode::Char('r')) => self.ready(),
-            (_, KeyCode::Char('p')) => self.pull_back(),
-            (_, KeyCode::Char('g')) => match self.selected {
-                Some(id) => {
+            (_, KeyCode::Char('r')) if self.fits(Act::Ready) => self.ready(),
+            (_, KeyCode::Char('p')) if self.fits(Act::PullBack) => self.pull_back(),
+            (_, KeyCode::Char('g')) if self.fits(Act::Go) => {
+                if let Some(id) = self.selected {
                     self.input = Some(Input::RetryReason(id));
                     self.buffer.clear();
                 }
-                None => self.err("No item selected."),
-            },
-            (_, KeyCode::Char('x')) => match self.selected {
-                Some(id) => {
+            }
+            (_, KeyCode::Char('x')) if self.fits(Act::Drop) => {
+                if let Some(id) = self.selected {
                     self.input = Some(Input::DropReason(id));
                     self.buffer.clear();
                 }
-                None => self.err("No item selected."),
-            },
+            }
+            (_, KeyCode::Char('r' | 'p' | 'g' | 'x')) => {}
             (_, KeyCode::Char('w')) => return self.open_worktree(),
             (_, KeyCode::Char('o')) => return self.open_pr(),
             _ => {}
@@ -925,6 +1044,26 @@ impl App {
                 None
             }
         }
+    }
+
+    /// Whether `act` fits the selected item as it is now. When it doesn't,
+    /// the status line says why and which keys do.
+    fn fits(&mut self, act: Act) -> bool {
+        let Some(item) = self.item().cloned() else {
+            self.err("No item selected.");
+            return false;
+        };
+        if act.fits(&item) {
+            return true;
+        }
+        let keys = fitting(&item);
+        let tail = if keys.is_empty() {
+            String::new()
+        } else {
+            format!(": {}", keys.join(" · "))
+        };
+        self.err(&format!("{}{tail}.", act.refused(&item)));
+        false
     }
 
     fn report(&mut self, id: ItemId, r: Result<Response>) {

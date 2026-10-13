@@ -37,4 +37,4 @@ hall · app (1 of 3 repos)   daemon ● running   ⚑ 3 waiting   rejected today
 │                                                                                                                      │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 
-↑↓ finding  enter scenario + fix  ←→ step  d diff  r ready  p pull back  esc board  ? help  q quit
+↑↓ finding  enter scenario + fix  ←→ step  d diff  p pull back  esc board  ? help  q quit

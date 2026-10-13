@@ -705,13 +705,57 @@ fn ready_and_pull_back_go_through_the_journal() {
     assert_eq!(hall.load_item(ItemId(2)).unwrap().state, State::Development);
     assert_eq!(app.item().unwrap().state, State::Development);
 
-    // An action that isn't allowed shows the error and changes nothing.
+    // An action that doesn't fit the state isn't run: the status line
+    // says why, and the journal is unchanged.
     select(&mut app, 5);
+    let before = hall.read_item(ItemId(5)).unwrap().len();
     key(&mut app, KeyCode::Char('p'));
     let st = app.status.clone().unwrap();
     assert!(st.error);
-    assert!(st.text.contains("WRONG_STATE"), "{}", st.text);
-    assert_eq!(hall.load_item(ItemId(5)).unwrap().state, State::Closed);
+    assert_eq!(st.text, "H-0005 is closed, so it can't come back.");
+    assert_eq!(hall.read_item(ItemId(5)).unwrap().len(), before);
+}
+
+#[test]
+fn an_escalated_item_says_why_and_offers_only_what_fits() {
+    let env = building();
+    let hall = hall_of(&env);
+    let mut app = load(&env, &env.repo);
+    select(&mut app, 7);
+    assert_eq!(app.item().unwrap().state, State::Escalated);
+    // The board shows why it waits, the open findings and the keys that
+    // fit; the key bar has `g retry` and no `r ready`.
+    assert_snapshot!("board_escalated", screen(&env, &app, W, H));
+
+    // `r` doesn't run `hall ready`: it says what does.
+    let before = hall.read_item(ItemId(7)).unwrap().len();
+    key(&mut app, KeyCode::Char('r'));
+    let st = app.status.clone().unwrap();
+    assert!(st.error);
+    assert_eq!(
+        st.text,
+        "H-0007 is escalated, so it can't be sent to review: p pulls it back to development \
+         · g allows one more fix round · x drops it."
+    );
+    assert_eq!(hall.read_item(ItemId(7)).unwrap().len(), before);
+    assert_eq!(app.input, None);
+
+    // `g` asks for the reason, as before.
+    key(&mut app, KeyCode::Char('g'));
+    assert_eq!(app.input, Some(Input::RetryReason(ItemId(7))));
+    key(&mut app, KeyCode::Esc);
+
+    // `g` on an item with nothing to retry or lift asks for nothing.
+    select(&mut app, 3);
+    key(&mut app, KeyCode::Char('g'));
+    assert_eq!(app.input, None);
+    let st = app.status.clone().unwrap();
+    assert!(st.error);
+    assert_eq!(
+        st.text,
+        "H-0003 is in development, with nothing to retry or lift: \
+         r sends it to review · x drops it."
+    );
 }
 
 #[test]
@@ -721,21 +765,12 @@ fn go_on_lifts_a_budget_hold_without_changing_the_budget() {
     let cfg = std::fs::read_to_string(env.repo.join(".hallmark.toml")).unwrap();
     let mut app = load(&env, &env.repo);
 
-    // Nothing held: nothing to go on with.
+    // Nothing held: nothing to go on with, so `g` asks for nothing.
     select(&mut app, 2);
     let before = hall.read_item(ItemId(2)).unwrap().len();
     key(&mut app, KeyCode::Char('g'));
-    assert_eq!(app.input, Some(Input::RetryReason(ItemId(2))));
-    chars(&mut app, "why not");
-    key(&mut app, KeyCode::Enter);
-    let st = app.status.clone().unwrap();
-    assert!(st.error && st.text.contains("WRONG_STATE"), "{}", st.text);
-
-    // A reason is required.
-    key(&mut app, KeyCode::Char('g'));
-    key(&mut app, KeyCode::Enter);
+    assert_eq!(app.input, None);
     assert!(app.status.as_ref().unwrap().error);
-    assert_eq!(hall.read_item(ItemId(2)).unwrap().len(), before);
 
     add(
         &hall,
@@ -747,6 +782,15 @@ fn go_on_lifts_a_budget_hold_without_changing_the_budget() {
         },
     );
     app.reload_active();
+    let before = before + 1;
+
+    // A reason is required.
+    key(&mut app, KeyCode::Char('g'));
+    assert_eq!(app.input, Some(Input::RetryReason(ItemId(2))));
+    key(&mut app, KeyCode::Enter);
+    assert!(app.status.as_ref().unwrap().error);
+    assert_eq!(hall.read_item(ItemId(2)).unwrap().len(), before);
+
     key(&mut app, KeyCode::Char('g'));
     chars(&mut app, "worth finishing");
     key(&mut app, KeyCode::Enter);
