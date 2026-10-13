@@ -616,4 +616,24 @@ mod tests {
         assert!(info.ended);
         assert!(info.session_id.is_some());
     }
+
+    #[test]
+    fn a_run_that_ends_after_it_was_read_is_not_interrupted() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("20261012T215146-reviewer.jsonl");
+        let text = fixture();
+        fs::write(&p, &text).unwrap();
+        // Read while it ran: no end line yet.
+        let (_, mut info) = read(&p).unwrap();
+        assert!(!info.ended);
+        // Then it ends, and its writer frees the lock.
+        let end = RunEnd::new(4_000, Some(0), None).line();
+        fs::write(&p, format!("{text}{end}")).unwrap();
+        fs::write(crate::runner::lock_path(&p), "").unwrap();
+        let hall = crate::journal::Hall::new(dir.path());
+        let runs = runs_in(dir.path()).unwrap();
+        mark_interrupted(&hall, ItemId(1), &runs, 0, &mut info);
+        assert!(info.ended, "the end line is read again");
+        assert!(!info.interrupted);
+    }
 }
