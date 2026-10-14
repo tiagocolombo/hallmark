@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5](https://github.com/tiagocolombo/hallmark/compare/v0.1.4...v0.1.5) - 2026-10-14
+
+### Fixed
+
+- hall ready keeps a pending rebase until the branch is on its base ([#61](https://github.com/tiagocolombo/hallmark/pull/61))
+
 ## [0.1.4](https://github.com/tiagocolombo/hallmark/compare/v0.1.3...v0.1.4) - 2026-10-14
 
 ### Added
