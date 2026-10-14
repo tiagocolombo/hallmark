@@ -17,7 +17,8 @@ use serde_json::{Value, json};
 const URL: &str = "https://github.com/acme/app/pull/1";
 
 /// A fake `gh`: `pr view` answers from files the test writes; `pr edit` and
-/// `pr comment` succeed; every call is logged to `calls.log`.
+/// `pr comment` succeed, except one `pr edit` after `fail_next_edit`; every
+/// call is logged to `calls.log`.
 fn fake_gh(env: &Env) -> PathBuf {
     use std::os::unix::fs::PermissionsExt;
     let dir = env.root.join("gh-fake");
@@ -27,7 +28,7 @@ fn fake_gh(env: &Env) -> PathBuf {
     std::fs::write(
         &gh,
         format!(
-            "#!/bin/sh\necho \"$*\" >> '{d}/calls.log'\ncase \"$1 $2\" in\n  'pr view') case \"$*\" in *--jq*) cat '{d}/state.txt' ;; *) cat '{d}/pr.json' ;; esac ;;\n  'pr edit'|'pr comment') echo '{URL}#issuecomment-9' ;;\n  api*) echo '[]' ;;\n  *) exit 1 ;;\nesac\n"
+            "#!/bin/sh\necho \"$*\" >> '{d}/calls.log'\ncase \"$1 $2\" in\n  'pr view') case \"$*\" in *--jq*) cat '{d}/state.txt' ;; *) cat '{d}/pr.json' ;; esac ;;\n  'pr edit') if [ -f '{d}/fail-edit' ]; then rm '{d}/fail-edit'; echo 'Post \"https://api.github.com/graphql\": read tcp: connection reset by peer' >&2; exit 1; fi; echo '{URL}#issuecomment-9' ;;\n  'pr comment') echo '{URL}#issuecomment-9' ;;\n  api*) echo '[]' ;;\n  *) exit 1 ;;\nesac\n"
         ),
     )
     .unwrap();
@@ -43,6 +44,11 @@ fn pr(gh: &Path, state: &str, head: &str, oid: &str) {
                    "state": state, "headRefName": head, "baseRefName": "main",
                    "reviews": [], "comments": []});
     std::fs::write(dir.join("pr.json"), v.to_string()).unwrap();
+}
+
+/// The next `gh pr edit` fails, as when GitHub's API drops the connection.
+fn fail_next_edit(gh: &Path) {
+    std::fs::write(gh.parent().unwrap().join("fail-edit"), "").unwrap();
 }
 
 fn gh_calls(gh: &Path) -> String {
@@ -280,6 +286,47 @@ fn an_update_never_overwrites_a_pr_that_moved() {
     assert_eq!(
         git(&remote, &["rev-parse", &format!("refs/heads/{branch}")]),
         theirs
+    );
+}
+
+#[test]
+fn an_update_that_pushed_and_then_failed_ships_on_the_next_try() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    let (id, wt, old, remote) = shipped(&env, &gh);
+    let branch = branch_of(&wt);
+    pr(&gh, "OPEN", &branch, &old);
+    let (code, r) = hall_gh(&env, &gh, &wt, &["adopt"]);
+    assert_eq!(code, 0, "{r}");
+    let first = commit_file(&wt, "retry.rs", "fn retry() {}\n");
+    let (code, ready) = hall_gh(&env, &gh, &wt, &["ready"]);
+    assert_eq!(code, 0, "{ready}");
+    approve(&env, &id, &wt, 2, vec![], counts(0, 0, 1, 0));
+
+    // The push goes through, then `gh pr edit` loses the network.
+    fail_next_edit(&gh);
+    let step = ship_pass(&env, &gh);
+    assert!(step["what"].as_str().unwrap().contains("held"), "{step}");
+    assert_eq!(
+        git(&remote, &["rev-parse", &format!("refs/heads/{branch}")]),
+        first,
+        "the push went through"
+    );
+
+    // More work on top, reviewed again: the PR's head is Hallmark's own
+    // push, not the head it last recorded, and the update replaces it.
+    let (code, back) = hall_gh(&env, &gh, &wt, &["pull-back"]);
+    assert_eq!(code, 0, "{back}");
+    let second = commit_file(&wt, "retry.rs", "fn retry() {\n    deliver();\n}\n");
+    let (code, ready) = hall_gh(&env, &gh, &wt, &["ready"]);
+    assert_eq!(code, 0, "{ready}");
+    approve(&env, &id, &wt, 3, vec![], counts(0, 0, 0, 0));
+    let step = ship_pass(&env, &gh);
+    assert!(step["what"].as_str().unwrap().contains("shipped"), "{step}");
+    assert_eq!(state(&env, &id), "closed");
+    assert_eq!(
+        git(&remote, &["rev-parse", &format!("refs/heads/{branch}")]),
+        second
     );
 }
 

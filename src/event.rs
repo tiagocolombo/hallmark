@@ -136,7 +136,9 @@ pub enum Body {
     Reopened {
         pr_url: String,
         /// The commit the PR's head was at on reopening; the update push
-        /// replaces exactly that.
+        /// leases on this commit, or on the branch's head on origin when
+        /// this item hallmarked that commit, as after an update that pushed
+        /// and then failed (ADR 0042).
         pr_head: String,
         /// The branch the item is reviewed against and the PR targets now.
         base: String,

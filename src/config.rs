@@ -30,8 +30,10 @@ pub struct Config {
     /// Updates the open PR of an item that already has one (an adopted PR,
     /// or a shipped item reopened for a rebase or a conflict fix), instead
     /// of `ship`. Placeholders: those of `ship`, plus {pr} (the PR's URL)
-    /// and {pr_head} (the commit the PR's head was at when the item took it
-    /// over: the push replaces exactly that).
+    /// and {pr_head} (the commit the push replaces: the PR's head when the
+    /// item took it over or last shipped, or the branch's head on origin when
+    /// this item hallmarked that commit, as after an update that pushed and
+    /// then failed; ADR 0042).
     pub update: String,
     /// Posts the review on the PR as a comment, after `ship` opens it and
     /// after every `update`: the description keeps only What, Why and How.
