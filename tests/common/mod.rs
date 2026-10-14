@@ -211,3 +211,11 @@ pub fn fixture(rel: &str) -> String {
 pub fn p(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }
+
+/// Creates `/tmp/spike`, where the fixture streams say their run began.
+/// `hall` resolves it against the drive of the directory it runs in, which
+/// on Windows isn't always the drive the tests run from, so create it there.
+pub fn make_spike_dir(env: &Env) {
+    let root = env.root.ancestors().last().unwrap_or(Path::new("/"));
+    std::fs::create_dir_all(root.join("tmp/spike")).unwrap();
+}

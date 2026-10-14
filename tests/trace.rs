@@ -22,7 +22,7 @@ fn runs_dir(env: &Env, id: &str) -> PathBuf {
 fn write_run(env: &Env, id: &str, name: &str, body: &str) -> PathBuf {
     // The fixture's run began here; a resume command cds only into a
     // directory that exists.
-    std::fs::create_dir_all("/tmp/spike").unwrap();
+    common::make_spike_dir(env);
     let dir = runs_dir(env, id);
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join(name);

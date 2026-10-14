@@ -386,7 +386,7 @@ fn run_file(
 ) -> std::path::PathBuf {
     // The fixture's run began here; a resume command cds only into a
     // directory that exists.
-    std::fs::create_dir_all("/tmp/spike").unwrap();
+    common::make_spike_dir(env);
     let stream = fixture("claude/stream.jsonl");
     let mut text: String = stream
         .lines()

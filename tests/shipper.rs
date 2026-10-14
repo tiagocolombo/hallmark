@@ -655,7 +655,7 @@ fn export_includes_what_each_run_did() {
     std::fs::create_dir_all(&runs).unwrap();
     // The fixture's run began here; a resume command cds only into a
     // directory that exists.
-    std::fs::create_dir_all("/tmp/spike").unwrap();
+    common::make_spike_dir(&env);
     // An older run's result, then a stream that timed out (ADR 0041).
     std::fs::write(
         runs.join("20261012T213749-reviewer.json"),
