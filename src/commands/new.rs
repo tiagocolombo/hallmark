@@ -931,35 +931,7 @@ fn fresh_start(repo: &Repo, base: &str) -> Option<String> {
     if git::ok(dir, &["remote", "get-url", "origin"]) {
         // Bounded and never prompting: a stalled network falls back to the
         // local copy of the base.
-        let child = Command::new("git")
-            .current_dir(dir)
-            .env("GIT_TERMINAL_PROMPT", "0")
-            .args([
-                "fetch",
-                "--quiet",
-                "origin",
-                &format!("+refs/heads/{base}:refs/remotes/origin/{base}"),
-            ])
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn();
-        if let Ok(mut child) = child {
-            let start = std::time::Instant::now();
-            loop {
-                match child.try_wait() {
-                    Ok(Some(_)) => break,
-                    Ok(None) if start.elapsed() < std::time::Duration::from_secs(20) => {
-                        crate::daemon::nap(std::time::Duration::from_millis(50));
-                    }
-                    _ => {
-                        let _ = child.kill();
-                        let _ = child.wait();
-                        break;
-                    }
-                }
-            }
-        }
+        git::fetch_base_capped(dir, base);
         if let Some(sha) = git::rev(dir, &format!("refs/remotes/origin/{base}")) {
             return Some(sha);
         }

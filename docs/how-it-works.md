@@ -60,6 +60,11 @@ conflict fix while it is still open: `hall adopt` brings its item back to
 development, and after review the shipper updates the same PR
 ([ADR 0029](decisions/0029-adopt-open-prs.md)).
 
+An item sent back with a rebase request waits for it: `hall ready` refuses
+while its branch isn't on its base, so review never sees a commit that
+conflicts, and the request stays until the Delivery office (or you) rebases
+it ([ADR 0043](decisions/0043-ready-waits-for-a-pending-rebase.md)).
+
 State is never stored directly. It is folded from the journal's events
 ([ADR 0008](decisions/0008-state-derived-from-journal.md)), so the journal is
 the single source of truth.

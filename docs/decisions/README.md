@@ -35,7 +35,7 @@ a decision, add a new record that supersedes the old one. Don't edit the old one
 | [0027](0027-the-library-stays-local.md) | The Library stays local: learnings live next to the journal | Accepted |
 | [0028](0028-grant-the-daily-budget.md) | Grant the daily budget for today, without changing the cap | Accepted |
 | [0029](0029-adopt-open-prs.md) | Adopt open PRs: reopen shipped items, take over the rest | Accepted; amended by 0039, 0042 |
-| [0030](0030-delivery-and-rebase-before-shipping.md) | The Delivery office (conflicts and PR comments), rebasing before shipping, what becomes an item, a clean inbox, auto-ready, a wrapped timeline, and a daemon that doesn't die in its sleep | Accepted; amended by 0039 |
+| [0030](0030-delivery-and-rebase-before-shipping.md) | The Delivery office (conflicts and PR comments), rebasing before shipping, what becomes an item, a clean inbox, auto-ready, a wrapped timeline, and a daemon that doesn't die in its sleep | Accepted; amended by 0039, 0043 |
 | [0031](0031-only-escalations-reach-you.md) | Only escalations reach you; the Delivery office fixes red CI; new items start from the latest base | Accepted |
 | [0032](0032-old-processes-and-the-index.md) | An older hall never rewrites a newer one's index; the terminal app restarts on update | Accepted |
 | [0033](0033-configurable-setup.md) | Every setting has a command, and `hall setup --interactive` may ask | Accepted; amends 0002 |
@@ -50,3 +50,4 @@ a decision, add a new record that supersedes the old one. Don't edit the old one
 | [0040](0040-sweep-finished-worktrees.md) | The sweeper removes the worktree of each item that is done with it: its PR merged or closed, or it shipped with no PR to watch | Accepted |
 | [0041](0041-watch-runs-live.md) | Watch headless runs live: each run streams into `runs/<stamp>-<role>.jsonl`, `hall trace` and the terminal app read it | Accepted |
 | [0042](0042-an-update-that-pushed-and-failed.md) | An update that pushed and then failed doesn't stick its item: the lease is the remote head when this item hallmarked it | Accepted; amends 0029 |
+| [0043](0043-ready-waits-for-a-pending-rebase.md) | `hall ready` waits for a pending rebase: refused while the branch isn't on its base, and the request stays | Accepted; amends 0030 |

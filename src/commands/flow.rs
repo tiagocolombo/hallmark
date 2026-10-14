@@ -55,6 +55,71 @@ fn wrong_state(item: &Item, what: &str) -> HallError {
     .next(next_for(item))
 }
 
+/// An item the Delivery office was asked to rebase can't go to review until
+/// its branch is on the base: review would see a commit that conflicts, and
+/// the move would drop the request, so nothing would rebase it again
+/// (ADR 0043). None when nothing is pending or the branch is already there.
+fn rebase_pending(item: &Item) -> Option<HallError> {
+    let req = item.rebase.as_ref()?;
+    if item.state != State::Development {
+        return None;
+    }
+    let wt = Path::new(&item.worktree);
+    let target = crate::delivery::base_ref_capped(wt, &req.onto)?;
+    let id = item.id;
+    if git::rebase_in_progress(wt) {
+        let q = crate::commands::new::shell_quote(&item.worktree);
+        return Some(
+            HallError::new(
+                ErrorCode::WrongState,
+                format!(
+                    "{id} has a rebase onto {} in progress; finish it (`git rebase --continue`) \
+                     or abort it in {}, then run `hall ready {id}` again",
+                    target.name, item.worktree
+                ),
+            )
+            .next([
+                format!("git -C {q} rebase --continue"),
+                format!("git -C {q} rebase --abort"),
+                format!("hall status {id}"),
+            ]),
+        );
+    }
+    let head = git::head(wt).ok()?;
+    if git::is_ancestor(wt, &target.git_ref, &head) {
+        return None;
+    }
+    let mut next = Vec::new();
+    if item.hold.is_some() {
+        next.push(format!("hall retry {id} --reason \"<why>\""));
+    } else {
+        next.push(format!("hall status {id}"));
+    }
+    next.push(format!(
+        "git -C {} rebase {}",
+        crate::commands::new::shell_quote(&item.worktree),
+        target.name
+    ));
+    next.push(format!("hall ready {id}"));
+    Some(
+        HallError::new(
+            ErrorCode::WrongState,
+            format!(
+                "{id} waits for a rebase onto {} ({}), and its branch isn't on it yet; {}, \
+                 or rebase it yourself and run `hall ready {id}` again",
+                target.name,
+                req.reason.trim().trim_end_matches('.'),
+                if item.hold.is_some() {
+                    "release the hold and the Delivery office rebases it"
+                } else {
+                    "the Delivery office rebases it on its next pass"
+                }
+            ),
+        )
+        .next(next),
+    )
+}
+
 fn reply(item: &Item, changed: bool, note: Option<String>) -> Response {
     Response::new(
         FlowOut {
@@ -126,6 +191,9 @@ pub fn ready(cwd: &Path, a: ReadyArgs) -> Result<Response> {
             format!("{}'s worktree {} is missing", item.id, item.worktree),
         )
         .next([format!("hall drop {} --reason \"worktree gone\"", item.id)]));
+    }
+    if let Some(e) = rebase_pending(&item) {
+        return Err(e);
     }
     let head = git::head(wt)?;
     let dirty = git::dirty_files(wt)?;
@@ -457,6 +525,9 @@ pub fn propose_ready(cwd: &Path, a: ProposeReadyArgs) -> Result<Response> {
     {
         let note = format!("{} is already in review at that commit.", item.id);
         return Ok(reply(&item, false, Some(note)));
+    }
+    if let Some(e) = rebase_pending(&item) {
+        return Err(e);
     }
     // Nothing left to confirm: straight to review (`auto_ready`).
     let wait_for = if a.ask {

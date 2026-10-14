@@ -181,6 +181,40 @@ pub fn patch_id(dir: &Path, from: &str, to: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+/// Fetches `origin <base>` into `refs/remotes/origin/<base>`, bounded to 20 s
+/// and never prompting: a stalled network or missing credentials leave the
+/// local copy as it was.
+pub fn fetch_base_capped(dir: &Path, base: &str) {
+    let child = command(dir)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .args([
+            "fetch",
+            "--quiet",
+            "origin",
+            &format!("+refs/heads/{base}:refs/remotes/origin/{base}"),
+        ])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+    if let Ok(mut child) = child {
+        let start = std::time::Instant::now();
+        loop {
+            match child.try_wait() {
+                Ok(Some(_)) => break,
+                Ok(None) if start.elapsed() < std::time::Duration::from_secs(20) => {
+                    crate::daemon::nap(std::time::Duration::from_millis(50));
+                }
+                _ => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    break;
+                }
+            }
+        }
+    }
+}
+
 /// A rebase stopped half-way in this worktree.
 pub fn rebase_in_progress(dir: &Path) -> bool {
     ["rebase-merge", "rebase-apply"].iter().any(|d| {
