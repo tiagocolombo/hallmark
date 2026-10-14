@@ -276,6 +276,49 @@ fn a_conflict_at_the_dock_goes_to_the_delivery_office_and_back_to_review() {
 }
 
 #[test]
+fn ready_waits_for_a_pending_rebase_until_the_branch_is_on_its_base() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    remote_with_main(&env);
+    let (id, wt, sha) = hallmarked_item(&env, "Retry webhooks");
+    conflicting_main(&env);
+    pass(&env, &gh, "shipper", json!([]));
+    assert_eq!(events(&env, &id, "rebase_requested").len(), 1);
+
+    // Sending the conflicting commit to review is refused, and the request
+    // stays for the Delivery office.
+    let r = env.hall(&wt, &["ready"]);
+    assert_eq!(r.code, 4, "{}", r.stdout);
+    assert_eq!(r.json["error"]["code"], "WRONG_STATE");
+    let message = r.json["error"]["message"].as_str().unwrap();
+    assert!(message.contains("rebase onto origin/main"), "{message}");
+    let next = r.json["error"]["next"].to_string();
+    assert!(next.contains("rebase origin/main"), "{next}");
+    let r = env.hall(&wt, &["propose-ready", "--summary", "done"]);
+    assert_eq!(r.code, 4, "{}", r.stdout);
+    assert_eq!(state(&env, &id), "development");
+    assert_eq!(git(&wt, &["rev-parse", "HEAD"]), sha);
+    let status = env.hall(&env.repo, &["status", &id]);
+    assert_eq!(status.json["rebase"]["onto"], "main", "{}", status.stdout);
+
+    // Rebased by hand, it goes to review.
+    assert!(
+        git_ok(&wt, &["rebase", "origin/main"]).is_none(),
+        "it conflicts"
+    );
+    std::fs::write(
+        wt.join("retry.rs"),
+        "fn retry() {\n    log();\n    deliver();\n}\n",
+    )
+    .unwrap();
+    git(&wt, &["add", "retry.rs"]);
+    git(&wt, &["-c", "core.editor=true", "rebase", "--continue"]);
+    let r = env.hall(&wt, &["ready"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(state(&env, &id), "checks");
+}
+
+#[test]
 fn a_rebase_the_run_cant_finish_is_retried_once_then_held() {
     let env = Env::initialized();
     let gh = fake_gh(&env);
