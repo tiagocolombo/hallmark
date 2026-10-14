@@ -207,7 +207,9 @@ pub struct Item {
     pub pr_url: Option<String>,
     /// The commit the PR's head is at, as far as Hallmark knows: what it
     /// shipped, or what the PR had when the item took it over. An update
-    /// push replaces exactly this commit.
+    /// push leases on this commit, or on the branch's head on origin when
+    /// this item hallmarked that commit, as after an update that pushed and
+    /// then failed (ADR 0042).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pr_head: Option<String>,
     /// The dev agent's summary from `propose-ready`.
