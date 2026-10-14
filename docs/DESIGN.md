@@ -124,6 +124,11 @@ Rules:
 - **`ready` is idempotent.** On an item already in the loop at the same SHA,
   `ready` returns the current result. At a different SHA, it fails with
   `ITEM_IN_REVIEW` (exit 4) and suggests `hall pull-back`.
+- **A pending rebase blocks `ready`.** While the Delivery office's rebase
+  request stands and the base isn't an ancestor of HEAD (or a rebase is
+  half-done), `ready` and `propose-ready` (`--ask` too) refuse with
+  `WRONG_STATE` and keep the request, so the conflicting commit never reaches
+  review (ADR 0043).
 - **A script decides when to stop.** Loops end when the hallmark exists or the
   round limit is reached, never because an agent printed "done".
 - **The state is derived, not stored.** The state machine folds the item's
@@ -297,11 +302,11 @@ $ echo $?
 | `hall status [<id>] [--all]` | Lists items by state, or shows one item in detail. |
 | `hall log [<id>] [--kind] [--limit]` | Prints the item's journal. |
 | `hall inbox` | Lists the escalations waiting for you, oldest first. `<n> --dismiss` hides one entry and `--clear` hides them all, until each changes; `--all` shows them. `--notices` lists what the loop handles on its own. |
-| `hall ready [<id>] [--note]` | Freezes HEAD and queues the item. A dirty worktree is refused. |
+| `hall ready [<id>] [--note]` | Freezes HEAD and queues the item. A dirty worktree is refused, and so is a branch the Delivery office was asked to rebase that isn't on its base yet (`WRONG_STATE`, ADR 0043). |
 | `hall pull-back [<id>] [--reason]` | Returns the item to development. |
 | `hall drop [<id>] --reason [--keep-worktree]` | Abandons the item. The branch and journal stay. |
 | `hall retry [<id>] --reason [--tokens <n>]` | Allows an escalated item one more round, or releases a held item. A budget hold also grants that item another `per_item` (or `--tokens`); the budget is unchanged. |
-| `hall propose-ready [<id>] --summary [--why] [--how] [--ask]` | The agent says the work is done: straight to review when nothing is left to confirm, else (or with `--ask`) it waits for you. |
+| `hall propose-ready [<id>] --summary [--why] [--how] [--ask]` | The agent says the work is done: straight to review when nothing is left to confirm, else (or with `--ask`) it waits for you. Refused like `ready` while a rebase is pending and the branch isn't on its base (ADR 0043). |
 | `hall ask <q> [--item] [--options] [--default] [--wait] [--session]` | Records a question. |
 | `hall answer <qid> <answer>` | Records the answer; the daemon resumes the asking session with it. |
 | `hall usage [--by item\|room\|role\|model\|day] [--since] [--item]` | Shows tokens and list-price cost. |

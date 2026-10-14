@@ -294,9 +294,16 @@ fn ready_waits_for_a_pending_rebase_until_the_branch_is_on_its_base() {
     assert!(message.contains("rebase onto origin/main"), "{message}");
     let next = r.json["error"]["next"].to_string();
     assert!(next.contains("rebase origin/main"), "{next}");
-    let r = env.hall(&wt, &["propose-ready", "--summary", "done"]);
-    assert_eq!(r.code, 4, "{}", r.stdout);
-    assert_eq!(state(&env, &id), "development");
+    assert!(next.contains(&format!("hall status {id}")), "{next}");
+    assert!(!next.contains("hall retry"), "{next}");
+    for args in [
+        &["propose-ready", "--summary", "done"][..],
+        &["propose-ready", "--summary", "done", "--ask"][..],
+    ] {
+        let r = env.hall(&wt, args);
+        assert_eq!(r.code, 4, "{}", r.stdout);
+        assert_eq!(state(&env, &id), "development");
+    }
     assert_eq!(git(&wt, &["rev-parse", "HEAD"]), sha);
     let status = env.hall(&env.repo, &["status", &id]);
     assert_eq!(status.json["rebase"]["onto"], "main", "{}", status.stdout);
@@ -306,6 +313,22 @@ fn ready_waits_for_a_pending_rebase_until_the_branch_is_on_its_base() {
         git_ok(&wt, &["rebase", "origin/main"]).is_none(),
         "it conflicts"
     );
+    // Mid-rebase, HEAD sits on the base but the branch isn't rebased: still
+    // refused, and the request stays.
+    let r = env.hall(&wt, &["propose-ready", "--summary", "done"]);
+    assert_eq!(r.code, 4, "{}", r.stdout);
+    assert_eq!(r.json["error"]["code"], "WRONG_STATE");
+    assert!(
+        r.json["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("in progress"),
+        "{}",
+        r.stdout
+    );
+    assert_eq!(state(&env, &id), "development");
+    let status = env.hall(&env.repo, &["status", &id]);
+    assert_eq!(status.json["rebase"]["onto"], "main", "{}", status.stdout);
     std::fs::write(
         wt.join("retry.rs"),
         "fn retry() {\n    log();\n    deliver();\n}\n",
@@ -349,6 +372,13 @@ fn a_rebase_the_run_cant_finish_is_retried_once_then_held() {
     );
     // Held: the office leaves it alone until you retry.
     assert_eq!(pass(&env, &gh, "delivery", json!([]))["progress"], "idle");
+    // So ready's refusal points at the retry, not at waiting.
+    let r = env.hall(&wt, &["ready"]);
+    assert_eq!(r.code, 4, "{}", r.stdout);
+    assert_eq!(r.json["error"]["code"], "WRONG_STATE");
+    let next = r.json["error"]["next"].to_string();
+    assert!(next.contains(&format!("hall retry {id}")), "{next}");
+    assert!(!next.contains("hall status"), "{next}");
     assert_eq!(
         env.hall(&env.repo, &["retry", &id, "--reason", "try again"])
             .code,

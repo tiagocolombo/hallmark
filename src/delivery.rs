@@ -80,6 +80,21 @@ pub fn base_ref(wt: &Path, base: &str) -> Option<Target> {
                 &format!("+refs/heads/{base}:refs/remotes/origin/{base}"),
             ],
         );
+    }
+    resolve_ref(wt, base)
+}
+
+/// Like `base_ref`, for the CLI: the fetch is bounded and never prompts.
+pub fn base_ref_capped(wt: &Path, base: &str) -> Option<Target> {
+    if git::ok(wt, &["remote", "get-url", "origin"]) {
+        git::fetch_base_capped(wt, base);
+    }
+    resolve_ref(wt, base)
+}
+
+/// `origin/<base>` when it exists locally, else the local branch.
+fn resolve_ref(wt: &Path, base: &str) -> Option<Target> {
+    if git::ok(wt, &["remote", "get-url", "origin"]) {
         let remote = format!("refs/remotes/origin/{base}");
         if git::rev(wt, &remote).is_some() {
             return Some(Target {

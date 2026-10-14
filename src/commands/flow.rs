@@ -65,12 +65,30 @@ fn rebase_pending(item: &Item) -> Option<HallError> {
         return None;
     }
     let wt = Path::new(&item.worktree);
-    let target = crate::delivery::base_ref(wt, &req.onto)?;
+    let target = crate::delivery::base_ref_capped(wt, &req.onto)?;
+    let id = item.id;
+    if git::rebase_in_progress(wt) {
+        let q = crate::commands::new::shell_quote(&item.worktree);
+        return Some(
+            HallError::new(
+                ErrorCode::WrongState,
+                format!(
+                    "{id} has a rebase onto {} in progress; finish it (`git rebase --continue`) \
+                     or abort it in {}, then run `hall ready {id}` again",
+                    target.name, item.worktree
+                ),
+            )
+            .next([
+                format!("git -C {q} rebase --continue"),
+                format!("git -C {q} rebase --abort"),
+                format!("hall status {id}"),
+            ]),
+        );
+    }
     let head = git::head(wt).ok()?;
     if git::is_ancestor(wt, &target.git_ref, &head) {
         return None;
     }
-    let id = item.id;
     let mut next = Vec::new();
     if item.hold.is_some() {
         next.push(format!("hall retry {id} --reason \"<why>\""));
