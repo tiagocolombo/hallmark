@@ -1,17 +1,19 @@
 //! What an item is doing now, in any phase, and what you can do about it.
 //! `hall status <id>`, `hall watch`, `hall inbox <entry>`, the hooks, the
 //! HUD and the terminal app all read it. It is derived, never stored: from
-//! the item, its lease, the review queue, the daemon's Live log and the
-//! check log being written.
+//! the item, its lease, the review queue, the daemon's Live log, the
+//! check log being written and the item's run streams (ADR 0041).
 
 use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
 use serde::Serialize;
 
 use crate::config::Role;
+use crate::event::{Body, Event};
 use crate::findings::{Ledger, Severity};
-use crate::item::{Item, State};
+use crate::item::{HoldKind, Item, ItemId, State};
 use crate::repo::Repo;
+use crate::trace::{self, RunFile, RunInfo, Step, StepKind, Tail};
 
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub struct Now {
@@ -128,23 +130,17 @@ fn ordinal(n: usize) -> String {
 
 /// What `item` is doing now. `items` are the repo's live items (for the
 /// queue), `events` the item's journal.
-pub fn now(repo: &Repo, item: &Item, items: &[Item], events: &[crate::event::Event]) -> Now {
+pub fn now(repo: &Repo, item: &Item, items: &[Item], events: &[Event]) -> Now {
     now_with(repo, item, items, events, true)
 }
 
 /// Like `now`, without the git-derived detail (last commit, dirty files):
 /// for callers that only show the line and must stay cheap, like the HUD.
-pub fn now_cheap(repo: &Repo, item: &Item, items: &[Item], events: &[crate::event::Event]) -> Now {
+pub fn now_cheap(repo: &Repo, item: &Item, items: &[Item], events: &[Event]) -> Now {
     now_with(repo, item, items, events, false)
 }
 
-fn now_with(
-    repo: &Repo,
-    item: &Item,
-    items: &[Item],
-    events: &[crate::event::Event],
-    git: bool,
-) -> Now {
+fn now_with(repo: &Repo, item: &Item, items: &[Item], events: &[Event], git: bool) -> Now {
     let id = item.id.to_string();
     let mut n = Now {
         status: String::new(),
@@ -170,8 +166,11 @@ fn now_with(
                 format!("hall pull-back {id}"),
                 "take it back to development",
             ),
-            log_cmd,
         ];
+        if let Some(any) = after_failed_runs(h.kind, events) {
+            n.actions.extend(failed_run(repo, item, any));
+        }
+        n.actions.push(log_cmd);
         return finish(n);
     }
     if let Some(since) = item.stuck_since {
@@ -459,10 +458,144 @@ fn now_with(
             n.actions = vec![log_cmd.clone()];
         }
     }
+    if n.status == "running"
+        && let Some(l) = &lease
+    {
+        following(repo, item, l.acquired, &mut n);
+    }
     if !matches!(item.state, State::Closed | State::Dropped) {
         n.actions.push(log_cmd);
     }
     finish(n)
+}
+
+/// How much of a run's stream the now block reads from each end. A stream
+/// holds the whole conversation; the now block needs only how it began
+/// (the session, where it ran) and where it stands.
+const WINDOW: u64 = 64 * 1024;
+
+/// The item's latest run, when it started at or after `since`.
+fn latest_run(
+    repo: &Repo,
+    id: ItemId,
+    since: DateTime<Utc>,
+) -> Option<(RunFile, Vec<Step>, RunInfo)> {
+    // Run files are stamped to the second.
+    let since = since - chrono::Duration::seconds(1);
+    let run = trace::runs(repo, id)
+        .ok()?
+        .pop()
+        .filter(|r| r.started >= since)?;
+    let (steps, info) = glance(&run.path)?;
+    Some((run, steps, info))
+}
+
+/// A run's info and its last steps, without reading all of a long stream:
+/// whole lines from its first and last `WINDOW` bytes.
+fn glance(path: &std::path::Path) -> Option<(Vec<Step>, RunInfo)> {
+    use std::io::Read;
+    let len = std::fs::metadata(path).ok()?.len();
+    let streamed = path.extension().and_then(|e| e.to_str()) == Some("jsonl");
+    if !streamed || len <= 2 * WINDOW {
+        return trace::read(path).ok();
+    }
+    let mut head = Vec::new();
+    std::fs::File::open(path)
+        .ok()?
+        .take(WINDOW)
+        .read_to_end(&mut head)
+        .ok()?;
+    let upto = head.iter().rposition(|&b| b == b'\n').map_or(0, |i| i + 1);
+    let mut info = RunInfo::default();
+    for line in String::from_utf8_lossy(&head[..upto]).lines() {
+        if let Ok(v) = serde_json::from_str(line.trim()) {
+            info.observe(&v);
+        }
+    }
+    // From the middle of a line: the partial first line doesn't parse and
+    // is skipped.
+    let mut tail = Tail {
+        offset: len - WINDOW,
+        info,
+    };
+    let steps = tail.poll(path).ok()?;
+    Some((steps, tail.info))
+}
+
+/// How wide a step is in the log.
+pub const STEP_CLIP: usize = 160;
+
+/// What the agent is doing: its last call or words, and the result that
+/// came back, if one did. At most two lines.
+fn last_steps(steps: &[Step]) -> Vec<String> {
+    let Some(i) = steps
+        .iter()
+        .rposition(|s| matches!(s.kind, StepKind::Start | StepKind::Text | StepKind::Tool))
+    else {
+        return Vec::new();
+    };
+    steps[i..]
+        .iter()
+        .take(2)
+        .map(|s| crate::output::clip(&s.render(), STEP_CLIP))
+        .collect()
+}
+
+/// A model run is going: its last step, and how to follow it. The lease
+/// says the loop holds the item now; a stream that began under the lease
+/// and has no end line says the run hasn't exited. A stream alone isn't
+/// enough: a daemon that died mid-run never writes the end line.
+fn following(repo: &Repo, item: &Item, acquired: DateTime<Utc>, n: &mut Now) {
+    let Some((run, steps, info)) = latest_run(repo, item.id, acquired) else {
+        return;
+    };
+    if info.ended {
+        return;
+    }
+    n.log.extend(last_steps(&steps));
+    n.actions.insert(
+        0,
+        act(
+            format!("hall trace {} --follow", item.id),
+            format!("watch the {} work, live", run.role),
+        ),
+    );
+}
+
+/// Whether the hold came from failed model runs: a `run_failed` hold
+/// (`Some(true)`), or a Delivery-office hold recorded right after its
+/// second failed run (`Some(false)`: only when the run itself failed).
+fn after_failed_runs(kind: HoldKind, events: &[Event]) -> Option<bool> {
+    if kind == HoldKind::RunFailed {
+        return Some(true);
+    }
+    let held = events
+        .iter()
+        .rposition(|e| matches!(e.body, Body::Held { .. }))?;
+    let before = events.get(held.checked_sub(1)?)?;
+    matches!(before.body, Body::RunFailed { .. }).then_some(false)
+}
+
+/// For a hold after failed runs: open the last one in Claude Code, and
+/// read it. Only once it has ended, so nobody resumes a session the
+/// daemon is still writing. `any`: the run counts even if its process
+/// exited cleanly (its output was what failed).
+fn failed_run(repo: &Repo, item: &Item, any: bool) -> Vec<Action> {
+    let Some((run, _, info)) = latest_run(repo, item.id, item.state_since) else {
+        return Vec::new();
+    };
+    if !info.ended || !(any || info.failure.is_some()) {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    if let Some(cmd) = info.resume_command() {
+        out.push(act(cmd, "open the failed run in Claude Code"));
+    }
+    out.push(act(
+        format!("hall trace {}", item.id),
+        format!("read what the {} run did, step by step", run.role),
+    ));
+    out
 }
 
 fn finish(mut n: Now) -> Now {
@@ -618,6 +751,69 @@ fn queued(repo: &Repo, item: &Item, items: &[Item], role: &str, n: &mut Now) {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    fn stream() -> String {
+        std::fs::read_to_string(format!(
+            "{}/tests/fixtures/claude/stream.jsonl",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn a_long_stream_is_read_from_both_ends() {
+        // The fixture's run began here; a resume command cds only into a
+        // directory that exists.
+        std::fs::create_dir_all("/tmp/spike").unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("20261012T215146-reviewer.jsonl");
+        // The run's init, then a long conversation: more than both windows.
+        let text = stream();
+        let (init, rest) = text.split_once('\n').unwrap();
+        let mut long = format!("{init}\n");
+        while (long.len() as u64) < 3 * WINDOW {
+            long.push_str(rest);
+        }
+        std::fs::write(&p, &long).unwrap();
+        let (steps, info) = glance(&p).unwrap();
+        let (all, whole) = trace::read(&p).unwrap();
+        assert!(steps.len() < all.len(), "only the tail's steps");
+        assert_eq!(steps.last(), all.last());
+        assert_eq!(info, whole, "the head knows where it ran");
+        assert!(!info.ended);
+
+        let end = trace::RunEnd::new(4_000, None, Some("timed out".into())).line();
+        std::fs::write(&p, format!("{long}{end}")).unwrap();
+        let (steps, info) = glance(&p).unwrap();
+        assert!(info.ended);
+        assert_eq!(info.failure.as_deref(), Some("timed out"));
+        assert_eq!(steps.last().map(|s| s.kind), Some(StepKind::End));
+        assert_eq!(
+            info.resume_command().as_deref(),
+            Some("cd /tmp/spike && claude --resume 91aedf44-f4cd-4efa-8e74-768d46a9dc75")
+        );
+    }
+
+    #[test]
+    fn the_last_steps_are_a_call_and_its_result() {
+        let steps: Vec<Step> = stream().lines().flat_map(trace::steps).collect();
+        // Up to the Bash call's result: the call and what came back.
+        let lines = last_steps(&steps[..5]);
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert!(
+            lines[0].ends_with("▸ Bash Count bytes in note.txt"),
+            "{lines:?}"
+        );
+        assert_eq!(lines[1], "↳ 6 note.txt");
+        // Words and the result: the words, and how it ended.
+        let lines = last_steps(&steps);
+        assert!(lines[0].contains("» `note.txt` contains"), "{lines:?}");
+        assert!(lines[1].starts_with("■ done"), "{lines:?}");
+        assert!(lines.iter().all(|l| l.chars().count() <= 160));
+        assert!(last_steps(&[]).is_empty());
+    }
+
     #[test]
     fn ordinals() {
         assert_eq!(super::ordinal(1), "1st");

@@ -295,7 +295,7 @@ pub fn new(cwd: &Path, a: NewArgs, mode: Mode) -> Result<Response> {
             let dir = repo.hall.item_runs(item.id);
             if std::fs::create_dir_all(&dir).is_ok() {
                 let stamp = chrono::Utc::now().format("%Y%m%dT%H%M%S");
-                let _ = std::fs::write(dir.join(format!("{stamp}-intake.json")), raw);
+                let _ = std::fs::write(dir.join(format!("{stamp}-intake.jsonl")), raw);
             }
         }
         let mut children: Vec<(Item, Part)> = Vec::new();

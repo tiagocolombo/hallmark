@@ -25,6 +25,7 @@ The raw outputs are saved as test fixtures:
 | `tests/fixtures/transcript/session.jsonl` | spike 5, session transcript (trimmed) |
 | `tests/fixtures/claude/print_code_review.json` | spike 6 |
 | `tests/fixtures/claude/print_code_review_schema.json` | spike 6, with `--json-schema` |
+| `tests/fixtures/claude/stream.jsonl` | `--output-format stream-json --verbose` with two tool calls; hook lines dropped, paths made `/tmp/spike` (ADR 0041) |
 
 **Result: no decision turned out impossible.** Two findings change how Hallmark
 reads Claude's output (spikes 1, 2 and 5), and one confirms that the reviewer
@@ -38,6 +39,12 @@ should be our own agent rather than `/code-review` (spike 6).
 - Without stdin redirected, `claude -p` waits 3 seconds and warns
   `no stdin data received in 3s`. Hallmark passes `< /dev/null` (a null stdin)
   to every headless run.
+- With `-p`, `--output-format stream-json` needs `--verbose`. The stream
+  (`tests/fixtures/claude/stream.jsonl`, ADR 0041) prints
+  `{"type":"rate_limit_event",…,"status":"allowed"}` lines in an ordinary
+  run, and its init and assistant lines name the model, so rate-limit and
+  model checks read the `result` line and stderr, never every line. The `result` line is the
+  last one Claude prints.
 
 ## 1. Usage fields from `claude -p --output-format json`
 

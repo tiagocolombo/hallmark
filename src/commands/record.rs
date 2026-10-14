@@ -597,6 +597,8 @@ pub fn render_export(repo: &Repo, item: &Item, events: &[Event]) -> String {
         }
     }
 
+    runs(repo, id, &mut s);
+
     // Usage.
     let usage = usage_by_role(events);
     if !usage.is_empty() {
@@ -640,6 +642,62 @@ pub fn render_export(repo: &Repo, item: &Item, events: &[Event]) -> String {
         }
     }
     s
+}
+
+/// How many steps of one run the export keeps: the first few (how it
+/// began) and the last (how it ended). The stream file keeps them all.
+const RUN_HEAD: usize = 10;
+const RUN_TAIL: usize = 150;
+
+/// What the agents did: every headless run of the item, step by step
+/// (ADR 0041), in UTC like the rest of the record.
+fn runs(repo: &Repo, id: ItemId, s: &mut String) {
+    let runs = crate::trace::runs(repo, id).unwrap_or_default();
+    if runs.is_empty() {
+        return;
+    }
+    let _ = writeln!(s, "\n## Runs");
+    for (n, r) in runs.iter().enumerate() {
+        let Ok((steps, info)) = crate::trace::read(&r.path) else {
+            continue;
+        };
+        let how = match (info.ended, &info.failure) {
+            (false, _) => "no end yet: still running, or the daemon stopped".to_string(),
+            (true, Some(f)) => format!("failed: {}", clip(f, 80)),
+            (true, None) => "ended".into(),
+        };
+        let _ = writeln!(s, "\n### Run {} · {} · {how}\n", n + 1, r.role);
+        let mut about = vec![format!("Started {}", time(r.started))];
+        if let Some(m) = &info.model {
+            about.push(m.clone());
+        }
+        about.push(format!("`{}`", crate::paths::display(&r.path)));
+        let _ = writeln!(s, "{}", about.join(" · "));
+        if let Some(c) = info.resume_command() {
+            let _ = writeln!(s, "\nResume: `{c}`");
+        }
+        if steps.is_empty() {
+            continue;
+        }
+        s.push_str("\n````text\n");
+        let line = |s: &mut String, step: &crate::trace::Step| {
+            let _ = writeln!(s, "{}", step.render_in(&Utc).trim_end());
+        };
+        if steps.len() > RUN_HEAD + RUN_TAIL {
+            steps[..RUN_HEAD].iter().for_each(|st| line(s, st));
+            let _ = writeln!(
+                s,
+                "          … {} steps not shown",
+                steps.len() - RUN_HEAD - RUN_TAIL
+            );
+            steps[steps.len() - RUN_TAIL..]
+                .iter()
+                .for_each(|st| line(s, st));
+        } else {
+            steps.iter().for_each(|st| line(s, st));
+        }
+        s.push_str("````\n");
+    }
 }
 
 /// Child items: from the plan, merges, and the index.

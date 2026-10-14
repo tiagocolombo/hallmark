@@ -14,6 +14,7 @@ use crate::event::short;
 use crate::findings::{Status as FStatus, Tracked};
 use crate::index::{InboxEntry, UsageRow};
 use crate::item::{Item, State};
+use crate::trace::{Step, StepKind};
 use crate::usage::fmt_tokens;
 
 const BRASS: Color = Color::Yellow;
@@ -171,6 +172,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         View::Usage => usage(f, body, app),
         View::Diff | View::Output => diff(f, body, app),
         View::Inbox => inbox_view(f, body, app),
+        View::Trace => trace_view(f, body, app),
     }
     status_line(f, status, app);
     key_bar(f, keys, app);
@@ -310,6 +312,7 @@ fn key_bar(f: &mut Frame, area: Rect, app: &App) {
             ("←→", "step"),
             ("f", "findings"),
             ("d", "diff"),
+            ("t", "trace"),
             ("r", "ready"),
             ("p", "pull back"),
             ("g", "go"),
@@ -378,6 +381,15 @@ fn key_bar(f: &mut Frame, area: Rect, app: &App) {
             ("?", "help"),
             ("q", "quit"),
         ],
+        View::Trace => &[
+            ("↑↓", "scroll"),
+            ("pgup pgdn", "page"),
+            ("end", "follow"),
+            ("[ ]", "older·newer run"),
+            ("esc t", "back"),
+            ("?", "help"),
+            ("q", "quit"),
+        ],
         View::Diff | View::Output => &[
             ("↑↓", "scroll"),
             ("pgup pgdn", "page"),
@@ -439,6 +451,7 @@ fn help(f: &mut Frame, area: Rect) {
         ("home end", "first event · back to now"),
         ("f", "findings for this item"),
         ("d", "diff at the selected round"),
+        ("t", "trace: the latest run, live ([ ] other runs)"),
         ("r", "send to review (hall ready)"),
         ("p", "pull back to development"),
         ("g", "go on: lift a hold, or retry (hall retry)"),
@@ -1472,6 +1485,135 @@ fn live(f: &mut Frame, area: Rect, app: &App) {
         })
         .collect();
     f.render_widget(Paragraph::new(lines), inner);
+}
+
+// --- trace -------------------------------------------------------------------
+
+/// The selected item's run, step by step: the newest steps at the bottom,
+/// followed while the run grows.
+fn trace_view(f: &mut Frame, area: Rect, app: &App) {
+    let Some(t) = &app.trace else {
+        f.render_widget(
+            Paragraph::new(Span::styled("No item selected.", fg(DIM))).block(pane("Trace")),
+            area,
+        );
+        return;
+    };
+    let Some(run) = t.run() else {
+        let lines = vec![
+            Line::from(Span::styled(format!("{} has no runs yet.", t.id), bold())),
+            Line::from(Span::styled(
+                "A run shows here, live, as soon as the daemon starts a reviewer, fixer or \
+                 other headless run for this item.",
+                fg(DIM),
+            )),
+        ];
+        f.render_widget(
+            Paragraph::new(lines)
+                .wrap(ratatui::widgets::Wrap { trim: false })
+                .block(pane(format!("{} · trace", t.id))),
+            area,
+        );
+        return;
+    };
+    let info = t.info();
+    let (state, c) = match (&info.ended, &info.failure) {
+        (false, _) if info.interrupted => ("✗ interrupted".to_string(), STOP),
+        (false, _) => ("● running".to_string(), INFO),
+        (true, Some(why)) => (format!("✗ failed: {}", clip(why, 60)), STOP),
+        (true, None) => ("■ ended".to_string(), OK),
+    };
+    let mut bottom = Vec::new();
+    if t.runs.len() > 1 {
+        bottom.push(format!(
+            "run {}/{} · [ older · ] newer",
+            t.at + 1,
+            t.runs.len()
+        ));
+    }
+    if t.scroll > 0 {
+        bottom.push(format!("↑ {} · end follows", t.scroll));
+    } else if !info.ended && !info.interrupted {
+        bottom.push("following".into());
+    }
+    let mut block = pane(format!(
+        "{} · {} run · started {}",
+        t.id,
+        run.role,
+        app.clock(run.started)
+    ))
+    .title(Line::from(Span::styled(format!(" {state} "), fg(c))).right_aligned());
+    if !bottom.is_empty() {
+        block = block.title_bottom(
+            Line::from(Span::styled(format!(" {} ", bottom.join(" · ")), fg(DIM))).right_aligned(),
+        );
+    }
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    let mut lines: Vec<Line> = Vec::new();
+    if let Some(e) = &t.error {
+        lines.push(Line::from(Span::styled(
+            format!(
+                "Can't read {}: {e}",
+                app.show_path(&run.path.to_string_lossy())
+            ),
+            fg(STOP),
+        )));
+    }
+    if t.steps.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "Waiting for the run's first step…",
+            fg(DIM),
+        )));
+        f.render_widget(Paragraph::new(lines), inner);
+        return;
+    }
+    let h = (inner.height as usize).saturating_sub(lines.len());
+    let n = t.steps.len();
+    let end = n - t.scroll.min(n - 1);
+    let start = end.saturating_sub(h);
+    let w = inner.width as usize;
+    lines.extend(t.steps[start..end].iter().map(|s| step_line(app, s, w)));
+    f.render_widget(Paragraph::new(lines), inner);
+}
+
+/// One step as `hall trace` prints it, coloured by kind and clipped to the
+/// pane.
+fn step_line(app: &App, s: &Step, width: usize) -> Line<'static> {
+    let r = app.show_text(&s.render_in(&chrono::Local));
+    // Every rendered step starts with its time, or eight spaces.
+    let (time, rest) = match r.get(..8) {
+        Some(t) => (t.to_string(), r[8..].to_string()),
+        None => (String::new(), r.clone()),
+    };
+    let time = if app.redact.times && !time.trim().is_empty() {
+        "hh:mm:ss".to_string()
+    } else {
+        time
+    };
+    let style = match s.kind {
+        _ if s.error => fg(STOP),
+        StepKind::Start => fg(INFO),
+        StepKind::Text => Style::new(),
+        StepKind::Tool => fg(BRASS),
+        StepKind::Result => fg(DIM),
+        StepKind::Done | StepKind::End => fg(OK),
+    };
+    Line::from(vec![
+        Span::styled(time, fg(DIM)),
+        Span::styled(cut(&rest, width.saturating_sub(8)), style),
+    ])
+}
+
+/// Shortens `s` to `max` characters with an ellipsis, keeping its spacing
+/// (the indent of results and nested steps).
+fn cut(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s.to_string();
+    }
+    let mut t: String = s.chars().take(max.saturating_sub(1)).collect();
+    t.push('…');
+    t
 }
 
 // --- usage -------------------------------------------------------------------

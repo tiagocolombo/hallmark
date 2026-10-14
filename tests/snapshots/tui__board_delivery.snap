@@ -37,4 +37,4 @@ hall · app (1 of 1 repo)   daemon ● running   ⚑ 3 waiting   rejected today 
 │F1   blocker security_tenancy Export reads other tenants             src/webhooks.rs:42     fixed · verified r2       │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 
-↑↓ item enter journal i your office ←→ step f findings d diff / filter w worktree o PR h history u usage ? help q quit
+↑↓ item enter journal i your office ←→ step f findings d diff t trace / filter w worktree o PR h history ? help q quit

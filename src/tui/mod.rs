@@ -6,7 +6,8 @@
 //! marks the repo stale, and the app re-reads it once the writes settle.
 //! Its actions (`r`, `p`, `x`, and each inbox entry's actions in your
 //! office) run the same commands as the CLI, in-process. Closing it never
-//! stops work.
+//! stops work. `t` follows the selected item's latest headless run, read
+//! a whole line at a time from its stream in `runs/` (ADR 0041).
 //!
 //! [`App`] holds the state and handles keys; [`ui::draw`] renders it.
 //! Neither needs a terminal, so tests drive them with ratatui's
@@ -26,7 +27,7 @@ use std::time::{Duration, Instant};
 use chrono::Utc;
 use crossterm::event::{self, Event as TermEvent};
 
-pub use app::{App, Effect, Input, UsageGroup, View};
+pub use app::{App, Effect, Input, Trace, UsageGroup, View};
 
 use crate::error::{HallError, Result};
 use crate::output::Response;
@@ -39,6 +40,8 @@ const MAX_WAIT: Duration = Duration::from_secs(1);
 /// The slow tick: clock, daemon state, and a full re-read when the watcher
 /// isn't available.
 const TICK: Duration = Duration::from_secs(2);
+/// How often the Trace view reads what its run wrote since the last look.
+const TRACE_POLL: Duration = Duration::from_millis(500);
 
 /// Opens the app on the repo at `cwd` (or the first registered one).
 pub fn run(cwd: &Path) -> Result<Response> {
@@ -124,6 +127,7 @@ fn event_loop(
     let mut first_change: Option<Instant> = None;
     let mut last_change = Instant::now();
     let mut last_tick = Instant::now();
+    let mut last_trace = Instant::now();
     let mut redraw = true;
     let mut waiting = app.inbox().len();
     loop {
@@ -180,6 +184,13 @@ fn event_loop(
             }
             first_change = None;
             redraw = true;
+        }
+        // A run grows a line at a time; the Trace view reads only what's new.
+        if app.view == View::Trace && last_trace.elapsed() >= TRACE_POLL {
+            last_trace = Instant::now();
+            if app.poll_trace() {
+                redraw = true;
+            }
         }
         if last_tick.elapsed() >= TICK {
             last_tick = Instant::now();

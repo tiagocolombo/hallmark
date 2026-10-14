@@ -293,6 +293,8 @@ pub const SCHEMA_NAMES: &[&str] = &[
     "hud",
     "watch",
     "watch-line",
+    "trace",
+    "trace-line",
     "error",
     "event",
     "config",
@@ -312,6 +314,9 @@ pub fn schema_value(name: &str) -> Option<serde_json::Value> {
         "watch" => schema_for!(Out<super::watch::WatchOut>),
         // The progress lines `hall watch` prints before its reply.
         "watch-line" => schema_for!(super::watch::Change),
+        "trace" => schema_for!(Out<super::trace::TraceOut>),
+        // The steps `hall trace` prints before its reply.
+        "trace-line" => schema_for!(crate::trace::Step),
         "ready" | "pull-back" | "drop" | "retry" | "propose-ready" | "continue" => {
             schema_for!(Out<FlowOut>)
         }

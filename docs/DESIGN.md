@@ -135,7 +135,9 @@ Rules:
 $(git rev-parse --git-common-dir)/hallmark/   shared by every worktree, never committed
 ├─ items/H-0042/
 │  ├─ events.jsonl        the journal: append-only, source of truth
-│  └─ item.json           cached snapshot (title, branch, worktree, state)
+│  ├─ item.json           cached snapshot (title, branch, worktree, state)
+│  └─ runs/               each headless run, streamed as it happens:
+│                         <stamp>-<role>.jsonl, plus .lock, .stderr and prompts
 ├─ events.jsonl           repo-level events: prompts and notifications from
 │                         sessions with no item, gate denials
 ├─ sessions/<id>.json     session → item binding, transcript byte offset
@@ -154,6 +156,13 @@ $(git rev-parse --git-common-dir)/hallmark/   shared by every worktree, never co
   append, all as one step.
 - The SQLite index (rusqlite, bundled) catches up from the files on read.
   Usage, inbox and history queries use it. Deleting it loses nothing.
+- Each headless run with an item streams into `runs/<stamp>-<role>.jsonl`
+  as it happens: Claude's stream-json, line by line, then one
+  `{"type":"hall_run_end",…}` line from the runner once the process has
+  exited, with its duration, exit code and failure (ADR 0041). The result is
+  the stream's last `result` line; stderr, when there is any, sits beside it
+  as `<stamp>-<role>.stderr`. A fallback-model retry is a run of its own,
+  with its own file. Runs are debugging records, like `checks/`, not events.
 
 Every line is one event:
 
@@ -321,7 +330,7 @@ $ echo $?
 | `hall fixed <ids> [--dispute <id> --reason]` | fixer | Records what the commit fixes, resubmits. |
 | `hall verdict --file <json>` | assayer | Records a schema-checked verdict. |
 | `hall history [--rejected] [--lens] [--since]` | you | Closed and dropped items, and why things were rejected. |
-| `hall export [<id>]` | you, shipper | The whole record as Markdown. |
+| `hall export [<id>]` | you, shipper | The whole record as Markdown, with what each model run did, step by step. |
 | `hall budget [--set k=v] [--grant [<tokens>]]` | you | The caps and today's spend. `--grant` lets the loop go past the daily cap for today (default: another `daily`) and lifts the budget pause; the cap is unchanged. |
 | `hall notify test` | you | A test notification on every channel. |
 | `hall statusline` | Claude Code | One line for the status line. |
@@ -414,7 +423,8 @@ It runs headless with a fresh context:
 
 ```sh
 claude -p --plugin-dir "$PLUGIN" --agent principal-engineer \
-  --json-schema "$PLUGIN/schemas/verdict.json" --output-format json \
+  --json-schema "$PLUGIN/schemas/verdict.json" \
+  --output-format stream-json --verbose \
   --max-budget-usd 3 "Review H-0042 round 2: commit b81f3e4 against main" < /dev/null
 ```
 
@@ -473,7 +483,8 @@ write), turns, duration and list-price cost.
 
 **Sources.**
 
-- **Headless runs.** Usage comes from `claude -p --output-format json`.
+- **Headless runs.** Usage comes from the `result` line that ends
+  `claude -p --output-format stream-json --verbose`.
   - `modelUsage` is the source of truth; the top-level `usage` can be zero or
     partial.
   - `num_turns`, `duration_ms` and `session_id` come from the top level.
@@ -629,6 +640,18 @@ checkout, a worktree on another branch, or one a live item still uses. It
 records `worktree_removed`, and the branch and journal stay. `hall drop` and
 `hall merge` remove their own worktrees, unless `--keep-worktree`.
 
+**What an item is doing now.** `hall status <id>`, `hall watch`, the inbox,
+the hooks, the HUD and the terminal app read one derived **now** block: the
+item, its lease, the queue, the Live log, the check log, and the item's run
+streams (ADR 0041). While the loop holds the item's lease and the latest run
+began under it without its `hall_run_end` line, the block shows the run's last
+step and offers `hall trace <id> --follow`. A stream without an end line alone
+proves nothing, since a daemon that died mid-run never writes one. When an
+item is held after failed runs and its last run has ended, the block offers
+that run's `claude --resume` command (in the directory it ran in) and
+`hall trace <id>`. `hall export` lists every run's steps, so the record
+includes what the agents did.
+
 ## What we reuse
 
 | Need | Reused |
@@ -679,6 +702,7 @@ Two outside tools fit at the edges:
    - the Library and the librarian
    - desktop and phone notifications
 3. **The terminal app and releases** (done; releases are dry-run only)
-   - views: board, journal, findings, history, live, usage and repos
+   - views: board, journal, findings, history, live, usage and repos, and
+     a run's trace on `t`, followed live (ADR 0041)
    - qmd as an option
    - dist releases and a Nix package

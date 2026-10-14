@@ -1,0 +1,31 @@
+---
+source: tests/shipper.rs
+expression: "section.replace(&p(&env.root), \"[root]\")"
+---
+
+### Run 1 · reviewer · ended
+
+Started 2026-10-12 21:37:49 UTC · `[root]/app/.git/hallmark/items/H-0001/runs/20261012T213749-reviewer.json`
+
+Resume: `claude --resume 72f4b985-73be-420f-9061-9c36a3570d33`
+
+````text
+          ■ done in 0s, $0.00
+````
+
+### Run 2 · fixer · failed: timed out
+
+Started 2026-10-12 21:51:46 UTC · claude-haiku-5-5 · `[root]/app/.git/hallmark/items/H-0001/runs/20261012T215146-fixer.jsonl`
+
+Resume: `cd /tmp/spike && claude --resume 91aedf44-f4cd-4efa-8e74-768d46a9dc75`
+
+````text
+          ● claude-haiku-5-5 in /tmp/spike
+21:51:46  ▸ Read  /tmp/spike/note.txt
+            ↳ 1 hello 2
+21:51:47  ▸ Bash  Count bytes in note.txt
+            ↳ 6 note.txt
+21:51:48  » `note.txt` contains just the word "hello" and a trailing newline, which `wc -c` confirms at 6 bytes.
+          ■ done in 3s, $0.01
+21:51:50  ✗ run failed after 4s: timed out
+````

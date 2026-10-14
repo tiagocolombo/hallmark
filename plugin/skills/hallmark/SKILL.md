@@ -205,7 +205,9 @@ they do:
 To see what an item is doing at any time: `hall status <id>` has a **now**
 block (queued and what is ahead, which gate is running, the reviewer's run,
 the fixer, a hold and how to release it), and `hall watch <id>` follows it
-live.
+live. `hall trace <id>` shows a headless run (the reviewer's, the fixer's)
+step by step: what it read, ran and said; `--follow` keeps going until it
+ends, and `--open` gives the `claude --resume` command once it has ended.
 
 ## Questions
 

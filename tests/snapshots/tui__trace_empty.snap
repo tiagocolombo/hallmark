@@ -1,0 +1,16 @@
+---
+source: tests/tui.rs
+expression: "screen(&env, &app, W, 12)"
+---
+hall · app (1 of 1 repo)   daemon ● running   ⚑ 3 waiting   rejected today 3 · review tokens 400k          trace · hh:mm
+┌ H-0003 · trace ──────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│H-0003 has no runs yet.                                                                                               │
+│A run shows here, live, as soon as the daemon starts a reviewer, fixer or other headless run for this item.           │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+↑↓ scroll  pgup pgdn page  end follow  [ ] older·newer run  esc t back  ? help  q quit

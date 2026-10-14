@@ -646,3 +646,40 @@ fn the_review_comment_says_how_each_finding_was_settled() {
         assert!(!body.contains(s), "{s} in the description:\n{body}");
     }
 }
+
+#[test]
+fn export_includes_what_each_run_did() {
+    let env = Env::initialized();
+    let (id, _) = env.new_item("Retry webhooks");
+    let runs = item_file(&env, &id, "runs");
+    std::fs::create_dir_all(&runs).unwrap();
+    // The fixture's run began here; a resume command cds only into a
+    // directory that exists.
+    common::make_spike_dir(&env);
+    // An older run's result, then a stream that timed out (ADR 0041).
+    std::fs::write(
+        runs.join("20261012T213749-reviewer.json"),
+        common::fixture("claude/print_result.json"),
+    )
+    .unwrap();
+    let end = hallmark::trace::RunEnd {
+        t: "2026-10-12T21:51:50Z".parse().unwrap(),
+        ..hallmark::trace::RunEnd::new(4_000, None, Some("timed out".into()))
+    };
+    std::fs::write(
+        runs.join("20261012T215146-fixer.jsonl"),
+        common::fixture("claude/stream.jsonl") + &end.line(),
+    )
+    .unwrap();
+    // Prompts and stderr are not runs.
+    std::fs::write(runs.join("20261012T213749-reviewer-r1.prompt.md"), "x").unwrap();
+
+    let r = env.hall(&env.repo, &["export", &id]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let md = r.json["markdown"].as_str().unwrap();
+    let section = md
+        .split_once("\n## Runs\n")
+        .map(|(_, rest)| rest)
+        .unwrap_or_else(|| panic!("no runs section in\n{md}"));
+    insta::assert_snapshot!(section.replace(&p(&env.root), "[root]"));
+}

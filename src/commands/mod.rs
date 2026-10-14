@@ -21,6 +21,7 @@ pub mod record;
 pub mod review;
 pub mod setup;
 pub mod status;
+pub mod trace;
 pub mod update;
 pub mod watch;
 pub mod wizard;

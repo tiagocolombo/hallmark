@@ -343,17 +343,27 @@ fn a_review_with_blockers_requests_changes() {
     assert!(report.contains("**Scenario.** two workers retry"));
     assert!(report.contains("### Minors"));
 
-    // The raw result and the prompt are kept for debugging; usage is booked.
+    // The run's stream and the prompt are kept; usage is booked. The stream
+    // is the only record of the result: no `.json` beside it (ADR 0041).
     let runs = env.repo.join(".git/hallmark/items").join(&id).join("runs");
     let names: Vec<String> = std::fs::read_dir(&runs)
         .unwrap()
         .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
         .collect();
     assert!(
-        names.iter().any(|n| n.ends_with("-reviewer.json")),
+        names.iter().any(|n| n.ends_with("-reviewer.jsonl")),
         "{names:?}"
     );
+    assert!(!names.iter().any(|n| n.ends_with(".json")), "{names:?}");
     assert!(names.iter().any(|n| n.ends_with(".prompt.md")), "{names:?}");
+    let run = hallmark::trace::runs_in(&runs).unwrap();
+    assert_eq!(run.len(), 1, "{run:?}");
+    let (steps, info) = hallmark::trace::read(&run[0].path).unwrap();
+    assert!(info.ended && info.failure.is_none(), "{info:?}");
+    assert_eq!(
+        steps.last().map(|s| s.kind),
+        Some(hallmark::trace::StepKind::End)
+    );
     let usage = events_of(&env, &id, "usage");
     assert_eq!(usage[0]["room"], "assay");
 
@@ -968,4 +978,68 @@ fn an_extension_on_the_base_reaches_the_reviewer() {
     assert!(head[ext..].contains("by Matt Pocock, https://github.com/mattpocock/skills (MIT)"));
     assert!(!head.contains("name=\"tdd\""), "only the reviewer's skills");
     assert!(ext < head.find("# Review ").unwrap(), "before the item");
+}
+
+/// Where the parts of ADR 0041 meet: a real metered review streams into
+/// `runs/`, and while it runs `hall status` offers to follow it and
+/// `hall trace` reads it as still going; afterwards it reads as ended.
+#[test]
+fn a_running_review_can_be_followed_and_read_afterwards() {
+    let env = Env::initialized();
+    configure(&env, &[("gates", &format!("[\"{PASS}\"]"))]);
+    let (id, _, _) = ready_item(&env, "Retry webhooks", "retry.rs", "fn retry() {}\n");
+    let mut step = reviewer(verdict(vec![], json!([])));
+    step["run"] = json!([
+        format!("{{hall}} status {id} > \"{{cwd}}.status\""),
+        format!("{{hall}} trace {id} > \"{{cwd}}.trace\""),
+    ]);
+    let script = env.script(json!([step]));
+    tick(&env, &script);
+    assert_eq!(state(&env, &id), "review");
+    tick(&env, &script);
+
+    let review = env
+        .root
+        .read_dir()
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .find(|p| p.to_string_lossy().ends_with(".status"))
+        .expect("the reviewer's run wrote hall status")
+        .with_extension("");
+    let read = |ext: &str| {
+        let p = PathBuf::from(format!("{}.{ext}", review.display()));
+        std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("{}: {e}", p.display()))
+    };
+    let last = |text: &str| -> Value {
+        serde_json::from_str(text.lines().last().expect("a reply")).unwrap()
+    };
+
+    // While it runs: the now block's first action follows it.
+    let status = last(&read("status"));
+    let actions = status["now"]["actions"]
+        .as_array()
+        .or_else(|| status["item"]["now"]["actions"].as_array())
+        .unwrap_or_else(|| panic!("no now actions: {status}"));
+    assert_eq!(
+        actions[0]["command"],
+        format!("hall trace {id} --follow"),
+        "{status}"
+    );
+    // …and `hall trace` reads the stream as still going.
+    let mid = last(&read("trace"));
+    assert_eq!(mid["run"]["role"], "reviewer", "{mid}");
+    assert_eq!(mid["run"]["ended"], false, "{mid}");
+    assert!(mid["steps"].as_u64().unwrap() >= 1, "{mid}");
+
+    // Afterwards the same run has ended, and can be reopened.
+    let r = env.hall(&env.repo, &["trace", &id]);
+    let after = last(&r.stdout);
+    assert_eq!(after["run"]["ended"], true, "{after}");
+    assert_eq!(after["run"]["session_id"], "fake-session", "{after}");
+    assert!(
+        after["run"]["resume"]
+            .as_str()
+            .is_some_and(|c| c.ends_with("claude --resume fake-session")),
+        "{after}"
+    );
 }

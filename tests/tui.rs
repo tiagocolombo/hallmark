@@ -14,6 +14,7 @@ use hallmark::event::{Body, CheckRun, Event, Usage, VerdictKind};
 use hallmark::findings::{Counts, Finding, Lens, PriorRuling, PriorStatus, Severity};
 use hallmark::item::{HoldKind, ItemId, State};
 use hallmark::journal::Hall;
+use hallmark::trace::{RunEnd, StepKind};
 use hallmark::tui::app::Redact;
 use hallmark::tui::{App, Effect, Input, UsageGroup, View, ui};
 use insta::assert_snapshot;
@@ -946,7 +947,7 @@ fn falls_back_to_the_current_repo_without_a_registry() {
     let mut app = app;
     app.redact.times = true;
     assert_snapshot!("empty", screen(&env, &app, W, 14));
-    for v in ['h', 'u', 'l', 'R', 'f', 'b'] {
+    for v in ['h', 'u', 'l', 'R', 'f', 't', 'b'] {
         key(&mut app, KeyCode::Char(v));
         render(&app, 20, 5);
         render(&app, 1, 1);
@@ -1257,4 +1258,236 @@ fn long_journal_lines_wrap_to_two_lines_then_clip() {
     assert!(!s.contains("THE-END"), "{s}");
     let after = s.lines().nth(i + 2).unwrap_or_default();
     assert!(!after.contains("word word"), "only two lines: {s}");
+}
+
+/// The stream fixture: a headless run as `claude -p --output-format
+/// stream-json` writes it.
+fn stream() -> String {
+    std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/claude/stream.jsonl"),
+    )
+    .unwrap()
+}
+
+/// Writes (or replaces) a run's file in the item's `runs/`, as the runner
+/// would.
+fn write_run(env: &Env, id: u32, name: &str, text: &str) -> std::path::PathBuf {
+    let dir = hall_of(env).item_runs(ItemId(id));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join(name);
+    std::fs::write(&path, text).unwrap();
+    path
+}
+
+/// The daemon holds the item, since before its runs began: a stream with no
+/// end line is going, not interrupted.
+fn hold(env: &Env, id: u32) {
+    let hall = hall_of(env);
+    let lease = hallmark::lease::Lease {
+        item: ItemId(id),
+        role: "fixer".into(),
+        holder: "daemon:1".into(),
+        acquired: "2026-10-12T21:00:00Z".parse().unwrap(),
+        expires: "2099-01-01T00:00:00Z".parse().unwrap(),
+    };
+    std::fs::create_dir_all(hall.leases_dir()).unwrap();
+    std::fs::write(
+        hall.leases_dir().join(format!("{}.json", ItemId(id))),
+        serde_json::to_string(&lease).unwrap(),
+    )
+    .unwrap();
+}
+
+fn append(path: &Path, text: &str) {
+    use std::io::Write;
+    let mut f = std::fs::OpenOptions::new().append(true).open(path).unwrap();
+    f.write_all(text.as_bytes()).unwrap();
+}
+
+#[test]
+fn t_follows_the_selected_items_latest_run() {
+    let env = building();
+    let text = stream();
+    // An older run that failed, and the latest one, still going: so far
+    // only its start and first tool call, and half of the next line.
+    let failed = RunEnd::new(600_000, None, Some("timed out after 600s".into())).line();
+    write_run(
+        &env,
+        1,
+        "20261012T200000-reviewer.jsonl",
+        &format!("{text}{failed}"),
+    );
+    let cut = text.find("{\"type\":\"user\"").unwrap();
+    let half = &text[cut..cut + 40];
+    let latest = write_run(
+        &env,
+        1,
+        "20261012T215146-fixer.jsonl",
+        &format!("{}{half}", &text[..cut]),
+    );
+    hold(&env, 1);
+    let mut app = load(&env, &env.repo);
+    select(&mut app, 1);
+
+    key(&mut app, KeyCode::Char('t'));
+    assert_eq!(app.view, View::Trace);
+    let t = app.trace.as_ref().unwrap();
+    assert_eq!(t.id, ItemId(1));
+    assert_eq!(t.run().unwrap().role, "fixer", "the latest run");
+    let kinds: Vec<StepKind> = t.steps.iter().map(|s| s.kind).collect();
+    assert_eq!(kinds, [StepKind::Start, StepKind::Tool], "whole lines only");
+    assert!(!t.info().ended);
+    assert_snapshot!("trace_running", screen(&env, &app, W, 16));
+
+    // The run goes on: the next refresh reads only what's new.
+    let offset = app.trace.as_ref().unwrap().tail.offset;
+    append(&latest, &text[cut + 40..]);
+    assert!(app.poll_trace());
+    let t = app.trace.as_ref().unwrap();
+    assert!(t.tail.offset > offset);
+    assert_eq!(t.steps.len(), 7, "{:?}", t.steps);
+    assert!(!app.poll_trace(), "nothing new");
+    assert!(screen(&env, &app, W, 16).contains("▸ Bash  Count bytes in note.txt"));
+
+    // Scrolled up, the same steps stay in view as more arrive; end follows.
+    key(&mut app, KeyCode::Up);
+    assert_eq!(app.trace.as_ref().unwrap().scroll, 1);
+    append(&latest, &RunEnd::new(4_000, Some(0), None).line());
+    // A change under the journal's directory refreshes it too.
+    app.reload_active();
+    let t = app.trace.as_ref().unwrap();
+    assert_eq!(t.scroll, 2);
+    assert!(t.info().ended);
+    assert_eq!(t.info().failure, None);
+    key(&mut app, KeyCode::End);
+    assert_eq!(app.trace.as_ref().unwrap().scroll, 0);
+    for _ in 0..50 {
+        key(&mut app, KeyCode::PageUp);
+    }
+    assert_eq!(app.trace.as_ref().unwrap().scroll, 7, "stops at the top");
+    key(&mut app, KeyCode::PageDown);
+    key(&mut app, KeyCode::PageDown);
+    assert_eq!(app.trace.as_ref().unwrap().scroll, 0);
+    assert_eq!(
+        app.selected,
+        Some(ItemId(1)),
+        "scrolling never moves the board"
+    );
+    assert_snapshot!("trace_ended", screen(&env, &app, W, 16));
+
+    // [ goes back to the older run, which failed.
+    key(&mut app, KeyCode::Char('['));
+    let t = app.trace.as_ref().unwrap();
+    assert_eq!(t.at, 0);
+    assert_eq!(t.run().unwrap().role, "reviewer");
+    assert_eq!(t.info().failure.as_deref(), Some("timed out after 600s"));
+    assert_snapshot!("trace_failed", screen(&env, &app, W, 16));
+    key(&mut app, KeyCode::Char('['));
+    assert_eq!(app.trace.as_ref().unwrap().at, 0, "stays at the oldest");
+
+    // An older run stays put when a new one starts; the newest follows.
+    write_run(&env, 1, "20261012T220000-reviewer.jsonl", &text[..cut]);
+    app.poll_trace();
+    assert_eq!(app.trace.as_ref().unwrap().at, 0);
+    key(&mut app, KeyCode::Char(']'));
+    key(&mut app, KeyCode::Char(']'));
+    assert_eq!(app.trace.as_ref().unwrap().at, 2);
+    write_run(&env, 1, "20261012T221000-fixer.jsonl", &text[..cut]);
+    app.poll_trace();
+    let t = app.trace.as_ref().unwrap();
+    assert_eq!(
+        (t.at, t.runs.len()),
+        (3, 4),
+        "moves on to the run that started"
+    );
+    assert_eq!(t.steps.len(), 2);
+
+    // Esc returns, and so does t, to the view it was opened from.
+    key(&mut app, KeyCode::Esc);
+    assert_eq!(app.view, View::Board);
+    assert!(app.trace.is_none());
+    key(&mut app, KeyCode::Enter);
+    key(&mut app, KeyCode::Char('t'));
+    assert_eq!(app.view, View::Trace);
+    key(&mut app, KeyCode::Char('t'));
+    assert_eq!(app.view, View::Journal);
+}
+
+#[test]
+fn t_on_an_item_without_runs_says_so() {
+    let env = building();
+    let mut app = load(&env, &env.repo);
+    select(&mut app, 3);
+    key(&mut app, KeyCode::Char('t'));
+    assert_eq!(app.view, View::Trace);
+    assert!(app.trace.as_ref().unwrap().runs.is_empty());
+    assert!(!app.poll_trace());
+    assert_snapshot!("trace_empty", screen(&env, &app, W, 12));
+    key(&mut app, KeyCode::Char('['));
+    key(&mut app, KeyCode::Up);
+    key(&mut app, KeyCode::Esc);
+    assert_eq!(app.view, View::Board);
+
+    // A run's file that is still empty waits for its first step.
+    write_run(&env, 3, "20261012T215146-intake.jsonl", "");
+    key(&mut app, KeyCode::Char('t'));
+    assert!(app.trace.as_ref().unwrap().steps.is_empty());
+    assert!(screen(&env, &app, W, 12).contains("Waiting for the run's first step"));
+}
+
+#[test]
+fn now_block_actions_for_runs_open_in_the_app() {
+    let env = building();
+    let text = stream();
+    write_run(&env, 1, "20261012T215146-reviewer.jsonl", &text);
+    let mut app = load(&env, &env.repo);
+    select(&mut app, 2);
+    key(&mut app, KeyCode::Char('i'));
+
+    // Following a run opens the Trace view on its item, never blocks.
+    assert_eq!(app.run_command("hall trace H-0001 --follow"), Effect::None);
+    assert_eq!(app.view, View::Trace);
+    assert_eq!(app.selected, Some(ItemId(1)));
+    let t = app.trace.as_ref().unwrap();
+    assert_eq!((t.id, t.steps.len()), (ItemId(1), 7));
+    key(&mut app, KeyCode::Esc);
+    assert_eq!(app.view, View::Inbox, "back where it was run from");
+    // Reading a run (the failed-run action) opens the same view; `hall
+    // trace` doesn't run inside the app.
+    assert_eq!(app.run_command("hall trace H-0001"), Effect::None);
+    assert_eq!(app.view, View::Trace);
+    key(&mut app, KeyCode::Esc);
+    assert_eq!(app.view, View::Inbox);
+    assert_eq!(app.run_command("hall trace H-0099 --follow"), Effect::None);
+    assert!(app.status.as_ref().unwrap().error);
+    assert_eq!(app.view, View::Inbox);
+
+    // Resuming a failed run starts Claude Code where the run ran: here a
+    // folder that isn't the item's worktree, with a space in its name.
+    let dir = env.root.join("review H-0001");
+    std::fs::create_dir_all(&dir).unwrap();
+    let cmd = format!("cd \"{}\" && claude --resume 91aedf44", dir.display());
+    match app.run_command(&cmd) {
+        Effect::Run { program, args, cwd } => {
+            assert_eq!(program, "claude");
+            assert_eq!(args, ["--resume", "91aedf44"]);
+            assert_eq!(cwd, dir);
+        }
+        e => panic!("{e:?}"),
+    }
+    // A folder that is gone is shown for you to do.
+    let gone = format!(
+        "cd {} && claude --resume 91aedf44",
+        p(&env.root.join("gone"))
+    );
+    assert_eq!(app.run_command(&gone), Effect::None);
+    assert!(
+        app.status
+            .as_ref()
+            .unwrap()
+            .text
+            .starts_with("Do this yourself"),
+        "{:?}",
+        app.status
+    );
 }

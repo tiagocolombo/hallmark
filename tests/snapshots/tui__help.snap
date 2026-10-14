@@ -15,14 +15,15 @@ hall · app (1 of 3 repos)   daemon ● running   ⚑ 3 waiting   rejected today
 └───────────────────────────│  home end  first event · back to now                         │───────────────────────────┘
 ┌ H-0001 · Retry failed webh│  f         findings for this item                            │──── review · r2 · ####### ┐
 │now Next for the review; th│  d         diff at the selected round                        │                           │
-│hh:mm  you       created · │  r         send to review (hall ready)                       │                           │
-│hh:mm  you       ready · ro│  p         pull back to development                          │                           │
-│hh:mm  assayer   checks pas│  g         go on: lift a hold, or retry (hall retry)         │                           │
-│hh:mm  assayer   usage · op│  x         drop, with a reason (in your office: its item)    │                           │
-│hh:mm  assayer   review · c│            r p g x show only when they fit the item's state  │                           │
-│hh:mm  fixer     fix submit│  X         your office: drop every item, one reason          │                           │
-│hh:mm  fixer     usage · so│  w         open the item's worktree                          │                           │
-│hh:mm  assayer   checks pas│  o         open the PR                                       │                           │
+│hh:mm  you       created · │  t         trace: the latest run, live ([ ] other runs)      │                           │
+│hh:mm  you       ready · ro│  r         send to review (hall ready)                       │                           │
+│hh:mm  assayer   checks pas│  p         pull back to development                          │                           │
+│hh:mm  assayer   usage · op│  g         go on: lift a hold, or retry (hall retry)         │                           │
+│hh:mm  assayer   review · c│  x         drop, with a reason (in your office: its item)    │                           │
+│hh:mm  fixer     fix submit│            r p g x show only when they fit the item's state  │                           │
+│hh:mm  fixer     usage · so│  X         your office: drop every item, one reason          │                           │
+│hh:mm  assayer   checks pas│  w         open the item's worktree                          │                           │
+│                           │  o         open the PR                                       │                           │
 │                           │  b         board                                             │                           │
 │                           │  h         history: closed and dropped                       │                           │
 │                           │  u         usage (then b i m d to group)                     │                           │
@@ -30,11 +31,10 @@ hall · app (1 of 3 repos)   daemon ● running   ⚑ 3 waiting   rejected today
 │                           │  R         repositories                                      │                           │
 │                           │  tab       next repository                                   │                           │
 │                           │  /         filter by ID, title or state                      │                           │
-│                           │  esc       back · stop replaying · clear filter              │                           │
-└───────────────────────────│  q         quit (work carries on)                            │───────────────────────────┘
-┌ Findings · 2 open of 2 ───│                                                              │───────────────────────────┐
-│F1   major   correctness   └ any key closes ──────────────────────────────────────────────┘ open · fix claimed #######│
-│F2   minor   evidence         No test for the backoff cap            src/webhooks.rs:42     open                      │
+└───────────────────────────│  esc       back · stop replaying · clear filter              │───────────────────────────┘
+┌ Findings · 2 open of 2 ───│  q         quit (work carries on)                            │───────────────────────────┐
+│F1   major   correctness   │                                                              │ open · fix claimed #######│
+│F2   minor   evidence      └ any key closes ──────────────────────────────────────────────┘ open                      │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 
-↑↓ item enter journal i your office ←→ step f findings d diff p pull back x drop / filter w worktree o PR ? help q quit
+↑↓ item enter journal i your office ←→ step f findings d diff t trace p pull back x drop / filter ? help q quit

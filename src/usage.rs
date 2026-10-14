@@ -1,5 +1,5 @@
-//! Usage from `claude -p --output-format json` results and from Claude Code
-//! session transcripts.
+//! Usage from `claude -p` results (the `result` line of a stream-json run)
+//! and from Claude Code session transcripts.
 //!
 //! Step 0 findings this module relies on (docs/spikes.md):
 //! - `modelUsage` is the source of truth for headless runs. Top-level
@@ -176,7 +176,22 @@ pub fn fmt_tokens(n: u64) -> String {
 
 // --- claude -p ------------------------------------------------------------
 
-/// The final JSON object printed by `claude -p --output-format json`.
+/// The `type`s of stream-json lines that are events, not the result, plus
+/// the runner's own `hall_run_end`. Every run prints them, so they mention
+/// models and rate limits (`rate_limit_event` with `"status":"allowed"`)
+/// whatever happened.
+pub const STREAM_EVENTS: &[&str] = &[
+    "system",
+    "assistant",
+    "user",
+    "rate_limit_event",
+    "stream_event",
+    crate::trace::END,
+];
+
+/// The result printed by `claude -p`: the last `result` line of
+/// `--output-format stream-json --verbose` (ADR 0041), or the one object of
+/// `--output-format json`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct PrintResult {
@@ -225,13 +240,40 @@ impl PrintResult {
         if let Ok(r) = serde_json::from_str(text) {
             return Ok(r);
         }
-        // stream-json and verbose modes print several lines; the result is last.
-        let line = text
+        // stream-json prints a line per event, the result last of Claude's;
+        // a run file then ends with the runner's `hall_run_end` (ADR 0041).
+        // Take the last `result` line, else the last JSON line that is no
+        // stream event (older output, such as an API error's).
+        let objects: Vec<serde_json::Value> = text
             .lines()
+            .filter(|l| l.trim_start().starts_with('{'))
+            .filter_map(|l| serde_json::from_str(l.trim()).ok())
+            .collect();
+        let kind = |v: &serde_json::Value| {
+            v.get("type")
+                .and_then(serde_json::Value::as_str)
+                .map(String::from)
+        };
+        let line = objects
+            .iter()
             .rev()
-            .find(|l| l.trim_start().starts_with('{'))
-            .unwrap_or(text);
-        serde_json::from_str(line).map_err(|e| {
+            .find(|v| kind(v).as_deref() == Some("result"))
+            .or_else(|| {
+                objects
+                    .iter()
+                    .rev()
+                    .find(|v| !kind(v).is_some_and(|k| STREAM_EVENTS.contains(&k.as_str())))
+            })
+            .ok_or_else(|| {
+                HallError::new(
+                    ErrorCode::CommandFailed,
+                    format!(
+                        "unreadable claude -p output: no result in {}",
+                        crate::output::clip(text.trim(), 200)
+                    ),
+                )
+            })?;
+        serde_json::from_value(line.clone()).map_err(|e| {
             HallError::new(
                 ErrorCode::CommandFailed,
                 format!("unreadable claude -p output: {e}"),
@@ -479,6 +521,30 @@ mod tests {
         let bad = PrintResult::parse(&fixture("claude/print_schema_mismatch.json")).unwrap();
         assert!(!bad.is_error);
         assert_eq!(bad.structured().unwrap_err().code, ErrorCode::CommandFailed);
+    }
+
+    #[test]
+    fn a_stream_parses_as_its_result_line_never_the_end_line() {
+        // A run file: stream-json, then the runner's `hall_run_end`, which
+        // is also the last JSON line (ADR 0041).
+        let end = crate::trace::RunEnd::new(3_100, Some(0), None).line();
+        let text = format!("{}{end}", fixture("claude/stream.jsonl"));
+        let r = PrintResult::parse(&text).unwrap();
+        assert_eq!(
+            r.session_id.as_deref(),
+            Some("91aedf44-f4cd-4efa-8e74-768d46a9dc75")
+        );
+        assert_eq!(r.subtype.as_deref(), Some("success"));
+        assert_eq!(r.num_turns, Some(3));
+        assert_eq!(r.usage("assay", "reviewer")[0].output_tokens, 341);
+        // A stream that died before its result has none: not the end line,
+        // not an assistant line.
+        let cut: String = fixture("claude/stream.jsonl")
+            .lines()
+            .filter(|l| !l.contains("\"type\":\"result\""))
+            .map(|l| format!("{l}\n"))
+            .collect();
+        assert!(PrintResult::parse(&format!("{cut}{end}")).is_err());
     }
 
     #[test]

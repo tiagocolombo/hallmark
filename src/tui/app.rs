@@ -20,6 +20,7 @@ use crate::index::InboxEntry;
 use crate::item::{Item, ItemId, State};
 use crate::output::Response;
 use crate::repo::Repo;
+use crate::trace::{self, RunFile, RunInfo, Step, Tail};
 
 /// The board's columns, left to right.
 pub const COLUMNS: [&str; 5] = [
@@ -67,6 +68,9 @@ pub enum View {
     Inbox,
     /// The reply of a command run from the app (`hall log`, …).
     Output,
+    /// The selected item's latest headless run, step by step, followed
+    /// while it grows (ADR 0041).
+    Trace,
 }
 
 impl View {
@@ -82,6 +86,7 @@ impl View {
             View::Diff => "diff",
             View::Inbox => "your office",
             View::Output => "output",
+            View::Trace => "trace",
         }
     }
 }
@@ -263,6 +268,42 @@ pub struct Diff {
     pub scroll: usize,
 }
 
+/// One item's headless runs, the one shown read step by step. A [`Tail`]
+/// keeps its place in the file, so each refresh reads only what the run
+/// wrote since the last.
+#[derive(Debug, Clone)]
+pub struct Trace {
+    pub id: ItemId,
+    /// The item's runs, oldest first.
+    pub runs: Vec<RunFile>,
+    /// The run shown: an index into `runs`.
+    pub at: usize,
+    /// Shows the newest run, moving on when another starts; off once `[`
+    /// goes back to an older one.
+    pub latest: bool,
+    pub tail: Tail,
+    pub steps: Vec<Step>,
+    /// Steps scrolled up from the bottom; 0 sticks to the bottom and
+    /// follows the run.
+    pub scroll: usize,
+    /// Why the run's file couldn't be read.
+    pub error: Option<String>,
+    /// Where `esc` and `t` return.
+    pub back: View,
+}
+
+impl Trace {
+    /// The run shown.
+    pub fn run(&self) -> Option<&RunFile> {
+        self.runs.get(self.at)
+    }
+
+    /// What the shown run's lines say about it so far.
+    pub fn info(&self) -> &RunInfo {
+        &self.tail.info
+    }
+}
+
 /// Rendering switches for snapshot tests: fixed placeholders for clock
 /// times and ages, and a path prefix shown as `[root]`.
 #[derive(Debug, Clone, Default)]
@@ -301,6 +342,8 @@ pub struct App {
     pub diff: Option<Diff>,
     /// Lines scrolled up from the bottom of the Live view.
     pub live_scroll: usize,
+    /// The run the Trace view shows (`t`).
+    pub trace: Option<Trace>,
     /// The selected inbox entry in your office.
     pub inbox_sel: usize,
     /// The selected entry explained (`hall inbox <n>`); `None` until it is
@@ -344,6 +387,7 @@ impl App {
             usage_by: UsageGroup::Room,
             diff: None,
             live_scroll: 0,
+            trace: None,
             inbox_sel: 0,
             inbox_detail: None,
             inbox_scroll: 0,
@@ -560,6 +604,7 @@ impl App {
             if self.view == View::Inbox {
                 self.load_inbox_detail();
             }
+            self.poll_trace();
         }
     }
 
@@ -703,6 +748,7 @@ impl App {
             }
             View::Board if !self.filter.is_empty() => self.filter.clear(),
             View::Findings if self.finding_open => self.finding_open = false,
+            View::Trace => self.close_trace(),
             _ => self.view = View::Board,
         }
         self.status = None;
@@ -792,6 +838,15 @@ impl App {
             (View::Live, KeyCode::PageDown) => {
                 self.live_scroll = self.live_scroll.saturating_sub(10)
             }
+            (View::Trace, KeyCode::Char('t')) => self.close_trace(),
+            (View::Trace, KeyCode::Up) => self.scroll_trace(1),
+            (View::Trace, KeyCode::Down) => self.scroll_trace(-1),
+            (View::Trace, KeyCode::PageUp) => self.scroll_trace(10),
+            (View::Trace, KeyCode::PageDown) => self.scroll_trace(-10),
+            (View::Trace, KeyCode::Home) => self.scroll_trace(isize::MAX),
+            (View::Trace, KeyCode::End) => self.scroll_trace(isize::MIN),
+            (View::Trace, KeyCode::Char('[')) => self.step_run(-1),
+            (View::Trace, KeyCode::Char(']')) => self.step_run(1),
             (View::Findings, KeyCode::Up) => self.finding_sel = self.finding_sel.saturating_sub(1),
             (View::Findings, KeyCode::Down) => {
                 let n = self.shown_ledger().map(|l| l.findings.len()).unwrap_or(0);
@@ -832,6 +887,7 @@ impl App {
             }
             (_, KeyCode::Char('b')) => self.view = View::Board,
             (_, KeyCode::Char('d')) => self.open_diff(),
+            (_, KeyCode::Char('t')) => self.open_trace(),
             (_, KeyCode::Char('r')) if self.fits(Act::Ready) => self.ready(),
             (_, KeyCode::Char('p')) if self.fits(Act::PullBack) => self.pull_back(),
             (_, KeyCode::Char('g')) if self.fits(Act::Go) => {
@@ -997,9 +1053,10 @@ impl App {
             self.cursor = None;
             self.diff = None;
             self.history_sel = 0;
-            if self.view == View::Diff {
+            if matches!(self.view, View::Diff | View::Trace) {
                 self.view = View::Board;
             }
+            self.trace = None;
             self.reload_active();
         }
         self.repo_sel = i;
@@ -1296,6 +1353,132 @@ impl App {
         self.info(fallback);
     }
 
+    // --- trace ----------------------------------------------------------------
+
+    /// `t`: the selected item's latest run, followed live.
+    fn open_trace(&mut self) {
+        let Some(id) = self.selected else {
+            self.err("No item selected.");
+            return;
+        };
+        self.trace = Some(Trace {
+            id,
+            runs: Vec::new(),
+            at: 0,
+            latest: true,
+            tail: Tail::default(),
+            steps: Vec::new(),
+            scroll: 0,
+            error: None,
+            back: self.view,
+        });
+        self.view = View::Trace;
+        self.status = None;
+        self.poll_trace();
+    }
+
+    /// `esc` or `t`: back to the view the trace was opened from.
+    fn close_trace(&mut self) {
+        let back = self.trace.take().map(|t| t.back).unwrap_or(View::Board);
+        self.view = if back == View::Trace {
+            View::Board
+        } else {
+            back
+        };
+        if self.view == View::Inbox {
+            self.load_inbox_detail();
+        }
+    }
+
+    /// Up (positive) or down; past the bottom it follows the run again.
+    fn scroll_trace(&mut self, by: isize) {
+        if let Some(t) = &mut self.trace {
+            let max = t.steps.len().saturating_sub(1);
+            t.scroll = t.scroll.saturating_add_signed(by).min(max);
+        }
+    }
+
+    /// `[` an older run, `]` a newer one.
+    fn step_run(&mut self, by: isize) {
+        let Some(t) = &mut self.trace else { return };
+        let last = t.runs.len().saturating_sub(1);
+        let to = t.at.saturating_add_signed(by).min(last);
+        if t.runs.is_empty() || to == t.at {
+            return;
+        }
+        t.at = to;
+        t.latest = to == last;
+        t.tail = Tail::default();
+        t.steps.clear();
+        t.scroll = 0;
+        t.error = None;
+        self.poll_trace();
+    }
+
+    /// Reads what the shown run wrote since the last call, and notices a
+    /// newer run starting. Only whole lines are read, and only while the
+    /// Trace view is open. True when anything changed.
+    pub fn poll_trace(&mut self) -> bool {
+        if self.view != View::Trace {
+            return false;
+        }
+        let (dir, hall) = match (&self.trace, self.repo().and_then(|r| r.hall())) {
+            (Some(t), Some(h)) => (h.item_runs(t.id), Some(h.clone())),
+            _ => return false,
+        };
+        let Some(t) = &mut self.trace else {
+            return false;
+        };
+        let runs = trace::runs_in(&dir).unwrap_or_default();
+        let shown = t.run().map(|r| r.path.clone());
+        let newest = runs.len().saturating_sub(1);
+        let at = if t.latest {
+            newest
+        } else {
+            shown
+                .as_ref()
+                .and_then(|p| runs.iter().position(|r| &r.path == p))
+                .unwrap_or(newest)
+        };
+        let mut changed = runs.len() != t.runs.len();
+        if runs.get(at).map(|r| &r.path) != shown.as_ref() {
+            t.tail = Tail::default();
+            t.steps.clear();
+            t.scroll = 0;
+            t.error = None;
+            changed = true;
+        }
+        t.runs = runs;
+        t.at = at;
+        let Some(path) = t.run().map(|r| r.path.clone()) else {
+            return changed;
+        };
+        let polled = t.tail.poll(&path);
+        if let Some(h) = hall.as_ref() {
+            let was = t.tail.info.interrupted;
+            trace::mark_interrupted(h, t.id, &t.runs, t.at, &mut t.tail.info);
+            changed |= was != t.tail.info.interrupted;
+        }
+        match polled {
+            Ok(new) => {
+                if !new.is_empty() {
+                    // Scrolled up, the same steps stay in view.
+                    if t.scroll > 0 {
+                        t.scroll += new.len();
+                    }
+                    t.steps.extend(new);
+                    changed = true;
+                }
+                changed |= t.error.take().is_some();
+            }
+            Err(e) => {
+                changed |= t.error.as_deref() != Some(e.message.as_str());
+                t.error = Some(e.message);
+            }
+        }
+        changed
+    }
+
     // --- your office ---------------------------------------------------------
 
     /// `i`: your office, on the entry last selected.
@@ -1409,14 +1592,24 @@ impl App {
     }
 
     /// Runs an action's command: `hall …` in-process (asking first for any
-    /// `<placeholder>`), `claude …` with the terminal handed over, and
-    /// anything else is shown for you to do.
+    /// `<placeholder>`), `hall trace … --follow` in the Trace view,
+    /// `claude …` with the terminal handed over (`cd <dir> && claude …` in
+    /// that folder: where the run started), and anything else is shown for
+    /// you to do.
     pub fn run_command(&mut self, cmd: &str) -> Effect {
+        if let Some(e) = self.resume_in(cmd) {
+            return e;
+        }
         let Some(args) = shlex::split(cmd).filter(|a| !a.is_empty()) else {
             self.err(&format!("Can't read the command: {cmd}"));
             return Effect::None;
         };
         match args[0].as_str() {
+            // `hall trace` prints straight to stdout and following would
+            // block the app; the Trace view reads and follows the run.
+            "hall" if args.get(1).is_some_and(|a| a == "trace") => {
+                self.follow_run(args.get(2).filter(|a| !a.starts_with('-')));
+            }
             "hall" if args.get(1).is_some_and(|a| a == "watch") => {
                 self.info(&format!(
                     "`{cmd}` follows the item live: run it in a terminal."
@@ -1496,6 +1689,47 @@ impl App {
             args: args[1..].to_vec(),
             cwd,
         }
+    }
+
+    /// `hall trace [<id>] --follow`: the Trace view on that item, or the
+    /// selected one.
+    fn follow_run(&mut self, id: Option<&String>) {
+        if let Some(arg) = id {
+            match arg.parse::<ItemId>() {
+                Ok(id) if self.repo().is_some_and(|r| r.data.item(id).is_some()) => {
+                    self.select(Some(id))
+                }
+                _ => {
+                    self.err(&format!("No item {arg} here."));
+                    return;
+                }
+            }
+        }
+        if self.view == View::Trace {
+            self.close_trace();
+        }
+        self.open_trace();
+    }
+
+    /// `cd <dir> && claude …`: the terminal handed to Claude Code in `<dir>`
+    /// (a failed run's working directory, which can be a review worktree
+    /// rather than the item's). Read without shell parsing, so a Windows
+    /// path keeps its backslashes. `None` when `cmd` isn't one.
+    fn resume_in(&mut self, cmd: &str) -> Option<Effect> {
+        let (dir, rest) = cmd.strip_prefix("cd ")?.split_once(" && ")?;
+        let args = shlex::split(rest).filter(|a| a.first().is_some_and(|p| p == "claude"))?;
+        let dir = PathBuf::from(dir.trim().trim_matches('"'));
+        if !dir.is_dir() {
+            self.info(&format!(
+                "Do this yourself: {cmd} (that folder is gone here)"
+            ));
+            return Some(Effect::None);
+        }
+        Some(Effect::Run {
+            program: crate::config::Tool::Claude.command(),
+            args: args[1..].to_vec(),
+            cwd: dir,
+        })
     }
 
     /// Called by the runner when an [`Effect::Run`] is over.

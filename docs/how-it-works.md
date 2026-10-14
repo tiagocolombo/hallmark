@@ -88,7 +88,11 @@ From the replay in the design page:
    removes H-0042's worktree. The branch stays
    ([ADR 0040](decisions/0040-sweep-finished-worktrees.md)).
 
-Steps 5–9 are the daemon's work.
+Steps 5–9 are the daemon's work. Each model run in them (the review, a fix)
+is a headless `claude -p` run, and it streams into the item's `runs/`
+directory as it goes: one file per run, with what the agent read, ran and
+said, ended by a line saying how the run ended
+([ADR 0041](decisions/0041-watch-runs-live.md)).
 
 ## Parallel parts
 
@@ -147,6 +151,13 @@ started (one `ci_down` entry). Hallmark tells you in Claude Code (a hook and
 the status line), in the terminal app, with a desktop notification, and on
 your phone through [ntfy](https://ntfy.sh), Telegram or Slack, plus an
 optional morning digest.
+
+`hall status <id>` says what an item is doing now and what you can do. While
+the reviewer, the fixer or the Delivery office's dev run is working, it shows
+the run's last step and offers `hall trace <id> --follow` to watch the agent
+work, live. When an item is held because its runs failed, it offers the
+`claude --resume` command that opens the failed run in Claude Code, once the
+run has ended. `hall export` keeps every run's steps in the item's record.
 
 Stuck items, Claude Code sessions waiting for permission, CI on merged PRs and
 proposed learnings are notices: `hall inbox --notices` lists them, and they are

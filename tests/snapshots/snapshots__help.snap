@@ -255,11 +255,79 @@ expression: v
           "required": false,
           "syntax": "--timeout <timeout>",
           "takes_value": true
+        },
+        {
+          "default": "false",
+          "help": "Also print the steps of the item's run while one is going (`hall trace`)",
+          "name": "trace",
+          "required": false,
+          "syntax": "--trace",
+          "takes_value": false
         }
       ],
       "name": "watch",
       "schema": "hall schema watch",
       "usage": "hall watch [OPTIONS] [ID]"
+    },
+    {
+      "about": "A headless run of an item, step by step: what the agent read, ran and said. The latest run unless --role or --run picks another",
+      "args": [
+        {
+          "name": "id",
+          "required": false,
+          "syntax": "<id>",
+          "takes_value": true
+        },
+        {
+          "help": "The latest run of this role: reviewer, fixer, intake, librarian, resume…",
+          "name": "role",
+          "required": false,
+          "syntax": "--role <role>",
+          "takes_value": true
+        },
+        {
+          "help": "The n-th run, 1 = oldest; `hall trace --list` numbers them",
+          "name": "run",
+          "required": false,
+          "syntax": "--run <run>",
+          "takes_value": true
+        },
+        {
+          "default": "false",
+          "help": "List the item's runs (with --role, only that role's) instead of printing one",
+          "name": "list",
+          "required": false,
+          "syntax": "--list",
+          "takes_value": false
+        },
+        {
+          "default": "false",
+          "help": "Keep printing the run's steps until it ends or --timeout passes",
+          "name": "follow",
+          "required": false,
+          "syntax": "--follow",
+          "takes_value": false
+        },
+        {
+          "default": "false",
+          "help": "Print the `claude --resume` command that opens the run in Claude Code. Only once the run has ended; nothing is started",
+          "name": "open",
+          "required": false,
+          "syntax": "--open",
+          "takes_value": false
+        },
+        {
+          "default": "30m",
+          "help": "With --follow: stop after this long, such as 30m",
+          "name": "timeout",
+          "required": false,
+          "syntax": "--timeout <timeout>",
+          "takes_value": true
+        }
+      ],
+      "name": "trace",
+      "schema": "hall schema trace",
+      "usage": "hall trace [OPTIONS] [ID]"
     },
     {
       "about": "Freeze the commit and send the item to review",

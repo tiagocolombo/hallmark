@@ -1,0 +1,20 @@
+---
+source: tests/tui.rs
+expression: "screen(&env, &app, W, 16)"
+---
+hall · app (1 of 1 repo)   daemon ● running   ⚑ 3 waiting   rejected today 3 · review tokens 400k          trace · hh:mm
+┌ H-0001 · fixer run · started hh:mm ───────────────────────────────────────────────────────────────────────── ■ ended ┐
+│          ● claude-haiku-5-5 in /tmp/spike                                                                            │
+│hh:mm:ss  ▸ Read  /tmp/spike/note.txt                                                                                 │
+│            ↳ 1 hello 2                                                                                               │
+│hh:mm:ss  ▸ Bash  Count bytes in note.txt                                                                             │
+│            ↳ 6 note.txt                                                                                              │
+│hh:mm:ss  » `note.txt` contains just the word "hello" and a trailing newline, which `wc -c` confirms at 6 bytes.      │
+│          ■ done in 3s, $0.01                                                                                         │
+│hh:mm:ss  ■ run ended after 4s                                                                                        │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+└───────────────────────────────────────────────────────────────────────────────────────── run 2/2 · [ older · ] newer ┘
+
+↑↓ scroll  pgup pgdn page  end follow  [ ] older·newer run  esc t back  ? help  q quit
