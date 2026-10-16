@@ -38,6 +38,8 @@ expression: keys
   "repo budget.review_model string",
   "repo capture.free list",
   "repo capture.mode choice",
+  "repo capture.push_allow list",
+  "repo capture.push_guard choice",
   "repo claude_args list",
   "repo dev_commands list",
   "repo extensions.mattpocock list",

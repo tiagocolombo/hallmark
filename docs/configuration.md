@@ -62,6 +62,8 @@ ship   = 2
 [capture]
 mode = "gate"   # gate: edits need an item · ask: Claude asks you · off
 free = ["docs/", "*.md"]   # paths that need no item
+push_guard = "strict"      # or "parse": see "The push guard" below
+push_allow = []            # scripts the strict guard lets through, as prefixes: ["make release"]
 
 [merge]                     # the merger: shipped PRs merge without you
 mode       = "off"          # or "auto"
@@ -132,6 +134,33 @@ lit     = [".github/", "release-plz.toml"]
 
 `--admin` also skips required checks, so `require_ci = false` with it merges
 a PR whose CI is red, and only the base branch's own CI says so afterwards.
+
+## The push guard
+
+The push gate denies `git push`, `gh pr create`, the ship command and the
+other pushes it can read ([DESIGN.md](DESIGN.md#the-hallmark-and-the-gates))
+unless `HEAD` has a hallmark. `[capture] push_guard` sets what it does with
+commands it can't read:
+
+- `strict` (default): inside an item's worktree, it also denies a command that
+  may push but that it can't follow: a script whose name or arguments mention
+  `push`, `release`, `publish`, `notes` or `gh` (`make push`, `npm run release`,
+  `./push.sh`, `python3 -c …`), a git subcommand it doesn't know (an alias such
+  as `git p`), a `gh` command that changes GitHub (`gh pr merge`, a `gh api`
+  write, `gh release create`), or a command word computed when it runs
+  (`$(echo git) push`). The denial is `GATE_DENIED` with `hall ready` in
+  `next`.
+- `parse`: only what the gate reads as a push or a note write is denied.
+
+`push_allow` lists the commands a repo needs that the strict guard would
+deny, as word prefixes: `push_allow = ["make release"]` lets `make release`
+and `make release VERSION=2` through. It never lets a command the gate reads
+as a push through.
+
+Whatever these say, `git notes` writes (`add`, `append`, `edit`, `copy`,
+`remove`, `merge`, `prune`, and `git update-ref` on a notes ref) are denied
+unless `HALL_ACTOR` is `assayer` or `shipper`: the hallmark is a note, and
+only the daemon writes it.
 
 ## Extensions
 

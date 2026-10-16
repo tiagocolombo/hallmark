@@ -207,13 +207,31 @@ One `PreToolUse` hook, `hall hook pre-tool-use`, enforces two gates. Both apply
 only in repos where `hall init` has created `<git-common-dir>/hallmark`
 (ADR 0010).
 
-**The push gate.** It denies `git push`, `gh pr create`, and the configured ship
-command unless `HEAD` has a hallmark.
+**The push gate.** It denies a push unless `HEAD` has a hallmark: `git push`,
+`git send-pack`, `git http-push`, `git subtree push`, `gh pr create`,
+`gh pr merge`, a `gh api` write to a PR, ref, merge or contents path, and the
+configured ship command.
 
-- Compound shell commands (`&&`, `||`, `;`, `|`) are split, and each part is
-  checked.
-- Leading `cd …` steps and `VAR=value` assignments are skipped, and so are git
-  global options such as `git -C dir push`.
+- Compound shell commands (`&&`, `||`, `;`, `|`, newlines) are split, and each
+  part is checked. Heredoc bodies are data, except when a shell reads them.
+- Leading `cd …` steps, `VAR=value` assignments and shell keywords are skipped,
+  and so are git global options such as `git -C dir push`.
+- It sees through wrappers (`env`, `command`, `exec`, `sudo`, `nohup`, `time`,
+  `timeout`, `nice`, `ionice`, `caffeinate`, `stdbuf`, `xargs`,
+  `nix develop --command`, `direnv exec`), `sh|bash|zsh -c` with any option
+  cluster holding `c` (`bash -ec`), `eval`, command substitutions, git aliases
+  (`git -c alias.p=push p`, and aliases in git config), and the commands git
+  runs itself (`rebase -x`, `bisect run`, `submodule foreach`).
+- `[capture] push_guard = "strict"` (the default) covers what it can't read:
+  inside an item's worktree, a command that may push but can't be followed (a
+  script mentioning `push` or `release`, an unknown git subcommand, a `gh`
+  command that changes GitHub, a computed command word) is denied too, unless
+  `[capture] push_allow` lists it. `parse` turns this off.
+
+**The note gate.** The hallmark is a git note, so `git notes` writes (`add`,
+`append`, `edit`, `copy`, `remove`, `merge`, `prune`) and `git update-ref` on a
+notes ref are denied unless `HALL_ACTOR` is `assayer` or `shipper`. Reading
+notes (`git notes show`, `list`) passes.
 
 **The edit gate.** It denies an `Edit`, `Write`, `MultiEdit` or `NotebookEdit`
 inside the repo but outside an active item's worktree, and also a Bash
@@ -377,6 +395,8 @@ rules       = ["CLAUDE.md", "AGENTS.md"]
 [capture]
 mode = "gate"                   # gate | ask | off
 free = ["docs/", "*.md"]        # paths that need no item
+push_guard = "strict"           # or "parse": deny unreadable pushes in worktrees
+push_allow = []                 # commands the strict guard lets through
 
 [merge]                         # the merger (ADR 0048)
 mode       = "off"              # or "auto"

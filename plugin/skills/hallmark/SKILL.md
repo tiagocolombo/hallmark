@@ -9,7 +9,10 @@ Every change in a Hallmark repo is an **item** (`H-0042`) with its own branch,
 worktree and journal. You build it with the human; an independent reviewer
 approves it later. Only a commit with a hallmark (an approval bound to that
 SHA) may be pushed, so **never push** and never open PRs yourself. The gate
-denies `git push`, `gh pr create` and the repo's ship command without one.
+denies `git push`, `gh pr create` and the repo's ship command without one. In
+an item's worktree it also denies what may push that it can't read (scripts
+like `make push`, git aliases, `gh` commands that change GitHub), and it
+denies `git notes` writes: only Hallmark writes the hallmark.
 
 ## What becomes an item
 
