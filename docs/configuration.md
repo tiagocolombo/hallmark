@@ -67,13 +67,13 @@ free = ["docs/", "*.md"]   # paths that need no item
 split     = "auto"   # or "off"
 max_parts = 4
 
-[budget]                       # no caps unless you set them
+[budget]                       # runs are capped by default; daily caps only if you set them
 review_model    = "opus"
 fix_model       = "sonnet"
 intake_model    = "haiku"
 librarian_model = "haiku"
 # daily = "4M"; per_item = "800k" (weighted by price: a cache read counts a tenth) or "$15"
-# [budget.review] max_usd = 3.0, daily = "2M", effort = "high", timeout = "20m"
+# [budget.review] max_usd = 3.0 (or "none"), daily = "2M", effort = "high", timeout = "20m"
 
 [extensions]                # skill packs by other authors: `hall extensions`
 # mattpocock = ["planner", "developer", "reviewer", "fixer"]
@@ -225,6 +225,24 @@ Each role has a table with the same keys: `[budget.review]`, `[budget.fix]`,
 `model` wins over `<role>_model`, and its `fallback` is used when `model` is
 unavailable (a run that fails fast without tokens is retried once with it) or
 overloaded.
+
+Every run has a per-run cap, `max_usd`, passed to Claude as
+`--max-budget-usd`. When a role's table doesn't set it, the default applies:
+
+| Role | `max_usd` default |
+| --- | --- |
+| `[budget.review]` | 3.00 |
+| `[budget.fix]` | 2.00 |
+| `[budget.intake]` | 0.10 |
+| `[budget.librarian]` | 0.20 |
+
+A run that needs more than this has already gone wrong: a reviewer that
+wanders, or a fixer looping on a flaky gate. A run that reaches its cap stops
+and is retried once; a second stop holds the item for you. Set
+`max_usd = "none"` to run a role with no per-run cap (only `timeout` bounds
+it), or `hall budget --set review.max_usd=none`;
+`hall budget --set review.max_usd=default` (or `hall config unset
+budget.review.max_usd`) goes back to the default.
 
 ## Notifications
 

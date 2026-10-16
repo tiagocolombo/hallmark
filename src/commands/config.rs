@@ -231,6 +231,13 @@ fn entries(f: &Files, scope: Scope, keys: &[Key]) -> Vec<Entry> {
                 .unwrap_or_default();
             let mut v = serde_json::to_value(&c).unwrap_or_default();
             v["notify"] = serde_json::to_value(c.notify()).unwrap_or_default();
+            // An unset per-run cap is the role's default, not "no cap".
+            for r in crate::budget::ROLES {
+                v["budget"][crate::budget::table_key(r)]["max_usd"] = match c.budget.max_usd(r) {
+                    Some(u) => Value::from(u),
+                    None => Value::from("none"),
+                };
+            }
             v
         }
         Scope::User => {
