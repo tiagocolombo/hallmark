@@ -1189,6 +1189,20 @@ mod tests {
     }
 
     #[test]
+    fn a_cached_check_says_so_in_the_comment() {
+        let mut events = updated(json!({"event": "rebase_requested", "onto": "main",
+            "reason": "r"}));
+        events.push(ev(json!({"event": "checks", "sha": "abc1234", "round": 4,
+        "passed": true, "runs": [
+            {"command": "cargo test", "exit_code": 0, "duration_ms": 2500, "cached": true},
+            {"command": "cargo fmt", "exit_code": 0, "duration_ms": 1000}
+        ]})));
+        let c = review_comment(&item(None), &events, false);
+        assert!(c.contains("- `cargo test` passed (2.5s, cached)"), "{c}");
+        assert!(c.contains("- `cargo fmt` passed (1.0s)"), "{c}");
+    }
+
+    #[test]
     fn an_update_after_a_rebase_says_so() {
         let events = updated(json!({"event": "rebase_requested", "onto": "main",
             "reason": "the branch conflicts with main."}));

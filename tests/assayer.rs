@@ -1181,3 +1181,51 @@ fn a_failing_gate_is_rerun_and_both_results_are_kept() {
     assert_eq!(lines[0]["tree"], tree.as_str());
     assert_eq!(lines[1]["sha"], fix.as_str());
 }
+
+#[test]
+fn a_fully_cached_resubmit_checks_out_nothing_and_shows_cached_in_the_export() {
+    let env = Env::initialized();
+    let gate = counting_gate(&env, "cached");
+    configure(&env, &[("gates", &format!("['{gate}']"))]);
+    let (id, wt, sha) = ready_item(&env, "Retry webhooks", "retry.rs", "fn retry() {}\n");
+    let script = env.script(json!([reviewer(verdict(
+        vec![finding("blocker", "retry.rs", "Double delivery")],
+        json!([])
+    ))]));
+    tick(&env, &script);
+    tick(&env, &script);
+    assert_eq!(state(&env, &id), "fixing");
+
+    let fix = same_tree_commit(&wt);
+    resubmit(&env, &id, &fix, &["F1"]);
+    let r = tick(&env, &script);
+    assert!(what(&r).contains("checks passed"), "{}", r.stdout);
+    assert_eq!(runs_of(&env, "cached"), 1);
+    assert_eq!(
+        git(&env.root.join("app-assay"), &["rev-parse", "HEAD"]),
+        sha,
+        "no assay checkout when every gate is cached"
+    );
+
+    let r = env.hall(&env.repo, &["export", &id]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let md = r.json["markdown"].as_str().unwrap();
+    assert!(md.contains(" · cached"), "{md}");
+}
+
+#[test]
+fn a_cache_that_cant_be_written_fails_no_check() {
+    let env = Env::initialized();
+    let gate = counting_gate(&env, "plain");
+    configure(&env, &[("gates", &format!("['{gate}']"))]);
+    // A plain file where the cache directory belongs.
+    std::fs::write(env.repo.join(".git/hallmark/checks-cache"), "x").unwrap();
+    let (id, _, _) = ready_item(&env, "Retry webhooks", "retry.rs", "fn retry() {}\n");
+    let script = env.script(json!([reviewer(verdict(vec![], json!([])))]));
+    let r = tick(&env, &script);
+    assert!(what(&r).contains("checks passed"), "{}", r.stdout);
+    assert_eq!(runs_of(&env, "plain"), 1);
+    let live = std::fs::read_to_string(env.repo.join(".git/hallmark/live.log")).unwrap_or_default();
+    assert!(live.contains("checks cache not written"), "{live}");
+    assert_eq!(events_of(&env, &id, "checks").len(), 1);
+}
