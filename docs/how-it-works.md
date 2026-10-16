@@ -219,6 +219,13 @@ fit its job:
 - **The fixer** fixes test-first with `tdd`, and builds a feedback loop with
   `diagnosing-bugs` when a cause isn't plain.
 
+The headless roles read a skill in full in their prompt, so each loads only
+when the run calls for it. The reviewer reads `code-review` and the Front
+Desk `to-tickets` on every run: they are their method. The fixer gets
+`diagnosing-bugs` only when a gate failed, and `tdd` only when an open
+finding is under the `correctness` or `evidence` lens; a round with neither
+gets no Extensions section at all.
+
 The text is the author's, unchanged and credited; Hallmark's instructions
 and your repo's rules win where they disagree. `hall extensions` lists every
 extension with its author, source and license.

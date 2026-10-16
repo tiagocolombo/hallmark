@@ -563,10 +563,17 @@ pub fn prompt(repo: &Repo, item: &Item, events: &[Event], ledger: &Ledger) -> St
         s.push_str(&format!("\n{}\n", crate::skills::section(&skill, &origin)));
     }
     // Extensions turned on for the fixer (ADR 0038), from the main
-    // checkout's config like every other setting (ADR 0012).
-    if let Some(x) =
-        crate::extensions::prompt(&repo.config.extensions, crate::extensions::Role::Fixer)
-    {
+    // checkout's config like every other setting (ADR 0012), each skill
+    // only when this round calls for it: a red gate, an open finding's lens.
+    let round = crate::extensions::Context {
+        gate_failed: !failing.is_empty(),
+        lenses: ledger.open().iter().map(|t| t.finding.lens).collect(),
+    };
+    if let Some(x) = crate::extensions::prompt_for(
+        &repo.config.extensions,
+        crate::extensions::Role::Fixer,
+        &round,
+    ) {
         s.push_str(&format!("\n{x}"));
     }
     let gates: Vec<String> = repo.config.gates.iter().map(|g| format!("`{g}`")).collect();

@@ -61,7 +61,7 @@ The extensions, and what each role gets:
 
 | Extension | Credit | planner | developer | reviewer | fixer |
 | --- | --- | --- | --- | --- | --- |
-| `mattpocock` | [Matt Pocock's skills](https://github.com/mattpocock/skills) by Matt Pocock, MIT | `to-tickets` | `tdd`, `diagnosing-bugs`, `codebase-design` | `code-review` | `tdd`, `diagnosing-bugs` |
+| `mattpocock` | [Matt Pocock's skills](https://github.com/mattpocock/skills) by Matt Pocock, MIT | `to-tickets` | `tdd`, `diagnosing-bugs`, `codebase-design` | `code-review` | `tdd` (an open `correctness` or `evidence` finding), `diagnosing-bugs` (a failed gate) |
 
 ## Items
 

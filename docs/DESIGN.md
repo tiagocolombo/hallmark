@@ -758,8 +758,10 @@ per role in `[extensions]`. The first is Matt Pocock's skills (MIT):
 `to-tickets` for the Front Desk, `tdd`, `diagnosing-bugs` and
 `codebase-design` for development sessions, `code-review` for the reviewer,
 `tdd` and `diagnosing-bugs` for the fixer. Headless roles get the skill in
-full with a note on how it fits and a rule for running without a person;
-sessions get an index and `hall extensions show`.
+full with a note on how it fits and a rule for running without a person,
+and only when its trigger holds: the fixer reads `diagnosing-bugs` when a
+gate failed and `tdd` when an open finding is about correctness or
+evidence. Sessions get an index and `hall extensions show`.
 
 Two outside tools fit at the edges:
 
