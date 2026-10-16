@@ -326,6 +326,7 @@ pub fn inspect(cmd: &str, cwd: &Path, ctx: &Context) -> Scan {
     let mut s = Scanner {
         ctx,
         out: Scan::default(),
+        xrepl: None,
     };
     let mut dir = cwd.to_path_buf();
     s.walk(cmd, &mut dir, 0);
@@ -638,6 +639,8 @@ impl Lexer {
 struct Scanner<'a, 'b> {
     ctx: &'a Context<'b>,
     out: Scan,
+    /// The `-I` replace string of the `xargs` the current segment runs under.
+    xrepl: Option<String>,
 }
 
 /// `prefix` starts `w`, comparing the program by name.
@@ -735,6 +738,30 @@ fn wrapper_len(p: &str, w: &[String], dir: &mut PathBuf) -> Option<usize> {
     Some(i)
 }
 
+/// The replace string an `xargs` invocation's options set (`-I{}`, `-i`,
+/// `--replace`), given the words after `xargs`.
+fn xargs_replace(opts: &[String]) -> Option<String> {
+    let mut found = None;
+    let mut i = 0;
+    while let Some(a) = opts.get(i) {
+        if a == "-I" {
+            found = opts.get(i + 1).cloned();
+            i += 1;
+        } else if let Some(r) = a.strip_prefix("-I") {
+            found = Some(r.to_string());
+        } else if a == "-i" || a == "--replace" {
+            found = Some("{}".into());
+        } else if let Some(r) = a
+            .strip_prefix("-i")
+            .or_else(|| a.strip_prefix("--replace="))
+        {
+            found = Some(r.to_string());
+        }
+        i += 1;
+    }
+    found
+}
+
 /// `gh` commands that only read.
 fn gh_reads(v1: &str, v2: &str) -> bool {
     matches!(
@@ -794,16 +821,22 @@ impl Scanner<'_, '_> {
         w.retain(|x| !x.is_empty() && x != "{" && x != "}");
         // Env assignments, keywords and wrappers come before the command.
         let mut xargs = false;
+        let mut xrepl = None;
+        // `env -C` moves only the command it wraps, not the walk.
+        let mut scoped = dir.clone();
         while let Some(first) = w.first() {
             let p = program(first);
             if is_assignment(first) || KEYWORDS.contains(&p.as_str()) {
                 w.remove(0);
                 continue;
             }
-            let Some(n) = wrapper_len(&p, &w, dir) else {
+            let Some(n) = wrapper_len(&p, &w, &mut scoped) else {
                 break;
             };
-            xargs |= p == "xargs";
+            if p == "xargs" {
+                xargs = true;
+                xrepl = xargs_replace(&w[1..n.min(w.len())]).or(xrepl);
+            }
             w.drain(..n.min(w.len()));
         }
         if w.is_empty() {
@@ -811,7 +844,12 @@ impl Scanner<'_, '_> {
         }
         // `[capture] push_allow` quiets the guard, never the parser.
         let before = self.out.suspects.len();
-        self.command(&w, seg, dir, depth, xargs);
+        self.xrepl = xrepl;
+        if scoped == *dir {
+            self.command(&w, seg, dir, depth, xargs);
+        } else {
+            self.command(&w, seg, &mut scoped, depth, xargs);
+        }
         if self.ctx.allow.iter().any(|p| starts_with(p, &w)) {
             self.out.suspects.truncate(before);
         }
@@ -855,6 +893,7 @@ impl Scanner<'_, '_> {
     /// `sh -c '…'` (any option cluster with `c`), a heredoc on stdin, or a
     /// script.
     fn shell(&mut self, w: &[String], seg: &Segment, dir: &Path, depth: u8) {
+        let repl = self.xrepl.take();
         let mut i = 1;
         let mut command = false;
         while let Some(a) = w.get(i) {
@@ -885,11 +924,16 @@ impl Scanner<'_, '_> {
         if depth >= MAX_DEPTH {
             if command || !seg.heredocs.is_empty() {
                 self.too_deep(dir, seg);
+                return;
             }
-            return;
         }
         if command {
             if let Some(inner) = w.get(i) {
+                let first = words(inner).into_iter().next();
+                if repl.is_some() && first == repl {
+                    self.suspect(dir, seg, "its command comes from elsewhere".into());
+                    return;
+                }
                 let mut d = dir.to_path_buf();
                 self.walk(inner, &mut d, depth + 1);
             } else {
@@ -1093,7 +1137,8 @@ impl Scanner<'_, '_> {
             // `cargo xtask release` and `cargo make release` run whatever
             // follows.
             let own = [
-                "test", "build", "check", "clippy", "fmt", "doc", "bench", "nextest", "run",
+                "test", "build", "check", "clippy", "fmt", "doc", "bench", "nextest", "t", "b",
+                "c", "d",
             ];
             let mut out: Vec<&str> = if rest.first().is_some_and(|f| own.contains(f)) {
                 rest.first().copied().into_iter().collect()
@@ -1237,6 +1282,11 @@ mod tests {
             )),
             vec![(OpKind::Push, base.join("elsewhere"))]
         );
+        // `env -C` scopes to the wrapped command only.
+        assert_eq!(
+            at(&format!("env -C '{}' true && git push", base.display())),
+            vec![(OpKind::Push, repo.clone())]
+        );
         assert_eq!(
             kinds("git -c core.pager=cat --no-pager commit -am x"),
             vec![(OpKind::Commit, "/repo".into())]
@@ -1363,6 +1413,7 @@ mod tests {
             "cargo build --release",
             "cargo test",
             "cargo test push_guard",
+            "cargo t notes",
             "cargo test --all-targets 2>&1 | tail -20",
             "nix develop --command cargo fmt --check",
             "nix develop --command cargo clippy --all-targets -- -D warnings",
@@ -1466,6 +1517,14 @@ mod tests {
             "eval \"eval \\\"eval \\\\\\\"eval \\\\\\\\\\\\\\\"eval git push\\\\\\\\\\\\\\\"\\\\\\\"\\\"\"",
             "echo $(echo $(echo $(echo $(echo $(git push)))))",
             "sh -c",
+            "cargo run --bin release",
+            "cargo run -p xtask release",
+            "echo 'git push' | xargs -I{} sh -c '{}'",
+            "echo 'git push' | eval eval eval eval sh",
+            "eval eval eval eval bash ./push.sh",
+            "echo $(echo $(echo $(echo $(sh -c 'git push'))))",
+            "echo $(echo $(echo $(echo $(git -c alias.p=push p))))",
+            "echo $(echo $(echo $(echo $(git rebase -x 'git push' main))))",
         ] {
             let (ops, guard) = verdict(cmd);
             assert!(ops.is_empty() && guard, "{cmd}: {ops:?} {guard}");
