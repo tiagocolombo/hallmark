@@ -68,19 +68,6 @@ pub fn lease_ttl_for(config: &crate::config::Config) -> Duration {
     Duration::seconds(run.max(gate).max(600) + 600)
 }
 
-#[cfg(test)]
-mod lease_tests {
-    use super::*;
-
-    #[test]
-    fn a_slow_gate_gets_a_lease_longer_than_itself() {
-        let c = crate::config::Config::parse("gates = [{ cmd = 'cargo test', timeout = '2h' }]\n")
-            .unwrap();
-        assert!(lease_ttl_for(&c).num_seconds() > 7200);
-        assert!(lease_ttl_for(&crate::config::Config::default()).num_seconds() < 7200);
-    }
-}
-
 /// The assayer's own worktree: a sibling of the main checkout,
 /// `../<repo>-assay`, created once and reused so ignored build caches
 /// survive between rounds.
@@ -202,4 +189,17 @@ fn is_empty_dir(p: &Path) -> bool {
     std::fs::read_dir(p)
         .map(|mut d| d.next().is_none())
         .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod lease_tests {
+    use super::*;
+
+    #[test]
+    fn a_slow_gate_gets_a_lease_longer_than_itself() {
+        let c = crate::config::Config::parse("gates = [{ cmd = 'cargo test', timeout = '2h' }]\n")
+            .unwrap();
+        assert!(lease_ttl_for(&c).num_seconds() > 7200);
+        assert!(lease_ttl_for(&crate::config::Config::default()).num_seconds() < 7200);
+    }
 }
