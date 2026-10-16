@@ -577,6 +577,8 @@ fn a_grant_lets_the_loop_go_on_today_without_changing_the_cap() {
 #[test]
 fn a_grant_needs_a_daily_cap() {
     let env = Env::initialized();
+    let r = env.hall(&env.repo, &["budget", "--set", "daily=none"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
     let r = env.hall(&env.repo, &["budget", "--grant", "1M"]);
     assert_eq!(r.code, 4, "{}", r.stdout);
     assert_eq!(r.json["error"]["code"], "WRONG_STATE");

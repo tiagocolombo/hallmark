@@ -117,6 +117,7 @@ Transitions:
 | awaiting_you | `pull-back` ("not yet") | development |
 | checks | checks pass | review |
 | checks | checks fail | fixing |
+| checks | checks fail for the `max_check_failures`-th time in a row (3) | fixing, held for you (`checks`) |
 | review | approve (0 blockers, 0 majors) | hallmarked |
 | review | changes requested | fixing |
 | review | changes requested, `max_rejects` reached (3) | escalated |
@@ -141,7 +142,9 @@ Rules:
   `WRONG_STATE` and keep the request, so the conflicting commit never reaches
   review (ADR 0043).
 - **A script decides when to stop.** Loops end when the hallmark exists or the
-  round limit is reached, never because an agent printed "done".
+  round limit is reached, never because an agent printed "done". Failed
+  checks count too: after `max_check_failures` in a row the item is held, so
+  fixes that never turn the gates green don't loop.
 - **The state is derived, not stored.** The state machine folds the item's
   events to get its state. `item.json` is only a cache (ADR 0008).
 
@@ -399,6 +402,7 @@ reviewer    = "claude -p"
 fixer       = "claude -p"       # or an external fix engine (Ralph Orchestrator…)
 claude_args = []                # extra arguments for every headless run
 max_rejects = 3
+max_check_failures = 3          # failed checks in a row before a `checks` hold
 stuck_after = "30m"
 lenses      = "all"
 rules       = ["CLAUDE.md", "AGENTS.md"]
@@ -419,12 +423,14 @@ lit        = []                 # paths a person merges
 split     = "auto"              # the Front Desk splits requests when it can; or "off"
 max_parts = 4
 
-[budget]                        # no caps unless you set them
+[budget]
+daily           = "4M"          # default caps; "none" turns one off
+per_item        = "800k"
 review_model    = "opus"
 fix_model       = "sonnet"
 intake_model    = "haiku"
 librarian_model = "haiku"
-# daily = "4M"; per_item = "800k"; [budget.review] max_usd = 3.00, daily = "2M"
+# [budget.review] max_usd = 3.00, daily = "2M"
 
 [library]
 search         = "builtin"      # or "qmd"
@@ -583,7 +589,7 @@ changes (ADR 0030).
 | question | `hall ask` without an answer | that item |
 | escalated | the item is `escalated` | that item |
 | ready? | the item is `awaiting_you` | nothing |
-| budget, run_failed, ship_failed, conflict, feedback, ci_failed | a hold: a per-item cap, two failed runs in a row, a failed ship, a rebase the Delivery office couldn't finish, PR comments or failing CI its dev run didn't act on | that item, until `hall retry` (which, for a budget hold, grants the item more tokens); a `ci_failed` hold also clears when a re-run of the PR's checks passes (ADR 0047) |
+| budget, run_failed, checks, ship_failed, conflict, feedback, ci_failed | a hold: a per-item cap, two failed runs in a row, `max_check_failures` failed checks in a row, a failed ship, a rebase the Delivery office couldn't finish, PR comments or failing CI its dev run didn't act on | that item, until `hall retry` (which, for a budget hold, grants the item more tokens); a `ci_failed` hold also clears when a re-run of the PR's checks passes (ADR 0047) |
 | merge_failed, lit | a hold on a shipped item: the merger's merge command failed, or the PR is ready but touches a `[merge] lit` path (ADR 0048) | that item, until `hall retry` (try again; for `lit`, merge this head) or the PR merges or closes |
 | ci_failed | an open PR's CI still fails after the Delivery office's fixes | a follow-up item |
 | ci_down | CI jobs that never started (an Actions billing limit, no runners): one entry for every PR | GitHub |

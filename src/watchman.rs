@@ -98,6 +98,7 @@ mod tests {
             state_since: t,
             round: 1,
             rejects: 0,
+            check_failures: 0,
             frozen_sha: None,
             hallmark_sha: None,
             pr_url: None,

@@ -56,6 +56,10 @@ pub struct Config {
     pub claude_args: Vec<String>,
     /// Rejected reviews before the item is escalated to you.
     pub max_rejects: u32,
+    /// Failed checks in a row before the item is held for you (kind
+    /// `checks`), so a fix that never turns the gates green can't loop.
+    /// 0: never.
+    pub max_check_failures: u32,
     /// `hall propose-ready` sends the item straight to review when nothing
     /// is left to confirm (no open question, a clean worktree, no open
     /// parts). `false`: it always waits for your call.
@@ -113,6 +117,7 @@ impl Default for Config {
             fixer: "claude -p".into(),
             claude_args: Vec::new(),
             max_rejects: 3,
+            max_check_failures: 3,
             auto_ready: true,
             stuck_after: "30m".into(),
             lenses: Lenses::All("all".into()),
@@ -239,11 +244,13 @@ impl Config {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(default)]
 pub struct Budget {
-    /// Daily cap for the whole review loop, in tokens ("4M"). None: no cap.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Daily cap for the whole review loop, in tokens or dollars ("4M",
+    /// "$15"). Default "4M"; "none" for no cap.
+    #[serde(deserialize_with = "cap_or_none", serialize_with = "cap_or_none_str")]
     pub daily: Option<String>,
-    /// Cap per item, in tokens ("800k"). None: no cap.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Cap per item, in tokens or dollars ("800k", "$5"). Default "800k";
+    /// "none" for no cap.
+    #[serde(deserialize_with = "cap_or_none", serialize_with = "cap_or_none_str")]
     pub per_item: Option<String>,
     pub review_model: String,
     pub fix_model: String,
@@ -257,6 +264,32 @@ pub struct Budget {
     pub intake: Option<RoleBudget>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub librarian: Option<RoleBudget>,
+}
+
+/// `[budget] daily` when the repo doesn't set it.
+pub const DEFAULT_DAILY: &str = "4M";
+/// `[budget] per_item` when the repo doesn't set it.
+pub const DEFAULT_PER_ITEM: &str = "800k";
+
+/// Whether a cap's value turns the cap off.
+pub fn is_no_cap(s: &str) -> bool {
+    s.trim().eq_ignore_ascii_case("none")
+}
+
+/// A cap as written: `"none"` (any case) is no cap.
+fn cap_or_none<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> std::result::Result<Option<String>, D::Error> {
+    let s: Option<String> = Option::deserialize(d)?;
+    Ok(s.filter(|s| !is_no_cap(s)))
+}
+
+/// No cap is written `"none"`: a missing key means the default cap.
+fn cap_or_none_str<S: serde::Serializer>(
+    v: &Option<String>,
+    s: S,
+) -> std::result::Result<S::Ok, S::Error> {
+    s.serialize_str(v.as_deref().unwrap_or("none"))
 }
 
 /// The four budgeted model roles, and the room each one works in.
@@ -342,8 +375,8 @@ impl Budget {
 impl Default for Budget {
     fn default() -> Self {
         Budget {
-            daily: None,
-            per_item: None,
+            daily: Some(DEFAULT_DAILY.into()),
+            per_item: Some(DEFAULT_PER_ITEM.into()),
             review_model: "opus".into(),
             fix_model: "sonnet".into(),
             intake_model: "haiku".into(),
@@ -540,7 +573,9 @@ impl Route {
             "question" => &self.question,
             "escalated" => &self.escalated,
             "stuck" | "daemon_stopped" => &self.stuck,
-            "ci_failed" | "conflict" | "feedback" | "merge_failed" | "lit" => &self.escalated,
+            "ci_failed" | "conflict" | "feedback" | "merge_failed" | "lit" | "checks" => {
+                &self.escalated
+            }
             "ready" => &self.ready,
             "budget" | "run_failed" | "ship_failed" | "held" => &self.budget,
             "session_waiting" => &self.session_waiting,
@@ -857,7 +892,7 @@ rules = ["CLAUDE.md", "AGENTS.md"]
 mode = {capture}   # gate: edits need an item · ask: Claude asks you · off
 free = ["docs/", "*.md"]   # questions, docs, designs and plans need no item
 
-[budget]           # no caps unless you set them
+[budget]           # 800k per item, 4M a day unless you set them; "none" for no cap
 review_model = "opus"
 fix_model    = "sonnet"
 intake_model = "haiku"
@@ -885,6 +920,28 @@ mod tests {
     #[test]
     fn empty_file_gives_defaults() {
         assert_eq!(Config::parse("").unwrap(), Config::default());
+    }
+
+    #[test]
+    fn budgets_cap_by_default_and_none_opts_out() {
+        // No [budget] at all, or one without caps: 800k an item, 4M a day.
+        for text in ["", "[budget]\nfix_model = \"opus\"\n"] {
+            let c = Config::parse(text).unwrap();
+            assert_eq!(c.budget.per_item.as_deref(), Some("800k"), "{text}");
+            assert_eq!(c.budget.daily.as_deref(), Some("4M"), "{text}");
+        }
+        assert_eq!(Config::default().max_check_failures, 3);
+        // "none" (any case) turns a cap off, and survives a round trip.
+        let c = Config::parse("[budget]\nper_item = \"none\"\ndaily = \"None\"\n").unwrap();
+        assert_eq!(c.budget.per_item, None);
+        assert_eq!(c.budget.daily, None);
+        let back = toml::to_string(&c).unwrap();
+        assert!(back.contains("per_item = \"none\""), "{back}");
+        assert_eq!(Config::parse(&back).unwrap().budget, c.budget);
+        let c = Config::parse("max_check_failures = 5\n[budget]\nper_item = \"$5\"\n").unwrap();
+        assert_eq!(c.budget.per_item.as_deref(), Some("$5"));
+        assert_eq!(c.budget.daily.as_deref(), Some("4M"));
+        assert_eq!(c.max_check_failures, 5);
     }
 
     #[test]

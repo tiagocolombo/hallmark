@@ -285,7 +285,7 @@ base  = "main"
 gates = ["cargo fmt --check", "cargo clippy --all-targets -- -D warnings", "cargo test"]
 ship  = "git push -u origin {branch} && gh pr create --base {base} --head {branch} --title {title} --body-file {body_file}"
 
-[budget]
+[budget]            # these two are the defaults; "none" turns a cap off
 daily    = "4M"     # tokens across the whole review loop
 per_item = "800k"   # then the item waits for you
 
