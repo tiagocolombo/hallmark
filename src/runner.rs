@@ -404,13 +404,7 @@ impl ClaudeRunner {
             let deadline = start + Duration::from_secs(req.timeout_secs);
             wait_until(deadline, |left| child.wait_timeout(left))
         };
-        let status = match waited {
-            Ok(Some(s)) => Ok(s),
-            Ok(None) => Err(Failure::Timeout),
-            Err(e) => Err(Failure::Error {
-                message: format!("could not wait for {}: {e}", self.bin),
-            }),
-        };
+        let status = settle(waited, &self.bin);
         if status.is_err() {
             let _ = child.kill();
             let _ = child.wait();
@@ -438,6 +432,18 @@ impl ClaudeRunner {
     }
 }
 
+/// What a finished wait means: an exit, a timeout (`Ok(None)`: the deadline
+/// passed), or a wait error, which is an error and never a timeout.
+fn settle<T>(waited: std::io::Result<Option<T>>, bin: &str) -> std::result::Result<T, Failure> {
+    match waited {
+        Ok(Some(s)) => Ok(s),
+        Ok(None) => Err(Failure::Timeout),
+        Err(e) => Err(Failure::Error {
+            message: format!("could not wait for {bin}: {e}"),
+        }),
+    }
+}
+
 /// Waits for an exit until `deadline`, asking `wait` (`wait_timeout`) to wait
 /// for the time left. `Ok(None)` means the deadline has passed. `wait` may
 /// come back early without an exit: on Unix, wait_timeout 0.2 polls for what
@@ -453,8 +459,11 @@ fn wait_until<T>(
         if left.is_zero() {
             return Ok(None);
         }
-        // Under a millisecond rounds down to a poll of 0: a spin.
-        if let Some(status) = wait(left.max(Duration::from_millis(1)))? {
+        // wait_timeout rounds what it is given down to whole milliseconds
+        // after spending a few nanoseconds, so asking for exactly `left`
+        // under 1ms polls for 0 and spins. One more millisecond makes the
+        // call reach the deadline, overshooting by under 1ms.
+        if let Some(status) = wait(left + Duration::from_millis(1))? {
             return Ok(Some(status));
         }
     }
@@ -1616,6 +1625,21 @@ mod tests {
         });
         assert_eq!(r.unwrap_err().to_string(), "no child");
         assert_eq!(calls, 1, "an error ends the wait at once");
+    }
+
+    #[test]
+    fn settle_tells_an_exit_a_timeout_and_an_error_apart() {
+        assert_eq!(settle(Ok(Some(3u8)), "claude").unwrap(), 3);
+        assert!(matches!(
+            settle::<u8>(Ok(None), "claude"),
+            Err(Failure::Timeout)
+        ));
+        match settle::<u8>(Err(std::io::Error::other("no child")), "claude") {
+            Err(Failure::Error { message }) => {
+                assert_eq!(message, "could not wait for claude: no child")
+            }
+            other => panic!("{other:?}"),
+        }
     }
 
     #[cfg(unix)]
