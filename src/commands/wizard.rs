@@ -745,6 +745,23 @@ mod tests {
     }
 
     #[test]
+    fn gates_with_a_table_are_left_as_written() {
+        let mut ctx = ctx();
+        for e in ctx.entries.iter_mut() {
+            if e.scope == Scope::Repo && e.key == "gates" {
+                e.value = serde_json::json!([
+                    { "cmd": "cargo test", "timeout": "40m" },
+                    "cargo clippy"
+                ]);
+            }
+        }
+        let (plan, out) = run_with(&ctx, &[""; 40]);
+        let plan = plan.unwrap();
+        assert!(!out.contains("nix develop --command <gate>"), "{out}");
+        assert!(plan.changes.is_empty(), "{:?}", plan.changes);
+    }
+
+    #[test]
     fn answers_become_changes() {
         let ctx = Context {
             wrapper: None,
