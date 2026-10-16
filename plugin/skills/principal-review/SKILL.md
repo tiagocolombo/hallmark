@@ -221,6 +221,9 @@ didn't use.
 }
 ```
 
-In a headless review, return it through the structured output. To record one
-by hand, save it to a file and run `hall verdict <item> --file verdict.json`
-(`--file -` reads stdin); `hall schema verdict-input` prints the schema.
+In a headless review, return it through the structured output. `hall verdict`
+is not for agents: inside Claude Code it is refused (`GATE_DENIED`), so an
+agent can't approve work. A person records one by hand from a terminal: save it
+to a file and run `hall verdict <item> --file verdict.json` (`--file -` reads
+stdin); `hall schema verdict-input` prints the schema. Theirs is recorded as a
+human override.

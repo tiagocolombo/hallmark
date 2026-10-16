@@ -207,7 +207,12 @@ The journal records:
 ## The hallmark and the gates
 
 The hallmark is a git note under `refs/notes/hallmark` on the approved SHA. Any
-later commit has no note.
+later commit has no note. The note is JSON: the item, the commit, the round, the
+reviewer's model, the findings still open, and `actor`, who approved it:
+`assayer`, or `you` when a person recorded the verdict with `hall verdict` (a
+human override). Notes struck before `actor` existed don't have it. Agents may
+not run `hall verdict`, and the fixer's headless run may not run `hall ready`,
+`hall retry` or `hall drop` either.
 
 A note on `HEAD` is a hallmark only when Hallmark struck it (ADR 0045), because
 anyone with git can write a note. The push gate checks three things:
@@ -379,7 +384,7 @@ $ echo $?
 | `hall next --role assayer\|fixer\|shipper` | agents | Claims work with a lease (exit 7 `CLAIMED`). |
 | `hall findings [<id>]` | fixer | Open findings and failing checks. |
 | `hall fixed <ids> [--dispute <id> --reason]` | fixer | Records what the commit fixes, resubmits. |
-| `hall verdict --file <json>` | assayer | Records a schema-checked verdict. |
+| `hall verdict --file <json>` | assayer, you | Records a schema-checked verdict. Refused to agents (`GATE_DENIED`); yours is a human override, named as one in the report, the note and the PR comment. |
 | `hall history [--rejected] [--lens] [--since]` | you | Closed and dropped items, and why things were rejected. |
 | `hall export [<id>]` | you, shipper | The whole record as Markdown, with what each model run did, step by step. |
 | `hall budget [--set k=v] [--grant [<tokens>]]` | you | The caps and today's spend. `--grant` lets the loop go past the daily cap for today (default: another `daily`) and lifts the budget pause; the cap is unchanged. |
