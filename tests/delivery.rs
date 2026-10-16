@@ -132,6 +132,8 @@ fn a_clean_rebase_with_the_same_patch_carries_the_hallmark() {
     ))
     .unwrap();
     assert_eq!(note["rebased_from"], sha.as_str());
+    // The push gate requires the note to name HEAD, so the carry must too.
+    assert_eq!(note["sha"], head.as_str());
     let file = |name: &str| {
         std::fs::read_to_string(env.repo.join(".git/hallmark/items").join(&id).join(name)).unwrap()
     };

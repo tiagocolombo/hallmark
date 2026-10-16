@@ -35,9 +35,11 @@ or shipper gets no exception.
 
 - Forging a hallmark now takes appending to the item's journal as well as
   writing the note. The journal lives under the git common dir, outside
-  every worktree, where the edit gate denies Claude's edit tools. A shell
-  write isn't gated, so this raises the bar; it doesn't make forging
-  impossible.
+  every worktree. The edit gate doesn't cover the common dir
+  (`Repo::contains` is false for it), so Claude's Edit and Write tools can
+  append to the journal just as a shell write can. This raises the bar; it
+  doesn't make forging impossible. Denying edits under the hallmark root in
+  the edit gate is the remaining gap, left for a follow-up.
 - Gating `git notes` writes themselves is a separate change to the gate's
   parser. This decision doesn't depend on it.
 - The rest of ADR 0004 stands: the note is still the hallmark, local and not
