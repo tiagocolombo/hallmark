@@ -42,6 +42,9 @@ pub struct Config {
     pub review_comment: String,
     /// The repo's checks, run in order at the frozen commit.
     pub gates: Vec<String>,
+    /// Gates whose results are never cached, such as tests that reach the
+    /// network: they run on every check, even on a tree that passed before.
+    pub gates_no_cache: Vec<String>,
     /// Commands the headless dev runs (the fixer, the Delivery office) may
     /// run besides the gates, as prefixes: a narrower test run, or what
     /// regenerates generated files (snapshots) after a conflict.
@@ -106,6 +109,7 @@ impl Default for Config {
             update: "git push --force-with-lease={branch}:{pr_head} origin {branch} && gh pr edit {pr} --base {base}".into(),
             review_comment: "gh pr comment {pr} --body-file {review_file}".into(),
             gates: Vec::new(),
+            gates_no_cache: Vec::new(),
             dev_commands: Vec::new(),
             fixer: "claude -p".into(),
             claude_args: Vec::new(),

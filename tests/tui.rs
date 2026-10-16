@@ -88,6 +88,7 @@ fn checks(sha: &str, round: u32, passed: bool) -> Body {
             exit_code: if passed { 0 } else { 101 },
             duration_ms: 1200,
             log: None,
+            cached: false,
         }],
     }
 }

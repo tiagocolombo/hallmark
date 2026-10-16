@@ -43,6 +43,7 @@ ship        = "git push -u origin {branch} && gh pr create --base {base} --head 
 update      = "git push --force-with-lease={branch}:{pr_head} origin {branch} && gh pr edit {pr} --base {base}"
 review_comment = "gh pr comment {pr} --body-file {review_file}"   # every review is a PR comment; "" for none
 gates       = []
+gates_no_cache = []         # gates never served from the checks cache
 fixer       = "claude -p"   # or another fix engine, run in the worktree
 claude_args = []            # extra arguments for every headless claude -p run
 dev_commands = []           # what headless dev runs may run besides the gates
@@ -256,6 +257,32 @@ gates = [
 PATH, and never preselects direnv: direnv refuses an `.envrc` that wasn't
 allowed at the path it runs in, so `direnv allow` it in the main checkout and
 in every worktree path (or use direnv's whitelist prefix) before using it.
+
+### Cached gate results
+
+A gate that passed on a tree passes again on it, so Hallmark doesn't run it
+again. Each gate's result is kept under a key made of the tree checked
+(`git rev-parse <sha>^{tree}`), the gate's command, a hash of `gates` and the
+OS. When a later check (a fixer's commit that only rewords a message, a
+rebase onto an unchanged base, another item with the same tree) asks for a
+key that passed, the `checks` event records the gate with `"cached": true`
+and the original run's log, and nothing runs. When every gate is cached, no
+assay worktree is checked out either.
+
+Only a pass is served. A failing gate runs every time, so a fixer's retry is
+real. Every run is kept, red or green, one line each, in
+`<git-common-dir>/hallmark/checks-cache/<key>.jsonl`: a key with both a red
+and a green run is a flaky gate. Changing `gates` starts the cache over;
+deleting the directory only means the gates run.
+
+List gates whose result depends on more than the tree, such as tests that
+reach the network, in `gates_no_cache`. They always run and are never
+recorded. Entries match a gate's command exactly.
+
+```toml
+gates          = ["cargo test", "cargo test --features live-api"]
+gates_no_cache = ["cargo test --features live-api"]
+```
 
 ## Your tools
 

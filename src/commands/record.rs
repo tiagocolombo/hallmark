@@ -402,6 +402,9 @@ pub fn render_export(repo: &Repo, item: &Item, events: &[Event]) -> String {
                     r.exit_code,
                     r.duration_ms as f64 / 1000.0
                 );
+                if r.cached {
+                    s.push_str(" · cached");
+                }
                 if let Some(log) = &r.log {
                     let _ = write!(s, " · log `{log}`");
                 }

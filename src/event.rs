@@ -57,9 +57,21 @@ pub enum VerdictKind {
 pub struct CheckRun {
     pub command: String,
     pub exit_code: i32,
+    /// For a cached result, how long the original run took.
     pub duration_ms: u64,
+    /// Relative to the item's journal directory (`checks/r2.log`), or, for a
+    /// cached result, the original run's log relative to the journal root
+    /// (`items/H-0003/checks/r1.log`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub log: Option<String>,
+    /// Served from the checks cache: this gate passed before on the same
+    /// tree, so it didn't run again.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub cached: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 /// One model run, or one Workshop turn's worth of usage.

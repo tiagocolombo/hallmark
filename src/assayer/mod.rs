@@ -10,6 +10,7 @@
 //!   ([`record_verdict`]) and strikes the hallmark on approval.
 
 pub mod base;
+pub mod cache;
 pub mod checks;
 pub mod prompt;
 pub mod rebased;
