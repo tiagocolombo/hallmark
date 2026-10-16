@@ -1,6 +1,6 @@
 ---
 name: principal-review
-description: How Hallmark's principal engineer reviews a frozen commit - the test audit first, then the seven lenses, severities, the evidence bar, the refutation pass, incremental rulings, learnings and the verdict shape. Use when reviewing a Hallmark item or recording a verdict with `hall verdict`.
+description: How Hallmark's principal engineer reviews a frozen commit - the test audit first, then the seven lenses, severities, the evidence bar, the refutation pass, incremental rulings, learnings and the verdict shape. Use when reviewing a Hallmark item.
 ---
 
 # Principal review
@@ -223,7 +223,7 @@ didn't use.
 
 In a headless review, return it through the structured output. `hall verdict`
 is not for agents: inside Claude Code it is refused (`GATE_DENIED`), so an
-agent can't approve work. A person records one by hand from a terminal: save it
+agent doesn't approve work (a guardrail, not a lock). A person records one by hand from a terminal: save it
 to a file and run `hall verdict <item> --file verdict.json` (`--file -` reads
 stdin); `hall schema verdict-input` prints the schema. Theirs is recorded as a
 human override.

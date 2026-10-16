@@ -294,11 +294,18 @@ pub fn render(r: &Report) -> String {
     meta.push(Utc::now().format("%Y-%m-%d %H:%M UTC").to_string());
     let _ = writeln!(s, "{}\n", meta.join(" · "));
     if let Some(who) = override_by(r.actor) {
-        let _ = writeln!(
-            s,
-            "**A human override**: {who} recorded this verdict with `hall verdict`; \
-             the assayer did not review it.\n"
-        );
+        if who == "you" {
+            let _ = writeln!(
+                s,
+                "**A human override**: {who} recorded this verdict with `hall verdict`; \
+                 the assayer did not review it.\n"
+            );
+        } else {
+            let _ = writeln!(
+                s,
+                "Recorded by {who} with `hall verdict`, not the assayer.\n"
+            );
+        }
     }
     let open = format!(
         "{} blocker, {} major, {} minor, {} nit open",

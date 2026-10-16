@@ -869,11 +869,18 @@ pub fn review_comment(item: &Item, events: &[Event], update: bool) -> String {
                     .unwrap_or_default()
             );
             if let Some(who) = crate::assayer::verdict::override_by(actor) {
-                let _ = writeln!(
-                    s,
-                    "\n**A human override**: {who} approved it with `hall verdict`; \
-                     the assayer did not."
-                );
+                if who == "you" {
+                    let _ = writeln!(
+                        s,
+                        "\n**A human override**: {who} approved it with `hall verdict`; \
+                         the assayer did not."
+                    );
+                } else {
+                    let _ = writeln!(
+                        s,
+                        "\nRecorded by {who} with `hall verdict`, not the assayer."
+                    );
+                }
             }
         }
         None => {
@@ -1159,6 +1166,13 @@ mod tests {
             c.contains(
                 "**A human override**: you approved it with `hall verdict`; the assayer did not."
             ),
+            "{c}"
+        );
+        events[0].actor = "agent".into();
+        let c = review_comment(&item(None), &events, false);
+        assert!(!c.contains("human override"), "{c}");
+        assert!(
+            c.contains("Recorded by agent with `hall verdict`, not the assayer."),
             "{c}"
         );
     }

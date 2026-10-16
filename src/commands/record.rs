@@ -641,7 +641,13 @@ pub fn render_export(repo: &Repo, item: &Item, events: &[Event]) -> String {
                 note.actor
                     .as_deref()
                     .and_then(crate::assayer::verdict::override_by)
-                    .map(|who| format!(" · approved by {who} (a human override)"))
+                    .map(|who| {
+                        if who == "you" {
+                            format!(" · approved by {who} (a human override)")
+                        } else {
+                            format!(" · approved by {who}, not the assayer")
+                        }
+                    })
                     .unwrap_or_default(),
                 note.findings.minor,
                 note.findings.nit,
