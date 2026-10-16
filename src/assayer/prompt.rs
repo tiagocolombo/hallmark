@@ -120,10 +120,6 @@ pub fn prepare(
         Body::Created { request, .. } => Some(request.clone()),
         _ => None,
     });
-    let ready_note = events.iter().rev().find_map(|e| match &e.body {
-        Body::Ready { note, .. } => Some(note.clone()),
-        _ => None,
-    });
     let commits = git::run(
         dir,
         &[
@@ -171,8 +167,10 @@ pub fn prepare(
     if let Some(s) = &item.summary {
         let _ = writeln!(p, "Author's summary: {s}");
     }
-    if let Some(Some(n)) = &ready_note {
-        let _ = writeln!(p, "Note when sent to review: {n}");
+    // What the person said since the last run (`hall ready --note`, a
+    // retry's reason), given once (ADR 0044).
+    if let Some(w) = crate::words::pending(events) {
+        let _ = writeln!(p, "\n{}", w.section);
     }
 
     let _ = writeln!(
