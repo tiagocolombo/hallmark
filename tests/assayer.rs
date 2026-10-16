@@ -771,6 +771,8 @@ fn agents_may_not_record_a_verdict() {
         vec![("CLAUDECODE", "1")],
         vec![("HALL_HEADLESS", "1"), ("HALL_ACTOR", "fixer")],
         vec![("HALL_HEADLESS", "1"), ("HALL_ACTOR", "agent")],
+        vec![("HALL_HEADLESS", "1")],
+        vec![("HALL_HEADLESS", "1"), ("HALL_ACTOR", "you")],
     ] {
         let r = verdict_as(&env, &id, &file, &vars);
         assert_eq!(r.code, 5, "{vars:?}: {}", r.stdout);
@@ -796,6 +798,9 @@ fn agents_may_not_record_a_verdict() {
     assert_eq!(note["actor"], "assayer");
     let report = std::fs::read_to_string(r.json["report"].as_str().unwrap()).unwrap();
     assert!(!report.contains("human override"), "{report}");
+    let out = env.cmd(&env.repo).args(["export", &id]).output().unwrap();
+    let md = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert!(!md.contains("a human override"), "{md}");
 }
 
 #[test]
@@ -820,6 +825,9 @@ fn a_human_verdict_is_recorded_as_an_override() {
     assert_eq!(note["actor"], "you");
     let report = std::fs::read_to_string(r.json["report"].as_str().unwrap()).unwrap();
     assert!(report.contains("human override"), "{report}");
+    let out = env.cmd(&env.repo).args(["export", &id]).output().unwrap();
+    let md = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert!(md.contains("approved by you (a human override)"), "{md}");
 
     // Again, from an agent: still refused, even though it would be a no-op.
     let r = verdict_as(&env, &id, &file, &[("CLAUDECODE", "1")]);

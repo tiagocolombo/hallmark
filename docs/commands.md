@@ -118,7 +118,7 @@ The extensions, and what each role gets:
 | `hall next --role assayer\|fixer\|shipper` | Claims work with a lease. |
 | `hall findings [<id>]` | Open findings and failing checks (the fixer). |
 | `hall fixed <ids>` | Records what a commit fixes, or `--dispute <id> --reason` (the fixer). |
-| `hall verdict --file <json>` | Records a schema-checked verdict. Only the assayer (`HALL_ACTOR=assayer`) and you on a terminal may run it; an agent (a Claude Code session, or any headless run but the assayer's) gets exit 5, `GATE_DENIED`, so an agent can't approve its own item. Your verdict is recorded with `actor: "you"` and shown as a human override in the report, the hallmark's note and the PR's review comment. |
+| `hall verdict --file <json>` | Records a schema-checked verdict. Only the assayer (`HALL_ACTOR=assayer`) and you on a terminal may run it; an agent (a Claude Code session, or any headless run but the assayer's) gets exit 5, `GATE_DENIED`, which keeps an honest agent from approving its own item (a guardrail, not a guarantee: the actor comes from the environment). Your verdict is recorded with `actor: "you"` and shown as a human override in the report, the hallmark's note and the PR's review comment. |
 | `hall reindex` | Rebuilds the SQLite index from the journals. |
 | `hall help --json` | Lists the commands. |
 | `hall schema <name>` | Prints a JSON Schema: any command's output, `error`, `event`, `config` or `verdict-input`. |
