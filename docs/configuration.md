@@ -45,7 +45,7 @@ update      = "git push --force-with-lease={branch}:{pr_head} origin {branch} &&
 review_comment = "gh pr comment {pr} --body-file {review_file}"   # every review is a PR comment; "" for none
 gates       = []
 gates_no_cache = []         # gates never served from the checks cache
-gates_timeout = "20m"       # each gate is killed after this; "0s": no limit
+gates_timeout = "20m"       # each gate is killed after this
 fixer       = "claude -p"   # or another fix engine, run in the worktree
 claude_args = []            # extra arguments for every headless claude -p run
 dev_commands = []           # what headless dev runs may run besides the gates
@@ -304,7 +304,7 @@ mutation testing, gets its own limit with the table form; plain strings and
 tables mix in one list:
 
 ```toml
-gates_timeout = "20m"   # every gate without its own; "0s": no limit
+gates_timeout = "20m"   # every gate without its own
 gates = [
   "cargo clippy --all-targets -- -D warnings",
   { cmd = "cargo test", timeout = "40m" },
