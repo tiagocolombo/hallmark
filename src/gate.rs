@@ -771,9 +771,15 @@ impl Scanner<'_, '_> {
                     let mut d = dir.clone();
                     self.walk(sub, &mut d, depth + 1);
                 }
+            } else if !seg.subs.is_empty() {
+                self.too_deep(dir, &seg);
             }
             self.segment(&seg, dir, depth);
         }
+    }
+
+    fn too_deep(&mut self, dir: &Path, seg: &Segment) {
+        self.suspect(dir, seg, "it is nested too deep to read".into());
     }
 
     fn segment(&mut self, seg: &Segment, dir: &mut PathBuf, depth: u8) {
@@ -836,6 +842,8 @@ impl Scanner<'_, '_> {
             "eval" => {
                 if depth < MAX_DEPTH {
                     self.walk(&w[1..].join(" "), dir, depth + 1);
+                } else {
+                    self.too_deep(dir, seg);
                 }
             }
             "git" => self.git(w, seg, dir, depth, xargs),
@@ -875,12 +883,17 @@ impl Scanner<'_, '_> {
             break;
         }
         if depth >= MAX_DEPTH {
+            if command || !seg.heredocs.is_empty() {
+                self.too_deep(dir, seg);
+            }
             return;
         }
         if command {
             if let Some(inner) = w.get(i) {
                 let mut d = dir.to_path_buf();
                 self.walk(inner, &mut d, depth + 1);
+            } else {
+                self.suspect(dir, seg, "its command comes from elsewhere".into());
             }
             return;
         }
@@ -940,7 +953,7 @@ impl Scanner<'_, '_> {
                 .map(|(_, v)| v.clone())
                 .or_else(|| (self.ctx.alias)(&gdir, sub));
             match alias {
-                Some(_) if depth >= MAX_DEPTH => {}
+                Some(_) if depth >= MAX_DEPTH => self.too_deep(&gdir, seg),
                 Some(v) => match v.strip_prefix('!') {
                     // A shell alias: git runs it with the arguments appended.
                     Some(shell) => {
@@ -1030,6 +1043,8 @@ impl Scanner<'_, '_> {
                 let mut d = gdir.clone();
                 self.walk(&c, &mut d, depth + 1);
             }
+        } else if !nested.is_empty() {
+            self.too_deep(&gdir, seg);
         }
     }
 
@@ -1074,7 +1089,17 @@ impl Scanner<'_, '_> {
                 .map(String::as_str)
                 .filter(|a| !a.starts_with('-') && !a.starts_with('+'))
                 .collect();
-            let mut out: Vec<&str> = rest.first().copied().into_iter().collect();
+            // Only cargo's own subcommands are read by their first word;
+            // `cargo xtask release` and `cargo make release` run whatever
+            // follows.
+            let own = [
+                "test", "build", "check", "clippy", "fmt", "doc", "bench", "nextest", "run",
+            ];
+            let mut out: Vec<&str> = if rest.first().is_some_and(|f| own.contains(f)) {
+                rest.first().copied().into_iter().collect()
+            } else {
+                rest.clone()
+            };
             if rest.first() == Some(&"run")
                 && let Some(k) = w.iter().position(|a| a == "--")
             {
@@ -1204,6 +1229,13 @@ mod tests {
         assert_eq!(
             at(&format!("git -C '{}' push", other.display())),
             vec![(OpKind::Push, other)]
+        );
+        assert_eq!(
+            at(&format!(
+                "env -C '{}' git push",
+                base.join("elsewhere").display()
+            )),
+            vec![(OpKind::Push, base.join("elsewhere"))]
         );
         assert_eq!(
             kinds("git -c core.pager=cat --no-pager commit -am x"),
@@ -1388,6 +1420,10 @@ mod tests {
             ("gh pr create --base main", Push),
             ("git rebase -x 'git push' main", Push),
             ("git submodule foreach --recursive 'git push'", Push),
+            ("bash <<'EOF'\ngit push\nEOF", Push),
+            ("git bisect run git push", Push),
+            ("git filter-branch --tree-filter 'git push' HEAD", Push),
+            ("direnv exec . git push", Push),
             ("git notes add -m x", NoteWrite),
             ("git notes --ref=refs/notes/hallmark append -m x", NoteWrite),
             ("git notes edit HEAD", NoteWrite),
@@ -1423,6 +1459,13 @@ mod tests {
             "npx semantic-release",
             "make -C tools release",
             "awk 'BEGIN { system(\"gh pr merge 7\") }'",
+            "cargo xtask release",
+            "cargo make release",
+            // Nested past MAX_DEPTH: unreadable, so held back.
+            "eval eval eval eval eval git push",
+            "eval \"eval \\\"eval \\\\\\\"eval \\\\\\\\\\\\\\\"eval git push\\\\\\\\\\\\\\\"\\\\\\\"\\\"\"",
+            "echo $(echo $(echo $(echo $(echo $(git push)))))",
+            "sh -c",
         ] {
             let (ops, guard) = verdict(cmd);
             assert!(ops.is_empty() && guard, "{cmd}: {ops:?} {guard}");
