@@ -51,6 +51,7 @@ a decision, add a new record that supersedes the old one. Don't edit the old one
 | [0041](0041-watch-runs-live.md) | Watch headless runs live: each run streams into `runs/<stamp>-<role>.jsonl`, `hall trace` and the terminal app read it | Accepted |
 | [0042](0042-an-update-that-pushed-and-failed.md) | An update that pushed and then failed doesn't stick its item: the lease is the remote head when this item hallmarked it | Accepted; amends 0029 |
 | [0043](0043-ready-waits-for-a-pending-rebase.md) | `hall ready` waits for a pending rebase: refused while the branch isn't on its base, and the request stays | Accepted; amends 0030 |
+| [0044](0044-your-reasons-reach-the-next-agent.md) | Your reasons reach the next agent: retry, continue, pull-back and ready notes go into the next run's prompt on the item, once | Accepted |
 | [0045](0045-the-gate-verifies-the-note.md) | The push gate verifies the hallmark note: it parses, names `HEAD`, and its item's journal records `hallmarked` there | Accepted; partly supersedes 0004 |
 | [0047](0047-a-ci-fix-clears-when-ci-goes-green.md) | A CI fix request clears when the PR's checks go green: the fix run reads them first, the CI watch follows held fixes, and the log is the failed job's own | Accepted; amends 0031 |
 | [0048](0048-the-merger.md) | The merger: shipped PRs merge without you, one at a time per base, in dependency order; `lit` paths wait for a person; `hall queue` | Accepted; amends 0030, 0031; amended by 0049, 0050 |

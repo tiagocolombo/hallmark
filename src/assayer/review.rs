@@ -87,6 +87,13 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
                 Ok(mv) => mv,
                 Err(e) => return invalid(repo, item, &e.message),
             };
+            // The reviewer read the person's words; the next run doesn't.
+            crate::words::delivered(
+                repo,
+                item.id,
+                "reviewer",
+                crate::words::pending(&events).as_ref(),
+            )?;
             // Pulled back or dropped while the reviewer ran: discard.
             let now = repo.hall.load_item(item.id)?;
             if now.state != State::Review || now.frozen_sha.as_deref() != Some(sha.as_str()) {

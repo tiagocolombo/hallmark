@@ -277,13 +277,13 @@ fn resolve(
         files.join(", ")
     ));
     let events = repo.hall.read_item(id)?;
-    let mut req = runner::request(
-        repo,
-        Role::Fixer,
-        None,
-        prompt(repo, item, &events, target, files),
-        wt,
-    )?;
+    let words = crate::words::pending(&events);
+    let task = prompt(repo, item, &events, target, files);
+    let task = match &words {
+        Some(w) => w.after(task),
+        None => task,
+    };
+    let mut req = runner::request(repo, Role::Fixer, None, task, wt)?;
     req.permission_mode = Some("acceptEdits".into());
     req.allowed_tools = tools(&repo.config.run_commands(), wt);
     for (k, v) in req.env.iter_mut() {
@@ -321,7 +321,10 @@ fn resolve(
             )))
         }
         // Whatever the run said, the worktree decides.
-        Metered::Done(_) => settle(repo, id, wt, target),
+        Metered::Done(_) => {
+            crate::words::delivered(repo, id, ACTOR, words.as_ref())?;
+            settle(repo, id, wt, target)
+        }
     }
 }
 
@@ -466,6 +469,7 @@ fn address(ctx: &WorkerCtx, item: &Item, wt: &Path, comments: &[PrComment]) -> R
         item,
         wt,
         prompt,
+        &events,
         Task {
             what: "feedback",
             nothing: "the dev run changed nothing for the PR's comments",
@@ -534,6 +538,7 @@ fn fix_ci(ctx: &WorkerCtx, item: &Item, wt: &Path, req: &CiFixRequest) -> Result
         item,
         wt,
         prompt,
+        &events,
         Task {
             what: "CI fix",
             nothing: "the dev run changed nothing for the PR's failing CI",
@@ -686,11 +691,17 @@ fn dev_run(
     item: &Item,
     wt: &Path,
     prompt: String,
+    events: &[Event],
     task: Task,
 ) -> Result<Progress> {
     let repo = ctx.repo;
     let id = item.id;
     let before = git::head(wt)?;
+    let words = crate::words::pending(events);
+    let prompt = match &words {
+        Some(w) => w.after(prompt),
+        None => prompt,
+    };
     let mut req = runner::request(repo, Role::Fixer, None, prompt, wt)?;
     req.permission_mode = Some("acceptEdits".into());
     req.allowed_tools = tools(&repo.config.run_commands(), wt)
@@ -724,11 +735,14 @@ fn dev_run(
                 failure.describe()
             )));
         }
-        Metered::Done(outcome) => outcome
-            .result
-            .as_ref()
-            .and_then(|r| r.result.clone())
-            .unwrap_or_default(),
+        Metered::Done(outcome) => {
+            crate::words::delivered(repo, id, ACTOR, words.as_ref())?;
+            outcome
+                .result
+                .as_ref()
+                .and_then(|r| r.result.clone())
+                .unwrap_or_default()
+        }
     };
     if !git::dirty_files(wt)?.is_empty() {
         return failed(

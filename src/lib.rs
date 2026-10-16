@@ -49,6 +49,7 @@ pub mod trace;
 pub mod tui;
 pub mod usage;
 pub mod watchman;
+pub mod words;
 pub mod worker;
 
 pub use cli::run;

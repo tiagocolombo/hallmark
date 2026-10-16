@@ -64,6 +64,9 @@ pub struct FixBrief {
     pub failing_checks: Vec<CheckRun>,
     /// Where to write the optional fix report (`plugin/schemas/fix.json`).
     pub report_file: String,
+    /// What the person said since the last run, given once (ADR 0044).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub said: Option<String>,
 }
 
 pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
@@ -159,6 +162,7 @@ fn run_claude(
             // never filled the schema). The item moving is what counts.
             let now = repo.hall.load_item(id)?;
             if now.state != State::Fixing {
+                said_to_fixer(repo, id, events)?;
                 return Ok(Progress::worked(format!(
                     "{id} resubmitted by the fixer at {}",
                     short(now.frozen_sha.as_deref().unwrap_or("?"))
@@ -171,6 +175,7 @@ fn run_claude(
             )))
         }
         Metered::Done(outcome) => {
+            said_to_fixer(repo, id, events)?;
             let report = outcome
                 .structured()
                 .and_then(|v| serde_json::from_value::<FixReport>(v.clone()).ok());
@@ -207,6 +212,7 @@ fn run_external(
         open: ledger.open_counts(),
         failing_checks: failing_checks(events),
         report_file: crate::paths::display(&out_file),
+        said: crate::words::pending(events).map(|w| w.section),
     };
     std::fs::write(&file, serde_json::to_string_pretty(&brief)?)?;
     let cmd = crate::commands::new::fill_shell(
@@ -233,16 +239,23 @@ fn run_external(
     if let Some(why) = run.failure() {
         // The engine may still have submitted before it failed.
         if repo.hall.load_item(id)?.state != State::Fixing {
+            said_to_fixer(repo, id, events)?;
             return Ok(Progress::worked(format!(
                 "{id} resubmitted by the fix engine"
             )));
         }
         return failed(repo, id, format!("the fix engine {why}"));
     }
+    said_to_fixer(repo, id, events)?;
     let report = std::fs::read_to_string(&out_file)
         .ok()
         .and_then(|s| serde_json::from_str::<FixReport>(&s).ok());
     settle(repo, id, wt, report)
+}
+
+/// A fix run finished, so it read what the person said; later runs don't.
+fn said_to_fixer(repo: &Repo, id: ItemId, events: &[Event]) -> Result<()> {
+    crate::words::delivered(repo, id, "fixer", crate::words::pending(events).as_ref())
 }
 
 /// After a run: the script decides whether the item is resubmitted.
@@ -482,6 +495,9 @@ pub fn prompt(repo: &Repo, item: &Item, events: &[Event], ledger: &Ledger) -> St
     }
     if let Some(sum) = &item.summary {
         s.push_str(&format!("\nThe developer's summary: {}\n", sum.trim()));
+    }
+    if let Some(w) = crate::words::pending(events) {
+        s.push_str(&format!("\n{}", w.section));
     }
     let failing = failing_checks(events);
     if !failing.is_empty() {
