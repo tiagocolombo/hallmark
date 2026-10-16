@@ -216,3 +216,177 @@ fn a_proposed_ready_has_no_words_for_the_reviewer() {
     assert!(!prompts(&env)[0].contains(SAID), "{}", prompts(&env)[0]);
     assert!(delivered(&env, &id).is_empty());
 }
+
+fn answered_question(env: &Env, wt: &std::path::Path) -> String {
+    let ask = env.hall(wt, &["ask", "billed or raw?", "--session", "sess-1"]);
+    let qid = ask.json["qid"].as_str().unwrap().to_string();
+    assert_eq!(env.hall(&env.repo, &["answer", &qid, "raw"]).code, 0);
+    qid
+}
+
+fn retried(env: &Env, id: &str, reason: &str) {
+    append(
+        env,
+        id,
+        "you",
+        hallmark::event::Body::Retried {
+            reason: reason.into(),
+        },
+    );
+}
+
+#[test]
+fn a_resume_run_gets_the_words_while_the_item_is_with_a_session() {
+    let env = Env::initialized();
+    let (id, wt) = env.new_item("Usage page");
+    let qid = answered_question(&env, &wt);
+    append(
+        &env,
+        &id,
+        "you",
+        hallmark::event::Body::PulledBack {
+            reason: Some("use the billed numbers".into()),
+        },
+    );
+    let script = env.script(json!([{"role": "resume", "session_id": "sess-1"}]));
+    let step = tick(&env, &script, "resume");
+    assert_eq!(step["progress"], "worked", "{step}");
+    let said = &prompts(&env)[0];
+    assert!(
+        said.starts_with(&format!("The human answered {qid}")) && said.contains(SAID),
+        "{said}"
+    );
+    assert!(said.contains("use the billed numbers"), "{said}");
+    assert_eq!(delivered(&env, &id), ["resume"]);
+}
+
+#[test]
+fn a_resume_run_leaves_the_words_to_the_loop_run_when_the_item_is_in_the_loop() {
+    let env = Env::initialized();
+    let (id, wt, _) = fixing_item(&env, "Retry webhooks");
+    let qid = answered_question(&env, &wt);
+    retried(&env, &id, "lock the row");
+    let script = env.script(json!([{"role": "resume", "session_id": "sess-1"}]));
+    tick(&env, &script, "resume");
+    let said = &prompts(&env)[0];
+    assert!(said.contains(&qid), "{said}");
+    assert!(!said.contains(SAID), "{said}");
+    assert!(delivered(&env, &id).is_empty());
+}
+
+#[test]
+fn an_external_fix_engine_gets_the_words_in_its_brief() {
+    let env = Env::initialized();
+    let hall = hallmark::commands::new::shell_quote(env!("CARGO_BIN_EXE_hall"));
+    set_config(
+        &env,
+        "fixer",
+        &toml(&format!(
+            "git commit -q --allow-empty -m \"fix F1 by the engine\" && {hall} fixed F1 --item {{id}}"
+        )),
+    );
+    let (id, _, _) = fixing_item(&env, "Retry webhooks");
+    retried(&env, &id, "lock the row");
+    let script = env.script(json!([]));
+    tick(&env, &script, "fixer");
+    let brief: Value = serde_json::from_str(
+        &std::fs::read_to_string(
+            env.repo
+                .join(format!(".git/hallmark/items/{id}/fix-r1.json")),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let said = brief["said"].as_str().expect("said in the brief");
+    assert!(
+        said.contains(SAID) && said.contains("lock the row"),
+        "{said}"
+    );
+    assert_eq!(delivered(&env, &id), ["fixer"]);
+}
+
+#[test]
+fn session_start_after_a_pull_back_reason_gives_the_words_once() {
+    let env = Env::initialized();
+    let (id, wt, _) = ready_item(&env, "Retry webhooks");
+    let r = env.hall(&wt, &["pull-back", &id, "--reason", "rename it"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let start = |session: &str| {
+        let mut v: Value = serde_json::from_str(&fixture("hooks/session_start.json")).unwrap();
+        v["cwd"] = json!(p(&wt));
+        v["session_id"] = json!(session);
+        let r = env.hook("session-start", &v);
+        r.json["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .unwrap_or("")
+            .to_string()
+    };
+    let ctx = start("s1");
+    assert!(ctx.contains(SAID) && ctx.contains("\"rename it\""), "{ctx}");
+    assert_eq!(delivered(&env, &id), ["session"]);
+    assert!(!start("s2").contains(SAID));
+}
+
+/// The prompt of the reviewer's run for the item in `checks`.
+fn reviewer_prompt(env: &Env) -> String {
+    let approve = json!({"summary": "ok", "findings": [], "prior": [], "learnings": []});
+    let script = env.script(json!([{"role": "reviewer", "structured": approve}]));
+    tick(env, &script, "assayer");
+    tick(env, &script, "assayer");
+    prompts(env).pop().unwrap()
+}
+
+fn git_head(wt: &std::path::Path) -> String {
+    common::git(wt, &["rev-parse", "HEAD"])
+}
+
+#[test]
+fn an_agents_ready_note_shows_as_the_authors() {
+    let env = Env::initialized();
+    let (id, wt) = env.new_item("Retry webhooks");
+    commit_file(&wt, "retry.rs", "fn retry() {}\n");
+    append(
+        &env,
+        &id,
+        "agent",
+        hallmark::event::Body::Ready {
+            sha: git_head(&wt),
+            round: 1,
+            note: Some("retry tests come next round".into()),
+        },
+    );
+    let said = reviewer_prompt(&env);
+    assert!(
+        said.contains("Author's note when sent to review: retry tests come next round"),
+        "{said}"
+    );
+    assert!(!said.contains(SAID), "{said}");
+}
+
+#[test]
+fn an_office_note_shows_and_an_earlier_rounds_agent_note_does_not() {
+    let env = Env::initialized();
+    let (id, wt) = env.new_item("Retry webhooks");
+    commit_file(&wt, "retry.rs", "fn retry() {}\n");
+    let sha = git_head(&wt);
+    let ready = |actor: &str, round: u32, note: &str| {
+        append(
+            &env,
+            &id,
+            actor,
+            hallmark::event::Body::Ready {
+                sha: sha.clone(),
+                round,
+                note: Some(note.into()),
+            },
+        )
+    };
+    ready("agent", 1, "retry tests come next round");
+    ready("delivery", 4, "fixes the PR's failing CI");
+    let said = reviewer_prompt(&env);
+    assert!(
+        said.contains("Note when sent to review (by delivery): fixes the PR's failing CI"),
+        "{said}"
+    );
+    assert!(!said.contains("retry tests come next round"), "{said}");
+}
