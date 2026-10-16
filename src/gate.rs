@@ -921,11 +921,9 @@ impl Scanner<'_, '_> {
             }
             break;
         }
-        if depth >= MAX_DEPTH {
-            if command || !seg.heredocs.is_empty() {
-                self.too_deep(dir, seg);
-                return;
-            }
+        if depth >= MAX_DEPTH && (command || !seg.heredocs.is_empty()) {
+            self.too_deep(dir, seg);
+            return;
         }
         if command {
             if let Some(inner) = w.get(i) {
