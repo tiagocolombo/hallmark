@@ -1,6 +1,6 @@
 # 0038. Extensions: skill packs by other authors, per role, with credit
 
-Status: Accepted, 2026-10-12
+Status: Accepted, 2026-10-12. Amended 2026-10-15: skills load by trigger (addendum).
 
 ## Context
 
@@ -71,3 +71,26 @@ headless and answer through a schema.
 - Adding an extension is a catalog entry in `src/extensions.rs`, its files
   under `extensions/`, and a key in `[extensions]`. Only extensions whose
   license allows redistribution can be embedded.
+
+## Addendum, 2026-10-15: skills load by trigger
+
+Inlining every enabled skill in full cost every headless run its whole text,
+whether the run needed it or not: the reviewer about 6.7 KB for
+`code-review`, the fixer about 12.3 KB for `tdd` and `diagnosing-bugs`, on
+every round.
+
+- **A skill's role mapping can carry a trigger** (`when` in the catalog in
+  `src/extensions.rs`). A headless role loads a skill with a trigger only on
+  a run that meets it; a skill without one loads on every run. The run's
+  context is whether a gate failed and the lenses of the open findings.
+- **The fixer**: `diagnosing-bugs` loads only when a gate failed on the
+  commit being fixed; `tdd` only when an open finding is under the
+  `correctness` or `evidence` lens. A round with neither gets no Extensions
+  section.
+- **The reviewer and the Front Desk** keep `code-review` and `to-tickets` on
+  every run: each is that role's method, not a tool for one kind of problem.
+- **Development sessions are unchanged**: they get the index of every skill
+  and read one with `hall extensions show` when the work calls for it.
+
+The decision above stands; this changes only when a headless role's skill
+text arrives, not which skills a role follows or how they are credited.

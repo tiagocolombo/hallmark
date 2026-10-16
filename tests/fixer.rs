@@ -532,8 +532,11 @@ fn an_extension_for_the_fixer_reaches_its_prompt() {
         .find("## Extensions\n")
         .unwrap_or_else(|| panic!("{prompt}"));
     assert!(prompt[at..].contains("for the fixer"));
+    // Open correctness and evidence findings, gates green: `tdd` only.
+    assert!(prompt[at..].contains("name=\"tdd\""));
     assert!(
-        prompt[at..].contains("name=\"tdd\"") && prompt[at..].contains("name=\"diagnosing-bugs\"")
+        !prompt.contains("name=\"diagnosing-bugs\""),
+        "no gate failed"
     );
     assert!(prompt[at..].contains("How it fits your role: Fix test-first"));
     assert!(!prompt.contains("name=\"code-review\""));
@@ -541,4 +544,26 @@ fn an_extension_for_the_fixer_reaches_its_prompt() {
         at < prompt.find("## When you are done").unwrap(),
         "before the closing steps"
     );
+}
+
+#[test]
+fn a_red_gate_brings_diagnosing_bugs_to_the_fixer_and_no_finding_leaves_out_tdd() {
+    let env = Env::initialized();
+    let (_, _, _) = failing_checks_item(&env, "Retry webhooks");
+    let r = env.hall(
+        &env.repo,
+        &["extensions", "enable", "mattpocock", "--role", "fixer"],
+    );
+    assert_eq!(r.code, 0, "{}", r.stdout);
+
+    let script = env.script(json!([
+        {"role": "fixer", "structured": {"summary": "nothing", "fixed": [], "disputed": []}}
+    ]));
+    fixer_pass(&env, &script);
+    let prompt = env.fake_calls()[0]["prompt"].as_str().unwrap().to_string();
+    let at = prompt
+        .find("## Extensions\n")
+        .unwrap_or_else(|| panic!("{prompt}"));
+    assert!(prompt[at..].contains("name=\"diagnosing-bugs\""));
+    assert!(!prompt.contains("name=\"tdd\""), "no finding calls for it");
 }
