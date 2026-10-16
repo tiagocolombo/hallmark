@@ -450,6 +450,26 @@ fn evidence_commands_pass_verbatim() {
         vec!["cd app;git diff".into()],
         vec!["cd app&&git log".into()],
         vec!["sh".into(), "-c".into(), "(git show)".into()],
+        vec![
+            "git".into(),
+            "-C".into(),
+            r"C:\Users\Jane Doe\repo".into(),
+            "diff".into(),
+        ],
+        vec![r#"git -C "C:\Users\Jane Doe\repo" diff"#.into()],
+        vec![r#"git -C "/Users/Jane Doe/wt" log"#.into()],
+        vec![
+            "git".into(),
+            "--git-dir".into(),
+            "/a b/.git".into(),
+            "show".into(),
+        ],
+        vec![
+            "git".into(),
+            "-c".into(),
+            "user.name=Jane Doe".into(),
+            "log".into(),
+        ],
     ] {
         assert!(condense::is_evidence(&cmd), "{cmd:?}");
         let c = condense::condense(&cmd, &big, 0, &Limits::default());

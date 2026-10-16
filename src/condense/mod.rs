@@ -209,6 +209,15 @@ pub fn is_evidence(cmd: &[String]) -> bool {
                 .collect::<Vec<_>>()
         })
         .collect();
+    // The aggressive split breaks option values with spaces (`git -C "a b"
+    // diff`), so the whole-argument view counts too: evidence if either
+    // finds it.
+    // (`git -c "user.name=Jane Doe" log` looks like a shell's `-c` script to
+    // `words`, so the untouched arguments count as a third view.)
+    finds_git_evidence(&words) || finds_git_evidence(&self::words(cmd)) || finds_git_evidence(cmd)
+}
+
+fn finds_git_evidence(words: &[String]) -> bool {
     (0..words.len()).any(|i| {
         is_program(&words[i], "git")
             && git_subcommand(&words[i + 1..]).is_some_and(|s| EVIDENCE.contains(&s))
