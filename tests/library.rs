@@ -427,6 +427,7 @@ fn committed_learnings_are_never_used() {
         &repo,
         &["apps/api/src/webhooks/retry.rs".into()],
         "+fn retry() {}\n",
+        None,
     )
     .unwrap();
     assert!(b.ids.contains(&"L-0001".to_string()));
@@ -443,7 +444,7 @@ fn the_briefing_puts_scoped_learnings_first_and_keeps_the_cap() {
     let repo = hallmark::repo::Repo::discover(&env.repo).unwrap();
     let changed = vec!["apps/billing/invoice.rs".to_string()];
     let diff = "--- a/apps/billing/invoice.rs\n+++ b/apps/billing/invoice.rs\n+    retry_webhook(endpoint);\n";
-    let b = hallmark::library::briefing(&repo, &changed, diff).unwrap();
+    let b = hallmark::library::briefing(&repo, &changed, diff, None).unwrap();
     assert_eq!(b.ids[0], "L-0003", "scoped first: {:?}", b.ids);
     assert!(
         b.ids.contains(&"L-0001".to_string()),
@@ -469,18 +470,78 @@ fn the_briefing_puts_scoped_learnings_first_and_keeps_the_cap() {
     // A small cap keeps the scoped learning and drops the rest.
     configure(&env, "\n[library]\nbriefing_limit = \"150\"\n");
     let repo = hallmark::repo::Repo::discover(&env.repo).unwrap();
-    let small = hallmark::library::briefing(&repo, &changed, diff).unwrap();
+    let small = hallmark::library::briefing(&repo, &changed, diff, None).unwrap();
     assert_eq!(small.ids, ["L-0003"], "{}", small.text);
     assert!(small.tokens <= 150);
 
     // Nothing matches: no briefing at all.
-    let none = hallmark::library::briefing(&repo, &["README.md".into()], "").unwrap();
+    let none = hallmark::library::briefing(&repo, &["README.md".into()], "", None).unwrap();
     assert!(none.ids.is_empty() && none.text.is_empty());
 
     // An empty Library gives an empty briefing.
     std::fs::remove_dir_all(store(&env)).unwrap();
-    let none = hallmark::library::briefing(&repo, &changed, diff).unwrap();
+    let none = hallmark::library::briefing(&repo, &changed, diff, None).unwrap();
     assert!(none.ids.is_empty());
+}
+
+#[test]
+fn the_briefing_scales_with_the_review_effort() {
+    let env = Env::initialized();
+    let body = "The ledgerguard check keeps every invoice balanced. ".repeat(90);
+    let mut files = vec![(
+        "L-0010-billing-ledger.md",
+        learning(
+            "L-0010",
+            "map",
+            &["apps/billing/**"],
+            "accepted",
+            "Billing keeps a ledger",
+            &body,
+        ),
+    )];
+    for (id, name) in [
+        ("L-0011", "L-0011-ledgerguard-a.md"),
+        ("L-0012", "L-0012-ledgerguard-b.md"),
+        ("L-0013", "L-0013-ledgerguard-c.md"),
+    ] {
+        files.push((
+            name,
+            learning(id, "rule", &[], "accepted", "Ledgerguard holds", &body),
+        ));
+    }
+    write_files(&store(&env), &files);
+    let repo = hallmark::repo::Repo::discover(&env.repo).unwrap();
+    let changed = vec!["apps/billing/invoice.rs".to_string()];
+    let diff = "--- a/apps/billing/invoice.rs\n+++ b/apps/billing/invoice.rs\n+    ledgerguard(invoice);\n";
+    let brief =
+        |effort: Option<&str>| hallmark::library::briefing(&repo, &changed, diff, effort).unwrap();
+
+    // No effort, or a deep one: the whole `briefing_limit` (6k).
+    let full = brief(None);
+    assert_eq!(full.ids.len(), 4, "{:?}", full.ids);
+    assert_eq!(full.ids[0], "L-0010", "scoped first: {:?}", full.ids);
+    assert!(full.tokens > 4000 && full.tokens <= 6000, "{}", full.tokens);
+    for effort in ["high", "xhigh", "max"] {
+        assert_eq!(brief(Some(effort)), full, "{effort}");
+    }
+
+    // Medium: 4k, the scoped learning first.
+    let medium = brief(Some("medium"));
+    assert_eq!(medium.ids.len(), 3, "{:?}", medium.ids);
+    assert_eq!(medium.ids[0], "L-0010", "scoped first: {:?}", medium.ids);
+    assert!(medium.tokens <= 4000, "{}", medium.tokens);
+
+    // Low: 2k, and the scoped learning keeps its place over search hits.
+    let low = brief(Some("low"));
+    assert_eq!(low.ids, ["L-0010"]);
+    assert!(low.tokens <= 2000, "{}", low.tokens);
+
+    // Never above `briefing_limit`.
+    configure(&env, "\n[library]\nbriefing_limit = \"1.5k\"\n");
+    let repo = hallmark::repo::Repo::discover(&env.repo).unwrap();
+    let capped = hallmark::library::briefing(&repo, &changed, diff, Some("medium")).unwrap();
+    assert_eq!(capped.ids, ["L-0010"]);
+    assert!(capped.tokens <= 1500, "{}", capped.tokens);
 }
 
 // --- the librarian ------------------------------------------------------------------
@@ -659,7 +720,8 @@ fn the_librarian_updates_rather_than_duplicates() {
     // The accepted version is kept, and still briefs reviews meanwhile.
     assert_eq!(history(&env, "L-0001").len(), 1);
     let repo = hallmark::repo::Repo::discover(&env.repo).unwrap();
-    let b = hallmark::library::briefing(&repo, &["apps/api/src/webhooks/a.rs".into()], "").unwrap();
+    let b = hallmark::library::briefing(&repo, &["apps/api/src/webhooks/a.rs".into()], "", None)
+        .unwrap();
     assert_eq!(b.ids[0], "L-0001", "{:?}", b.ids);
     assert!(b.text.contains("until the job notices"), "{}", b.text);
     assert!(!b.text.contains("Same point again"), "{}", b.text);
@@ -765,7 +827,7 @@ fn review_accepts_and_rejects_locally() {
     assert!(inbox_learnings(&env).is_none(), "nothing waits any more");
     assert_eq!(items(&env), std::slice::from_ref(&id));
     let repo = hallmark::repo::Repo::discover(&env.repo).unwrap();
-    let b = hallmark::library::briefing(&repo, &["apps/api/x.rs".into()], "").unwrap();
+    let b = hallmark::library::briefing(&repo, &["apps/api/x.rs".into()], "", None).unwrap();
     assert_eq!(b.ids, ["L-0001"], "accepted learnings brief at once");
 
     // Idempotent.
@@ -1054,7 +1116,7 @@ fn import_reads_committed_learnings_from_the_base() {
         &["commit", "-q", "-m", "Move the Library out of the repo"],
     );
     let repo = hallmark::repo::Repo::discover(&env.repo).unwrap();
-    let b = hallmark::library::briefing(&repo, &["apps/billing/a.rs".into()], "").unwrap();
+    let b = hallmark::library::briefing(&repo, &["apps/billing/a.rs".into()], "", None).unwrap();
     assert_eq!(b.ids[0], "L-0003", "{:?}", b.ids);
     let r = env.hall(&env.repo, &["library", "import"]);
     assert_eq!(r.json["imported"], json!([]));
