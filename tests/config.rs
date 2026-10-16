@@ -37,6 +37,24 @@ fn set_get_unset_keep_the_file_and_are_idempotent() {
         entry(&r)["value"],
         serde_json::json!(["make test", "make lint"])
     );
+    // A gate with its own time limit is an inline table among the strings.
+    let r = env.hall(
+        &env.repo,
+        &[
+            "config",
+            "set",
+            "gates",
+            r#"[{ cmd = "make test", timeout = "40m" }, "make lint"]"#,
+        ],
+    );
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(
+        entry(&r)["value"],
+        serde_json::json!([{ "cmd": "make test", "timeout": "40m" }, "make lint"])
+    );
+    let r = env.hall(&env.repo, &["config", "set", "gates_timeout", "30m"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(entry(&r)["value"], "30m");
     let r = env.hall(
         &env.repo,
         &["config", "set", "claude_args", "--", "--verbose"],
@@ -169,6 +187,23 @@ fn bad_keys_and_values_are_usage_errors() {
             "not a whole number",
         ),
         (vec!["config", "set", "stuck_after", "30"], "not a duration"),
+        (
+            vec!["config", "set", "gates_timeout", "40"],
+            "not a duration",
+        ),
+        (
+            vec![
+                "config",
+                "set",
+                "gates",
+                r#"[{ cmd = "make test", timeout = "40" }]"#,
+            ],
+            "not a duration",
+        ),
+        (
+            vec!["config", "set", "gates", r#"[{ command = "make test" }]"#],
+            "invalid",
+        ),
         (vec!["config", "get", "notify"], "notify is a table"),
     ] {
         let r = env.hall(&env.repo, &args);

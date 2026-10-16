@@ -8,7 +8,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use super::cache;
-use crate::config::Role;
+use crate::config::Gate;
 use crate::error::Result;
 use crate::event::{Body, CheckRun, short};
 use crate::item::{HoldKind, Item, State};
@@ -29,7 +29,6 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
     };
     let round = item.round;
     let gates = repo.config.gates.clone();
-    let timeout = repo.config.budget.timeout_secs(Role::Reviewer).max(0) as u64;
     let mut runs = Vec::new();
     if !gates.is_empty() {
         let mut bench = Bench::open(
@@ -41,7 +40,7 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
         )?;
         let forced = bench.forced(&gates);
         for (i, g) in gates.iter().enumerate() {
-            // Renew the lease: each gate may take up to the timeout.
+            // Renew the lease: each gate may take up to its timeout.
             let _ = crate::lease::claim(
                 &repo.hall,
                 item.id,
@@ -50,12 +49,13 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
                 super::lease_ttl(repo),
             );
             repo.hall.live(&format!(
-                "{} checks {}/{}: {g}",
+                "{} checks {}/{}: {}",
                 item.id,
                 i + 1,
-                gates.len()
+                gates.len(),
+                g.cmd()
             ));
-            runs.push(bench.gate(g, timeout, i < forced)?);
+            runs.push(bench.gate(g, i < forced)?);
         }
         bench.log.flush()?;
     }
@@ -145,18 +145,18 @@ pub fn gates_at(
     if gates.is_empty() {
         return Ok(vec![]);
     }
-    let timeout = repo.config.budget.timeout_secs(Role::Reviewer).max(0) as u64;
     let mut bench = Bench::open(repo, id, sha, name, name)?;
     let mut runs = Vec::new();
     let forced = bench.forced(&gates);
     for (i, g) in gates.iter().enumerate() {
         renew();
         repo.hall.live(&format!(
-            "{id} {name} checks {}/{}: {g}",
+            "{id} {name} checks {}/{}: {}",
             i + 1,
-            gates.len()
+            gates.len(),
+            g.cmd()
         ));
-        runs.push(bench.gate(g, timeout, i < forced)?);
+        runs.push(bench.gate(g, i < forced)?);
     }
     bench.log.flush()?;
     Ok(runs)
@@ -208,7 +208,10 @@ impl<'a> Bench<'a> {
         self.tree
             .as_deref()
             .filter(|_| !config.gates_no_cache.iter().any(|n| n.trim() == g.trim()))
-            .map(|t| cache::Key::new(t, g, &config.gates))
+            .map(|t| {
+                let cmds: Vec<String> = config.gates.iter().map(|g| g.cmd().to_string()).collect();
+                cache::Key::new(t, g, &cmds)
+            })
     }
 
     /// The passing run that serves `g`, if any. Never one whose log is the
@@ -223,29 +226,31 @@ impl<'a> Bench<'a> {
     /// slot, so every gate before one that has to run runs too (a generator
     /// or an install its successors depend on); only the gates after the
     /// last one that runs are served.
-    fn forced(&self, gates: &[String]) -> usize {
+    fn forced(&self, gates: &[Gate]) -> usize {
         gates
             .iter()
-            .rposition(|g| self.hit(self.key(g).as_ref()).is_none())
+            .rposition(|g| self.hit(self.key(g.cmd()).as_ref()).is_none())
             .map_or(0, |i| i + 1)
     }
 
     /// One gate's result: from the cache when it passed on this tree
     /// before and `force` is off, else by running it.
-    fn gate(&mut self, g: &str, timeout: u64, force: bool) -> Result<CheckRun> {
-        let key = self.key(g);
+    fn gate(&mut self, g: &Gate, force: bool) -> Result<CheckRun> {
+        let cmd = g.cmd();
+        let timeout = self.repo.config.gate_timeout_secs(g);
+        let key = self.key(cmd);
         let hit = if force { None } else { self.hit(key.as_ref()) };
         if let Some(hit) = hit {
             writeln!(
                 self.log,
-                "\n$ {g}\n[cached: passed on tree {} for {} at {}; log {}]",
+                "\n$ {cmd}\n[cached: passed on tree {} for {} at {}; log {}]",
                 short(&hit.tree),
                 hit.item,
                 short(&hit.sha),
                 hit.log.as_deref().unwrap_or("none")
             )?;
             return Ok(CheckRun {
-                command: g.to_string(),
+                command: cmd.to_string(),
                 exit_code: 0,
                 duration_ms: hit.duration_ms,
                 log: hit.log,
@@ -263,9 +268,9 @@ impl<'a> Bench<'a> {
                 wt
             }
         };
-        writeln!(self.log, "\n$ {g}")?;
+        writeln!(self.log, "\n$ {cmd}")?;
         self.log.flush()?;
-        let (exit_code, duration_ms) = run_gate(g, &wt, &self.log, timeout)?;
+        let (exit_code, duration_ms) = run_gate(cmd, &wt, &self.log, timeout)?;
         writeln!(
             self.log,
             "\n[exit {exit_code} after {:.1}s]",
@@ -293,7 +298,7 @@ impl<'a> Bench<'a> {
             }
         }
         Ok(CheckRun {
-            command: g.to_string(),
+            command: cmd.to_string(),
             exit_code,
             duration_ms,
             log: Some(self.rel.clone()),

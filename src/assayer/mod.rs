@@ -61,7 +61,8 @@ pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
 /// Long enough for one gate or one review run; renewed between gates.
 pub fn lease_ttl(repo: &Repo) -> Duration {
     let run = repo.config.budget.timeout_secs(Role::Reviewer).max(0);
-    Duration::seconds(run.max(600) + 600)
+    let gate = repo.config.longest_gate_secs() as i64;
+    Duration::seconds(run.max(gate).max(600) + 600)
 }
 
 /// The assayer's own worktree: a sibling of the main checkout,

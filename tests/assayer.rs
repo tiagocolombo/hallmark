@@ -986,8 +986,10 @@ fn the_assay_worktree_is_reused_and_cleaned() {
 #[test]
 fn a_gate_that_hangs_is_killed() {
     let env = Env::initialized();
-    configure(&env, &[("gates", "[\"sleep 30\"]")]);
-    configure_table(&env, "\n[budget.review]\ntimeout = \"1s\"\n");
+    configure(
+        &env,
+        &[("gates", "[\"sleep 30\"]"), ("gates_timeout", "\"1s\"")],
+    );
     let (id, _, _) = ready_item(&env, "Slow", "slow.rs", "x\n");
     let start = std::time::Instant::now();
     tick(&env, &env.script(json!([])));
@@ -1002,6 +1004,41 @@ fn a_gate_that_hangs_is_killed() {
             .join("checks/r1.log"),
     )
     .unwrap();
+    assert!(log.contains("timed out after 1s"), "{log}");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_gate_has_its_own_timeout_not_the_reviewers() {
+    let env = Env::initialized();
+    // The reviewer's limit no longer reaches the gates: `sleep 2` passes
+    // under the default gate timeout, and the table form sets one gate's.
+    configure(
+        &env,
+        &[(
+            "gates",
+            "[{ cmd = \"sleep 30\", timeout = \"1s\" }, \"sleep 2\"]",
+        )],
+    );
+    configure_table(&env, "\n[budget.review]\ntimeout = \"1s\"\n");
+    let (id, _, _) = ready_item(&env, "Slow", "slow.rs", "x\n");
+    let start = std::time::Instant::now();
+    tick(&env, &env.script(json!([])));
+    assert!(start.elapsed().as_secs() < 20);
+    let c = &events_of(&env, &id, "checks")[0];
+    assert_eq!(c["passed"], false);
+    assert_eq!(c["runs"][0]["command"], "sleep 30");
+    assert_eq!(c["runs"][0]["exit_code"], 124);
+    assert_eq!(c["runs"][1]["command"], "sleep 2");
+    assert_eq!(c["runs"][1]["exit_code"], 0);
+    let log = std::fs::read_to_string(
+        env.repo
+            .join(".git/hallmark/items")
+            .join(&id)
+            .join("checks/r1.log"),
+    )
+    .unwrap();
+    assert!(log.contains("$ sleep 30\n"), "{log}");
     assert!(log.contains("timed out after 1s"), "{log}");
 }
 

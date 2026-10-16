@@ -44,8 +44,10 @@ are happy with.
    --in-diff mutants.diff`, PIT's `scmMutationCoverage`), or a coverage floor
    (`cargo llvm-cov --fail-under-lines 90`,
    `pytest --cov=<package> --cov-fail-under=90`). Gates get no base branch or
-   diff, and are killed after `budget.review.timeout` (20 minutes by
-   default), so a mutation gate needs that timeout raised.
+   diff, and are killed after `gates_timeout` (20 minutes by default), so a
+   mutation gate needs its own limit: the table form
+   `{ cmd = "<gate>", timeout = "60m" }` in the `gates` list, set with
+   `hall config set gates '[{ cmd = "cargo mutants …", timeout = "60m" }, "cargo test"]'`.
 3. **The gates' shell.** The daemon runs gates with `sh -c`, outside any shell
    the person entered. If the toolchain comes from `nix develop`, devbox, mise
    or direnv, wrap each gate:

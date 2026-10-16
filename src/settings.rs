@@ -183,9 +183,12 @@ pub fn parse(key: &Key, input: &[String]) -> Result<toml_edit::Value, String> {
             let doc: toml_edit::DocumentMut = format!("v = {v}")
                 .parse()
                 .map_err(|_| format!("{v} is not a TOML list, such as [\"a\", \"b\"]"))?;
+            // A gate may be `{ cmd = "…", timeout = "40m" }`.
+            let item =
+                |x: &toml_edit::Value| x.is_str() || (key.key == "gates" && x.is_inline_table());
             let arr = doc["v"]
                 .as_array()
-                .filter(|a| a.iter().all(|x| x.is_str()))
+                .filter(|a| a.iter().all(item))
                 .ok_or_else(|| format!("{} is a list of strings", key.key))?;
             return Ok(toml_edit::Value::Array(arr.clone()));
         }
@@ -257,13 +260,26 @@ pub fn parse(key: &Key, input: &[String]) -> Result<toml_edit::Value, String> {
 
 /// Keys whose strings carry units: durations, token counts and caps.
 fn check_units(key: &str, v: &toml_edit::Value) -> Result<(), String> {
+    if key == "gates"
+        && let Some(a) = v.as_array()
+    {
+        for t in a.iter().filter_map(|x| x.as_inline_table()) {
+            if let Some(s) = t.get("timeout").and_then(|x| x.as_str())
+                && parse_duration(s).is_none()
+            {
+                return Err(format!(
+                    "gates: {s} is not a duration; use 90s, 30m, 4h or 7d"
+                ));
+            }
+        }
+    }
     let Some(s) = v.as_str() else {
         return Ok(());
     };
     let last = key.rsplit('.').next().unwrap_or(key);
     let duration = matches!(
         key,
-        "stuck_after" | "notify.remind" | "library.retire_after"
+        "stuck_after" | "gates_timeout" | "notify.remind" | "library.retire_after"
     ) || (key.starts_with("budget.") && last == "timeout");
     let cap = key.starts_with("budget.") && matches!(last, "daily" | "per_item");
     if duration && parse_duration(s).is_none() {

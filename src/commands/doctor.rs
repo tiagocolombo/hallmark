@@ -240,7 +240,7 @@ pub fn doctor(cwd: &Path) -> Result<Response> {
                 let gates = if repo.config.gates.is_empty() {
                     "no gates configured".to_string()
                 } else {
-                    format!("gates {}", repo.config.gates.join(", "))
+                    format!("gates {}", repo.config.gate_commands().join(", "))
                 };
                 checks.push(check("repo", true, format!("{}: {gates}", repo.name), None));
                 let probe = repo.hall.root.join(".doctor");

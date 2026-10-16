@@ -46,6 +46,7 @@ expression: keys
   "repo fixer string",
   "repo gates list",
   "repo gates_no_cache list",
+  "repo gates_timeout string",
   "repo intake.max_parts integer",
   "repo intake.split choice",
   "repo lenses string_or_list",
