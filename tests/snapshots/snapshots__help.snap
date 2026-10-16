@@ -1201,7 +1201,7 @@ expression: v
       "about": "Show or set the budget caps, with today's spend",
       "args": [
         {
-          "help": "Set a cap in .hallmark.toml, such as daily=4M, per_item=800k, review.max_usd=3, review.daily=2M (repeatable)",
+          "help": "Set a cap in .hallmark.toml, such as daily=4M, per_item=800k, review.max_usd=3, review.daily=2M (repeatable). none lifts a cap; default goes back to the default",
           "name": "set",
           "required": false,
           "syntax": "--set <set>",

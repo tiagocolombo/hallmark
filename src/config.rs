@@ -280,6 +280,17 @@ impl Role {
         }
     }
 
+    /// The per-run cap in USD when `max_usd` is unset. A run that needs
+    /// more than this has already gone wrong.
+    pub fn default_max_usd(self) -> f64 {
+        match self {
+            Role::Reviewer => 3.0,
+            Role::Fixer => 2.0,
+            Role::Intake => 0.10,
+            Role::Librarian => 0.20,
+        }
+    }
+
     /// The room usage is booked to.
     pub fn room(self) -> &'static str {
         match self {
@@ -314,9 +325,14 @@ impl Budget {
         }
     }
 
-    /// The per-run cap passed as `--max-budget-usd`.
+    /// The per-run cap passed as `--max-budget-usd`: `[budget.<role>]
+    /// max_usd`, else the role's default; `"none"` means no cap.
     pub fn max_usd(&self, r: Role) -> Option<f64> {
-        self.role(r).and_then(|b| b.max_usd)
+        match self.role(r).and_then(|b| b.max_usd) {
+            Some(MaxUsd::Usd(u)) => Some(u),
+            Some(MaxUsd::None) => None,
+            None => Some(r.default_max_usd()),
+        }
     }
 
     /// The model to use when the role's model is unavailable or overloaded.
@@ -735,9 +751,10 @@ pub struct RoleBudget {
     pub model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
-    /// Per run, passed as `--max-budget-usd`.
+    /// Per run, passed as `--max-budget-usd`. Unset: review 3.00, fix
+    /// 2.00, intake 0.10, librarian 0.20; "none": no per-run cap.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_usd: Option<f64>,
+    pub max_usd: Option<MaxUsd>,
     /// Per room, per day, in tokens.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub daily: Option<String>,
@@ -748,6 +765,67 @@ pub struct RoleBudget {
     /// tokens is retried once with it) or overloaded (`--fallback-model`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fallback: Option<String>,
+}
+
+/// `max_usd`: a per-run cap in USD, or `"none"` for no cap.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum MaxUsd {
+    Usd(f64),
+    None,
+}
+
+impl Serialize for MaxUsd {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        match self {
+            MaxUsd::Usd(u) => s.serialize_f64(*u),
+            MaxUsd::None => s.serialize_str("none"),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for MaxUsd {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Self, D::Error> {
+        struct V;
+        impl serde::de::Visitor<'_> for V {
+            type Value = MaxUsd;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str(r#"an amount in USD, such as 3.0, or "none""#)
+            }
+            fn visit_f64<E: serde::de::Error>(self, v: f64) -> std::result::Result<MaxUsd, E> {
+                Ok(MaxUsd::Usd(v))
+            }
+            fn visit_i64<E: serde::de::Error>(self, v: i64) -> std::result::Result<MaxUsd, E> {
+                Ok(MaxUsd::Usd(v as f64))
+            }
+            fn visit_u64<E: serde::de::Error>(self, v: u64) -> std::result::Result<MaxUsd, E> {
+                Ok(MaxUsd::Usd(v as f64))
+            }
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> std::result::Result<MaxUsd, E> {
+                if v.trim().eq_ignore_ascii_case("none") {
+                    Ok(MaxUsd::None)
+                } else {
+                    Err(E::invalid_value(serde::de::Unexpected::Str(v), &self))
+                }
+            }
+        }
+        d.deserialize_any(V)
+    }
+}
+
+impl JsonSchema for MaxUsd {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "MaxUsd".into()
+    }
+
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "description": "An amount in USD, or \"none\" for no cap",
+            "anyOf": [
+                { "type": "number", "minimum": 0 },
+                { "const": "none" }
+            ]
+        })
+    }
 }
 
 impl Config {
@@ -858,7 +936,7 @@ rules = ["CLAUDE.md", "AGENTS.md"]
 mode = {capture}   # gate: edits need an item · ask: Claude asks you · off
 free = ["docs/", "*.md"]   # questions, docs, designs and plans need no item
 
-[budget]           # no caps unless you set them
+[budget]           # runs are capped by default; daily caps only if you set them
 review_model = "opus"
 fix_model    = "sonnet"
 intake_model = "haiku"
@@ -936,6 +1014,37 @@ split = "off"
         assert_eq!(c.library.search, SearchBackend::Qmd);
         assert_eq!(c.library.briefing_limit, "6k");
         assert_eq!(c.intake.split, SplitMode::Off);
+    }
+
+    #[test]
+    fn per_run_caps_have_defaults_by_role() {
+        let c = Config::parse("").unwrap();
+        assert_eq!(c.budget.max_usd(Role::Reviewer), Some(3.0));
+        assert_eq!(c.budget.max_usd(Role::Fixer), Some(2.0));
+        assert_eq!(c.budget.max_usd(Role::Intake), Some(0.10));
+        assert_eq!(c.budget.max_usd(Role::Librarian), Some(0.20));
+        // A table without max_usd keeps the default; "none" opts out.
+        let c = Config::parse(
+            r#"
+[budget.review]
+max_usd = "none"
+[budget.fix]
+max_usd = 5
+[budget.intake]
+effort = "low"
+[budget.librarian]
+max_usd = 0.5
+"#,
+        )
+        .unwrap();
+        assert_eq!(c.budget.max_usd(Role::Reviewer), None);
+        assert_eq!(c.budget.max_usd(Role::Fixer), Some(5.0));
+        assert_eq!(c.budget.max_usd(Role::Intake), Some(0.10));
+        assert_eq!(c.budget.max_usd(Role::Librarian), Some(0.5));
+        // "none" round-trips as written.
+        let back = toml::to_string(&c.budget).unwrap();
+        assert!(back.contains(r#"max_usd = "none""#), "{back}");
+        assert!(Config::parse("[budget.review]\nmax_usd = \"lots\"\n").is_err());
     }
 
     #[test]
