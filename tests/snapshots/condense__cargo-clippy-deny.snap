@@ -1,0 +1,37 @@
+---
+source: tests/condense.rs
+expression: "format!(\"{}---\\n{}\", c.text, c.measure())"
+---
+error: unused import: `std::collections::HashMap`
+  --> src/ratio.rs:1:5
+error: unused variable: `scale`
+  --> src/ratio.rs:4:9
+   | ^ help: if this is intentional, prefix it with an underscore: `_scale`
+error: unused variable: `spare`
+  --> src/teeth.rs:10:9
+   | ^ help: if this is intentional, prefix it with an underscore: `_spare`
+error: unneeded `return` statement
+  --> src/ratio.rs:9:5
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_return
+error: length comparison to zero
+  --> src/ratio.rs:14:8
+   | ^ help: using `is_empty` is clearer and more explicit: `label.is_empty()`
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#len_zero
+error: unneeded `return` statement
+  --> src/teeth.rs:6:5
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_return
+error: writing `&Vec` instead of `&[_]` involves a new object where a slice will do
+  --> src/teeth.rs:1:21
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#ptr_arg
+error: the loop variable `i` is only used to index `teeth`
+  --> src/teeth.rs:3:14
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_range_loop
+error: writing `&Vec` instead of `&[_]` involves a new object where a slice will do
+  --> src/teeth.rs:9:23
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#ptr_arg
+per file: src/ratio.rs 4 errors; src/teeth.rs 5 errors
+error: could not compile `sprockets` (lib) due to 9 previous errors
+error: could not compile `sprockets` (lib test) due to 9 previous errors
+exit code: 101
+---
+condensed 3635 bytes (109 lines) to 1769 bytes (31 lines); ~466 tokens saved (estimate: bytes/4)

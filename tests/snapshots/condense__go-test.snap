@@ -1,0 +1,28 @@
+---
+source: tests/condense.rs
+expression: "format!(\"{}---\\n{}\", c.text, c.measure())"
+---
+--- FAIL: TestParseQty (0.00s)
+    qty_test.go:21: ParseQty("2x") = 0, <nil>; want an error
+--- FAIL: TestRound (0.00s)
+    --- FAIL: TestRound/half_even (0.00s)
+    round_test.go:34: Round(2.5) = 3, want 2
+FAIL	example.com/inventory/pricing	0.014s
+--- FAIL: TestLookup (0.00s)
+panic: runtime error: index out of range [3] with length 3 [recovered]
+	panic: runtime error: index out of range [3] with length 3
+goroutine 21 [running]:
+example.com/inventory/catalog.(*Catalog).At(...)
+	/home/dev/src/inventory/catalog/catalog.go:41
+example.com/inventory/catalog.TestLookup(0xc000102b60)
+	/home/dev/src/inventory/catalog/catalog_test.go:58 +0x1c5
+FAIL	example.com/inventory/catalog	0.009s
+# example.com/inventory/orders [example.com/inventory/orders.test]
+orders/orders_test.go:12:9: undefined: NewLedger
+orders/orders_test.go:27:15: invalid operation: total + fee (mismatched types int and float64)
+FAIL	example.com/inventory/orders [build failed]
+ok  	example.com/inventory/users	0.651s
+ok  	example.com/inventory/warehouse	(cached)
+exit code: 1
+---
+condensed 2981 bytes (84 lines) to 1044 bytes (22 lines); ~484 tokens saved (estimate: bytes/4)

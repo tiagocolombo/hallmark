@@ -1,0 +1,36 @@
+---
+source: tests/condense.rs
+expression: "format!(\"{}---\\n{}\", c.text, c.measure())"
+---
+==================================== ERRORS ====================================
+____________________ ERROR at setup of test_migrations_apply ____________________
+tests/conftest.py:14:
+>           raise KeyError(key) from None
+E           KeyError: 'DATABASE_URL'
+/usr/lib/python3.12/os.py:714: KeyError
+=================================== FAILURES ===================================
+______________________________ test_create_order _______________________________
+>       assert resp.status_code == 201
+E       assert 422 == 201
+E        +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+tests/test_api.py:88: AssertionError
+______________________________ test_search_by_tag ______________________________
+tests/test_catalog.py:41:
+>       return [item for item in self.items if tag in item.tags.split(",")]
+E       AttributeError: 'list' object has no attribute 'split'
+inventory/catalog.py:27: AttributeError
+____________________________ test_discount_rounding ____________________________
+>       assert price == Decimal("16.99")
+E       AssertionError: assert Decimal('16.9915') == Decimal('16.99')
+E        +  where Decimal('16.9915') = apply_discount(Decimal('19.99'), percent=15)
+tests/test_pricing.py:63: AssertionError
+warnings summary: 2 distinct warnings omitted
+=========================== short test summary info ============================
+FAILED tests/test_api.py::test_create_order - assert 422 == 201
+FAILED tests/test_catalog.py::test_search_by_tag - AttributeError: 'list' object has no attribute 'split'
+FAILED tests/test_pricing.py::test_discount_rounding - AssertionError: assert Decimal('16.9915') == Decimal('16.99')
+ERROR tests/test_db.py::test_migrations_apply - KeyError: 'DATABASE_URL'
+======= 3 failed, 209 passed, 1 skipped, 3 warnings, 1 error in 4.82s ========
+exit code: 1
+---
+condensed 5027 bytes (99 lines) to 1824 bytes (30 lines); ~800 tokens saved (estimate: bytes/4)

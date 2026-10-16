@@ -1,0 +1,121 @@
+
+> inventory-web@1.4.0 test
+> jest --ci
+
+ PASS  src/utils/format.test.ts
+ PASS  src/utils/currency.test.ts
+ PASS  src/utils/dates.test.ts
+ FAIL  src/cart/cart.test.ts
+  ● Console
+
+    console.log
+      adding item A-100
+
+      at Cart.log [as add] (src/cart/cart.ts:22:13)
+
+    console.log
+      adding item B-200
+
+      at Cart.log [as add] (src/cart/cart.ts:22:13)
+
+    console.log
+      adding item C-300
+
+      at Cart.log [as add] (src/cart/cart.ts:22:13)
+
+  ● Cart › applies a percentage discount
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 16.99
+    Received: 16.9915
+
+      40 |     const cart = new Cart();
+      41 |     cart.add({ sku: "A-100", price: 19.99 });
+    > 42 |     expect(cart.total({ discount: 15 })).toBe(16.99);
+         |                                          ^
+      43 |   });
+      44 |
+      45 |   it("removes an item by sku", () => {
+
+      at Object.toBe (src/cart/cart.test.ts:42:42)
+
+  ● Cart › removes an item by sku
+
+    expect(received).toEqual(expected) // recursively checks the equality of all fields
+
+    - Expected  - 0
+    + Received  + 24
+
+      [
+        {
+          "price": 12.5,
+          "qty": 1,
+          "sku": "B-200",
+          "title": "Hex bolt, M8",
+        },
+    +   {
+    +     "price": 4.5,
+    +     "qty": 3,
+    +     "sku": "C-300",
+    +     "title": "Washer, M8",
+    +   },
+    +   {
+    +     "price": 0.75,
+    +     "qty": 12,
+    +     "sku": "D-400",
+    +     "title": "Spring washer, M8",
+    +   },
+    +   {
+    +     "price": 2.25,
+    +     "qty": 6,
+    +     "sku": "E-500",
+    +     "title": "Lock nut, M8",
+    +   },
+    +   {
+    +     "price": 9,
+    +     "qty": 1,
+    +     "sku": "F-600",
+    +     "title": "Threaded rod, M8 x 1m",
+    +   },
+      ]
+
+      55 |     cart.add({ sku: "C-300", price: 4.5, qty: 3 });
+      56 |     cart.remove("A-100");
+    > 57 |     expect(cart.items).toEqual([bolt]);
+         |                        ^
+      58 |   });
+      59 | });
+      60 |
+
+      at Object.toEqual (src/cart/cart.test.ts:57:24)
+
+ PASS  src/components/Button.test.tsx
+ PASS  src/components/CartBadge.test.tsx
+ PASS  src/components/ProductCard.test.tsx
+ FAIL  src/api/client.test.ts (5.412 s)
+  ● api client › retries on 503
+
+    thrown: "Exceeded timeout of 5000 ms for a test.
+    Add a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout."
+
+      18 |   });
+      19 |
+    > 20 |   it("retries on 503", async () => {
+         |   ^
+      21 |     server.respondWith(503);
+      22 |     await expect(client.get("/items")).resolves.toHaveLength(3);
+      23 |   });
+
+      at it (src/api/client.test.ts:20:3)
+      at Object.describe (src/api/client.test.ts:8:1)
+
+ PASS  src/api/retry.test.ts
+ PASS  src/store/inventory.test.ts
+ PASS  src/store/session.test.ts
+
+Test Suites: 2 failed, 9 passed, 11 total
+Tests:       3 failed, 87 passed, 90 total
+Snapshots:   12 passed, 12 total
+Time:        7.214 s
+Ran all test suites.

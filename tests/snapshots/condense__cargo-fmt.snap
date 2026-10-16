@@ -1,0 +1,42 @@
+---
+source: tests/condense.rs
+expression: "format!(\"{}---\\n{}\", c.text, c.measure())"
+---
+Diff in /home/dev/src/sprockets/src/ratio.rs:1:
+ use std::collections::HashMap;
+ 
+-pub fn ratio(driver: u32,driven: u32) -> f64 {
++pub fn ratio(driver: u32, driven: u32) -> f64 {
+     let scale = 10;
+-    if driven == 0 { return 0.0; }
++    if driven == 0 {
++        return 0.0;
++    }
+     let r = driver as f64 / driven as f64;
+     return r;
+ }
+... 1 more hunk in /home/dev/src/sprockets/src/ratio.rs
+Diff in /home/dev/src/sprockets/src/teeth.rs:1:
+ pub fn count(teeth: &Vec<u32>) -> usize {
+     let mut total = 0;
+-    for i in 0..teeth.len() { total += teeth[i] as usize; }
++    for i in 0..teeth.len() {
++        total += teeth[i] as usize;
++    }
+     return total;
+ }
+ 
+... 1 more hunk in /home/dev/src/sprockets/src/teeth.rs
+Diff in /home/dev/src/sprockets/tests/ratio.rs:1:
+ #[test]
+ fn ratio_is_two() {
+-    let r = sprockets::ratio(4,2);
++    let r = sprockets::ratio(4, 2);
+     assert!(r == 2.0);
+     let teeth = vec![1, 2, 3];
+     assert_eq!(sprockets::count(&teeth), 6);
+... 1 more hunk in /home/dev/src/sprockets/tests/ratio.rs
+3 files differ
+exit code: 1
+---
+condensed 2344 bytes (70 lines) to 1076 bytes (36 lines); ~317 tokens saved (estimate: bytes/4)
