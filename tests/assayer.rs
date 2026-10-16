@@ -798,9 +798,11 @@ fn agents_may_not_record_a_verdict() {
     assert_eq!(note["actor"], "assayer");
     let report = std::fs::read_to_string(r.json["report"].as_str().unwrap()).unwrap();
     assert!(!report.contains("human override"), "{report}");
+    assert!(!report.contains("`hall verdict`"), "{report}");
     let out = env.cmd(&env.repo).args(["export", &id]).output().unwrap();
     let md = String::from_utf8_lossy(&out.stdout).into_owned();
     assert!(!md.contains("a human override"), "{md}");
+    assert!(!md.contains("approved by"), "{md}");
 }
 
 #[test]

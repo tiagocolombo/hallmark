@@ -1151,6 +1151,7 @@ mod tests {
         let mut events = vec![verdict(1, "approve", vec![], json!([]))];
         let c = review_comment(&item(None), &events, false);
         assert!(!c.contains("human override"), "{c}");
+        assert!(!c.contains("`hall verdict`"), "{c}");
         events[0].actor = "you".into();
         let c = review_comment(&item(None), &events, false);
         assert!(

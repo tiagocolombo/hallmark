@@ -409,3 +409,16 @@ fn plural(s: Severity) -> &'static str {
         Severity::Nit => "Nits",
     }
 }
+
+#[cfg(test)]
+mod override_tests {
+    use super::override_by;
+
+    #[test]
+    fn only_a_non_assayer_actor_is_an_override() {
+        assert_eq!(override_by("assayer"), None);
+        assert_eq!(override_by(""), None);
+        assert_eq!(override_by("you"), Some("you"));
+        assert_eq!(override_by("agent"), Some("agent"));
+    }
+}
