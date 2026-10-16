@@ -71,7 +71,8 @@ pass.
 - Never approve, and never claim the change is approved. Only the next
   review can settle a finding; `hall fixed` sends the item back to it.
 - Never push, never open a pull request, never run `hall ready`,
-  `hall verdict`, `hall pull-back` or `hall drop`.
+  `hall verdict`, `hall retry`, `hall pull-back` or `hall drop`. `hall`
+  refuses all but `hall pull-back` in your run (`GATE_DENIED`).
 - Never edit `.hallmark.toml`, `.hallmark/`, CLAUDE.md or AGENTS.md to make a
   finding go away.
 

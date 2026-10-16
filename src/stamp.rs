@@ -25,6 +25,10 @@ pub struct Note {
     /// The reviewer's model.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reviewer: Option<String>,
+    /// Who recorded the approval: `assayer`, or `you` for a human override
+    /// with `hall verdict`. Absent on hallmarks struck before it was kept.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actor: Option<String>,
     /// Findings still open (minors and nits) when it was approved.
     pub findings: Counts,
     pub t: DateTime<Utc>,
@@ -34,7 +38,8 @@ pub struct Note {
     pub rebased_from: Option<String>,
 }
 
-/// Writes the note on `sha` and records `hallmarked`. Safe to repeat: the
+/// Writes the note on `sha`, naming `actor` as the one who approved it, and
+/// records `hallmarked`. Safe to repeat: the
 /// note is overwritten with the same content, and the event is written once.
 pub fn strike(
     repo: &Repo,
@@ -42,6 +47,7 @@ pub fn strike(
     sha: &str,
     round: u32,
     reviewer: Option<String>,
+    actor: &str,
     findings: Counts,
 ) -> Result<Note> {
     let note = Note {
@@ -50,6 +56,7 @@ pub fn strike(
         sha: sha.to_string(),
         round,
         reviewer,
+        actor: Some(actor.to_string()),
         findings,
         t: Utc::now(),
         rebased_from: None,

@@ -96,6 +96,7 @@ pub fn record_verdict(
             base_sha: base_sha.as_deref(),
             since: since.as_deref(),
             reviewer: reviewer.as_deref(),
+            actor,
             mv,
             judged: &judged,
             before: &ledger,
@@ -133,6 +134,7 @@ pub fn record_verdict(
                 open: judged.counts,
                 report: Some(rel),
                 reviewer: reviewer.clone(),
+                actor: actor.to_string(),
                 changed: true,
             },
         ))
@@ -143,7 +145,15 @@ pub fn record_verdict(
     if rec.verdict == VerdictKind::Approve
         && (rec.changed || item.hallmark_sha.as_deref() != Some(sha))
     {
-        crate::stamp::strike(repo, id, sha, rec.round, rec.reviewer.clone(), rec.open)?;
+        crate::stamp::strike(
+            repo,
+            id,
+            sha,
+            rec.round,
+            rec.reviewer.clone(),
+            &rec.actor,
+            rec.open,
+        )?;
         item = repo.hall.refresh_item_json(id)?;
     }
     repo.hall.live(&format!(
@@ -175,6 +185,8 @@ struct Partial {
     open: Counts,
     report: Option<String>,
     reviewer: Option<String>,
+    /// Who recorded the verdict.
+    actor: String,
     changed: bool,
 }
 
@@ -199,6 +211,7 @@ fn existing(events: &[Event], sha: &str, round: u32) -> Option<Partial> {
             open: *counts,
             report: report.clone(),
             reviewer: reviewer.clone(),
+            actor: e.actor.clone(),
             changed: false,
         }),
         _ => None,
@@ -221,6 +234,13 @@ fn not_in_review(item: &Item, sha: &str) -> HallError {
     ])
 }
 
+/// Who overrode the assayer, when `actor` (who recorded a verdict or
+/// struck a hallmark) isn't the assayer: `you`, or an older journal's
+/// actor. None for the assayer, and for hallmarks that don't say.
+pub fn override_by(actor: &str) -> Option<&str> {
+    (!actor.is_empty() && actor != "assayer").then_some(actor)
+}
+
 pub fn kind(v: VerdictKind) -> &'static str {
     match v {
         VerdictKind::Approve => "approve",
@@ -236,6 +256,8 @@ pub struct Report<'a> {
     pub base_sha: Option<&'a str>,
     pub since: Option<&'a str>,
     pub reviewer: Option<&'a str>,
+    /// Who recorded it: `assayer`, or `you` for a human override.
+    pub actor: &'a str,
     pub mv: &'a ModelVerdict,
     pub judged: &'a Judged,
     /// The findings before this verdict.
@@ -271,6 +293,13 @@ pub fn render(r: &Report) -> String {
     }
     meta.push(Utc::now().format("%Y-%m-%d %H:%M UTC").to_string());
     let _ = writeln!(s, "{}\n", meta.join(" · "));
+    if let Some(who) = override_by(r.actor) {
+        let _ = writeln!(
+            s,
+            "**A human override**: {who} recorded this verdict with `hall verdict`; \
+             the assayer did not review it.\n"
+        );
+    }
     let open = format!(
         "{} blocker, {} major, {} minor, {} nit open",
         c.blocker, c.major, c.minor, c.nit

@@ -234,6 +234,7 @@ pub fn approve(
         &sha,
         round,
         Some("claude-opus-5-5".into()),
+        "assayer",
         open,
     )
     .unwrap();
@@ -279,6 +280,7 @@ pub fn hallmarked_item_with(
         &sha,
         1,
         Some("claude-opus-5-5".into()),
+        "assayer",
         counts(0, 0, 1, 0),
     )
     .unwrap();
