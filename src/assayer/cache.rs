@@ -114,6 +114,7 @@ pub fn record(hall: &Hall, run: &CachedRun) -> Result<()> {
     fs::create_dir_all(&d)?;
     let f: File = OpenOptions::new()
         .create(true)
+        .read(true)
         .append(true)
         .open(d.join(format!("{}.jsonl", run.key)))?;
     FileExt::lock(&f)?;
