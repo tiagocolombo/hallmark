@@ -628,6 +628,11 @@ pub fn explain(repo: &Repo, ix: &Index, entry: InboxEntry, number: usize) -> Res
                 }
                 "stuck" => "Nothing has happened to it for longer than `stuck_after`.",
                 "ci_failed" => "The shipped PR's CI failed after the review approved it.",
+                "checks" => {
+                    "Its checks failed `max_check_failures` times in a row: the fixer's \
+                     commits aren't turning the gates green. `hall pull-back` to fix it in a \
+                     session, or `hall retry` to give the fixer more rounds."
+                }
                 _ => "It needs your decision.",
             };
             let acts = match &now {

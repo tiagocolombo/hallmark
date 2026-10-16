@@ -404,7 +404,7 @@ fn grant(repo: &Repo, day: &str, tokens: &str, reason: Option<&str>) -> Result<G
         None => {
             return Err(HallError::new(
                 ErrorCode::WrongState,
-                "there is no daily budget to go past: `[budget] daily` isn't set",
+                "there is no daily budget to go past: `[budget] daily` is \"none\"",
             )
             .next(["hall budget"]));
         }
@@ -509,8 +509,9 @@ const KEYS: &str = "daily, per_item, <role>.daily, <role>.max_usd, <role>.timeou
 
 /// Applies `key=value` settings to `.hallmark.toml` text with toml_edit,
 /// keeping comments and layout. `none` (or `off`) removes a cap, and turns
-/// off a per-run `max_usd`; `default` removes any key. The result must still
-/// parse as a [`Config`].
+/// off a per-run `max_usd`; `daily` and `per_item` are then written `"none"`,
+/// since without them the default caps apply. `default` removes any key. The
+/// result must still parse as a [`Config`].
 pub fn apply_sets(text: &str, sets: &[String]) -> Result<(String, Vec<String>)> {
     let mut doc: toml_edit::DocumentMut = text.parse().map_err(|e| {
         HallError::new(
@@ -531,11 +532,15 @@ pub fn apply_sets(text: &str, sets: &[String]) -> Result<(String, Vec<String>)> 
         let v = v.trim().trim_matches('"');
         let word = v.to_ascii_lowercase();
         let off = matches!(word.as_str(), "none" | "off");
-        // A per-run cap has a default, so turning it off is written down as
-        // "none"; `default` (or nothing) removes any key.
+        // A per-run cap, `daily` and `per_item` have defaults, so turning
+        // one off is written down as "none"; `default` (or nothing) removes
+        // any key.
         let usd = matches!(kind, Kind::Usd);
-        let remove = matches!(word.as_str(), "default" | "") || (off && !usd);
-        let value: Option<toml_edit::Value> = if remove {
+        let defaulted = table.is_none() && matches!(field, "daily" | "per_item");
+        let remove = matches!(word.as_str(), "default" | "") || (off && !usd && !defaulted);
+        let value: Option<toml_edit::Value> = if off && defaulted {
+            Some("none".into())
+        } else if remove {
             None
         } else {
             Some(match kind {

@@ -271,9 +271,11 @@ fn check_units(key: &str, v: &toml_edit::Value) -> Result<(), String> {
             "{key}: {s} is not a duration; use 90s, 30m, 4h or 7d"
         ));
     }
-    if cap && crate::budget::Cap::parse(s).is_none() {
+    // `daily` and `per_item` default to a cap; "none" turns it off.
+    let no_cap = matches!(key, "budget.daily" | "budget.per_item") && crate::config::is_no_cap(s);
+    if cap && !no_cap && crate::budget::Cap::parse(s).is_none() {
         return Err(format!(
-            "{key}: {s} is not a cap; use tokens (800k, 4M) or dollars ($15)"
+            "{key}: {s} is not a cap; use tokens (800k, 4M), dollars ($15) or none"
         ));
     }
     if key == "library.briefing_limit" && parse_tokens(s).is_none() {

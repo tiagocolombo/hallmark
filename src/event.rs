@@ -928,6 +928,7 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
         state_since: first.t,
         round: 0,
         rejects: 0,
+        check_failures: 0,
         frozen_sha: None,
         hallmark_sha: None,
         pr_url: pr_url.clone(),
@@ -988,6 +989,10 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
             Body::Ready { sha, round, .. } => {
                 item.frozen_sha = Some(sha.clone());
                 item.round = *round;
+                item.check_failures = 0;
+            }
+            Body::Checks { passed, .. } => {
+                item.check_failures = if *passed { 0 } else { item.check_failures + 1 };
             }
             Body::FixSubmitted { sha, .. } => {
                 item.frozen_sha = Some(sha.clone());
@@ -1020,7 +1025,11 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
                 {
                     item.merged = None;
                 }
-                item.hold = None
+                // Lifting a `checks` hold allows another set of rounds.
+                if item.hold.as_ref().map(|h| h.kind) == Some(HoldKind::Checks) {
+                    item.check_failures = 0;
+                }
+                item.hold = None;
             }
             Body::PrChecks {
                 passed,

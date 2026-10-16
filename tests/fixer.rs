@@ -568,3 +568,127 @@ fn a_red_gate_brings_diagnosing_bugs_to_the_fixer_and_no_finding_leaves_out_tdd(
     assert!(prompt[at..].contains("name=\"diagnosing-bugs\""));
     assert!(!prompt.contains("name=\"tdd\""), "no finding calls for it");
 }
+
+/// One assayer tick: runs the gates of an item in checks.
+fn assayer_pass(env: &Env, script: &std::path::Path) -> Value {
+    let r = env.hall_fake(
+        &env.repo,
+        script,
+        &["daemon", "run", "--once", "--only", "assayer"],
+    );
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    r.json["steps"][0].clone()
+}
+
+#[test]
+fn a_repo_that_sets_no_budget_holds_an_item_at_800k() {
+    let env = Env::initialized();
+    // No [budget] table at all: the default caps apply.
+    let path = env.repo.join(".hallmark.toml");
+    let text = std::fs::read_to_string(&path).unwrap();
+    let without = text.split("[budget]").next().unwrap().to_string();
+    assert!(!without.contains("per_item"), "{without}");
+    std::fs::write(&path, without).unwrap();
+    git(&env.repo, &["commit", "-qam", "no budget"]);
+
+    let (id, _, _) = fixing_item(&env, "Retry webhooks");
+    append(
+        &env,
+        &id,
+        "fixer",
+        hallmark::event::Body::Usage(hallmark::event::Usage {
+            source: "headless".into(),
+            room: "repair".into(),
+            role: "fixer".into(),
+            model: "claude-sonnet-5".into(),
+            input_tokens: 800_000,
+            ..Default::default()
+        }),
+    );
+    let script = env.script(json!([
+        {"role": "fixer", "structured": {"summary": "s", "fixed": [], "disputed": []}}
+    ]));
+    let step = fixer_pass(&env, &script);
+    assert!(step["what"].as_str().unwrap().contains("budget"), "{step}");
+    assert!(env.fake_calls().is_empty(), "no run past the cap");
+    let held = events(&env, &id, "held");
+    assert_eq!(held.len(), 1, "{held:?}");
+    assert_eq!(held[0]["kind"], "budget");
+    let reason = held[0]["reason"].as_str().unwrap();
+    assert!(reason.contains("800k of 800k"), "{reason}");
+
+    // `"none"` turns the cap off.
+    let text = std::fs::read_to_string(&path).unwrap();
+    std::fs::write(&path, format!("{text}\n[budget]\nper_item = \"none\"\n")).unwrap();
+    let r = env.hall(&env.repo, &["retry", &id, "--reason", "no cap"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let step = fixer_pass(&env, &script);
+    assert_eq!(env.fake_calls().len(), 1, "{step}");
+    assert_eq!(events(&env, &id, "held").len(), 1);
+}
+
+#[test]
+fn three_failed_checks_in_a_row_escalate() {
+    let env = Env::initialized();
+    // Fails under both `sh -c` and `cmd /C`.
+    set_config(
+        &env,
+        "gates",
+        "[\"git ls-files missing-file --error-unmatch\"]",
+    );
+    git(&env.repo, &["commit", "-qam", "a failing gate"]);
+    let (id, _, _) = ready_item(&env, "Retry webhooks");
+    // A fixer that commits a no-op every round: the gate never turns green.
+    let noop = json!({
+        "role": "fixer",
+        "run": ["git commit -q --allow-empty -m \"no-op\""],
+        "structured": {"summary": "Tried again.", "fixed": [], "disputed": []}
+    });
+    let script = env.script(json!([noop, noop, noop, noop]));
+
+    for round in 1..=2 {
+        let step = assayer_pass(&env, &script);
+        assert!(
+            step["what"].as_str().unwrap().contains("checks failed"),
+            "{step}"
+        );
+        assert_eq!(state(&env, &id), "fixing");
+        assert!(events(&env, &id, "held").is_empty(), "round {round}");
+        let step = fixer_pass(&env, &script);
+        assert_eq!(step["progress"], "worked", "{step}");
+        assert_eq!(state(&env, &id), "checks");
+    }
+    // The third failure in a row escalates: held for you, kind `checks`.
+    let step = assayer_pass(&env, &script);
+    assert!(step["what"].as_str().unwrap().contains("held"), "{step}");
+    assert_eq!(state(&env, &id), "fixing");
+    let held = events(&env, &id, "held");
+    assert_eq!(held.len(), 1);
+    assert_eq!(held[0]["kind"], "checks");
+    assert_eq!(held[0]["actor"], "assayer");
+    let reason = held[0]["reason"].as_str().unwrap();
+    assert!(reason.contains("3 times in a row"), "{reason}");
+    // The fixer leaves it alone, and it waits in your office.
+    assert_eq!(fixer_pass(&env, &script)["progress"], "idle");
+    assert_eq!(env.fake_calls().len(), 2);
+    let inbox = env.hall(&env.repo, &["inbox"]);
+    let entries = inbox.json["entries"].as_array().unwrap();
+    assert!(
+        entries
+            .iter()
+            .any(|e| e["kind"] == "checks" && e["item"] == id.as_str()),
+        "{}",
+        inbox.stdout
+    );
+
+    // `hall retry` gives it another three rounds.
+    let r = env.hall(&env.repo, &["retry", &id, "--reason", "one more go"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(fixer_pass(&env, &script)["progress"], "worked");
+    let step = assayer_pass(&env, &script);
+    assert!(
+        step["what"].as_str().unwrap().contains("checks failed"),
+        "{step}"
+    );
+    assert_eq!(events(&env, &id, "held").len(), 1);
+}

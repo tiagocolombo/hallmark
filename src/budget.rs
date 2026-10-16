@@ -698,7 +698,16 @@ mod tests {
             "{}",
             s.reason
         );
-        assert_eq!(item_allowance(&ix, &Budget::default(), a), None);
+        // The default cap, 800k, plus the grant; none when the cap is off.
+        assert_eq!(
+            item_allowance(&ix, &Budget::default(), a),
+            Some(Cap::Tokens(1_100_000))
+        );
+        let off = Budget {
+            per_item: None,
+            ..Default::default()
+        };
+        assert_eq!(item_allowance(&ix, &off, a), None);
     }
 
     #[test]

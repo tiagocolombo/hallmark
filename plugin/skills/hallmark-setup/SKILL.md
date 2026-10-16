@@ -73,10 +73,13 @@ are happy with.
    - `budget.review_model`, `budget.fix_model`, `budget.intake_model` and
      `budget.librarian_model`;
    - `budget.daily` and `budget.per_item`: tokens such as `4M` or `800k`, or
-     dollars such as `$15`.
+     dollars such as `$15`. They default to `4M` and `800k`; `none` turns a
+     cap off (unsetting the key brings the default back);
    - `budget.<role>.max_usd`, the cap on one run in dollars (role: review,
      fix, intake, librarian). Unset, it defaults to 6, 2, 0.10 and 0.20;
-     `none` lifts it.
+     `none` lifts it;
+   - `max_check_failures`: failed checks in a row before an item is held
+     for them (default 3).
 7. **Merging** (`[merge]`, ADR 0048): whether shipped PRs merge without
    them. `merge.mode` is `off` (they merge) or `auto` (the merger merges each
    ready PR, one at a time, in dependency order, and brings each PR up to
@@ -107,7 +110,8 @@ hall config set budget.daily 4M
 hall config set claude_args -- --verbose          # `--` before values that start with -
 hall config set --user tools.gh /opt/homebrew/bin/gh
 hall config set --user notify.quiet_hours 22:00-07:30
-hall config unset budget.per_item                 # back to the default
+hall config unset budget.per_item                 # back to the default (800k)
+hall config set budget.daily none                 # no daily cap
 ```
 
 - A list takes several values, or one TOML array (`'["a", "b"]'`).

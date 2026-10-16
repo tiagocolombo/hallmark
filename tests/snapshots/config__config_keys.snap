@@ -55,6 +55,7 @@ expression: keys
   "repo library.dir string",
   "repo library.retire_after string",
   "repo library.search choice",
+  "repo max_check_failures integer",
   "repo max_rejects integer",
   "repo merge.command string",
   "repo merge.lit list",
