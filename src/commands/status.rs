@@ -151,8 +151,8 @@ pub struct LogOut {
     /// Events in the journal before filtering.
     pub total: usize,
     /// The event kinds shown, when filtered. A headless run (`HALL_HEADLESS`)
-    /// gets `verdict`, `fix_submitted` and `checks` unless it asks for
-    /// `--kind all`.
+    /// gets `verdict`, `fix_submitted` and `checks` unless it passes
+    /// `--kind` (`all` for every event).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub kinds: Vec<String>,
 }
