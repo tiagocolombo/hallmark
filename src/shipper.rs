@@ -497,7 +497,10 @@ fn freshen(
                 id,
                 "shipper",
                 holder,
-                chrono::Duration::seconds(SHIP_TIMEOUT_SECS as i64 + 900),
+                // Renewed before each gate, so it outlasts the slowest.
+                chrono::Duration::seconds(
+                    SHIP_TIMEOUT_SECS.max(repo.config.longest_gate_secs()) as i64 + 900,
+                ),
             );
         };
         match crate::assayer::checks::gates_at(

@@ -7,7 +7,6 @@ use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-use crate::config::Role;
 use crate::error::Result;
 use crate::event::{Body, CheckRun, short};
 use crate::item::{Item, State};
@@ -26,7 +25,6 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
     };
     let round = item.round;
     let gates = repo.config.gates.clone();
-    let timeout = repo.config.budget.timeout_secs(Role::Reviewer).max(0) as u64;
     let mut runs = Vec::new();
     if !gates.is_empty() {
         // A slot of the assay pool, locked until the checks end.
@@ -43,7 +41,7 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
             crate::paths::display(&wt)
         )?;
         for (i, g) in gates.iter().enumerate() {
-            // Renew the lease: each gate may take up to the timeout.
+            // Renew the lease: each gate may take up to its timeout.
             let _ = crate::lease::claim(
                 &repo.hall,
                 item.id,
@@ -59,14 +57,15 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
             ));
             writeln!(log, "\n$ {g}")?;
             log.flush()?;
-            let (exit_code, duration_ms) = run_gate(g, &wt, &log, timeout)?;
+            let timeout = repo.config.gate_timeout_secs(g);
+            let (exit_code, duration_ms) = run_gate(g.cmd(), &wt, &log, timeout)?;
             writeln!(
                 log,
                 "\n[exit {exit_code} after {:.1}s]",
                 duration_ms as f64 / 1000.0
             )?;
             runs.push(CheckRun {
-                command: g.clone(),
+                command: g.cmd().to_string(),
                 exit_code,
                 duration_ms,
                 log: Some(rel.clone()),
@@ -137,7 +136,6 @@ pub fn gates_at(
     if gates.is_empty() {
         return Ok(vec![]);
     }
-    let timeout = repo.config.budget.timeout_secs(Role::Reviewer).max(0) as u64;
     let slot = super::checkout_checks(repo, sha)?;
     let dir = repo.hall.item_checks(id);
     fs::create_dir_all(&dir)?;
@@ -158,14 +156,15 @@ pub fn gates_at(
         ));
         writeln!(log, "\n$ {g}")?;
         log.flush()?;
-        let (exit_code, duration_ms) = run_gate(g, &slot.path, &log, timeout)?;
+        let timeout = repo.config.gate_timeout_secs(g);
+        let (exit_code, duration_ms) = run_gate(g.cmd(), &slot.path, &log, timeout)?;
         writeln!(
             log,
             "\n[exit {exit_code} after {:.1}s]",
             duration_ms as f64 / 1000.0
         )?;
         runs.push(CheckRun {
-            command: g.clone(),
+            command: g.cmd().to_string(),
             exit_code,
             duration_ms,
             log: Some(rel.clone()),

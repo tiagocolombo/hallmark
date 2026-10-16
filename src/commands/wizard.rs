@@ -522,7 +522,7 @@ impl<R: BufRead, W: Write> Wizard<'_, R, W> {
             "gates",
             Some("Gates: the checks every change must pass before review"),
         )?;
-        let gates: Vec<String> = self
+        let gates: Vec<Value> = self
             .changes
             .iter()
             .find(|c| c.key == "gates")
@@ -530,11 +530,13 @@ impl<R: BufRead, W: Write> Wizard<'_, R, W> {
             .map(to_json)
             .unwrap_or_else(|| self.current(Scope::Repo, "gates"))
             .as_array()
-            .map(|a| a.iter().map(plain).collect())
+            .cloned()
             .unwrap_or_default();
-        if gates.is_empty() {
+        // A gate with its own timeout is a table: leave those as written.
+        if gates.is_empty() || !gates.iter().all(Value::is_string) {
             return Ok(());
         }
+        let gates: Vec<String> = gates.iter().map(plain).collect();
         let wrapped = |p: &str| gates.iter().all(|g| g.starts_with(p));
         if detect::WRAPPERS.iter().any(|(_, p)| wrapped(p)) {
             return Ok(());
