@@ -172,16 +172,22 @@ pub fn prepare(
     if let Some(w) = crate::words::pending(events, "reviewer") {
         let _ = writeln!(p, "\n{}", w.section);
     }
-    // A note the author's own session gave is the author's, not the person's.
-    if let Some(n) = events.iter().rev().find_map(|e| match &e.body {
-        crate::event::Body::Ready { note: Some(n), .. }
-            if e.actor == "agent" && !n.trim().is_empty() && n != "nothing left to confirm" =>
-        {
-            Some(n)
-        }
+    // The note on this round's Ready event, when someone other than the
+    // person gave it (the author's session, the Delivery office, the shipper).
+    // Only the latest Ready counts: an earlier round's note isn't this one's.
+    if let Some((actor, n)) = events.iter().rev().find_map(|e| match &e.body {
+        crate::event::Body::Ready { note, .. } => Some((e.actor.as_str(), note.as_deref())),
         _ => None,
-    }) {
-        let _ = writeln!(p, "Author's note when sent to review: {}", n.trim());
+    }) && actor != "you"
+        && let Some(n) = n
+        && !n.trim().is_empty()
+        && n.trim() != "nothing left to confirm"
+    {
+        if actor == "agent" {
+            let _ = writeln!(p, "Author's note when sent to review: {}", n.trim());
+        } else {
+            let _ = writeln!(p, "Note when sent to review (by {actor}): {}", n.trim());
+        }
     }
 
     let _ = writeln!(
