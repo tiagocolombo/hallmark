@@ -413,7 +413,28 @@ fn test(lines: &[&str]) -> Option<Vec<String>> {
             i = next;
             continue;
         }
-        if line == "failures:" {
+        if is_panic(line) {
+            // Printed inline (`--nocapture`), outside a stdout section.
+            recognised = true;
+            let mut end = i + 1;
+            while end < lines.len()
+                && !lines[end].trim().is_empty()
+                && !lines[end].starts_with("note: ")
+                && !lines[end].starts_with("stack backtrace:")
+                && !lines[end].starts_with("test ")
+                && !is_panic(lines[end])
+            {
+                end += 1;
+            }
+            out.extend(failure(&lines[i..end]));
+            i = end;
+            continue;
+        } else if (line.starts_with("thread '") && line.contains("has overflowed its stack"))
+            || line.starts_with("fatal runtime error:")
+        {
+            recognised = true;
+            out.push(line.to_string());
+        } else if line == "failures:" {
             if lines.get(i + 1).is_some_and(|l| l.starts_with("    ")) {
                 section = Section::Names;
             }
