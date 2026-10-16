@@ -190,7 +190,9 @@ pub struct StatusArgs {
 pub struct LogArgs {
     pub id: Option<String>,
     /// Only these events (comma-separated): prompt, commit, ready, verdict…
-    /// `review` means verdict.
+    /// `review` means verdict, `fix` fix_submitted, `all` every event. A
+    /// headless run (HALL_HEADLESS) gets verdict, fix_submitted and checks
+    /// unless it passes one.
     #[arg(long, value_delimiter = ',')]
     pub kind: Vec<String>,
     /// Only the last N events.
