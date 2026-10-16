@@ -395,29 +395,34 @@ impl ClaudeRunner {
         }
         let out = child.stdout.take().map(|o| tee(o, stream));
         let err = child.stderr.take().map(|e| tee(e, None));
-        let status = if req.timeout_secs == 0 {
-            child.wait().ok()
+        // The limit counts from `start`, as the run's duration does, so a
+        // run that timed out lasted at least its limit.
+        let waited = if req.timeout_secs == 0 {
+            child.wait().map(Some)
         } else {
             use wait_timeout::ChildExt;
-            match child.wait_timeout(Duration::from_secs(req.timeout_secs)) {
-                Ok(Some(s)) => Some(s),
-                _ => {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    None
-                }
-            }
+            let deadline = start + Duration::from_secs(req.timeout_secs);
+            wait_until(deadline, |left| child.wait_timeout(left))
         };
+        let status = match waited {
+            Ok(Some(s)) => Ok(s),
+            Ok(None) => Err(Failure::Timeout),
+            Err(e) => Err(Failure::Error {
+                message: format!("could not wait for {}: {e}", self.bin),
+            }),
+        };
+        if status.is_err() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
         let (raw, stream) = out.and_then(|h| h.join().ok()).unwrap_or_default();
         let stderr = err
             .and_then(|h| h.join().ok())
             .map(|(s, _)| s)
             .unwrap_or_default();
-        let Some(status) = status else {
-            return (
-                RunOutcome::failed(Failure::Timeout, raw, stderr, ms(start)),
-                stream,
-            );
+        let status = match status {
+            Ok(s) => s,
+            Err(f) => return (RunOutcome::failed(f, raw, stderr, ms(start)), stream),
         };
         let result = PrintResult::parse(&raw).ok();
         let failure = classify(result.as_ref(), &raw, &stderr, req.json_schema.is_some());
@@ -430,6 +435,28 @@ impl ClaudeRunner {
             failure,
         };
         (o, stream)
+    }
+}
+
+/// Waits for an exit until `deadline`, asking `wait` (`wait_timeout`) to wait
+/// for the time left. `Ok(None)` means the deadline has passed. `wait` may
+/// come back early without an exit: on Unix, wait_timeout 0.2 polls for what
+/// is left rounded down to whole milliseconds and calls a poll that ends a
+/// timeout, so `wait_timeout(1s)` can return after 999ms. An early return is
+/// asked again for what is left; an error is the caller's, never a timeout.
+fn wait_until<T>(
+    deadline: Instant,
+    mut wait: impl FnMut(Duration) -> std::io::Result<Option<T>>,
+) -> std::io::Result<Option<T>> {
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return Ok(None);
+        }
+        // Under a millisecond rounds down to a poll of 0: a spin.
+        if let Some(status) = wait(left.max(Duration::from_millis(1)))? {
+            return Ok(Some(status));
+        }
     }
 }
 
@@ -1548,6 +1575,66 @@ mod tests {
         assert_eq!(e.exit_code, None);
         assert_eq!(e.failure.as_deref(), Some("timed out"));
         assert!(e.duration_ms >= 1000);
+    }
+
+    #[test]
+    fn an_early_wake_is_not_a_timeout() {
+        // A wait that comes back before the deadline without an exit, as
+        // wait_timeout does when it rounds what is left down to whole
+        // milliseconds, is asked again for the time left.
+        let limit = Duration::from_millis(200);
+        let start = Instant::now();
+        let mut asked = Vec::new();
+        let r = wait_until(start + limit, |left| {
+            asked.push(left);
+            crate::daemon::nap(left / 2);
+            Ok::<_, std::io::Error>(None::<u8>)
+        });
+        assert!(matches!(r, Ok(None)), "{r:?}");
+        assert!(start.elapsed() >= limit, "{:?}", start.elapsed());
+        assert!(asked.len() > 1, "{asked:?}");
+        assert!(
+            asked.iter().all(|d| *d >= Duration::from_millis(1)),
+            "never a zero wait, which would spin: {asked:?}"
+        );
+        // An exit after an early wake is the exit.
+        let mut calls = 0;
+        let r = wait_until(Instant::now() + limit, |_| {
+            calls += 1;
+            Ok::<_, std::io::Error>((calls == 3).then_some(7u8))
+        });
+        assert_eq!(r.unwrap(), Some(7));
+        assert_eq!(calls, 3);
+    }
+
+    #[test]
+    fn a_wait_error_is_not_a_timeout() {
+        let mut calls = 0;
+        let r = wait_until(Instant::now() + Duration::from_secs(60), |_| {
+            calls += 1;
+            Err::<Option<u8>, _>(std::io::Error::other("no child"))
+        });
+        assert_eq!(r.unwrap_err().to_string(), "no child");
+        assert_eq!(calls, 1, "an error ends the wait at once");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_timed_out_wait_lasts_its_limit() {
+        // wait_timeout alone can come back a millisecond early (see
+        // `wait_until`); this is the real thing, a few times over.
+        use wait_timeout::ChildExt;
+        for _ in 0..10 {
+            let mut child = Command::new("sleep").arg("30").spawn().unwrap();
+            let limit = Duration::from_millis(50);
+            let start = Instant::now();
+            let r = wait_until(start + limit, |left| child.wait_timeout(left));
+            let took = start.elapsed();
+            let _ = child.kill();
+            let _ = child.wait();
+            assert!(matches!(r, Ok(None)), "{r:?}");
+            assert!(took >= limit, "{took:?}");
+        }
     }
 
     #[test]
