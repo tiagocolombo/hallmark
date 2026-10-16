@@ -468,8 +468,12 @@ impl Ctx {
         if !matches!(i.state, State::Development | State::AwaitingYou) {
             return None;
         }
+        // The Delivery office's run is next: it takes the words.
+        if i.rebase.is_some() || i.feedback.is_some() || i.ci_fix.is_some() {
+            return None;
+        }
         let events = self.repo.hall.read_item(i.id).ok()?;
-        let w = crate::words::pending(&events)?;
+        let w = crate::words::pending(&events, "session")?;
         let _ = crate::words::delivered(&self.repo, i.id, "session", Some(&w));
         Some(w.section.trim_end().to_string())
     }

@@ -169,8 +169,19 @@ pub fn prepare(
     }
     // What the person said since the last run (`hall ready --note`, a
     // retry's reason), given once (ADR 0044).
-    if let Some(w) = crate::words::pending(events) {
+    if let Some(w) = crate::words::pending(events, "reviewer") {
         let _ = writeln!(p, "\n{}", w.section);
+    }
+    // A note the author's own session gave is the author's, not the person's.
+    if let Some(n) = events.iter().rev().find_map(|e| match &e.body {
+        crate::event::Body::Ready { note: Some(n), .. }
+            if e.actor == "agent" && !n.trim().is_empty() && n != "nothing left to confirm" =>
+        {
+            Some(n)
+        }
+        _ => None,
+    }) {
+        let _ = writeln!(p, "Author's note when sent to review: {}", n.trim());
     }
 
     let _ = writeln!(

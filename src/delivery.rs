@@ -276,7 +276,7 @@ fn resolve(
         files.join(", ")
     ));
     let events = repo.hall.read_item(id)?;
-    let words = crate::words::pending(&events);
+    let words = crate::words::pending(&events, "delivery");
     let task = prompt(repo, item, &events, target, files);
     let task = match &words {
         Some(w) => w.after(task),
@@ -696,7 +696,7 @@ fn dev_run(
     let repo = ctx.repo;
     let id = item.id;
     let before = git::head(wt)?;
-    let words = crate::words::pending(events);
+    let words = crate::words::pending(events, "delivery");
     let prompt = match &words {
         Some(w) => w.after(prompt),
         None => prompt,

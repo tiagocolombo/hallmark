@@ -167,3 +167,52 @@ fn a_pull_back_reason_reaches_the_session_once() {
     assert!(!ctx.contains(SAID), "{ctx}");
     assert_eq!(delivered(&env, &id), ["session"]);
 }
+
+#[test]
+fn a_ready_note_survives_a_fixer_run_and_reaches_the_reviewer() {
+    let env = Env::initialized();
+    let (id, wt) = env.new_item("Retry webhooks");
+    let sha = commit_file(&wt, "retry.rs", "fn retry() {}\n");
+    let r = env.hall(&wt, &["ready", "--note", "please look at the retry path"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    append(&env, &id, "assayer", checks(&sha, 1, false, vec![]));
+    let approve = json!({"summary": "Adds retries.", "findings": [], "prior": [], "learnings": []});
+    let script = env.script(json!([
+        {
+            "role": "fixer",
+            "files": {"retry.rs": "fn retry() { lock(); }\n"},
+            "run": ["git add -A", "git commit -qm \"fix checks\"", "{hall} fixed"],
+            "structured": {"summary": "Fixed.", "fixed": [], "disputed": []}
+        },
+        {"role": "reviewer", "structured": approve},
+    ]));
+    tick(&env, &script, "fixer");
+    assert!(
+        !prompts(&env)[0].contains("please look at the retry path"),
+        "a ready note is the reviewer's, not the fixer's"
+    );
+    tick(&env, &script, "assayer"); // checks
+    tick(&env, &script, "assayer"); // review
+    let said = prompts(&env);
+    assert!(
+        said[1].contains("please look at the retry path"),
+        "{}",
+        said[1]
+    );
+    assert_eq!(delivered(&env, &id), ["reviewer"]);
+}
+
+#[test]
+fn a_proposed_ready_has_no_words_for_the_reviewer() {
+    let env = Env::initialized();
+    let (id, wt) = env.new_item("Retry webhooks");
+    commit_file(&wt, "retry.rs", "fn retry() {}\n");
+    let r = env.hall(&wt, &["propose-ready", "--summary", "done"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let approve = json!({"summary": "Adds retries.", "findings": [], "prior": [], "learnings": []});
+    let script = env.script(json!([{"role": "reviewer", "structured": approve}]));
+    tick(&env, &script, "assayer");
+    tick(&env, &script, "assayer");
+    assert!(!prompts(&env)[0].contains(SAID), "{}", prompts(&env)[0]);
+    assert!(delivered(&env, &id).is_empty());
+}

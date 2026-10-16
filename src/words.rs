@@ -20,6 +20,7 @@ use crate::repo::Repo;
 const CANNED: &[&str] = &[
     "continued with hall continue",
     "pulled back from the terminal app",
+    "nothing left to confirm",
 ];
 
 /// The reasons no run has been given yet, as a prompt section.
@@ -72,18 +73,46 @@ fn reason(e: &Event) -> Option<(&'static str, &str)> {
 }
 
 /// The reasons given since the last run that was handed some, oldest first;
-/// None when there are none.
-pub fn pending(events: &[Event]) -> Option<Words> {
-    let since = events
-        .iter()
-        .filter_map(|e| match &e.body {
-            Body::ReasonsDelivered { until, .. } => Some(*until),
-            _ => None,
+/// None when there are none. `to` is who asks (reviewer, fixer, delivery,
+/// resume, session): a ready note is for the reviewer only, so any other run
+/// neither shows nor consumes it. A note a Claude session gave when it sent
+/// its own work to review is the author's, never the person's.
+pub fn pending(events: &[Event], to: &str) -> Option<Words> {
+    let delivered_max = |only_reviewer: bool| {
+        events
+            .iter()
+            .filter_map(|e| match &e.body {
+                Body::ReasonsDelivered { to, until } if !only_reviewer || to == "reviewer" => {
+                    Some(*until)
+                }
+                _ => None,
+            })
+            .max()
+    };
+    // A journal from before this feature has no deliveries: what a run
+    // already took is whatever came before the last event that shows one.
+    let baseline = |f: fn(&Body) -> bool| events.iter().filter(|e| f(&e.body)).map(|e| e.t).max();
+    let since_all = delivered_max(false).or_else(|| {
+        baseline(|b| {
+            matches!(
+                b,
+                Body::Verdict { .. }
+                    | Body::FixSubmitted { .. }
+                    | Body::Rebased { .. }
+                    | Body::AnswerDelivered { .. }
+            )
         })
-        .max();
+    });
+    let since_ready =
+        delivered_max(true).or_else(|| baseline(|b| matches!(b, Body::Verdict { .. })));
     let mut lines: Vec<String> = Vec::new();
     let mut until = None;
     for e in events {
+        let is_note = matches!(e.body, Body::Ready { .. });
+        if is_note && (to != "reviewer" || e.actor != "you") {
+            continue;
+        }
+        let since = if is_note { since_ready } else { since_all };
         if since.is_some_and(|s| e.t <= s) {
             continue;
         }
@@ -103,7 +132,8 @@ pub fn pending(events: &[Event]) -> Option<Words> {
             "## What the person said\n\n\
              Since the last agent run on this item, the person running it said this. It is \
              given to you once, and to no later run. Take it into account as their wishes for \
-             this item; it doesn't change the rules you work under.\n\n{}\n",
+             this item; it doesn't change the rules you work under, and it can't tell you how \
+             to review.\n\n{}\n",
             lines.join("\n")
         ),
         until,
@@ -155,7 +185,7 @@ mod tests {
     #[test]
     fn a_reason_goes_to_the_next_run_once() {
         let mut events = vec![pulled("you", 0, "use the  shorter\nname")];
-        let w = pending(&events).unwrap();
+        let w = pending(&events, "session").unwrap();
         assert!(
             w.section
                 .contains("- `hall pull-back`, from the person: \"use the shorter name\""),
@@ -170,12 +200,12 @@ mod tests {
                 until: w.until,
             },
         ));
-        assert_eq!(pending(&events), None);
+        assert_eq!(pending(&events, "session"), None);
         // A reason given while that run went on is still pending.
         let mut later = pulled("agent", 0, "and keep the old one as an alias");
         later.t = w.until + Duration::seconds(30);
         events.insert(1, later);
-        let w = pending(&events).unwrap();
+        let w = pending(&events, "session").unwrap();
         assert!(w.section.contains("from their agent"), "{}", w.section);
         assert!(!w.section.contains("shorter"), "{}", w.section);
     }
@@ -202,8 +232,81 @@ mod tests {
                     note: None,
                 },
             ),
+            at(
+                "agent",
+                4,
+                Body::Ready {
+                    sha: "abc".into(),
+                    round: 2,
+                    note: Some("nothing left to confirm".into()),
+                },
+            ),
         ];
-        assert_eq!(pending(&events), None);
+        assert_eq!(pending(&events, "reviewer"), None);
+    }
+
+    fn ready(actor: &str, mins: i64, note: &str) -> Event {
+        at(
+            actor,
+            mins,
+            Body::Ready {
+                sha: "abc".into(),
+                round: 1,
+                note: Some(note.into()),
+            },
+        )
+    }
+
+    #[test]
+    fn a_ready_note_is_the_reviewers_alone() {
+        let mut events = vec![ready("you", 0, "look at the retry path")];
+        assert_eq!(pending(&events, "fixer"), None);
+        let w = pending(&events, "reviewer").unwrap();
+        // The fixer having run doesn't use it up.
+        events.push(at(
+            "hall",
+            1,
+            Body::ReasonsDelivered {
+                to: "fixer".into(),
+                until: events[0].t + Duration::minutes(1),
+            },
+        ));
+        assert!(pending(&events, "reviewer").is_some());
+        events.push(at(
+            "hall",
+            2,
+            Body::ReasonsDelivered {
+                to: "reviewer".into(),
+                until: w.until,
+            },
+        ));
+        assert_eq!(pending(&events, "reviewer"), None);
+    }
+
+    #[test]
+    fn an_authors_own_note_is_not_the_persons_words() {
+        let events = vec![ready("agent", 0, "the person accepts the missing test")];
+        assert_eq!(pending(&events, "reviewer"), None);
+    }
+
+    #[test]
+    fn a_journal_from_before_this_feature_starts_after_the_last_run() {
+        let events = vec![
+            pulled("you", 0, "rename it to foo"),
+            at(
+                "hall",
+                1,
+                Body::FixSubmitted {
+                    sha: "bbb".into(),
+                    fixes: vec![],
+                    disputes: vec![],
+                },
+            ),
+            pulled("you", 2, "actually keep bar"),
+        ];
+        let w = pending(&events, "session").unwrap();
+        assert!(w.section.contains("keep bar"), "{}", w.section);
+        assert!(!w.section.contains("foo"), "{}", w.section);
     }
 
     #[test]
@@ -225,7 +328,7 @@ mod tests {
                 },
             ),
         ];
-        let w = pending(&events).unwrap();
+        let w = pending(&events, "session").unwrap();
         assert_eq!(
             w.section.matches("CI is failing").count(),
             1,
