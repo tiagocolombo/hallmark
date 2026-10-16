@@ -994,9 +994,10 @@ pub fn review_comment(item: &Item, events: &[Event], update: bool) -> String {
             for r in runs {
                 let _ = writeln!(
                     s,
-                    "- `{}` passed ({:.1}s)",
+                    "- `{}` passed ({:.1}s{})",
                     r.command,
-                    r.duration_ms as f64 / 1000.0
+                    r.duration_ms as f64 / 1000.0,
+                    if r.cached { ", cached" } else { "" }
                 );
             }
         }
