@@ -44,8 +44,8 @@ pub struct Config {
     /// `{ cmd = "cargo test", timeout = "40m" }` for one with its own time
     /// limit.
     pub gates: Vec<Gate>,
-    /// How long each gate may run before it is killed ("20m"; "0s": no
-    /// limit). A gate's own `timeout` overrides it.
+    /// How long each gate may run before it is killed ("20m").
+    /// A gate's own `timeout` overrides it.
     pub gates_timeout: String,
     /// Commands the headless dev runs (the fixer, the Delivery office) may
     /// run besides the gates, as prefixes: a narrower test run, or what
@@ -148,7 +148,7 @@ pub enum Gate {
 pub struct TimedGate {
     /// The command.
     pub cmd: String,
-    /// How long it may run ("40m"; "0s": no limit). Default: `gates_timeout`.
+    /// How long it may run ("40m"). Default: `gates_timeout`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout: Option<String>,
 }
@@ -188,7 +188,7 @@ impl Config {
         self.gates.iter().map(|g| g.cmd().to_string()).collect()
     }
 
-    /// How long `gate` may run, in seconds (0: no limit): its own
+    /// How long `gate` may run, in seconds: its own
     /// `timeout`, else `gates_timeout`, else 20 minutes. Never the
     /// reviewer's limit: a slow test suite isn't a slow review.
     pub fn gate_timeout_secs(&self, gate: &Gate) -> u64 {

@@ -104,24 +104,26 @@ fn gate_timeout_check(config: &crate::config::Config) -> Option<Check> {
     if config.gates.is_empty() {
         return None;
     }
-    let review = config.budget.timeout_secs(crate::config::Role::Reviewer);
-    let gates = crate::config::parse_duration(&config.gates_timeout).unwrap_or(1200);
-    if gates == 0 || (review > 0 && review <= gates) {
+    // Only a limit the repo set itself can be a leftover.
+    let raw = config
+        .budget
+        .role(crate::config::Role::Reviewer)
+        .and_then(|b| b.timeout.clone())?;
+    let review = crate::config::parse_duration(&raw).filter(|s| *s > 0)? as u64;
+    let longest = config.longest_gate_secs();
+    let unlimited = config
+        .gates
+        .iter()
+        .any(|g| config.gate_timeout_secs(g) == 0);
+    if unlimited || review <= longest {
         return None;
     }
-    let fix = format!(
-        "hall config set gates_timeout {}",
-        config
-            .budget
-            .role(crate::config::Role::Reviewer)
-            .and_then(|b| b.timeout.clone())
-            .unwrap_or_else(|| "0s".into())
-    );
+    let fix = format!("hall config set gates_timeout {raw}");
     Some(check(
         "gates timeout",
         false,
         format!(
-            "gates stop after {gates}s (gates_timeout), not the reviewer's {review}s \
+            "gates stop after {longest}s at most, not the reviewer's {review}s \
              ([budget.review] timeout no longer applies to them)"
         ),
         Some(&fix),
@@ -365,5 +367,13 @@ mod tests {
         .unwrap();
         assert!(gate_timeout_check(&c).is_none());
         assert!(gate_timeout_check(&Config::parse("gates = ['make']\n").unwrap()).is_none());
+        let none = |t: &str| gate_timeout_check(&Config::parse(t).unwrap()).is_none();
+        assert!(none("gates = ['make']\ngates_timeout = '10m'\n"));
+        assert!(none(
+            "gates = [{ cmd = 'x', timeout = '60m' }]\n[budget.review]\ntimeout = '60m'\n"
+        ));
+        assert!(none(
+            "gates = ['make']\ngates_timeout = '0s'\n[budget.review]\ntimeout = '60m'\n"
+        ));
     }
 }
