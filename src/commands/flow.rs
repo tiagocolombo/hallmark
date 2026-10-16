@@ -683,7 +683,7 @@ pub fn continue_item(cwd: &Path, a: ContinueArgs, mode: crate::output::Mode) -> 
                 &item,
                 false,
                 Some(format!(
-                    "{} is in development. Reopen its session: {open}",
+                    "{} is in development. Reopen its session: {open} (a --reason isn't kept here; use `hall pull-back --reason` to give one)",
                     item.id
                 )),
             );

@@ -77,7 +77,7 @@ The extensions, and what each role gets:
 | `hall retry [<id>] --reason <r> [--tokens <n>]` | Allows an escalated item one more round, or releases a held item. A budget hold also grants that item another `per_item` (or `--tokens`); the budget is unchanged. On a shipped item the merger held, it lets the merger try again (`merge_failed`), or merge a PR that touches a `[merge] lit` path at its current head (`lit`) ([ADR 0048](decisions/0048-the-merger.md)). |
 | `hall continue [<id>]` | Moves an item on from wherever it waits: releases a hold, retries an escalation, sends "ready?" to review, or reopens its Claude session. |
 
-A reason or note you give (`hall retry --reason`, `hall continue --reason`, `hall pull-back --reason`, `hall ready --note`) goes into the next agent's prompt on that item, once, as your words: the reviewer's, the fixer's, a Delivery office run's, a resume run's, or the development session's ([ADR 0044](decisions/0044-your-reasons-reach-the-next-agent.md)).
+A reason or note you give (`hall retry --reason`, `hall continue --reason` when it releases a hold, retries an escalation or sends the item to review (in development or while it moves on its own it keeps nothing; use `hall pull-back --reason`), `hall pull-back --reason`, `hall ready --note`) goes into the next agent's prompt on that item, once, as your words: the reviewer's, the fixer's, a Delivery office run's, a resume run's, or the development session's ([ADR 0044](decisions/0044-your-reasons-reach-the-next-agent.md)).
 
 ## Seeing what's happening
 

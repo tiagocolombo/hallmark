@@ -212,7 +212,7 @@ fn run_external(
         open: ledger.open_counts(),
         failing_checks: failing_checks(events),
         report_file: crate::paths::display(&out_file),
-        said: crate::words::pending(events).map(|w| w.section),
+        said: crate::words::pending(events, "fixer").map(|w| w.section),
     };
     std::fs::write(&file, serde_json::to_string_pretty(&brief)?)?;
     let cmd = crate::commands::new::fill_shell(
@@ -255,7 +255,12 @@ fn run_external(
 
 /// A fix run finished, so it read what the person said; later runs don't.
 fn said_to_fixer(repo: &Repo, id: ItemId, events: &[Event]) -> Result<()> {
-    crate::words::delivered(repo, id, "fixer", crate::words::pending(events).as_ref())
+    crate::words::delivered(
+        repo,
+        id,
+        "fixer",
+        crate::words::pending(events, "fixer").as_ref(),
+    )
 }
 
 /// After a run: the script decides whether the item is resubmitted.
@@ -496,7 +501,7 @@ pub fn prompt(repo: &Repo, item: &Item, events: &[Event], ledger: &Ledger) -> St
     if let Some(sum) = &item.summary {
         s.push_str(&format!("\nThe developer's summary: {}\n", sum.trim()));
     }
-    if let Some(w) = crate::words::pending(events) {
+    if let Some(w) = crate::words::pending(events, "fixer") {
         s.push_str(&format!("\n{}", w.section));
     }
     let failing = failing_checks(events);

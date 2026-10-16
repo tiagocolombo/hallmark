@@ -743,7 +743,17 @@ impl Body {
                 None => format!("daemon paused · {}", c(reason, 50)),
             },
             Body::Unpaused {} => "daemon resumed".into(),
-            Body::ReasonsDelivered { to, .. } => format!("your words went to the {to}"),
+            Body::ReasonsDelivered { to, .. } => {
+                let to = match to.as_str() {
+                    "delivery" => "the Delivery office",
+                    "resume" => "the resumed session",
+                    "session" => "the development session",
+                    "reviewer" => "the reviewer",
+                    "fixer" => "the fixer",
+                    other => other,
+                };
+                format!("the words given went to {to}")
+            }
             Body::BudgetGranted {
                 day,
                 tokens,

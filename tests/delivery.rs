@@ -392,6 +392,13 @@ fn a_rebase_the_run_cant_finish_is_retried_once_then_held() {
         step["what"].as_str().unwrap().contains("sent to review"),
         "{step}"
     );
+    // The office's run was given the person's words, once.
+    let call = env.fake_calls().last().unwrap().to_string();
+    assert!(
+        call.contains("What the person said") && call.contains("try again"),
+        "{call}"
+    );
+    assert_eq!(events(&env, &id, "reasons_delivered")[0]["to"], "delivery");
 }
 
 #[test]

@@ -92,7 +92,7 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
                 repo,
                 item.id,
                 "reviewer",
-                crate::words::pending(&events).as_ref(),
+                crate::words::pending(&events, "reviewer").as_ref(),
             )?;
             // Pulled back or dropped while the reviewer ran: discard.
             let now = repo.hall.load_item(item.id)?;

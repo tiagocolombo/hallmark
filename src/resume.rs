@@ -23,7 +23,7 @@ use chrono::{DateTime, Utc};
 use crate::error::Result;
 use crate::event::{Body, Event};
 use crate::index::{Index, QuestionRow};
-use crate::item::ItemId;
+use crate::item::{ItemId, State};
 use crate::repo::Repo;
 use crate::runner::{self, Failure, Metered, RunRequest};
 use crate::worker::{Progress, WorkerCtx};
@@ -245,8 +245,14 @@ pub fn prompt(p: &Pending) -> String {
 /// What the person said about the question's item since the last run on it
 /// (ADR 0044).
 fn words(repo: &Repo, p: &Pending) -> Option<crate::words::Words> {
-    let events = repo.hall.read_item(p.q.item?).ok()?;
-    crate::words::pending(&events)
+    let id = p.q.item?;
+    let events = repo.hall.read_item(id).ok()?;
+    // Only while the item is with a session; elsewhere a loop run takes them.
+    let item = repo.hall.load_item(id).ok()?;
+    if !matches!(item.state, State::Development | State::AwaitingYou) {
+        return None;
+    }
+    crate::words::pending(&events, "resume")
 }
 
 /// The resume run: in the item's worktree when it still exists, else the

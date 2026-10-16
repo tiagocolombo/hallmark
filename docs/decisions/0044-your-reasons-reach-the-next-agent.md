@@ -50,4 +50,10 @@ Status: Accepted, 2026-10-16.
   that picks it up, without a separate message.
 - The reviewer sees a `ready` note once, in the round it was sent with (and
   that round's retries), not in every later round.
-- The journal says who got the words: "your words went to the fixer".
+- The journal says who got the words: "the words given went to the fixer".
+- A `ready --note` is the reviewer's alone: no other run shows or uses it up.
+  A note the author's own session gave (`actor` agent) reaches the reviewer as
+  "Author's note", never as the person's words. A journal from before this
+  change starts after the last event that shows a run took the prompt.
+- While a rebase, feedback or CI-fix request is open, the Delivery office's run
+  takes the words, not the development session.
