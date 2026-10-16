@@ -174,7 +174,7 @@ expression: v
           "takes_value": true
         },
         {
-          "help": "Only these events (comma-separated): prompt, commit, ready, verdict… `review` means verdict",
+          "help": "Only these events (comma-separated): prompt, commit, ready, verdict… `review` means verdict, `fix` fix_submitted, `all` every event. A headless run (HALL_HEADLESS) gets verdict, fix_submitted and checks unless it passes one",
           "name": "kind",
           "required": false,
           "syntax": "--kind <kind>",

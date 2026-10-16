@@ -308,6 +308,77 @@ fn the_whole_development_lifecycle() {
     );
 }
 
+/// Headless runs (the reviewer, the fixer) get the verdicts, fixes and
+/// checks from `hall log`, not every prompt and turn summary, unless they ask
+/// for `--kind all` (T11).
+#[test]
+fn headless_log_defaults_to_verdicts_fixes_and_checks() {
+    let env = Env::initialized();
+    let (id, _) = env.new_item("Retry webhooks");
+    let journal = env
+        .repo
+        .join(".git/hallmark/items")
+        .join(&id)
+        .join("events.jsonl");
+    let mut text = std::fs::read_to_string(&journal).unwrap();
+    let t = chrono::Utc::now().to_rfc3339();
+    for body in [
+        json!({"event": "prompt", "text": "build the retry"}),
+        json!({"event": "turn", "summary": "done, I think"}),
+        json!({"event": "checks", "sha": "abc", "round": 1, "passed": true}),
+        json!({"event": "verdict", "sha": "abc", "round": 1, "verdict": "changes"}),
+        json!({"event": "fix_submitted", "sha": "def", "fixes": ["F1"]}),
+    ] {
+        let mut e = json!({"v": 1, "t": t, "actor": "you", "item": id});
+        e.as_object_mut()
+            .unwrap()
+            .extend(body.as_object().unwrap().clone());
+        text.push_str(&format!("{e}\n"));
+    }
+    std::fs::write(&journal, text).unwrap();
+    let names = |r: &common::Reply| -> Vec<String> {
+        r.json["events"]
+            .as_array()
+            .unwrap_or_else(|| panic!("{}", r.stdout))
+            .iter()
+            .map(|e| e["event"].as_str().unwrap().to_string())
+            .collect()
+    };
+    let headless = |args: &[&str]| {
+        common::reply(
+            env.cmd(&env.repo)
+                .env("HALL_HEADLESS", "1")
+                .args(args)
+                .output()
+                .unwrap(),
+        )
+    };
+
+    let r = headless(&["log", &id]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(names(&r), ["checks", "verdict", "fix_submitted"]);
+    assert_eq!(r.json["total"], 6);
+    assert_eq!(
+        r.json["kinds"],
+        json!(["verdict", "fix_submitted", "checks"])
+    );
+
+    // `--kind all` is the whole journal; other kinds still filter.
+    let r = headless(&["log", &id, "--kind", "all"]);
+    assert_eq!(names(&r).len(), 6, "{}", r.stdout);
+    assert!(r.json.get("kinds").is_none(), "{}", r.stdout);
+    let r = headless(&["log", &id, "--kind", "prompt"]);
+    assert_eq!(names(&r), ["prompt"]);
+
+    // In a person's session nothing changes: the whole journal.
+    let r = env.hall(&env.repo, &["log", &id]);
+    assert_eq!(names(&r).len(), 6, "{}", r.stdout);
+
+    // What the reviewer is told to run: `fix` means fix_submitted.
+    let r = env.hall(&env.repo, &["log", &id, "--kind", "verdict,fix,checks"]);
+    assert_eq!(names(&r), ["checks", "verdict", "fix_submitted"]);
+}
+
 #[test]
 fn drop_keeps_a_dirty_worktree() {
     let env = Env::initialized();
