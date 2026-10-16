@@ -342,6 +342,94 @@ fn output_under_the_threshold_passes_verbatim() {
 }
 
 #[test]
+fn output_that_would_not_shrink_comes_back_verbatim() {
+    let raw: String = (0..70)
+        .map(|i| format!("{}\n", ["a", "b", "c"][i % 3]))
+        .collect();
+    let limits = Limits::default();
+    assert!(raw.lines().count() > limits.threshold_lines);
+    let c = condense::condense(&argv("make"), &raw, 1, &limits);
+    assert_eq!(c.text, raw);
+    assert_eq!(c.dropped, condense::Counts::default());
+}
+
+#[test]
+fn the_threshold_boundaries_are_exact() {
+    let limits = Limits::default();
+    let cmd = argv("make");
+    let lines = |n: usize| -> String { (0..n).map(|i| format!("line number {i}\n")).collect() };
+    // 60 lines: verbatim. 61: condensed.
+    let at = lines(60);
+    assert!(at.len() < limits.threshold_bytes);
+    assert_eq!(condense::condense(&cmd, &at, 0, &limits).text, at);
+    let over = lines(61);
+    assert!(over.len() < limits.threshold_bytes);
+    let tight_lines = Limits {
+        head: 2,
+        tail: 2,
+        ..limits
+    };
+    assert_ne!(condense::condense(&cmd, &over, 0, &tight_lines).text, over);
+    assert_eq!(condense::condense(&cmd, &at, 0, &tight_lines).text, at);
+    // Exactly 2,048 bytes in few lines: verbatim. 2,049: condensed.
+    let row = "x".repeat(99) + "\n";
+    let bytes = |n: usize| -> String {
+        let mut s = row.repeat(20);
+        s.push_str(&"y".repeat(n - s.len() - 1));
+        s.push('\n');
+        s
+    };
+    let at = bytes(limits.threshold_bytes);
+    assert_eq!(at.len(), 2048);
+    assert_eq!(condense::condense(&cmd, &at, 0, &limits).text, at);
+    // Narrow lines so condensing shrinks it: 2,049 bytes over 3 lines is
+    // too few to drop, so use the byte limit with a smaller head and tail.
+    let tight = Limits {
+        head: 2,
+        tail: 2,
+        ..limits
+    };
+    let many: String = (0..30).map(|i| format!("{i:0>67}\n")).collect();
+    assert_eq!(many.len(), 2040);
+    let over = format!("{many}12345678\n");
+    assert_eq!(over.len(), 2049);
+    assert_ne!(condense::condense(&cmd, &over, 0, &tight).text, over);
+    let at = format!("{many}1234567\n");
+    assert_eq!(at.len(), 2048);
+    assert_eq!(condense::condense(&cmd, &at, 0, &tight).text, at);
+}
+
+#[test]
+fn cargo_test_keeps_inline_panics_and_crashes() {
+    let mut raw = String::from("running 80 tests\n");
+    for i in 0..70 {
+        raw.push_str(&format!("test tests::passing_number_{i} ... ok\n"));
+    }
+    raw.push_str("thread 'tests::boom' panicked at src/lib.rs:5:9:\n");
+    raw.push_str("assertion failed: left == right\n");
+    raw.push_str("test tests::boom ... FAILED\n");
+    raw.push_str("thread 'tests::deep' has overflowed its stack\n");
+    raw.push_str("fatal runtime error: stack overflow\n");
+    raw.push_str("error: test failed, to rerun pass `--lib`\n");
+    let c = condense::condense(
+        &argv("cargo test -- --nocapture"),
+        &raw,
+        101,
+        &Limits::default(),
+    );
+    for want in [
+        "src/lib.rs:5:9",
+        "assertion failed: left == right",
+        "tests::boom ... FAILED",
+        "tests::deep' has overflowed its stack",
+        "fatal runtime error: stack overflow",
+    ] {
+        assert!(c.text.contains(want), "{want}\n{}", c.text);
+    }
+    assert!(c.text.lines().count() < 20, "{}", c.text);
+}
+
+#[test]
 fn evidence_commands_pass_verbatim() {
     let big = log("cargo-test.log");
     for cmd in [
@@ -354,6 +442,14 @@ fn evidence_commands_pass_verbatim() {
         vec![r"C:\Program Files\Git\cmd\git.exe".into(), "diff".into()],
         vec!["sh".into(), "-c".into(), "git diff | cat".into()],
         vec!["git diff origin/main".into()],
+        argv("bash -lc 'git diff'"),
+        vec!["bash".into(), "-lc".into(), "git diff".into()],
+        vec!["sh".into(), "-ec".into(), "git show HEAD".into()],
+        vec!["zsh".into(), "-ic".into(), "git log".into()],
+        vec!["powershell".into(), "-command".into(), "git log".into()],
+        vec!["cd app;git diff".into()],
+        vec!["cd app&&git log".into()],
+        vec!["sh".into(), "-c".into(), "(git show)".into()],
     ] {
         assert!(condense::is_evidence(&cmd), "{cmd:?}");
         let c = condense::condense(&cmd, &big, 0, &Limits::default());

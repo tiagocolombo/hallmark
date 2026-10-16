@@ -197,7 +197,18 @@ pub const EVIDENCE: &[&str] = &["diff", "show", "log"];
 /// Whether `cmd` runs a git command whose output is evidence (see
 /// [`EVIDENCE`]), anywhere in the command line.
 pub fn is_evidence(cmd: &[String]) -> bool {
-    let words = words(cmd);
+    // Fails closed: every argument is split on whitespace, shell operators
+    // and quotes, whatever flag precedes it (`bash -lc "git diff"`,
+    // `cd app;git log`).
+    let words: Vec<String> = cmd
+        .iter()
+        .flat_map(|a| {
+            a.split(|c: char| c.is_whitespace() || ";&|()`\"'".contains(c))
+                .filter(|w| !w.is_empty())
+                .map(String::from)
+                .collect::<Vec<_>>()
+        })
+        .collect();
     (0..words.len()).any(|i| {
         is_program(&words[i], "git")
             && git_subcommand(&words[i + 1..]).is_some_and(|s| EVIDENCE.contains(&s))
