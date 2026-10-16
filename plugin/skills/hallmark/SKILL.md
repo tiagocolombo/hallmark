@@ -12,7 +12,8 @@ SHA) may be pushed, so **never push** and never open PRs yourself. The gate
 denies `git push`, `gh pr create` and the repo's ship command without one. In
 an item's worktree it also denies what may push that it can't read (scripts
 like `make push`, git aliases, `gh` commands that change GitHub), and it
-denies `git notes` writes: only Hallmark writes the hallmark.
+denies `git notes` writes: only Hallmark writes the hallmark. A note you write
+yourself is not a hallmark: the push gate checks that Hallmark struck it.
 
 ## What becomes an item
 

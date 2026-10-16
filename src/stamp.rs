@@ -1,6 +1,6 @@
 //! The hallmark itself (ADR 0004): a git note under `refs/notes/hallmark` on
 //! the approved commit, holding JSON. Only an approved verdict strikes one,
-//! and the push gate reads it.
+//! and the push gate verifies it (ADR 0045).
 
 use std::path::Path;
 
@@ -122,4 +122,75 @@ pub fn carry(repo: &Repo, item: ItemId, from: &str, to: &str, actor: &str) -> Re
 /// The hallmark on `rev`, if it has one that parses.
 pub fn read(dir: &Path, rev: &str) -> Option<Note> {
     serde_json::from_str(&git::hallmark_note(dir, rev)?).ok()
+}
+
+/// Why the note on `head` isn't a hallmark Hallmark struck (ADR 0045).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Unverified {
+    /// No note at all.
+    Missing,
+    /// A note that doesn't parse as a [`Note`].
+    Unparsed,
+    /// A note of a version this hall doesn't know.
+    Version(u32),
+    /// A note for another commit, copied or written onto this one.
+    OtherSha(String),
+    /// A note whose item's journal records no `hallmarked` at this commit.
+    NotStruck(ItemId),
+}
+
+impl Unverified {
+    /// Says what is wrong, naming `head` and the mismatch.
+    pub fn reason(&self, head: &str) -> String {
+        let at = short(head);
+        match self {
+            Unverified::Missing => format!("{at} has no hallmark"),
+            Unverified::Unparsed => {
+                format!("{at} has no hallmark: its note doesn't parse as a hallmark")
+            }
+            Unverified::Version(v) => format!(
+                "{at} has no hallmark: its note is hallmark version {v}, and this hall knows \
+                 version 1"
+            ),
+            Unverified::OtherSha(sha) => format!(
+                "{at} has no hallmark: its note is for {}, not {at}",
+                short(sha)
+            ),
+            Unverified::NotStruck(item) => format!(
+                "{at} has no hallmark: its note names {item}, but {item}'s journal records no \
+                 hallmark on {at}"
+            ),
+        }
+    }
+}
+
+/// The hallmark on `head`, verified: the note parses, is version 1, names
+/// `head` itself, and its item's journal records `hallmarked` at `head`. A
+/// note anyone can write with `git notes` passes none of that unless
+/// Hallmark struck it.
+pub fn verify(repo: &Repo, dir: &Path, head: &str) -> std::result::Result<Note, Unverified> {
+    let text = git::hallmark_note(dir, head).ok_or(Unverified::Missing)?;
+    let note: Note = serde_json::from_str(&text).map_err(|_| Unverified::Unparsed)?;
+    if note.hallmark != 1 {
+        return Err(Unverified::Version(note.hallmark));
+    }
+    if note.sha != head {
+        return Err(Unverified::OtherSha(note.sha));
+    }
+    // An item the journal can't read has struck nothing.
+    let struck = repo.hall.read_item(note.item).is_ok_and(|events| {
+        events
+            .iter()
+            .any(|e| matches!(&e.body, Body::Hallmarked { sha, .. } if sha == head))
+    });
+    if !struck {
+        return Err(Unverified::NotStruck(note.item));
+    }
+    Ok(note)
+}
+
+/// The first seven characters of a sha, safe for one that came from a note
+/// anyone could write.
+fn short(sha: &str) -> String {
+    sha.chars().take(7).collect()
 }

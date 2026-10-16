@@ -203,6 +203,17 @@ The journal records:
 The hallmark is a git note under `refs/notes/hallmark` on the approved SHA. Any
 later commit has no note.
 
+A note on `HEAD` is a hallmark only when Hallmark struck it (ADR 0045), because
+anyone with git can write a note. The push gate checks three things:
+
+- The note parses as the hallmark's JSON, version 1.
+- Its `sha` is `HEAD` itself, so a note copied from an approved commit doesn't
+  count.
+- The journal of the item it names records `hallmarked` at `HEAD`.
+
+A denial says which check failed, for example *"its note is for 3f2a9c1, not
+e87f7ed"*.
+
 One `PreToolUse` hook, `hall hook pre-tool-use`, enforces two gates. Both apply
 only in repos where `hall init` has created `<git-common-dir>/hallmark`
 (ADR 0010).
