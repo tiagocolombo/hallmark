@@ -666,3 +666,31 @@ fn three_failed_checks_in_a_row_escalate() {
     );
     assert_eq!(events(&env, &id, "held").len(), 1);
 }
+
+#[test]
+fn max_check_failures_zero_never_holds() {
+    let env = Env::initialized();
+    set_config(
+        &env,
+        "gates",
+        "[\"git ls-files missing-file --error-unmatch\"]",
+    );
+    set_config(&env, "max_check_failures", "0");
+    git(&env.repo, &["commit", "-qam", "never hold"]);
+    let (id, _, _) = ready_item(&env, "Retry webhooks");
+    let noop = json!({
+        "role": "fixer",
+        "run": ["git commit -q --allow-empty -m \"no-op\""],
+        "structured": {"summary": "Tried again.", "fixed": [], "disputed": []}
+    });
+    let script = env.script(json!([noop, noop, noop, noop]));
+    for _ in 0..3 {
+        let step = assayer_pass(&env, &script);
+        assert!(
+            step["what"].as_str().unwrap().contains("checks failed"),
+            "{step}"
+        );
+        assert_eq!(fixer_pass(&env, &script)["progress"], "worked");
+    }
+    assert!(events(&env, &id, "held").is_empty());
+}

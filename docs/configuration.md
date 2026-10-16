@@ -283,7 +283,12 @@ A repo that sets no budget is still capped: `per_item = "800k"` and
 `daily = "4M"` are the defaults, so a loop that goes wrong stops instead of
 spending without limit. Set a cap to `"none"` to turn it off
 (`hall budget --set per_item=none` writes that); removing the key brings the
-default back. The role tables have no caps unless you set them.
+default back. The role tables have no caps unless you set them (to drop one,
+`hall config unset budget.review.daily`; `none` is for `daily` and `per_item`).
+
+One daemon can serve several repos. When any of them spends its daily cap, the
+daemon pauses the model workers for every repo it serves until 00:00 UTC, even
+a repo whose `daily` is `"none"`.
 
 Failed checks have a cap too: after `max_check_failures` (default 3) failed
 checks in a row, the item is held for you with kind `checks`, because the
