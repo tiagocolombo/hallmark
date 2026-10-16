@@ -1,0 +1,43 @@
+---
+source: tests/condense.rs
+expression: "format!(\"{}---\\n{}\", c.text, c.measure())"
+---
+ FAIL  src/cart/cart.test.ts > Cart > applies a percentage discount
+AssertionError: expected 16.9915 to be 16.99 // Object.is equality
+- Expected
++ Received
+- 16.99
++ 16.9915
+ ❯ src/cart/cart.test.ts:42:42
+     40|     const cart = new Cart();
+     41|     cart.add({ sku: "A-100", price: 19.99 });
+     42|     expect(cart.total({ discount: 15 })).toBe(16.99);
+       |                                          ^
+     43|   });
+     44|
+ FAIL  src/cart/cart.test.ts > Cart > removes an item by sku
+AssertionError: expected [ { sku: 'B-200', price: 12.5 }, …(1) ] to deeply equal [ { sku: 'B-200', price: 12.5 } ]
+- Expected
++ Received
+  [
+    {
+      "price": 12.5,
+      "sku": "B-200",
+    },
++   {
++     "price": 4.5,
++     "sku": "C-300",
++   },
+  ]
+ ❯ src/cart/cart.test.ts:57:24
+     55|     cart.add({ sku: "C-300", price: 4.5 });
+     56|     cart.remove("A-100");
+     57|     expect(cart.items).toEqual([bolt]);
+       |                        ^
+     58|   });
+     59| });
+ Test Files  1 failed | 10 passed (11)
+      Tests  2 failed | 88 passed (90)
+exit code: 1
+---
+condensed 2637 bytes (80 lines) to 1082 bytes (37 lines); ~388 tokens saved (estimate: bytes/4)

@@ -750,6 +750,32 @@ that run's `claude --resume` command (in the directory it ran in) and
 `hall trace <id>`. `hall export` lists every run's steps, so the record
 includes what the agents did.
 
+## Condensing command output (ADR 0046)
+
+`src/condense/` is a library that later commands (`hall run` and the gates)
+use; nothing calls it yet. It turns a command's output into what an agent
+should read: lossless on disk, lossy in context, with a drill-down.
+
+- **Evidence is never condensed.** `git diff`, `git show` and `git log` pass
+  through untouched. The list is hard-wired and can only grow.
+- **Small output is untouched.** At most 2 KB and 60 lines passes verbatim.
+- **What a fixer acts on stays:** the exit code, every failing test or error
+  with its file:line, the first message block of each failure, the tool's
+  summary line, and distinct warnings once with a count. Progress, ANSI,
+  `\r` redraws, "Compiling" lines, passing tests, repeats, downloads and
+  timing go.
+- **One filter per family**, picked from the command line: `cargo test`,
+  `cargo build|check|clippy`, `cargo fmt --check`, pytest, jest and vitest,
+  `go test`, and a generic one (the first 20 and last 40 lines, repeats as
+  `[xN]`). A family filter that doesn't recognise its output falls back to
+  the generic one.
+- **Measured honestly:** bytes and lines in and out; tokens saved are shown
+  as an estimate (bytes/4) and labelled as one. A footer names the full log
+  and how to show a part of it.
+
+Each filter is a pure function over text, pinned by real or real-format
+logs in `tests/fixtures/output/` and snapshots in `tests/condense.rs`.
+
 ## What we reuse
 
 | Need | Reused |

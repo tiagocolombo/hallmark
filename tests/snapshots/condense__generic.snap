@@ -1,0 +1,68 @@
+---
+source: tests/condense.rs
+expression: "format!(\"{}---\\n{}\", c.text, c.measure())"
+---
+==> inventory migrate (env: staging)
+reading config from /home/dev/src/inventory/config/staging.toml
+database: postgres://inventory@db.staging.internal:5432/inventory
+waiting for postgres on db.staging.internal:5432 ... [x45]
+postgres is up
+applying 0001_migration ... ok
+applying 0002_migration ... ok
+applying 0003_migration ... ok
+applying 0004_migration ... ok
+applying 0005_migration ... ok
+applying 0006_migration ... ok
+applying 0007_migration ... ok
+applying 0008_migration ... ok
+applying 0009_migration ... ok
+applying 0010_migration ... ok
+applying 0011_migration ... ok
+applying 0012_migration ... ok
+applying 0013_migration ... ok
+applying 0014_migration ... ok
+applying 0015_migration ... ok
+... 21 lines omitted
+applying 0037_migration ... ok
+applying 0038_migration ... ok
+applying 0039_migration ... ok
+applying 0040_migration ... ok
+applying 0041_migration ... ok
+applying 0042_migration ... ok
+applying 0043_migration ... ok
+applying 0044_migration ... ok
+applying 0045_migration ... ok
+applying 0046_migration ... ok
+applying 0047_migration ... ok
+applying 0048_migration ... ok
+applying 0049_migration ... ok
+applying 0050_migration ... ok
+applying 0051_migration ... ok
+applying 0052_migration ... ok
+applying 0053_migration ... ok
+applying 0054_migration ... ok
+applying 0055_migration ... ok
+applying 0056_migration ... ok
+applying 0057_migration ... ok
+applying 0058_migration ... ok
+applying 0059_migration ... ok
+applying 0060_migration ... ok
+applying 0061_migration ... ok
+applying 0062_migration ... ok
+applying 0063_migration ... ok
+applying 0064_migration ... ok
+applying 0065_migration ... ok
+applying 0066_migration ... ok
+applying 0067_migration ... ok
+applying 0068_migration ... ok
+applying 0069_migration ... ok
+applying 0070_migration ... ok
+applying 0071_add_sku_index ...
+ERROR:  could not create unique index "items_sku_key"
+DETAIL:  Key (sku)=(A-100) is duplicated.
+CONTEXT:  SQL statement "CREATE UNIQUE INDEX items_sku_key ON items (sku)"
+error: migration 0071_add_sku_index failed; rolled back
+1 of 71 migrations failed
+exit code: 1
+---
+condensed 5022 bytes (125 lines) to 2079 bytes (62 lines); ~735 tokens saved (estimate: bytes/4)

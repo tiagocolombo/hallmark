@@ -1,0 +1,28 @@
+---
+source: tests/condense.rs
+expression: "format!(\"{}---\\n{}\", c.text, c.measure())"
+---
+error[E0425]: cannot find value `drivn` in this scope
+  --> src/ratio.rs:15:30
+   = help: a local variable with a similar name exists
+error[E0425]: cannot find value `missing` in this scope
+  --> src/teeth.rs:13:36
+   | ^ not found in this scope
+warning: unused import: `std::collections::HashMap`
+  --> src/ratio.rs:1:5
+warning: unused import: `std::fmt::Write`
+  --> src/ratio.rs:2:5
+warning: unused import: `std::collections::HashMap`
+  --> src/teeth.rs:1:5
+error[E0308]: mismatched types
+  --> src/ratio.rs:9:18
+   | ^ expected `u32`, found `f64`
+error[E0599]: no method named `len` found for type `usize` in the current scope
+  --> src/teeth.rs:8:11
+   = help: there is a method `le` with a similar name, but with different arguments
+per file: src/ratio.rs 2 errors, 2 warnings; src/teeth.rs 2 errors, 1 warning
+warning: `gears` (lib) generated 3 warnings
+error: could not compile `gears` (lib) due to 4 previous errors; 3 warnings emitted
+exit code: 101
+---
+condensed 2027 bytes (62 lines) to 960 bytes (22 lines); ~266 tokens saved (estimate: bytes/4)

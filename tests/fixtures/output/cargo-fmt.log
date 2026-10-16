@@ -1,0 +1,70 @@
+Diff in /home/dev/src/sprockets/src/ratio.rs:1:
+ use std::collections::HashMap;
+ 
+[31m-pub fn ratio(driver: u32,driven: u32) -> f64 {
+(B[m[32m+pub fn ratio(driver: u32, driven: u32) -> f64 {
+(B[m     let scale = 10;
+[31m-    if driven == 0 { return 0.0; }
+(B[m[32m+    if driven == 0 {
+(B[m[32m+        return 0.0;
+(B[m[32m+    }
+(B[m     let r = driver as f64 / driven as f64;
+     return r;
+ }
+Diff in /home/dev/src/sprockets/src/ratio.rs:15:
+     format!("{}:{}", driver, driven)
+ }
+ 
+[31m-pub fn  table(rows: &[(u32,u32)]) -> Vec<String> {
+(B[m[31m-    rows.iter().map(|(a,b)| describe(*a,*b)).collect()
+(B[m[32m+pub fn table(rows: &[(u32, u32)]) -> Vec<String> {
+(B[m[32m+    rows.iter().map(|(a, b)| describe(*a, *b)).collect()
+(B[m }
+ 
+Diff in /home/dev/src/sprockets/src/teeth.rs:1:
+ pub fn count(teeth: &Vec<u32>) -> usize {
+     let mut total = 0;
+[31m-    for i in 0..teeth.len() { total += teeth[i] as usize; }
+(B[m[32m+    for i in 0..teeth.len() {
+(B[m[32m+        total += teeth[i] as usize;
+(B[m[32m+    }
+(B[m     return total;
+ }
+ 
+Diff in /home/dev/src/sprockets/src/teeth.rs:9:
+     *teeth.iter().max().unwrap_or(&0)
+ }
+ 
+[31m-pub fn smallest(teeth: &[u32]) -> u32 { *teeth.iter().min().unwrap_or(&0) }
+(B[m[32m+pub fn smallest(teeth: &[u32]) -> u32 {
+(B[m[32m+    *teeth.iter().min().unwrap_or(&0)
+(B[m[32m+}
+(B[m 
+ pub fn spread(teeth: &[u32]) -> u32 {
+[31m-    largest(&teeth.to_vec())   -   smallest(teeth)
+(B[m[32m+    largest(&teeth.to_vec()) - smallest(teeth)
+(B[m }
+ 
+[31m-pub fn mean(teeth: &[u32]) -> f64
+(B[m[31m-{
+(B[m[31m-    if teeth.is_empty() { return 0.0 }
+(B[m[32m+pub fn mean(teeth: &[u32]) -> f64 {
+(B[m[32m+    if teeth.is_empty() {
+(B[m[32m+        return 0.0;
+(B[m[32m+    }
+(B[m     teeth.iter().map(|t| *t as f64).sum::<f64>() / teeth.len() as f64
+ }
+ 
+Diff in /home/dev/src/sprockets/tests/ratio.rs:1:
+ #[test]
+ fn ratio_is_two() {
+[31m-    let r = sprockets::ratio(4,2);
+(B[m[32m+    let r = sprockets::ratio(4, 2);
+(B[m     assert!(r == 2.0);
+     let teeth = vec![1, 2, 3];
+     assert_eq!(sprockets::count(&teeth), 6);
+Diff in /home/dev/src/sprockets/tests/ratio.rs:7:
+[31m-    assert_eq!(sprockets::largest(&teeth.clone()),3);
+(B[m[32m+    assert_eq!(sprockets::largest(&teeth.clone()), 3);
+(B[m }
+ 

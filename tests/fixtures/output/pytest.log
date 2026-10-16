@@ -1,0 +1,99 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.4, pytest-8.3.2, pluggy-1.5.0
+rootdir: /home/dev/src/inventory
+configfile: pyproject.toml
+testpaths: tests
+plugins: cov-5.0.0, anyio-4.4.0
+collected 214 items
+
+tests/test_api.py ...................F........                            [ 13%]
+tests/test_auth.py ......................                                 [ 23%]
+tests/test_cart.py ..............................                         [ 37%]
+tests/test_catalog.py ...............F..............                      [ 51%]
+tests/test_db.py E..........s......                                       [ 59%]
+tests/test_orders.py ........................................             [ 78%]
+tests/test_pricing.py ...........................F........                [ 95%]
+tests/test_users.py ..........                                            [100%]
+
+==================================== ERRORS ====================================
+____________________ ERROR at setup of test_migrations_apply ____________________
+
+    @pytest.fixture
+    def db():
+>       conn = connect(os.environ["DATABASE_URL"])
+
+tests/conftest.py:14:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = environ({'PATH': '/home/dev/src/inventory/.venv/bin:/usr/bin:/bin', 'HOME': '/home/dev'})
+key = 'DATABASE_URL'
+
+    def __getitem__(self, key):
+        try:
+            value = self._data[self.encodekey(key)]
+        except KeyError:
+            # raise KeyError with the original key value
+>           raise KeyError(key) from None
+E           KeyError: 'DATABASE_URL'
+
+/usr/lib/python3.12/os.py:714: KeyError
+=================================== FAILURES ===================================
+______________________________ test_create_order _______________________________
+
+client = <starlette.testclient.TestClient object at 0x7f3c2a1b5e50>
+
+    def test_create_order(client):
+        resp = client.post("/orders", json={"sku": "A-100", "qty": 2})
+>       assert resp.status_code == 201
+E       assert 422 == 201
+E        +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+
+tests/test_api.py:88: AssertionError
+----------------------------- Captured stdout call -----------------------------
+POST /orders {"sku": "A-100", "qty": 2}
+validation failed: qty must be a string
+------------------------------ Captured log call -------------------------------
+WARNING  inventory.api:api.py:57 rejected order payload: {'sku': 'A-100', 'qty': 2}
+______________________________ test_search_by_tag ______________________________
+
+catalog = <inventory.catalog.Catalog object at 0x7f3c2a0d9d10>
+
+    def test_search_by_tag(catalog):
+>       results = catalog.search(tag="red")
+
+tests/test_catalog.py:41:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <inventory.catalog.Catalog object at 0x7f3c2a0d9d10>, tag = 'red'
+
+    def search(self, tag):
+>       return [item for item in self.items if tag in item.tags.split(",")]
+E       AttributeError: 'list' object has no attribute 'split'
+
+inventory/catalog.py:27: AttributeError
+____________________________ test_discount_rounding ____________________________
+
+    def test_discount_rounding():
+        price = apply_discount(Decimal("19.99"), percent=15)
+>       assert price == Decimal("16.99")
+E       AssertionError: assert Decimal('16.9915') == Decimal('16.99')
+E        +  where Decimal('16.9915') = apply_discount(Decimal('19.99'), percent=15)
+
+tests/test_pricing.py:63: AssertionError
+=============================== warnings summary ===============================
+tests/test_api.py::test_list_orders
+tests/test_api.py::test_get_order
+  /home/dev/src/inventory/inventory/api.py:31: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    created = datetime.utcnow()
+
+tests/test_orders.py::test_bulk_import
+  /home/dev/src/inventory/.venv/lib/python3.12/site-packages/pydantic/_internal/_config.py:291: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.8/migration/
+    warnings.warn(DEPRECATION_MESSAGE, category=PydanticDeprecatedSince20)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_api.py::test_create_order - assert 422 == 201
+FAILED tests/test_catalog.py::test_search_by_tag - AttributeError: 'list' object has no attribute 'split'
+FAILED tests/test_pricing.py::test_discount_rounding - AssertionError: assert Decimal('16.9915') == Decimal('16.99')
+ERROR tests/test_db.py::test_migrations_apply - KeyError: 'DATABASE_URL'
+======= 3 failed, 209 passed, 1 skipped, 3 warnings, 1 error in 4.82s ========
