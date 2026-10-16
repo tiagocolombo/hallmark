@@ -721,6 +721,32 @@ mod tests {
         assert_eq!(applied, ["budget.review.max_usd = default"]);
         let c = Config::parse(&back).unwrap();
         assert_eq!(c.budget.max_usd(config::Role::Reviewer), Some(3.0));
+        // `off` lifts the cap too; it must not restore the default.
+        let (off2, applied) = apply_sets("", &["review.max_usd=off".into()]).unwrap();
+        assert_eq!(applied, ["budget.review.max_usd = \"none\""]);
+        assert!(off2.contains("max_usd = \"none\""), "{off2}");
+        let c = Config::parse(&off2).unwrap();
+        assert_eq!(c.budget.max_usd(config::Role::Reviewer), None);
+    }
+
+    #[test]
+    fn default_removes_any_key() {
+        let start =
+            "[budget]\ndaily = \"4M\"\n\n[budget.review]\nmodel = \"opus\"\ntimeout = \"10m\"\n";
+        let (out, _) = apply_sets(
+            start,
+            &[
+                "daily=default".into(),
+                "review.model=default".into(),
+                "review.timeout=default".into(),
+            ],
+        )
+        .unwrap();
+        assert!(!out.contains("daily"), "{out}");
+        assert!(!out.contains("model"), "{out}");
+        assert!(!out.contains("timeout"), "{out}");
+        let c = Config::parse(&out).unwrap();
+        assert_eq!(c.budget.daily, None);
     }
 
     #[test]
