@@ -274,8 +274,13 @@ fn check_units(key: &str, v: &toml_edit::Value) -> Result<(), String> {
     // `daily` and `per_item` default to a cap; "none" turns it off.
     let no_cap = matches!(key, "budget.daily" | "budget.per_item") && crate::config::is_no_cap(s);
     if cap && !no_cap && crate::budget::Cap::parse(s).is_none() {
+        let none = if matches!(key, "budget.daily" | "budget.per_item") {
+            " or none".to_string()
+        } else {
+            format!("; to remove the cap, run hall config unset {key}")
+        };
         return Err(format!(
-            "{key}: {s} is not a cap; use tokens (800k, 4M), dollars ($15) or none"
+            "{key}: {s} is not a cap; use tokens (800k, 4M) or dollars ($15){none}"
         ));
     }
     if key == "library.briefing_limit" && parse_tokens(s).is_none() {

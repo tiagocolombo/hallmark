@@ -1272,6 +1272,62 @@ mod tests {
     }
 
     #[test]
+    fn check_failures_count_in_a_row_and_reset() {
+        let ready = || {
+            ev(Body::Ready {
+                sha: "a".into(),
+                round: 1,
+                note: None,
+            })
+        };
+        let checks = |passed| {
+            ev(Body::Checks {
+                sha: "a".into(),
+                round: 1,
+                passed,
+                runs: vec![],
+            })
+        };
+        let resubmit = || {
+            ev(Body::FixSubmitted {
+                sha: "b".into(),
+                fixes: vec![],
+                disputes: vec![],
+            })
+        };
+        let count = |events: &[Event]| fold(ItemId(1), events).unwrap().check_failures;
+        let mut e = vec![created(), ready(), checks(false), resubmit(), checks(false)];
+        assert_eq!(count(&e), 2);
+        // A pass resets the run.
+        e.extend([resubmit(), checks(true)]);
+        assert_eq!(count(&e), 0);
+        // Pulled back and readied again: a fresh count.
+        let mut e = vec![created(), ready(), checks(false), resubmit(), checks(false)];
+        e.extend([ev(Body::PulledBack { reason: None }), ready()]);
+        assert_eq!(count(&e), 0);
+        // Releasing a checks hold resets; releasing a budget hold keeps it.
+        let held = |kind| {
+            ev(Body::Held {
+                kind,
+                reason: "r".into(),
+            })
+        };
+        let released = || {
+            ev(Body::Released {
+                reason: None,
+                granted_tokens: None,
+            })
+        };
+        let base = vec![created(), ready(), checks(false), resubmit(), checks(false)];
+        let mut e = base.clone();
+        e.extend([held(HoldKind::Checks), released()]);
+        assert_eq!(count(&e), 0);
+        let mut e = base;
+        e.extend([held(HoldKind::Budget), released()]);
+        assert_eq!(count(&e), 2);
+    }
+
+    #[test]
     fn fold_ignores_impossible_transitions() {
         let events = vec![
             created(),
