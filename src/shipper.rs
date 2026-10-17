@@ -880,19 +880,27 @@ pub fn review_comment(item: &Item, events: &[Event], update: bool) -> String {
             onto,
             carried: true,
             to,
+            checks,
             ..
-        } if item.hallmark_sha.as_deref() == Some(to.as_str()) => {
-            Some((from.clone(), onto.clone()))
-        }
+        } if item.hallmark_sha.as_deref() == Some(to.as_str()) => Some((
+            from.clone(),
+            onto.clone(),
+            !checks.is_empty() && checks.iter().all(|c| c.cached),
+        )),
         _ => None,
     });
     // After such a rebase the commits a fix claimed were never pushed.
-    let rebased_onto = carried.as_ref().map(|(_, onto)| onto.clone());
-    if let Some((from, onto)) = carried {
+    let rebased_onto = carried.as_ref().map(|(_, onto, _)| onto.clone());
+    if let Some((from, onto, all_cached)) = carried {
+        let gates = if all_cached {
+            "the gates had passed on this tree before (cached), so none ran again"
+        } else {
+            "the gates passed again"
+        };
         let _ = writeln!(
             s,
             "\nRebased onto `{onto}` before shipping: the patch is identical to the approved `{}` \
-             and the gates passed again.",
+             and {gates}.",
             short(&from)
         );
     }
@@ -1200,6 +1208,24 @@ mod tests {
         let c = review_comment(&item(None), &events, false);
         assert!(c.contains("- `cargo test` passed (2.5s, cached)"), "{c}");
         assert!(c.contains("- `cargo fmt` passed (1.0s)"), "{c}");
+    }
+
+    #[test]
+    fn a_carried_rebase_served_from_the_cache_does_not_say_the_gates_ran() {
+        let rebased = |cached: bool| {
+            let mut events = updated(json!({"event": "reopened", "pr_url": "u", "pr_head": "h",
+                "base": "main", "worktree": "/w"}));
+            events.push(ev(json!({"event": "rebased", "from": "abc1234",
+                "to": "def5678def5678", "onto": "origin/main", "carried": true,
+                "checks": [{"command": "cargo test", "exit_code": 0, "duration_ms": 1,
+                    "cached": cached}]})));
+            events
+        };
+        let c = review_comment(&item(None), &rebased(true), false);
+        assert!(c.contains("passed on this tree before (cached)"), "{c}");
+        assert!(!c.contains("passed again"), "{c}");
+        let c = review_comment(&item(None), &rebased(false), false);
+        assert!(c.contains("the gates passed again"), "{c}");
     }
 
     #[test]

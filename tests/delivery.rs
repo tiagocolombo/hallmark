@@ -214,6 +214,112 @@ fn gates_that_fail_after_the_rebase_send_it_back_to_review() {
     );
 }
 
+/// A gate that counts its runs in `<root>/<name>.count`.
+fn counting(env: &Env, name: &str) -> String {
+    format!(
+        "echo ran >> '{}'",
+        p(&env.root.join(format!("{name}.count")))
+    )
+}
+
+fn runs_of(env: &Env, name: &str) -> usize {
+    std::fs::read_to_string(env.root.join(format!("{name}.count")))
+        .unwrap_or_default()
+        .lines()
+        .count()
+}
+
+/// Records a pass of `gate` on `sha`'s tree, as the review loop would have.
+fn seed_pass(env: &Env, id: &str, sha: &str, gate: &str, gates: &[String]) {
+    use hallmark::assayer::cache::{CachedRun, Key};
+    let tree = git(&env.repo, &["rev-parse", &format!("{sha}^{{tree}}")]);
+    let key = Key::new(&tree, gate, gates);
+    let run = CachedRun {
+        key: key.id(),
+        tree: key.tree.clone(),
+        command: key.command.clone(),
+        gates: key.gates.clone(),
+        os: key.os.clone(),
+        item: id.into(),
+        sha: sha.into(),
+        at: chrono::Utc::now(),
+        exit_code: 0,
+        duration_ms: 7,
+        log: Some(format!("items/{id}/checks/r1.log")),
+    };
+    let dir = env.repo.join(".git/hallmark/checks-cache");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join(format!("{}.jsonl", key.id())),
+        format!("{}\n", serde_json::to_string(&run).unwrap()),
+    )
+    .unwrap();
+}
+
+/// Main gains a commit and its revert: the rebased tree is the approved one.
+fn main_moves_and_back(env: &Env) {
+    main_moves(env, "other.rs", "fn other() {}\n");
+    git(&env.repo, &["revert", "--no-edit", "HEAD"]);
+    git(&env.repo, &["push", "-q", "origin", "main"]);
+}
+
+#[test]
+fn gates_served_from_the_cache_after_a_rebase_run_nothing() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    remote_with_main(&env);
+    let gate = counting(&env, "dock");
+    set_config(&env, "gates", &format!("[{}]", toml(&gate)));
+    let (id, _, sha) = hallmarked_item(&env, "Retry webhooks");
+    seed_pass(&env, &id, &sha, &gate, std::slice::from_ref(&gate));
+    main_moves_and_back(&env);
+
+    pass(&env, &gh, "shipper", json!([]));
+    assert_eq!(state(&env, &id), "closed");
+    assert_eq!(runs_of(&env, "dock"), 0, "a cached gate does not run");
+    let rebased = events(&env, &id, "rebased");
+    assert_eq!(rebased[0]["carried"], true, "{rebased:?}");
+    assert_eq!(rebased[0]["checks"][0]["cached"], true);
+    assert!(
+        !env.root.join("app-assay").exists(),
+        "no assay checkout when every gate is cached"
+    );
+    let review = std::fs::read_to_string(
+        env.repo
+            .join(".git/hallmark/items")
+            .join(&id)
+            .join("review.md"),
+    )
+    .unwrap();
+    assert!(!review.contains("passed again"), "{review}");
+}
+
+#[test]
+fn a_setup_gate_runs_before_a_no_cache_gate_at_the_dock() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    remote_with_main(&env);
+    let setup = counting(&env, "setup");
+    let check = "true".to_string();
+    let gates = vec![setup.clone(), check.clone()];
+    set_config(
+        &env,
+        "gates",
+        &format!("[{}, {}]", toml(&setup), toml(&check)),
+    );
+    set_config(&env, "gates_no_cache", &format!("[{}]", toml(&check)));
+    let (id, _, sha) = hallmarked_item(&env, "Retry webhooks");
+    seed_pass(&env, &id, &sha, &setup, &gates);
+    main_moves_and_back(&env);
+
+    pass(&env, &gh, "shipper", json!([]));
+    assert_eq!(state(&env, &id), "closed");
+    assert_eq!(runs_of(&env, "setup"), 1, "setup runs before the check");
+    let rebased = events(&env, &id, "rebased");
+    assert_eq!(rebased[0]["carried"], true, "{rebased:?}");
+    assert!(rebased[0]["checks"][0].get("cached").is_none());
+}
+
 /// Main changes `retry.rs`, which the item changed too.
 fn conflicting_main(env: &Env) {
     main_moves(env, "retry.rs", "fn retry() {\n    log();\n}\n");

@@ -1606,6 +1606,32 @@ fn gates_up_to_the_last_one_that_runs_are_all_run() {
     );
 }
 
+/// Changing `gates` starts the cache over.
+#[test]
+fn changing_the_gates_runs_a_passed_gate_again() {
+    let env = Env::initialized();
+    let a = counting_gate(&env, "a");
+    let b = counting_gate(&env, "b");
+    configure(&env, &[("gates", &format!("['{a}']"))]);
+    let (id, wt, _) = ready_item(&env, "Retry webhooks", "retry.rs", "fn retry() {}\n");
+    let script = env.script(json!([reviewer(verdict(
+        vec![finding("blocker", "retry.rs", "Double delivery")],
+        json!([])
+    ))]));
+    tick(&env, &script);
+    tick(&env, &script);
+    assert_eq!(state(&env, &id), "fixing");
+    assert_eq!(runs_of(&env, "a"), 1);
+
+    configure(&env, &[("gates", &format!("['{b}', '{a}']"))]);
+    let fix = same_tree_commit(&wt);
+    resubmit(&env, &id, &fix, &["F1"]);
+    let r = tick(&env, &script);
+    assert!(what(&r).contains("checks passed"), "{}", r.stdout);
+    assert_eq!(runs_of(&env, "a"), 2, "other gates: a is not served");
+    assert_eq!(runs_of(&env, "b"), 1);
+}
+
 /// A pass served from this round's own log would point at a truncated file.
 #[test]
 fn a_hit_on_the_log_being_rewritten_is_not_served() {

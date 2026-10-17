@@ -103,9 +103,10 @@ pub fn runs(hall: &Hall, key: &Key) -> Vec<CachedRun> {
         .collect()
 }
 
-/// The latest passing run for `key`: the only kind ever served.
+/// The latest run for `key`, when it passed: the only kind ever served. A
+/// pass followed by a failure is not served: the failure is newer.
 pub fn passed(hall: &Hall, key: &Key) -> Option<CachedRun> {
-    runs(hall, key).into_iter().rev().find(|r| r.exit_code == 0)
+    runs(hall, key).pop().filter(|r| r.exit_code == 0)
 }
 
 /// Appends one run, red or green, under the file's lock.
@@ -193,8 +194,9 @@ mod tests {
         record(&hall, &run(1, "a")).unwrap();
         assert!(passed(&hall, &key).is_none(), "a red run is never served");
         record(&hall, &run(0, "b")).unwrap();
-        record(&hall, &run(2, "c")).unwrap();
         assert_eq!(passed(&hall, &key).unwrap().sha, "b");
+        record(&hall, &run(2, "c")).unwrap();
+        assert!(passed(&hall, &key).is_none(), "a newer red run wins");
         let all = runs(&hall, &key);
         assert_eq!(
             all.iter().map(|r| r.exit_code).collect::<Vec<_>>(),
