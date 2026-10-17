@@ -212,6 +212,29 @@ fn gates_that_fail_after_the_rebase_send_it_back_to_review() {
     );
 }
 
+#[test]
+fn the_rebase_checks_use_the_gate_limits_not_the_reviewers() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    remote_with_main(&env);
+    set_config(
+        &env,
+        "gates",
+        "[{ cmd = \"sleep 30\", timeout = \"1s\" }, \"sleep 2\"]",
+    );
+    let cfg = env.repo.join(".hallmark.toml");
+    let text = std::fs::read_to_string(&cfg).unwrap();
+    std::fs::write(&cfg, format!("{text}\n[budget.review]\ntimeout = \"1s\"\n")).unwrap();
+    let (id, _, _) = hallmarked_item(&env, "Retry webhooks");
+    main_moves(&env, "other.rs", "fn other() {}\n");
+
+    pass(&env, &gh, "shipper", json!([]));
+    let rebased = events(&env, &id, "rebased");
+    assert_eq!(rebased[0]["checks"][0]["command"], "sleep 30");
+    assert_eq!(rebased[0]["checks"][0]["exit_code"], 124);
+    assert_eq!(rebased[0]["checks"][1]["exit_code"], 0);
+}
+
 /// Main changes `retry.rs`, which the item changed too.
 fn conflicting_main(env: &Env) {
     main_moves(env, "retry.rs", "fn retry() {\n    log();\n}\n");

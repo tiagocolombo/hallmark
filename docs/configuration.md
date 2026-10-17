@@ -43,6 +43,7 @@ ship        = "git push -u origin {branch} && gh pr create --base {base} --head 
 update      = "git push --force-with-lease={branch}:{pr_head} origin {branch} && gh pr edit {pr} --base {base}"
 review_comment = "gh pr comment {pr} --body-file {review_file}"   # every review is a PR comment; "" for none
 gates       = []
+gates_timeout = "20m"        # each gate is killed after this
 reviewer    = "claude -p"
 fixer       = "claude -p"   # or another fix engine, run in the worktree
 claude_args = []            # extra arguments for every headless claude -p run
@@ -247,6 +248,26 @@ gates = [
 PATH, and never preselects direnv: direnv refuses an `.envrc` that wasn't
 allowed at the path it runs in, so `direnv allow` it in the main checkout and
 in every worktree path (or use direnv's whitelist prefix) before using it.
+
+### Gate timeouts
+
+Each gate is killed after `gates_timeout`, 20 minutes by default, and recorded
+as failed with exit code 124. A slow gate, such as a full test suite or
+mutation testing, gets its own limit with the table form; plain strings and
+tables mix in one list:
+
+```toml
+gates_timeout = "20m"   # every gate without its own
+gates = [
+  "cargo clippy --all-targets -- -D warnings",
+  { cmd = "cargo test", timeout = "40m" },
+]
+```
+
+`hall config set gates_timeout 30m` changes the default, and
+`hall config set gates '[{ cmd = "cargo test", timeout = "40m" }, "cargo clippy"]'`
+writes the table form. Gates used to share the reviewer's run limit,
+`[budget.review] timeout`; that now covers only the reviewer's run.
 
 ## Your tools
 

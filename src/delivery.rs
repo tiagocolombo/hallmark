@@ -846,7 +846,7 @@ fn feedback_prompt(repo: &Repo, item: &Item, events: &[Event], comments: &[PrCom
     if !repo.config.gates.is_empty() {
         s.push_str(&format!(
             "Run the gates ({}) before you finish.\n",
-            repo.config.gates.join(", ")
+            repo.config.gate_commands().join(", ")
         ));
     }
     s.push_str(
@@ -902,7 +902,7 @@ fn ci_prompt(
     if !repo.config.gates.is_empty() {
         s.push_str(&format!(
             "Run the gates ({}) before you finish.\n",
-            repo.config.gates.join(", ")
+            repo.config.gate_commands().join(", ")
         ));
     }
     s.push_str(
@@ -953,7 +953,7 @@ fn prompt(repo: &Repo, item: &Item, events: &[Event], target: &Target, files: &[
         s.push_str(&format!(
             "3. When the rebase is done, run the gates ({}) and fix anything the rebase broke, \
              in a new commit.\n",
-            repo.config.gates.join(", ")
+            repo.config.gate_commands().join(", ")
         ));
     }
     let cmds = repo.config.run_commands();

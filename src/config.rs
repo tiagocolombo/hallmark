@@ -40,8 +40,13 @@ pub struct Config {
     /// Runs when the PR's URL is known. Placeholders: {pr} (the PR's URL)
     /// {review_file} {branch} {id} {base}. Empty: no comment.
     pub review_comment: String,
-    /// The repo's checks, run in order at the frozen commit.
-    pub gates: Vec<String>,
+    /// The repo's checks, run in order at the frozen commit: a command, or
+    /// `{ cmd = "cargo test", timeout = "40m" }` for one with its own time
+    /// limit.
+    pub gates: Vec<Gate>,
+    /// How long each gate may run before it is killed ("20m").
+    /// A gate's own `timeout` overrides it.
+    pub gates_timeout: String,
     /// Commands the headless dev runs (the fixer, the Delivery office) may
     /// run besides the gates, as prefixes: a narrower test run, or what
     /// regenerates generated files (snapshots) after a conflict.
@@ -88,7 +93,8 @@ impl Config {
     /// What a headless dev run may run: the gates, then `dev_commands`.
     pub fn run_commands(&self) -> Vec<String> {
         let mut out: Vec<String> = Vec::new();
-        for c in self.gates.iter().chain(&self.dev_commands) {
+        let gates = self.gates.iter().map(Gate::cmd);
+        for c in gates.chain(self.dev_commands.iter().map(String::as_str)) {
             let c = c.trim();
             if !c.is_empty() && !out.iter().any(|o| o == c) {
                 out.push(c.to_string());
@@ -108,6 +114,7 @@ impl Default for Config {
             update: "git push --force-with-lease={branch}:{pr_head} origin {branch} && gh pr edit {pr} --base {base}".into(),
             review_comment: "gh pr comment {pr} --body-file {review_file}".into(),
             gates: Vec::new(),
+            gates_timeout: "20m".into(),
             dev_commands: Vec::new(),
             reviewer: "claude -p".into(),
             fixer: "claude -p".into(),
@@ -126,6 +133,83 @@ impl Default for Config {
             library: Library::default(),
             extensions: Extensions::default(),
         }
+    }
+}
+
+/// A gate: its command, or a table with the command and its own time limit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum Gate {
+    /// A command, run with `gates_timeout`.
+    Cmd(String),
+    /// `{ cmd = "cargo test", timeout = "40m" }`.
+    Timed(TimedGate),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TimedGate {
+    /// The command.
+    pub cmd: String,
+    /// How long it may run ("40m"). Default: `gates_timeout`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout: Option<String>,
+}
+
+impl Gate {
+    pub fn cmd(&self) -> &str {
+        match self {
+            Gate::Cmd(c) => c,
+            Gate::Timed(t) => &t.cmd,
+        }
+    }
+
+    /// The gate's own time limit, as written.
+    pub fn timeout(&self) -> Option<&str> {
+        match self {
+            Gate::Cmd(_) => None,
+            Gate::Timed(t) => t.timeout.as_deref(),
+        }
+    }
+}
+
+impl std::fmt::Display for Gate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.cmd())
+    }
+}
+
+impl From<&str> for Gate {
+    fn from(c: &str) -> Self {
+        Gate::Cmd(c.into())
+    }
+}
+
+impl Config {
+    /// The gates' commands, in order.
+    pub fn gate_commands(&self) -> Vec<String> {
+        self.gates.iter().map(|g| g.cmd().to_string()).collect()
+    }
+
+    /// How long `gate` may run, in seconds: its own
+    /// `timeout`, else `gates_timeout`, else 20 minutes. Never the
+    /// reviewer's limit: a slow test suite isn't a slow review.
+    pub fn gate_timeout_secs(&self, gate: &Gate) -> u64 {
+        gate.timeout()
+            .and_then(parse_duration)
+            .or_else(|| parse_duration(&self.gates_timeout))
+            .unwrap_or(1200)
+            .max(0) as u64
+    }
+
+    /// The longest any gate may run, in seconds (0: no gates, or none has a
+    /// limit). A lease held while the gates run must outlast it.
+    pub fn longest_gate_secs(&self) -> u64 {
+        self.gates
+            .iter()
+            .map(|g| self.gate_timeout_secs(g))
+            .max()
+            .unwrap_or(0)
     }
 }
 
@@ -957,6 +1041,31 @@ mode = "ask"
     }
 
     #[test]
+    fn gates_have_their_own_timeout() {
+        // Not the reviewer's: `[budget.review] timeout` doesn't reach them.
+        let c = Config::parse(
+            r#"
+gates = ["cargo clippy", { cmd = "cargo test", timeout = "40m" }, { cmd = "make" }]
+[budget.review]
+timeout = "5m"
+"#,
+        )
+        .unwrap();
+        let cmds: Vec<&str> = c.gates.iter().map(Gate::cmd).collect();
+        assert_eq!(cmds, ["cargo clippy", "cargo test", "make"]);
+        let secs: Vec<u64> = c.gates.iter().map(|g| c.gate_timeout_secs(g)).collect();
+        assert_eq!(secs, [1200, 2400, 1200]);
+        // Leases held while the gates run last as long as the slowest one.
+        assert_eq!(c.longest_gate_secs(), 2400);
+        assert_eq!(Config::default().longest_gate_secs(), 0);
+        let c = Config::parse("gates_timeout = \"90s\"\ngates = [\"make\"]\n").unwrap();
+        assert_eq!(c.gate_timeout_secs(&c.gates[0]), 90);
+        // A table needs its command, and nothing it doesn't know.
+        assert!(Config::parse("gates = [{ timeout = \"1m\" }]").is_err());
+        assert!(Config::parse("gates = [{ cmd = \"make\", timout = \"1m\" }]").is_err());
+    }
+
+    #[test]
     fn initial_file_round_trips() {
         let text = render_initial(
             "trunk",
@@ -965,10 +1074,7 @@ mode = "ask"
         );
         let c = Config::parse(&text).unwrap();
         assert_eq!(c.base, "trunk");
-        assert_eq!(
-            c.gates,
-            vec!["cargo test".to_string(), "make \"lint\"".to_string()]
-        );
+        assert_eq!(c.gates, vec!["cargo test".into(), "make \"lint\"".into()]);
         assert_eq!(c.worktree, Config::default().worktree);
         assert_eq!(c.review_comment, Config::default().review_comment);
     }

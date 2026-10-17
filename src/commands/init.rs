@@ -91,7 +91,7 @@ pub fn init(cwd: &Path, a: InitArgs) -> Result<Response> {
     let (base, gates, capture) = if config_path.is_file() {
         unchanged.push(config::FILE_NAME.to_string());
         let c = Config::parse(&fs::read_to_string(&config_path)?)?;
-        (c.base, c.gates, c.capture.mode)
+        (c.base.clone(), c.gate_commands(), c.capture.mode)
     } else {
         let base = a
             .base
