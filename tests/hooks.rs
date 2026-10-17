@@ -663,3 +663,102 @@ fn session_start_lists_the_extensions_for_developers() {
     assert!(c[at..].contains("by Matt Pocock"));
     assert!(!c.contains("Refuse to give up"), "an index, not the text");
 }
+
+/// `hall hook pre-tool-use` for a Bash command, run as `actor`.
+fn bash_as(env: &Env, actor: Option<&str>, cwd: &Path, cmd: &str) -> common::Reply {
+    let mut c = env.cmd(&env.repo);
+    if let Some(a) = actor {
+        c.env("HALL_ACTOR", a);
+    }
+    let out = c
+        .args(["hook", "pre-tool-use"])
+        .write_stdin(bash("pre-tool-use", cwd, cmd, "s7").to_string())
+        .output()
+        .unwrap();
+    common::reply(out)
+}
+
+#[test]
+fn only_the_daemon_writes_git_notes() {
+    let env = Env::initialized();
+    let (id, wt) = env.new_item("Notes");
+    commit_file(&wt, "a.txt", "a");
+    let write = "git notes --ref refs/notes/hallmark add -f -m '{}' HEAD";
+    for actor in [None, Some("agent"), Some("fixer")] {
+        let (d, reason) = decision(&bash_as(&env, actor, &wt, write).json);
+        assert_eq!(d, "deny", "{actor:?}");
+        assert_eq!(reason["error"]["code"], "GATE_DENIED");
+        assert_eq!(reason["error"]["next"][0], format!("hall ready {id}"));
+    }
+    // Any notes ref: `core.notesRef` can point a plain `git notes` anywhere.
+    assert_eq!(
+        decision(&bash_as(&env, None, &wt, "git notes append -m x").json).0,
+        "deny"
+    );
+    for actor in ["assayer", "shipper"] {
+        assert_eq!(bash_as(&env, Some(actor), &wt, write).stdout, "", "{actor}");
+    }
+    for read in [
+        "git notes show HEAD",
+        "git notes --ref hallmark list",
+        "git notes",
+    ] {
+        assert_eq!(bash_as(&env, None, &wt, read).stdout, "", "{read}");
+    }
+}
+
+#[test]
+fn the_strict_push_guard_in_item_worktrees() {
+    let env = Env::initialized();
+    let (id, wt) = env.new_item("Guard");
+    commit_file(&wt, "a.txt", "a");
+    for cmd in ["make push", "npm run release", "git p", "gh pr merge 7"] {
+        let (d, reason) = decision(&bash_as(&env, None, &wt, cmd).json);
+        assert_eq!(d, "deny", "{cmd}");
+        assert_eq!(reason["error"]["code"], "GATE_DENIED", "{cmd}");
+        assert_eq!(reason["error"]["next"][0], format!("hall ready {id}"));
+    }
+    assert!(
+        env.journal(&id)
+            .iter()
+            .any(|e| e["event"] == "gate_denied" && e["target"] == "run make push")
+    );
+    for cmd in [
+        "git status",
+        "git log --oneline",
+        "git stash list",
+        "git notes show HEAD",
+        "cargo test",
+        "hall status",
+        "grep -rn push src",
+    ] {
+        assert_eq!(bash_as(&env, None, &wt, cmd).stdout, "", "{cmd}");
+    }
+    // Outside an item's worktree the guard stays out of the way.
+    assert_eq!(bash_as(&env, None, &env.repo, "make push").stdout, "");
+
+    // `push_allow` lists the scripts a repo needs; `parse` turns it off.
+    let toml_path = env.repo.join(".hallmark.toml");
+    let toml = std::fs::read_to_string(&toml_path).unwrap();
+    std::fs::write(
+        &toml_path,
+        toml.replace("[capture]\n", "[capture]\npush_allow = [\"make push\"]\n"),
+    )
+    .unwrap();
+    assert_eq!(bash_as(&env, None, &wt, "make push").stdout, "");
+    assert_eq!(
+        decision(&bash_as(&env, None, &wt, "make release").json).0,
+        "deny"
+    );
+    std::fs::write(
+        &toml_path,
+        toml.replace("[capture]\n", "[capture]\npush_guard = \"parse\"\n"),
+    )
+    .unwrap();
+    assert_eq!(bash_as(&env, None, &wt, "make release").stdout, "");
+    // A push the parser reads is denied in either mode.
+    assert_eq!(
+        decision(&bash_as(&env, None, &wt, "nice git push").json).0,
+        "deny"
+    );
+}

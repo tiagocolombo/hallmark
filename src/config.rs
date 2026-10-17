@@ -169,6 +169,24 @@ pub struct Capture {
     /// Markdown: questions, documents, architecture and requirements aren't
     /// development work, so they don't become items.
     pub free: Vec<String>,
+    /// How the push gate treats commands it can't read. `strict`: inside an
+    /// item's worktree, it also denies those that may push or write a note
+    /// (scripts such as `make push`, unknown git subcommands, `gh` commands
+    /// that change GitHub). `parse`: only what it reads as a push.
+    pub push_guard: PushGuard,
+    /// Commands the strict push guard lets through, as prefixes
+    /// (`make release`). A command the gate reads as a push is still gated.
+    pub push_allow: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PushGuard {
+    /// Inside an item's worktree, deny what may push but can't be read too.
+    #[default]
+    Strict,
+    /// Deny only what the gate reads as a push or a note write.
+    Parse,
 }
 
 impl Default for Capture {
@@ -176,11 +194,22 @@ impl Default for Capture {
         Capture {
             mode: CaptureMode::default(),
             free: vec!["docs/".into(), "*.md".into()],
+            push_guard: PushGuard::default(),
+            push_allow: Vec::new(),
         }
     }
 }
 
 impl Capture {
+    /// `push_allow` as word prefixes, for the gate.
+    pub fn push_allow_prefixes(&self) -> Vec<Vec<String>> {
+        self.push_allow
+            .iter()
+            .map(|c| crate::gate::words(c))
+            .filter(|w| !w.is_empty())
+            .collect()
+    }
+
     /// Whether `rel` (a path relative to the repo root, `/`-separated) matches
     /// `free`. Use [`Config::is_free`], which also protects review inputs.
     pub fn matches_free(&self, rel: &str) -> bool {

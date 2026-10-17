@@ -99,6 +99,13 @@ pub fn subject(dir: &Path, rev: &str) -> String {
     run(dir, &["log", "-1", "--format=%s", rev]).unwrap_or_default()
 }
 
+/// What the git alias `name` expands to in `dir`, if it is one.
+pub fn alias(dir: &Path, name: &str) -> Option<String> {
+    run(dir, &["config", "--get", &format!("alias.{name}")])
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+}
+
 /// The hallmark note on a commit, if it has one.
 pub fn hallmark_note(dir: &Path, rev: &str) -> Option<String> {
     run(dir, &["notes", "--ref", NOTES_REF, "show", rev])

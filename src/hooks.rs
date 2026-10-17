@@ -14,7 +14,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::config::CaptureMode;
+use crate::config::{CaptureMode, PushGuard};
 use crate::error::{ErrorCode, HallError, Result};
 use crate::event::{Body, Event};
 use crate::gate::{self, OpKind};
@@ -524,16 +524,28 @@ impl Ctx {
                     .get("command")
                     .and_then(Value::as_str)
                     .unwrap_or_default();
-                let ops = gate::scan(cmd, &self.dir, &self.repo.config.ship_prefixes());
+                let ship = self.repo.config.ship_prefixes();
+                let allow = self.repo.config.capture.push_allow_prefixes();
+                let alias = |dir: &Path, name: &str| git::alias(dir, name);
+                let ctx = gate::Context {
+                    ship: &ship,
+                    allow: &allow,
+                    alias: &alias,
+                };
+                let scan = gate::inspect(cmd, &self.dir, &ctx);
                 let mut d = None;
-                for op in ops {
+                for op in &scan.ops {
                     d = match op.kind {
                         OpKind::Commit => self.check_commit(&op.dir)?,
                         OpKind::Push => self.check_push(&op.dir)?,
+                        OpKind::NoteWrite => self.check_note_write(&op.dir),
                     };
                     if d.is_some() {
                         break;
                     }
+                }
+                if d.is_none() && self.repo.config.capture.push_guard == PushGuard::Strict {
+                    d = scan.suspects.iter().find_map(|s| self.check_guard(s));
                 }
                 d
             }
@@ -680,6 +692,61 @@ impl Ctx {
             err,
             format!("push {}", crate::event::short(&head)),
         )))
+    }
+
+    /// What to run instead of pushing from `dir`: send its item to review.
+    fn review_next(&self, dir: &Path) -> Vec<String> {
+        match self.repo.item_at(&self.items, dir).or_else(|| self.item()) {
+            Some(i) => vec![
+                format!("hall ready {}", i.id),
+                format!("hall status {}", i.id),
+            ],
+            None => vec!["hall status".into()],
+        }
+    }
+
+    /// The hallmark is a git note, so only the daemon's assayer and shipper
+    /// (`HALL_ACTOR`) write notes, whatever the capture mode.
+    fn check_note_write(&self, dir: &Path) -> Option<(&'static str, HallError, String)> {
+        let dir = paths::normalize(dir);
+        if !self.repo.contains(&dir) {
+            return None;
+        }
+        if matches!(crate::repo::actor().as_str(), "assayer" | "shipper") {
+            return None;
+        }
+        let err = HallError::new(
+            ErrorCode::GateDenied,
+            "Only Hallmark's assayer and shipper write git notes here: the hallmark is a note, \
+             and a note written in a session could stand in for an approval. Send the item to \
+             review instead.",
+        )
+        .next(self.review_next(&dir));
+        Some(("deny", err, format!("note in {}", paths::display(&dir))))
+    }
+
+    /// `[capture] push_guard = "strict"`: inside an item's worktree, a
+    /// command the gate can't read that may push is denied too.
+    fn check_guard(&self, s: &gate::Suspect) -> Option<(&'static str, HallError, String)> {
+        let dir = paths::normalize(&s.dir);
+        if !self.repo.contains(&dir) {
+            return None;
+        }
+        self.repo
+            .item_at(&self.items, &dir)
+            .or_else(|| self.repo.item_at(&self.items, &self.dir))?;
+        let text = clip(&s.text, 200);
+        let err = HallError::new(
+            ErrorCode::GateDenied,
+            format!(
+                "`{text}` may push without a hallmark: {}. In an item's worktree the gate denies \
+                 what it can't read, and work reaches GitHub only through review. If the repo \
+                 needs this command, list it in `[capture] push_allow`.",
+                s.why
+            ),
+        )
+        .next(self.review_next(&dir));
+        Some(("deny", err, format!("run {text}")))
     }
 
     // --- PostToolUse ------------------------------------------------------
