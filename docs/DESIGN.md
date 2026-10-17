@@ -366,7 +366,6 @@ ship        = "git push -u origin {branch} && gh pr create --base {base} --head 
 review_comment = "gh pr comment {pr} --body-file {review_file}"   # each review is a PR comment
 gates       = []                # hall init fills these
 dev_commands = []               # what headless dev runs may run besides the gates
-reviewer    = "claude -p"
 fixer       = "claude -p"       # or an external fix engine (Ralph Orchestrator…)
 claude_args = []                # extra arguments for every headless run
 max_rejects = 3

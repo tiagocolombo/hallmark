@@ -277,3 +277,32 @@ fn interactive_setup_needs_a_terminal() {
     let r = env.hall(&env.repo, &["setup", "claude", "--interactive"]);
     assert_eq!(r.code, 2);
 }
+
+/// `reviewer` was never read (L2): it is gone from the keys, and a file
+/// that still sets it loads, with the key ignored.
+#[test]
+fn the_old_reviewer_key_is_ignored() {
+    let env = Env::initialized();
+    let file = env.repo.join(".hallmark.toml");
+    let mut text = std::fs::read_to_string(&file).unwrap();
+    text.insert_str(0, "reviewer = \"my-reviewer\"\n");
+    std::fs::write(&file, text).unwrap();
+
+    let r = env.hall(&env.repo, &["config", "list"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let keys: Vec<&str> = r.json["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["key"].as_str().unwrap())
+        .collect();
+    assert!(keys.contains(&"fixer"), "{keys:?}");
+    assert!(!keys.contains(&"reviewer"), "{keys:?}");
+    assert!(!r.stdout.contains("my-reviewer"), "{}", r.stdout);
+
+    let s = env.hall(&env.repo, &["schema", "config"]);
+    assert_eq!(s.code, 0, "{}", s.stdout);
+    let props = &s.json["schema"]["properties"];
+    assert!(props.get("fixer").is_some(), "{}", s.stdout);
+    assert!(props.get("reviewer").is_none(), "{}", s.stdout);
+}

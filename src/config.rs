@@ -46,8 +46,6 @@ pub struct Config {
     /// run besides the gates, as prefixes: a narrower test run, or what
     /// regenerates generated files (snapshots) after a conflict.
     pub dev_commands: Vec<String>,
-    /// The command that runs the reviewer.
-    pub reviewer: String,
     /// The fix engine: `claude -p` (the fixer agent), or another command run
     /// in the item's worktree, such as Ralph Orchestrator. Placeholders:
     /// {id} {worktree} {findings_file} (JSON from `hall findings`).
@@ -109,7 +107,6 @@ impl Default for Config {
             review_comment: "gh pr comment {pr} --body-file {review_file}".into(),
             gates: Vec::new(),
             dev_commands: Vec::new(),
-            reviewer: "claude -p".into(),
             fixer: "claude -p".into(),
             claude_args: Vec::new(),
             max_rejects: 3,
