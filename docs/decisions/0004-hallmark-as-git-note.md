@@ -1,6 +1,7 @@
 # 0004. The hallmark is a git note
 
-Status: Accepted, 2026-10-09
+Status: Accepted, 2026-10-09. Partly superseded by 0045: the gate verifies the
+note, not only that one exists.
 
 ## Context
 

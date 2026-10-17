@@ -185,23 +185,173 @@ fn commits_need_an_item_and_pushes_need_a_hallmark() {
         assert_eq!(reason["error"]["code"], "GATE_DENIED");
         assert_eq!(reason["error"]["next"][0], format!("hall ready {id}"));
     }
-    // With a hallmark note on HEAD, the same push passes.
+    // With a hallmark struck on HEAD, the same push passes.
+    strike(&env, &id, &wt);
+    assert_eq!(pre(&wt, "git push -u origin HEAD").stdout, "");
+    // A later commit has no hallmark again.
+    commit_file(&wt, "more.txt", "x");
+    assert_eq!(decision(&pre(&wt, "git push").json).0, "deny");
+}
+
+/// Strikes a real hallmark on the worktree's HEAD, as an approved verdict
+/// does: the note and the `hallmarked` event.
+fn strike(env: &Env, id: &str, wt: &Path) {
+    let sha = git(wt, &["rev-parse", "HEAD"]);
+    let repo = hallmark::repo::Repo::discover(&env.repo).unwrap();
+    hallmark::stamp::strike(
+        &repo,
+        id.parse().unwrap(),
+        &sha,
+        1,
+        None,
+        hallmark::findings::Counts::default(),
+    )
+    .unwrap();
+}
+
+/// Writes `body` as the hallmark note on HEAD, as anyone with git can.
+fn forge(wt: &Path, body: &str) {
+    git(
+        wt,
+        &[
+            "notes",
+            "--ref",
+            "refs/notes/hallmark",
+            "add",
+            "-f",
+            "-m",
+            body,
+            "HEAD",
+        ],
+    );
+}
+
+/// The push's denial message, after checking it is a `GATE_DENIED` denial.
+fn push_denied(r: &common::Reply) -> String {
+    let (d, reason) = decision(&r.json);
+    assert_eq!(d, "deny", "{}", r.stdout);
+    assert_eq!(reason["error"]["code"], "GATE_DENIED");
+    reason["error"]["message"].as_str().unwrap().to_string()
+}
+
+/// A well-formed note body, as `stamp::strike` writes it.
+fn note(hallmark: u32, item: &str, sha: &str) -> String {
+    json!({
+        "hallmark": hallmark,
+        "item": item,
+        "sha": sha,
+        "round": 1,
+        "findings": {"blocker": 0, "major": 0, "minor": 0, "nit": 0},
+        "t": "2026-01-01T00:00:00Z",
+    })
+    .to_string()
+}
+
+#[test]
+fn the_push_gate_verifies_the_hallmark_note() {
+    let env = Env::initialized();
+    let pre =
+        |cwd: &Path, cmd: &str| env.hook("pre-tool-use", &bash("pre-tool-use", cwd, cmd, "s3"));
+    let (id, wt) = env.new_item("Ship it");
+    commit_file(&wt, "feature.txt", "done");
+    let head = git(&wt, &["rev-parse", "HEAD"]);
+    let short = &head[..7];
+
+    // A note that isn't a hallmark: any non-empty note used to pass.
+    for body in ["{\"item\":\"H-0001\"}", "approved, trust me"] {
+        forge(&wt, body);
+        let msg = push_denied(&pre(&wt, "git push"));
+        assert!(
+            msg.starts_with(&format!(
+                "{short} has no hallmark: its note doesn't parse as a hallmark"
+            )),
+            "{msg}"
+        );
+    }
+
+    // A well-formed note on this commit that Hallmark never struck: the
+    // item's journal has no `hallmarked` event for it.
+    forge(&wt, &note(1, &id, &head));
+    let msg = push_denied(&pre(&wt, "git push"));
+    assert!(
+        msg.contains(&format!(
+            "its note names {id}, but {id}'s journal records no hallmark on {short}"
+        )),
+        "{msg}"
+    );
+    // The same, naming an item that doesn't exist.
+    forge(&wt, &note(1, "H-9999", &head));
+    let msg = push_denied(&pre(&wt, "git push"));
+    assert!(
+        msg.contains("H-9999's journal records no hallmark"),
+        "{msg}"
+    );
+    // A version of the note this hall doesn't know.
+    forge(&wt, &note(2, &id, &head));
+    let msg = push_denied(&pre(&wt, "git push"));
+    assert!(msg.contains("its note is hallmark version 2"), "{msg}");
+
+    // The real hallmark, struck by an approved verdict, passes.
+    strike(&env, &id, &wt);
+    assert_eq!(pre(&wt, "git push").stdout, "");
+
+    // A real note copied onto a later commit is for the wrong sha.
+    commit_file(&wt, "more.txt", "x");
+    let later = git(&wt, &["rev-parse", "HEAD"]);
+    let later_short = &later[..7];
     git(
         &wt,
         &[
             "notes",
             "--ref",
             "refs/notes/hallmark",
-            "add",
-            "-m",
-            "{\"item\":\"H-0001\"}",
-            "HEAD",
+            "copy",
+            &head,
+            &later,
         ],
     );
-    assert_eq!(pre(&wt, "git push -u origin HEAD").stdout, "");
-    // A later commit has no hallmark again.
-    commit_file(&wt, "more.txt", "x");
-    assert_eq!(decision(&pre(&wt, "git push").json).0, "deny");
+    let msg = push_denied(&pre(&wt, "git push"));
+    assert!(
+        msg.contains(&format!("its note is for {short}, not {later_short}")),
+        "{msg}"
+    );
+    // A sha that is no commit at all, not even ASCII, is named safely.
+    let accents = "\u{e9}".repeat(8);
+    forge(&wt, &note(1, &id, &accents));
+    let msg = push_denied(&pre(&wt, "git push"));
+    assert!(
+        msg.contains(&format!(
+            "its note is for {}, not {later_short}",
+            "\u{e9}".repeat(7)
+        )),
+        "{msg}"
+    );
+
+    // The gate holds for the daemon's actors too: a headless run with a
+    // forged note is denied, and the same run passes with a real hallmark.
+    let headless = |actor: &str| {
+        let out = env
+            .cmd(&env.repo)
+            .env("HALL_HEADLESS", "1")
+            .env("HALL_ACTOR", actor)
+            .args(["hook", "pre-tool-use"])
+            .write_stdin(bash("pre-tool-use", &wt, "git push", "s4").to_string())
+            .output()
+            .unwrap();
+        common::reply(out)
+    };
+    forge(&wt, &note(1, &id, &later));
+    for actor in ["shipper", "assayer", "fixer"] {
+        let msg = push_denied(&headless(actor));
+        assert!(
+            msg.contains("journal records no hallmark"),
+            "{actor}: {msg}"
+        );
+    }
+    strike(&env, &id, &wt);
+    for actor in ["shipper", "assayer", "fixer"] {
+        assert_eq!(headless(actor).stdout, "", "{actor}");
+    }
 }
 
 #[test]

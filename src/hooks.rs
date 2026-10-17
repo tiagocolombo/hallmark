@@ -664,9 +664,10 @@ impl Ctx {
         let Ok(head) = git::head(&dir) else {
             return Ok(None);
         };
-        if git::hallmark_note(&dir, &head).is_some() {
-            return Ok(None);
-        }
+        let unverified = match crate::stamp::verify(&self.repo, &dir, &head) {
+            Ok(_) => return Ok(None),
+            Err(u) => u,
+        };
         let item = self.repo.item_at(&self.items, &dir).or_else(|| self.item());
         let next: Vec<String> = match &item {
             Some(i) => vec![
@@ -681,9 +682,9 @@ impl Ctx {
         let err = HallError::new(
             ErrorCode::GateDenied,
             format!(
-                "{} has no hallmark. Work reaches GitHub only through review: send the item to \
-                 review and the shipper pushes it once approved.",
-                crate::event::short(&head)
+                "{}. Work reaches GitHub only through review: send the item to review and the \
+                 shipper pushes it once approved.",
+                unverified.reason(&head)
             ),
         )
         .next(next);
