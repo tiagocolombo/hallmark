@@ -1596,12 +1596,16 @@ mod tests {
         let mut asked = Vec::new();
         let r = wait_until(start + limit, |left| {
             asked.push(left);
-            crate::daemon::nap(left / 2);
+            // Three instant early wakes, then the wait that reaches the
+            // deadline: a stalled runner cannot skip the early ones.
+            if asked.len() > 3 {
+                crate::daemon::nap(left);
+            }
             Ok::<_, std::io::Error>(None::<u8>)
         });
         assert!(matches!(r, Ok(None)), "{r:?}");
         assert!(start.elapsed() >= limit, "{:?}", start.elapsed());
-        assert!(asked.len() > 1, "{asked:?}");
+        assert!(asked.len() > 3, "{asked:?}");
         assert!(
             asked.iter().all(|d| *d >= Duration::from_millis(1)),
             "never a zero wait, which would spin: {asked:?}"

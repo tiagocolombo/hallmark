@@ -198,6 +198,10 @@ pub struct Item {
     pub round: u32,
     /// Rejected reviews so far.
     pub rejects: u32,
+    /// Checks that failed in a row: reset when they pass, at `ready`, and
+    /// when `hall retry` lifts a `checks` hold.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub check_failures: u32,
     /// The commit frozen by the last `ready`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frozen_sha: Option<String>,
@@ -359,6 +363,9 @@ pub enum HoldKind {
     /// The PR is ready to merge but touches a `[merge] lit` path, so a
     /// person merges it, or lets the merger with `hall retry`.
     Lit,
+    /// The checks failed `max_check_failures` times in a row: the fixes
+    /// aren't turning the gates green.
+    Checks,
     /// Anything else that needs a person.
     Other,
 }
@@ -374,6 +381,7 @@ impl HoldKind {
             HoldKind::CiFailed => "ci_failed",
             HoldKind::MergeFailed => "merge_failed",
             HoldKind::Lit => "lit",
+            HoldKind::Checks => "checks",
             HoldKind::Other => "other",
         }
     }

@@ -114,7 +114,8 @@ pub const ROLES: [Role; 4] = [Role::Reviewer, Role::Fixer, Role::Intake, Role::L
 ///
 /// Checked in order: the daily total (the daemon pauses), the role's room
 /// for today, then the item. Resume runs only answer to the daily total:
-/// delivering your answer never holds an item. An unreadable index fails
+/// delivering your answer never holds an item. The librarian answers to the
+/// daily and room caps only, so distilling never holds an item. An unreadable index fails
 /// open (logged to the Live view), like the gates.
 pub fn check(repo: &Repo, item: Option<ItemId>, role: &str) -> Result<(), Stop> {
     let b = &repo.config.budget;
@@ -167,7 +168,10 @@ pub fn check_with(
             });
         }
     }
-    if let (Some(id), Some(cap)) = (item, b.per_item.as_deref())
+    // The librarian distils items that have left the loop: what they spent
+    // there never holds them (the daily and room caps still apply).
+    if r != Role::Librarian
+        && let (Some(id), Some(cap)) = (item, b.per_item.as_deref())
         && let Some(limit) = Cap::parse(cap)
     {
         let used = item_spent(ix, id);
@@ -586,6 +590,8 @@ mod tests {
         );
         // Resume runs never hold an item.
         assert_eq!(check_with(&ix, &b, Some(id), "resume", &day), Ok(()));
+        // Nor does the librarian: it distils items that left the loop.
+        assert_eq!(check_with(&ix, &b, Some(id), "librarian", &day), Ok(()));
 
         b.review = Some(RoleBudget {
             daily: Some("400k".into()),
@@ -698,7 +704,16 @@ mod tests {
             "{}",
             s.reason
         );
-        assert_eq!(item_allowance(&ix, &Budget::default(), a), None);
+        // The default cap, 800k, plus the grant; none when the cap is off.
+        assert_eq!(
+            item_allowance(&ix, &Budget::default(), a),
+            Some(Cap::Tokens(1_100_000))
+        );
+        let off = Budget {
+            per_item: None,
+            ..Default::default()
+        };
+        assert_eq!(item_allowance(&ix, &off, a), None);
     }
 
     #[test]

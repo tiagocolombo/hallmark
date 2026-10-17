@@ -404,7 +404,7 @@ fn grant(repo: &Repo, day: &str, tokens: &str, reason: Option<&str>) -> Result<G
         None => {
             return Err(HallError::new(
                 ErrorCode::WrongState,
-                "there is no daily budget to go past: `[budget] daily` isn't set",
+                "there is no daily budget to go past: `[budget] daily` is \"none\"",
             )
             .next(["hall budget"]));
         }
@@ -508,8 +508,9 @@ const KEYS: &str = "daily, per_item, <role>.daily, <role>.max_usd, <role>.timeou
                     (roles: review, fix, intake, librarian)";
 
 /// Applies `key=value` settings to `.hallmark.toml` text with toml_edit,
-/// keeping comments and layout. `none` (or `off`) removes a cap. The result
-/// must still parse as a [`Config`].
+/// keeping comments and layout. `none` (or `off`) removes a cap: `daily`
+/// and `per_item` are written `"none"`, since without them the default caps
+/// apply. The result must still parse as a [`Config`].
 pub fn apply_sets(text: &str, sets: &[String]) -> Result<(String, Vec<String>)> {
     let mut doc: toml_edit::DocumentMut = text.parse().map_err(|e| {
         HallError::new(
@@ -529,7 +530,11 @@ pub fn apply_sets(text: &str, sets: &[String]) -> Result<(String, Vec<String>)> 
         })?;
         let v = v.trim().trim_matches('"');
         let remove = matches!(v.to_ascii_lowercase().as_str(), "none" | "off" | "");
-        let value: Option<toml_edit::Value> = if remove {
+        // `daily` and `per_item` have default caps: no cap is written out.
+        let defaulted = table.is_none() && matches!(field, "daily" | "per_item");
+        let value: Option<toml_edit::Value> = if remove && defaulted {
+            Some("none".into())
+        } else if remove {
             None
         } else {
             Some(match kind {

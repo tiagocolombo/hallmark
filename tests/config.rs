@@ -49,7 +49,77 @@ fn set_get_unset_keep_the_file_and_are_idempotent() {
     let r = env.hall(&env.repo, &["config", "unset", "budget.daily"]);
     assert_eq!(r.json["changed"], true);
     assert_eq!(entry(&r)["source"], "default");
-    assert_eq!(entry(&r)["value"], Value::Null);
+    // Unset is the default cap, not no cap.
+    assert_eq!(entry(&r)["value"], "4M");
+}
+
+#[test]
+fn budgets_cap_by_default_and_none_turns_a_cap_off() {
+    let env = Env::initialized();
+    for (key, value) in [
+        ("budget.per_item", "800k"),
+        ("budget.daily", "4M"),
+        ("max_check_failures", "3"),
+    ] {
+        let r = env.hall(&env.repo, &["config", "get", key]);
+        assert_eq!(r.code, 0, "{}", r.stdout);
+        assert_eq!(entry(&r)["source"], "default", "{key}");
+        assert_eq!(entry(&r)["value"].to_string().trim_matches('"'), value);
+    }
+    let r = env.hall(&env.repo, &["config", "set", "budget.per_item", "none"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(entry(&r)["value"], "none");
+    assert_eq!(entry(&r)["source"], "repo");
+    let r = env.hall(&env.repo, &["budget"]);
+    let item = r.json["caps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["key"] == "budget.per_item")
+        .unwrap()
+        .clone();
+    assert!(item["limit_tokens"].is_null(), "{item}");
+
+    // `hall budget --set daily=none` writes "none": removing the key would
+    // bring the default back.
+    let r = env.hall(&env.repo, &["budget", "--set", "daily=none"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let text = std::fs::read_to_string(env.repo.join(".hallmark.toml")).unwrap();
+    assert!(text.contains("daily = \"none\""), "{text}");
+    let r = env.hall(&env.repo, &["config", "get", "budget.daily"]);
+    assert_eq!(entry(&r)["value"], "none");
+
+    // The other key through each door.
+    let r = env.hall(&env.repo, &["config", "set", "budget.daily", "none"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(entry(&r)["value"], "none");
+    let r = env.hall(&env.repo, &["budget", "--set", "per_item=none"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let text = std::fs::read_to_string(env.repo.join(".hallmark.toml")).unwrap();
+    assert!(text.contains("per_item = \"none\""), "{text}");
+    let r = env.hall(&env.repo, &["budget"]);
+    let item = r.json["caps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["key"] == "budget.per_item")
+        .unwrap()
+        .clone();
+    assert!(item["limit_tokens"].is_null(), "{item}");
+
+    // A role cap has no "none": the hint says how to remove it instead.
+    let r = env.hall(&env.repo, &["config", "set", "budget.review.daily", "none"]);
+    assert_ne!(r.code, 0, "{}", r.stdout);
+    let msg = r.json["error"]["message"].as_str().unwrap().to_string();
+    assert!(
+        msg.contains("hall config unset budget.review.daily"),
+        "{msg}"
+    );
+    assert!(!msg.contains("or none"), "{msg}");
+    let r = env.hall(&env.repo, &["config", "set", "budget.daily", "lots"]);
+    assert_ne!(r.code, 0, "{}", r.stdout);
+    let msg = r.json["error"]["message"].as_str().unwrap().to_string();
+    assert!(msg.contains("or none"), "{msg}");
 }
 
 #[test]

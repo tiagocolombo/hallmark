@@ -891,6 +891,7 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
         state_since: first.t,
         round: 0,
         rejects: 0,
+        check_failures: 0,
         frozen_sha: None,
         hallmark_sha: None,
         pr_url: pr_url.clone(),
@@ -951,6 +952,10 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
             Body::Ready { sha, round, .. } => {
                 item.frozen_sha = Some(sha.clone());
                 item.round = *round;
+                item.check_failures = 0;
+            }
+            Body::Checks { passed, .. } => {
+                item.check_failures = if *passed { 0 } else { item.check_failures + 1 };
             }
             Body::FixSubmitted { sha, .. } => {
                 item.frozen_sha = Some(sha.clone());
@@ -983,7 +988,11 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
                 {
                     item.merged = None;
                 }
-                item.hold = None
+                // Lifting a `checks` hold allows another set of rounds.
+                if item.hold.as_ref().map(|h| h.kind) == Some(HoldKind::Checks) {
+                    item.check_failures = 0;
+                }
+                item.hold = None;
             }
             Body::PrChecks {
                 passed,
@@ -1191,6 +1200,62 @@ mod tests {
         assert_eq!(item.frozen_sha.as_deref(), Some("bbb"));
         assert_eq!(item.summary.as_deref(), Some("done"));
         assert_eq!(item.events, 6);
+    }
+
+    #[test]
+    fn check_failures_count_in_a_row_and_reset() {
+        let ready = || {
+            ev(Body::Ready {
+                sha: "a".into(),
+                round: 1,
+                note: None,
+            })
+        };
+        let checks = |passed| {
+            ev(Body::Checks {
+                sha: "a".into(),
+                round: 1,
+                passed,
+                runs: vec![],
+            })
+        };
+        let resubmit = || {
+            ev(Body::FixSubmitted {
+                sha: "b".into(),
+                fixes: vec![],
+                disputes: vec![],
+            })
+        };
+        let count = |events: &[Event]| fold(ItemId(1), events).unwrap().check_failures;
+        let mut e = vec![created(), ready(), checks(false), resubmit(), checks(false)];
+        assert_eq!(count(&e), 2);
+        // A pass resets the run.
+        e.extend([resubmit(), checks(true)]);
+        assert_eq!(count(&e), 0);
+        // Pulled back and readied again: a fresh count.
+        let mut e = vec![created(), ready(), checks(false), resubmit(), checks(false)];
+        e.extend([ev(Body::PulledBack { reason: None }), ready()]);
+        assert_eq!(count(&e), 0);
+        // Releasing a checks hold resets; releasing a budget hold keeps it.
+        let held = |kind| {
+            ev(Body::Held {
+                kind,
+                reason: "r".into(),
+            })
+        };
+        let released = || {
+            ev(Body::Released {
+                reason: None,
+                granted_tokens: None,
+            })
+        };
+        let base = vec![created(), ready(), checks(false), resubmit(), checks(false)];
+        let mut e = base.clone();
+        e.extend([held(HoldKind::Checks), released()]);
+        assert_eq!(count(&e), 0);
+        let mut e = base;
+        e.extend([held(HoldKind::Budget), released()]);
+        assert_eq!(count(&e), 2);
     }
 
     #[test]
