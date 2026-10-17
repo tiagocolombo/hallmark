@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1](https://github.com/tiagocolombo/hallmark/compare/v0.2.0...v0.2.1) - 2026-10-17
+
+### Fixed
+
+- a wait error or early wake is not a run timeout ([#77](https://github.com/tiagocolombo/hallmark/pull/77))
+
 ## [0.2.0](https://github.com/tiagocolombo/hallmark/compare/v0.1.7...v0.2.0) - 2026-10-17
 
 ### Added
