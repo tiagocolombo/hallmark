@@ -39,10 +39,13 @@ pub enum Action {
     /// A shipped item whose PR is still open goes back to development, to
     /// rebase it, resolve conflicts or change it (`hall adopt`).
     Reopen,
+    /// An item reopened to fix its PR's CI goes back to the PR unchanged:
+    /// the checks passed on a re-run (ADR 0047).
+    Restore,
 }
 
 impl Action {
-    pub const ALL: [Action; 14] = [
+    pub const ALL: [Action; 15] = [
         Action::ProposeReady,
         Action::Ready,
         Action::PullBack,
@@ -57,6 +60,7 @@ impl Action {
         Action::Ship,
         Action::Merge,
         Action::Reopen,
+        Action::Restore,
     ];
 }
 
@@ -100,6 +104,8 @@ pub fn next(from: State, action: Action) -> Option<State> {
 
         // A parallel part merges into its parent; the parent is reviewed.
         (S::Development | S::AwaitingYou, A::Merge) => Some(S::Closed),
+        // Back to its PR, unchanged, once its CI passes again.
+        (S::Development, A::Restore) => Some(S::Closed),
 
         _ => None,
     }
@@ -128,6 +134,7 @@ mod tests {
             (S::Development, A::Ready, S::Checks),
             (S::Development, A::Drop, S::Dropped),
             (S::Development, A::Merge, S::Closed),
+            (S::Development, A::Restore, S::Closed),
             (S::AwaitingYou, A::Merge, S::Closed),
             (S::AwaitingYou, A::Ready, S::Checks),
             (S::AwaitingYou, A::PullBack, S::Development),

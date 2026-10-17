@@ -1,6 +1,7 @@
 # 0031. Only escalations reach you; the Delivery office fixes red CI; new items start from the latest base
 
-Status: Accepted, 2026-10-11
+Status: Accepted, 2026-10-11. Amended by 0047: the fix run reads the checks
+again first, and a green re-run sends the item back to its PR.
 
 ## Context
 

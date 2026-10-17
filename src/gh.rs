@@ -425,47 +425,76 @@ fn job_start_inner(dir: &Path, link: &str, reason: bool) -> Option<JobStart> {
     ))
 }
 
-/// The tail of a failed job's log (`gh run view --job --log-failed`),
-/// focused on the lines that say what broke. None when gh can't read it.
+/// A failed job's log, cut down by [`log_excerpt`]. The job's own log comes
+/// from the API by its id: `gh run view --job` answers with the run's latest
+/// attempt, which after a re-run isn't the one that failed. `gh run view` is
+/// the fallback.
 pub fn failed_log(dir: &Path, link: &str, max_lines: usize) -> Option<String> {
     let (run, job) = run_and_job(link)?;
-    let out = Command::new(gh().ok()?)
-        .current_dir(dir)
-        .args(["run", "view", &run, "--job", &job, "--log-failed"])
-        .output()
-        .ok()?;
-    let text = String::from_utf8_lossy(&out.stdout);
+    let gh = gh().ok()?;
+    let read = |args: &[&str], must_succeed: bool| {
+        Command::new(&gh)
+            .current_dir(dir)
+            .args(args)
+            .output()
+            .ok()
+            .filter(|o| !must_succeed || o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+            .filter(|t| !t.trim().is_empty())
+    };
+    let api = format!("repos/{{owner}}/{{repo}}/actions/jobs/{job}/logs");
+    // Build logs carry color codes, which newer `gh api` refuses to print
+    // without the flag; older ones don't know it.
+    let text = read(&["api", "--allow-escape-sequences", &api], true)
+        .or_else(|| read(&["api", &api], true))
+        .or_else(|| read(&["run", "view", &run, "--job", &job, "--log-failed"], false))?;
     let excerpt = log_excerpt(&text, max_lines);
     (!excerpt.trim().is_empty()).then_some(excerpt)
 }
 
-/// The useful part of a CI log: lines around panics, errors and failures,
-/// without the runner's timestamps, at most `max` lines.
+/// The useful part of a CI log, without the runner's timestamps and color
+/// codes, at most `max` lines. The lines that say a step failed (a test
+/// marked FAILED, a panic, `error:`, the runner's `##[error]`) come first,
+/// with a little context, from the first: the first failure is the cause.
+/// Without any, lines that only mention an error or a failure, from the
+/// end; without those, the end of the log.
 pub fn log_excerpt(log: &str, max: usize) -> String {
     let lines: Vec<String> = log
         .lines()
         .map(|l| {
             // "job\tstep\t2026-10-10T02:41:18.1Z text": keep the text.
             let l = l.rsplit('\t').next().unwrap_or(l);
-            match l.split_once("Z ") {
-                Some((ts, rest)) if ts.len() >= 20 && ts.as_bytes()[4] == b'-' => rest.to_string(),
-                _ => l.to_string(),
-            }
+            let l = l.trim_start_matches('\u{feff}');
+            let l = match l.split_once("Z ") {
+                Some((ts, rest)) if ts.len() >= 20 && ts.as_bytes()[4] == b'-' => rest,
+                _ => l,
+            };
+            strip_ansi(l)
         })
         .collect();
-    let hot: Vec<usize> = lines
-        .iter()
-        .enumerate()
-        .filter(|(_, l)| {
-            let l = l.to_ascii_lowercase();
-            l.contains("panicked")
-                || l.contains("error")
-                || l.contains("failed")
-                || l.contains("failures:")
-                || l.contains("assert")
-        })
-        .map(|(i, _)| i)
-        .collect();
+    let failed = |l: &str| {
+        let t = l.trim_start();
+        l.contains("panicked at")
+            || l.trim_end().ends_with("... FAILED")
+            || l.contains("test result: FAILED")
+            || t.starts_with("failures:")
+            || t.starts_with("##[error]")
+            || t.starts_with("error:")
+            || t.starts_with("error[")
+    };
+    let mentions = |l: &str| {
+        let l = l.to_ascii_lowercase();
+        l.contains("panicked")
+            || l.contains("error")
+            || l.contains("failed")
+            || l.contains("failures:")
+            || l.contains("assert")
+    };
+    let mut hot: Vec<usize> = (0..lines.len()).filter(|&i| failed(&lines[i])).collect();
+    let first = !hot.is_empty();
+    if !first {
+        hot = (0..lines.len()).filter(|&i| mentions(&lines[i])).collect();
+    }
     let mut keep = vec![false; lines.len()];
     for i in hot {
         let from = i.saturating_sub(2);
@@ -482,8 +511,31 @@ pub fn log_excerpt(log: &str, max: usize) -> String {
     if out.is_empty() {
         out = lines.iter().map(String::as_str).collect();
     }
+    if first {
+        out.truncate(max);
+        return out.join("\n");
+    }
     let start = out.len().saturating_sub(max);
     out[start..].join("\n")
+}
+
+/// `text` without terminal color codes (`ESC [ ... m` and the like).
+fn strip_ansi(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' && chars.peek() == Some(&'[') {
+            chars.next();
+            for c in chars.by_ref() {
+                if ('@'..='~').contains(&c) {
+                    break;
+                }
+            }
+            continue;
+        }
+        out.push(c);
+    }
+    out
 }
 
 /// `https://github.com/o/r/pull/12` → (o, r).
@@ -533,6 +585,34 @@ mod ci_tests {
         );
         assert!(e.contains("Text file busy"), "{e}");
         assert!(!e.contains("2026-10-10T"), "timestamps go: {e}");
+    }
+
+    /// H-0074's red run: one test failed early, and the passing tests after
+    /// it have names with "error" and "failed" in them. The failure leads.
+    #[test]
+    fn a_failed_test_leads_the_excerpt_over_names_that_mention_errors() {
+        let mut log = String::from(
+            "\u{feff}2026-10-16T03:16:49.1Z \u{1b}[1m\u{1b}[92m   Compiling\u{1b}[0m hallmark\n\
+             2026-10-16T03:16:49.7Z test runner::tests::a_timed_out_run_still_ends_its_stream ... FAILED\n\
+             2026-10-16T03:16:53.6Z failures:\n\
+             2026-10-16T03:16:53.6Z thread 'runner::tests::a_timed_out_run_still_ends_its_stream' panicked at src/runner.rs:1550:9:\n\
+             2026-10-16T03:16:53.6Z test result: FAILED. 227 passed; 1 failed\n",
+        );
+        for n in 0..200 {
+            log.push_str(&format!(
+                "2026-10-16T03:17:00.0Z test an_error_{n}_is_reported ... ok\n"
+            ));
+        }
+        log.push_str("2026-10-16T03:17:37.6Z ##[error]Process completed with exit code 101.\n");
+        let e = log_excerpt(&log, 60);
+        assert!(e.lines().count() <= 60, "{e}");
+        assert!(
+            e.contains("a_timed_out_run_still_ends_its_stream ... FAILED"),
+            "{e}"
+        );
+        assert!(e.contains("panicked at src/runner.rs:1550:9:"), "{e}");
+        assert!(e.contains("##[error]Process completed"), "{e}");
+        assert!(!e.contains('\u{1b}'), "color codes go: {e}");
     }
 }
 
