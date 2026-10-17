@@ -643,13 +643,35 @@ impl<'a> Look<'a> {
         let busy = line.iter().any(|i| i.merged.is_some());
         let mut merging = false;
         let mut unknown_ahead = false;
-        for item in line {
+        // Walk dependency-first: a PR comes after every PR in this line it
+        // waits for, otherwise oldest first. A cycle falls back to number
+        // order.
+        let mut pending: Vec<(&Item, Judged)> = line.iter().map(|i| (i, self.judge(i))).collect();
+        let urls: Vec<String> = line
+            .iter()
+            .map(|i| i.pr_url.clone().unwrap_or_default())
+            .collect();
+        let mut walk: Vec<(&Item, Judged)> = Vec::new();
+        while !pending.is_empty() {
+            let at = pending
+                .iter()
+                .position(|(_, j)| {
+                    j.waits.iter().all(|w| {
+                        !urls.contains(w)
+                            || walk.iter().any(|(i, _)| i.pr_url.as_deref() == Some(w))
+                            || !pending.iter().any(|(i, _)| i.pr_url.as_deref() == Some(w))
+                    })
+                })
+                .unwrap_or(0);
+            walk.push(pending.remove(at));
+        }
+        for (item, judged) in walk {
             let Judged {
                 mut status,
                 mut why,
                 mut waits,
                 mut verdict,
-            } = self.judge(item);
+            } = judged;
             // An older PR GitHub hasn't finished checking goes first.
             if unknown_ahead && matches!(verdict, Some(Verdict::Merge(_))) {
                 status = Status::Queued;

@@ -257,6 +257,35 @@ fn a_pr_waits_for_the_one_it_depends_on() {
 }
 
 #[test]
+fn an_older_pr_depending_on_a_newer_one_sharing_a_file_does_not_deadlock() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    let (first, _, sha) = shipped(&env, &gh, 1, "a.rs");
+    pr(
+        &gh,
+        1,
+        "MERGEABLE",
+        &sha,
+        "## Why\n\nDepends on #3.",
+        json!([]),
+    );
+    let (second, _, _) = shipped(&env, &gh, 2, "a.rs");
+    let (third, _, _) = shipped(&env, &gh, 3, "a.rs");
+
+    let q = queue(&env, &gh);
+    // The walk is dependency-first, then oldest: #2, #3, then #1.
+    assert_eq!(status_of(&q, &second)["status"], "ready");
+    assert_eq!(status_of(&q, &third)["status"], "waits_for");
+    assert_eq!(status_of(&q, &first)["status"], "waits_for");
+
+    pass(&env, &gh);
+    assert_eq!(events(&env, &second, "pr_merged").len(), 1);
+    assert!(events(&env, &first, "pr_merged").is_empty());
+    assert!(events(&env, &third, "pr_merged").is_empty());
+}
+
+#[test]
 fn behind_on_its_own_files_it_is_rebased_first_otherwise_it_merges() {
     let env = Env::initialized();
     let gh = fake_gh(&env);
