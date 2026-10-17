@@ -8,7 +8,7 @@ mod common;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use common::{Env, Reply, commit_file, git, p};
 use insta::assert_json_snapshot;
 use serde_json::{Value, json};
@@ -159,19 +159,36 @@ fn the_watchman_flags_a_silent_item_once() {
     // The main checkout's settings are the ones that count.
     let cfg = env.repo.join(".hallmark.toml");
     let text = std::fs::read_to_string(&cfg).unwrap();
-    std::fs::write(&cfg, format!("stuck_after = \"1s\"\n{text}")).unwrap();
+    std::fs::write(&cfg, format!("stuck_after = \"10m\"\n{text}")).unwrap();
     let (id, wt) = env.new_item("Retry webhooks");
     commit_file(&wt, "retry.rs", "fn retry() {}");
     assert_eq!(env.hall(&wt, &["ready"]).code, 0);
     let script = env.script(json!([]));
     let watchman = ["daemon", "run", "--once", "--only", "watchman"];
+    // The workers' clock is pinned, counted from the item's last event, so
+    // a slow machine can't make "too soon" late.
+    let quiet_since: DateTime<Utc> = env.journal(&id).last().unwrap()["t"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let after = |d: chrono::Duration| quiet_since + d;
 
     // Too soon: nothing to flag.
-    let r = env.hall_fake(&env.repo, &script, &watchman);
+    let r = env.hall_fake_at(
+        &env.repo,
+        &script,
+        after(chrono::Duration::seconds(599)),
+        &watchman,
+    );
     assert_eq!(r.json["steps"][0]["progress"], "idle", "{}", r.stdout);
 
-    hallmark::daemon::nap(Duration::from_millis(1500));
-    let r = env.hall_fake(&env.repo, &script, &watchman);
+    let r = env.hall_fake_at(
+        &env.repo,
+        &script,
+        after(chrono::Duration::minutes(10)),
+        &watchman,
+    );
     assert_eq!(r.json["steps"][0]["progress"], "worked", "{}", r.stdout);
     assert!(
         r.json["steps"][0]["what"].as_str().unwrap().contains(&id),
@@ -185,8 +202,12 @@ fn the_watchman_flags_a_silent_item_once() {
     assert_eq!(last["state"], "checks");
 
     // Flagged once: the next patrol leaves it alone.
-    hallmark::daemon::nap(Duration::from_millis(1100));
-    let r = env.hall_fake(&env.repo, &script, &watchman);
+    let r = env.hall_fake_at(
+        &env.repo,
+        &script,
+        after(chrono::Duration::minutes(30)),
+        &watchman,
+    );
     assert_eq!(r.json["steps"][0]["progress"], "idle", "{}", r.stdout);
     assert_eq!(
         events(&env.journal(&id))

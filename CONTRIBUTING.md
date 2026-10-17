@@ -111,10 +111,13 @@ CI on Windows is the final check.
   change with `!` (`feat!:`) or a `BREAKING CHANGE:` footer.
 - **The PR title must be a conventional commit too.** PRs are squash-merged,
   so the title becomes the commit on `main`, and CI checks it. Release
-  versions come from those commits: `feat` bumps the minor version, anything
-  else the patch, and a breaking change the major
-  ([ADR 0035](docs/decisions/0035-semver-from-conventional-commits.md)).
-- Don't bump the version in `Cargo.toml` or edit `CHANGELOG.md`: after each
+  versions come from those commits. While the version is `0.x`, a breaking
+  change bumps the minor and anything else, `feat` included, the patch;
+  from `1.0`, `feat` bumps the minor and a breaking change the major
+  ([ADR 0040](docs/decisions/0040-a-version-for-every-merge.md)).
+- Don't bump the version in `Cargo.toml` or edit `CHANGELOG.md` (a
+  maintainer starting a new minor or major sets the version by hand, and
+  release-plz keeps it): after each
   merge, release-plz opens a release PR that does both, the workflow merges
   it, and the merge tags `vX.Y.Z`. A tag isn't a GitHub Release: a
   maintainer publishes one, with its binaries and installers, by running

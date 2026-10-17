@@ -39,7 +39,7 @@ pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
     let after = Duration::seconds(
         parse_duration(&repo.config.stuck_after).unwrap_or(DEFAULT_STUCK_AFTER_SECS),
     );
-    let now = Utc::now();
+    let now = crate::worker::now();
     let mut flagged = Vec::new();
     for cand in repo.index()?.items(false)? {
         if !is_stuck(&cand, after, now) {
@@ -48,7 +48,7 @@ pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
         // Decide again under the journal's lock, from the journal itself:
         // the index may trail, and an agent may have just written.
         let (_, did) = repo.hall.transact(cand.id, |item, _| {
-            if !is_stuck(item, after, Utc::now()) {
+            if !is_stuck(item, after, crate::worker::now()) {
                 return Ok((vec![], false));
             }
             let e = Event::new(

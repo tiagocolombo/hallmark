@@ -37,7 +37,7 @@ pub const GAVE_UP: &str = "resume_failed";
 pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
     let repo = ctx.repo;
     let ix = repo.index()?;
-    let defaulted = apply_defaults(repo, &ix, Utc::now())?;
+    let defaulted = apply_defaults(repo, &ix, crate::worker::now())?;
     let ix = if defaulted.is_empty() {
         ix
     } else {

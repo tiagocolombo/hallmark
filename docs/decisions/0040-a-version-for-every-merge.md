@@ -35,6 +35,16 @@ only when we choose to publish one.
   the release PR is merged with the admin bypass of the `RELEASE_PLZ_TOKEN`
   owner. It changes only `Cargo.toml`, `Cargo.lock` and `CHANGELOG.md`, and
   main's CI runs on it after the merge.
+- **How far a version moves.** While the version is `0.x`, a breaking
+  change bumps the minor and everything else, `feat` included, bumps the
+  patch: release-plz's `features_always_increment_minor` is off, as Cargo's
+  semver rules want (`0.1.3` became `0.1.4` on the `feat` PR #55). ADR 0035
+  said `feat` bumps the minor; that holds only from `1.0`. A new minor or
+  major is set by hand: a PR sets `version` in `Cargo.toml`. With the
+  version above the highest tag, release-plz takes it as already bumped
+  ("local version > registry version. Only changelog will be updated" in
+  `release_plz_core`'s updater), so the release PR keeps it, adds only its
+  `CHANGELOG.md` entry, and its merge tags it.
 - **The tag comes first.** The release-PR job runs after the tagging job,
   so on the push of a merged release PR the new tag exists before
   release-plz looks for changes since the last version, and nothing is
