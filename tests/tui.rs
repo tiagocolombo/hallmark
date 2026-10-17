@@ -373,7 +373,14 @@ fn daemon_here() {
         let home = std::env::temp_dir().join(format!("hall-tui-{}", std::process::id()));
         // SAFETY: set once, before any test reads it, from inside the
         // OnceLock that every test passes through first.
-        unsafe { std::env::set_var("HALL_HOME", &home) };
+        unsafe {
+            std::env::set_var("HALL_HOME", &home);
+            // A fixer's or an agent's run sets these; the app's actions are
+            // yours here, and `deny_fixer` would refuse them.
+            for k in ["HALL_HEADLESS", "HALL_ACTOR", "CLAUDECODE"] {
+                std::env::remove_var(k);
+            }
+        };
         hallmark::daemon::state::try_instance_lock()
             .unwrap()
             .expect("a private daemon lock")

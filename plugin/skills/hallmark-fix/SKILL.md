@@ -74,7 +74,8 @@ still blocks until the reviewer withdraws it.
 ## Never
 
 - push, open a PR, or run the ship command;
-- run `hall ready`, `hall verdict`, `hall pull-back` or `hall drop`;
+- run `hall ready`, `hall verdict`, `hall retry`, `hall pull-back` or `hall drop`
+  (`hall` refuses all but `hall pull-back` in your run);
 - edit `.hallmark.toml`, `.hallmark/`, CLAUDE.md or AGENTS.md to make a
   finding go away;
 - weaken, skip or delete tests, loosen assertions, or accept snapshots you

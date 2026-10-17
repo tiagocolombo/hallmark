@@ -838,7 +838,7 @@ pub fn review_comment(item: &Item, events: &[Event], update: bool) -> String {
             reviewer,
             round,
             ..
-        } => Some((summary.clone(), reviewer.clone(), *round)),
+        } => Some((summary.clone(), reviewer.clone(), *round, e.actor.clone())),
         _ => None,
     });
 
@@ -853,7 +853,7 @@ pub fn review_comment(item: &Item, events: &[Event], update: bool) -> String {
         }
     );
     match &approval {
-        Some((summary, reviewer, round)) => {
+        Some((summary, reviewer, round, actor)) => {
             if let Some(t) = summary {
                 let _ = writeln!(s, "{}\n", t.trim());
             }
@@ -868,6 +868,20 @@ pub fn review_comment(item: &Item, events: &[Event], update: bool) -> String {
                     .map(|r| format!(", reviewed by {r}"))
                     .unwrap_or_default()
             );
+            if let Some(who) = crate::assayer::verdict::override_by(actor) {
+                if who == "you" {
+                    let _ = writeln!(
+                        s,
+                        "\n**A human override**: {who} approved it with `hall verdict`; \
+                         the assayer did not."
+                    );
+                } else {
+                    let _ = writeln!(
+                        s,
+                        "\nRecorded by {who} with `hall verdict`, not the assayer."
+                    );
+                }
+            }
         }
         None => {
             let _ = writeln!(s, "Hallmarked after {} rounds.", item.round);
@@ -1123,11 +1137,36 @@ mod tests {
     }
 
     fn verdict(round: u32, kind: &str, found: Vec<Value>, prior: Value) -> Event {
-        ev(
+        let mut e = ev(
             json!({"event": "verdict", "sha": "abc1234", "round": round, "verdict": kind,
             "findings": found, "prior": prior,
             "counts": {"blocker": 0, "major": 0, "minor": 0, "nit": 0}}),
-        )
+        );
+        e.actor = "assayer".into();
+        e
+    }
+
+    #[test]
+    fn a_human_approval_is_named_as_an_override() {
+        let mut events = vec![verdict(1, "approve", vec![], json!([]))];
+        let c = review_comment(&item(None), &events, false);
+        assert!(!c.contains("human override"), "{c}");
+        assert!(!c.contains("`hall verdict`"), "{c}");
+        events[0].actor = "you".into();
+        let c = review_comment(&item(None), &events, false);
+        assert!(
+            c.contains(
+                "**A human override**: you approved it with `hall verdict`; the assayer did not."
+            ),
+            "{c}"
+        );
+        events[0].actor = "agent".into();
+        let c = review_comment(&item(None), &events, false);
+        assert!(!c.contains("human override"), "{c}");
+        assert!(
+            c.contains("Recorded by agent with `hall verdict`, not the assayer."),
+            "{c}"
+        );
     }
 
     /// F1 raised and fixed, shipped, then F2 raised and fixed after `since`.

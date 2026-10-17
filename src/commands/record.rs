@@ -632,9 +632,20 @@ pub fn render_export(repo: &Repo, item: &Item, events: &[Event]) -> String {
         if let Some(note) = crate::stamp::read(&repo.main_root, h) {
             let _ = writeln!(
                 s,
-                "\nRound {} · reviewer {} · open then: {} minor, {} nit · {}",
+                "\nRound {} · reviewer {}{} · open then: {} minor, {} nit · {}",
                 note.round,
                 note.reviewer.as_deref().unwrap_or("unknown"),
+                note.actor
+                    .as_deref()
+                    .and_then(crate::assayer::verdict::override_by)
+                    .map(|who| {
+                        if who == "you" {
+                            format!(" · approved by {who} (a human override)")
+                        } else {
+                            format!(" · approved by {who}, not the assayer")
+                        }
+                    })
+                    .unwrap_or_default(),
                 note.findings.minor,
                 note.findings.nit,
                 time(note.t)
