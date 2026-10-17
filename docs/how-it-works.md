@@ -45,7 +45,8 @@ stateDiagram-v2
     review --> hallmarked: approved
     hallmarked --> closed: rebase onto the base, ship command opens the PR
     hallmarked --> development: rebase conflicts
-    closed --> development: delivery - conflicts or new PR comments
+    closed --> development: delivery - conflicts, new PR comments or red CI
+    development --> closed: delivery - CI passed on a re-run
     loop --> development: hall pull-back
     escalated --> development: hall pull-back
     development --> dropped: hall drop --reason
@@ -64,6 +65,14 @@ An item sent back with a rebase request waits for it: `hall ready` refuses
 while its branch isn't on its base, so review never sees a commit that
 conflicts, and the request stays until the Delivery office (or you) rebases
 it ([ADR 0043](decisions/0043-ready-waits-for-a-pending-rebase.md)).
+
+An item sent back to fix its PR's red CI goes back to the PR, unchanged, if
+the checks pass on a re-run (a flaky test, a runner outage). The Delivery
+office reads the checks again before its fix run, and the CI watch keeps
+reading them while the item waits for you, so a green re-run clears the
+inbox entry without a `hall retry`. The fix run, when one is needed, gets the
+checks that fail now and the failed job's own log
+([ADR 0047](decisions/0047-a-ci-fix-clears-when-ci-goes-green.md)).
 
 State is never stored directly. It is folded from the journal's events
 ([ADR 0008](decisions/0008-state-derived-from-journal.md)), so the journal is

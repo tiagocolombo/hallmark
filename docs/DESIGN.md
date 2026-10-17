@@ -72,7 +72,7 @@ The docs and the terminal app describe Hallmark as a building.
 | Repair Shop | The fixer | Fixing |
 | Stamping Room | The hallmark is struck | Hallmarked |
 | Dispatch Dock | Rebases onto the latest base; the ship command opens the PR, whose description is What, Why and How; `update` updates an adopted or reopened one. Each review is posted as a PR comment (`review_comment`, ADR 0039). If that PR already merged with the hallmarked work in it, the item closes with nothing pushed | Closed |
-| Delivery Office | Watches each shipped PR until it merges; a headless dev run rebases conflicting ones, addresses new review comments (ADR 0030) and fixes red CI (ADR 0031). Once the PR merges or closes, the sweeper removes the item's worktree (ADR 0040) | Closed, Development (rebasing, addressing comments) |
+| Delivery Office | Watches each shipped PR until it merges; a headless dev run rebases conflicting ones, addresses new review comments (ADR 0030) and fixes red CI (ADR 0031); a CI fix whose checks pass on a re-run goes back to its PR without a run (ADR 0047). Once the PR merges or closes, the sweeper removes the item's worktree (ADR 0040) | Closed, Development (rebasing, addressing comments) |
 
 A **watchman** patrols the corridor. It flags any item with no new event for
 `stuck_after` (30 minutes by default), and a daemon that has stopped.
@@ -115,7 +115,8 @@ Transitions:
 | awaiting_you, checks, review, fixing, escalated, hallmarked | `pull-back` | development |
 | hallmarked | shipped (PR opened) | closed |
 | hallmarked | the rebase onto the base conflicts, or changes the patch (`pulled_back`) | development |
-| closed | the PR conflicts, or has new review comments (the Delivery office reopens it) | development |
+| closed | the PR conflicts, has new review comments or red CI (the Delivery office reopens it) | development |
+| development | reopened for red CI, and the checks passed on a re-run with nothing moved (`restored`, ADR 0047) | closed |
 | any non-terminal | `drop --reason` | dropped |
 
 Rules:
@@ -535,7 +536,7 @@ changes (ADR 0030).
 | question | `hall ask` without an answer | that item |
 | escalated | the item is `escalated` | that item |
 | ready? | the item is `awaiting_you` | nothing |
-| budget, run_failed, ship_failed, conflict, feedback, ci_failed | a hold: a per-item cap, two failed runs in a row, a failed ship, a rebase the Delivery office couldn't finish, PR comments or failing CI its dev run didn't act on | that item, until `hall retry` (which, for a budget hold, grants the item more tokens) |
+| budget, run_failed, ship_failed, conflict, feedback, ci_failed | a hold: a per-item cap, two failed runs in a row, a failed ship, a rebase the Delivery office couldn't finish, PR comments or failing CI its dev run didn't act on | that item, until `hall retry` (which, for a budget hold, grants the item more tokens); a `ci_failed` hold also clears when a re-run of the PR's checks passes (ADR 0047) |
 | ci_failed | an open PR's CI still fails after the Delivery office's fixes | a follow-up item |
 | ci_down | CI jobs that never started (an Actions billing limit, no runners): one entry for every PR | GitHub |
 | session waiting | an answer the loop couldn't deliver to the asking session | that session |

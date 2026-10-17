@@ -419,6 +419,15 @@ pub enum Body {
         pr_url: String,
         failing: Vec<FailingCheck>,
     },
+    /// An item reopened to fix its PR's CI went back to the PR unchanged:
+    /// the checks passed on a re-run, so there was nothing to fix (ADR 0047).
+    /// The item is shipped again and its PR watched again.
+    Restored {
+        pr_url: String,
+        /// The PR's head, which is also the branch's.
+        sha: String,
+        reason: String,
+    },
     /// The Delivery office won't fix the red PR itself (someone else pushed
     /// to it, or its worktree is missing or dirty): it waits for you.
     CiFixDeclined {
@@ -526,6 +535,7 @@ impl Body {
             Body::Rebased { .. } => "rebased",
             Body::RebaseRequested { .. } => "rebase_requested",
             Body::CiFixRequested { .. } => "ci_fix_requested",
+            Body::Restored { .. } => "restored",
             Body::CiFixDeclined { .. } => "ci_fix_declined",
             Body::Delivered { .. } => "delivered",
             Body::WorktreeRemoved { .. } => "worktree_removed",
@@ -555,6 +565,7 @@ impl Body {
             Body::Shipped { .. } => Action::Ship,
             Body::Merged { .. } => Action::Merge,
             Body::Reopened { .. } => Action::Reopen,
+            Body::Restored { .. } => Action::Restore,
             _ => return None,
         })
     }
@@ -793,6 +804,13 @@ impl Body {
                     50
                 )
             ),
+            Body::Restored {
+                pr_url,
+                sha,
+                reason,
+            } => {
+                format!("back on {pr_url} at {} · {}", short(sha), c(reason, 80))
+            }
             Body::CiFixDeclined { pr_url, reason } => {
                 format!("CI fix declined · {pr_url} · {reason}")
             }

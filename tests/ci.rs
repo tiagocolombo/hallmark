@@ -18,7 +18,7 @@ use serde_json::{Value, json};
 const URL: &str = "https://github.com/acme/app/pull/1";
 
 /// A fake `gh`: `pr checks`, `pr view`, `run view` and `api` answer from
-/// files the test writes.
+/// files the test writes. A job's log comes from the API.
 fn fake_gh(env: &Env) -> PathBuf {
     use std::os::unix::fs::PermissionsExt;
     let dir = env.root.join("gh-fake");
@@ -28,7 +28,7 @@ fn fake_gh(env: &Env) -> PathBuf {
     std::fs::write(
         &gh,
         format!(
-            "#!/bin/sh\ncase \"$1 $2\" in\n  'pr checks') cat '{d}/checks.json' ;;\n  'pr view') case \"$*\" in *--jq*) cat '{d}/state.txt' ;; *) cat '{d}/pr.json' ;; esac ;;\n  'run view') cat '{d}/log.txt' ;;\n  api*) case \"$2\" in *actions/jobs/*) cat '{d}/job.json' 2>/dev/null || echo '[]' ;; *annotations) cat '{d}/annotations.json' 2>/dev/null || echo '[]' ;; *) echo '[]' ;; esac ;;\n  *) exit 1 ;;\nesac\n"
+            "#!/bin/sh\ncase \"$1 $2\" in\n  'pr checks') cat '{d}/checks.json' ;;\n  'pr view') case \"$*\" in *--jq*) cat '{d}/state.txt' ;; *) cat '{d}/pr.json' ;; esac ;;\n  'run view') cat '{d}/log.txt' ;;\n  api*) case \"$*\" in *actions/jobs/*/logs) cat '{d}/log.txt'; exit ;; esac; case \"$2\" in *actions/jobs/*) cat '{d}/job.json' 2>/dev/null || echo '[]' ;; *annotations) cat '{d}/annotations.json' 2>/dev/null || echo '[]' ;; *) echo '[]' ;; esac ;;\n  *) exit 1 ;;\nesac\n"
         ),
     )
     .unwrap();

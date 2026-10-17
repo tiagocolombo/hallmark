@@ -14,7 +14,8 @@ use serde_json::{Value, json};
 
 const URL: &str = "https://github.com/acme/app/pull/1";
 
-/// A fake `gh`: `pr view` prints `pr.json`, every call is logged.
+/// A fake `gh`: `pr view` prints `pr.json`, `pr checks` prints
+/// `checks.json` (and fails without it), every call is logged.
 fn fake_gh(env: &Env) -> PathBuf {
     use std::os::unix::fs::PermissionsExt;
     let dir = env.root.join("gh-fake");
@@ -24,7 +25,7 @@ fn fake_gh(env: &Env) -> PathBuf {
     std::fs::write(
         &gh,
         format!(
-            "#!/bin/sh\necho \"$*\" >> '{d}/calls.log'\ncase \"$1 $2\" in\n  'pr view') case \"$*\" in *--jq*) cat '{d}/state.txt' ;; *) cat '{d}/pr.json' ;; esac ;;\n  'pr edit'|'pr comment') echo '{URL}#issuecomment-9' ;;\n  *) exit 1 ;;\nesac\n"
+            "#!/bin/sh\necho \"$*\" >> '{d}/calls.log'\ncase \"$1 $2\" in\n  'pr view') case \"$*\" in *--jq*) cat '{d}/state.txt' ;; *) cat '{d}/pr.json' ;; esac ;;\n  'pr edit'|'pr comment') echo '{URL}#issuecomment-9' ;;\n  'pr checks') cat '{d}/checks.json' 2>/dev/null || exit 1 ;;\n  *) exit 1 ;;\nesac\n"
         ),
     )
     .unwrap();
@@ -943,6 +944,228 @@ fn a_red_pr_the_office_wont_touch_escalates() {
     // Not repeated on the next tick.
     pass(&env, &gh, "delivery-watch", json!([]));
     assert_eq!(events(&env, &id, "ci_fix_declined").len(), 1);
+}
+
+// --- ADR 0047: a CI fix request clears when the PR's checks go green -----
+
+/// The PR's checks, as `gh pr checks --json` prints them.
+fn checks(gh: &Path, bucket: &str, name: &str) {
+    let v = json!([{"name": name, "bucket": bucket,
+                    "link": "https://github.com/acme/app/actions/runs/1/job/2"}]);
+    std::fs::write(gh.parent().unwrap().join("checks.json"), v.to_string()).unwrap();
+}
+
+/// A shipped item reopened by the Delivery office to fix its red CI.
+fn reopened_for_ci(env: &Env, gh: &Path) -> (String, PathBuf, String) {
+    let (id, wt, sha) = hallmarked_item(env, "Retry webhooks");
+    pass(env, gh, "shipper", json!([]));
+    ci_failed(env, &id);
+    pr(gh, "OPEN", "MERGEABLE", &sha);
+    pass(env, gh, "delivery-watch", json!([]));
+    assert_eq!(state(env, &id), "development");
+    assert_eq!(events(env, &id, "ci_fix_requested").len(), 1);
+    (id, wt, sha)
+}
+
+#[test]
+fn a_ci_fix_whose_checks_passed_on_a_re_run_goes_back_to_its_pr_without_a_run() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    remote_with_main(&env);
+    let (id, _, sha) = reopened_for_ci(&env, &gh);
+    // Someone re-ran the failed job on GitHub, and it passed.
+    checks(&gh, "pass", "test (windows-latest)");
+    let step = pass(&env, &gh, "delivery", json!([]));
+    assert!(step["what"].as_str().unwrap().contains("back on"), "{step}");
+    assert!(env.fake_calls().is_empty(), "no dev run");
+    assert_eq!(state(&env, &id), "closed");
+    let restored = events(&env, &id, "restored");
+    assert_eq!(restored.len(), 1);
+    assert_eq!(restored[0]["sha"], sha.as_str());
+    let checks = events(&env, &id, "pr_checks");
+    assert_eq!(checks.last().unwrap()["passed"], true);
+    let status = env.hall(&env.repo, &["status", &id]);
+    assert_eq!(status.json["ci_fix"], Value::Null, "{}", status.stdout);
+    let inbox = env.hall(&env.repo, &["inbox"]);
+    assert_eq!(inbox.json["entries"], json!([]), "{}", inbox.stdout);
+    // Its PR is watched again: the merge is seen.
+    forget(&env);
+    pr(&gh, "MERGED", "UNKNOWN", &sha);
+    pass(&env, &gh, "delivery-watch", json!([]));
+    assert_eq!(events(&env, &id, "delivered").len(), 1);
+}
+
+#[test]
+fn a_held_ci_fix_clears_when_a_re_run_passes() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    remote_with_main(&env);
+    let (id, _, _) = reopened_for_ci(&env, &gh);
+    checks(&gh, "fail", "test (windows-latest)");
+    pass(
+        &env,
+        &gh,
+        "delivery",
+        json!([{"role": "fixer", "result": "A flaky runner test; nothing to fix here."}]),
+    );
+    assert_eq!(
+        events(&env, &id, "held").last().unwrap()["kind"],
+        "ci_failed"
+    );
+    // The re-run passes: the CI watch sends it back, and the inbox clears.
+    checks(&gh, "pass", "test (windows-latest)");
+    let step = pass(&env, &gh, "ci", json!([]));
+    assert!(step["what"].as_str().unwrap().contains("back on"), "{step}");
+    assert_eq!(state(&env, &id), "closed");
+    let inbox = env.hall(&env.repo, &["inbox"]);
+    assert_eq!(inbox.json["entries"], json!([]), "{}", inbox.stdout);
+}
+
+#[test]
+fn a_ci_fix_waits_while_ci_runs_again() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    remote_with_main(&env);
+    let (id, _, _) = reopened_for_ci(&env, &gh);
+    checks(&gh, "pending", "test (windows-latest)");
+    pass(&env, &gh, "delivery", json!([]));
+    assert!(env.fake_calls().is_empty(), "no dev run");
+    let held = events(&env, &id, "held");
+    let reason = held.last().unwrap()["reason"].as_str().unwrap().to_string();
+    assert!(reason.contains("running again"), "{reason}");
+    // Still running: nothing moves.
+    pass(&env, &gh, "ci", json!([]));
+    assert_eq!(state(&env, &id), "development");
+    checks(&gh, "pass", "test (windows-latest)");
+    let _ = std::fs::remove_file(env.repo.join(".git/hallmark/ci-watch.json"));
+    pass(&env, &gh, "ci", json!([]));
+    assert_eq!(state(&env, &id), "closed");
+}
+
+#[test]
+fn a_ci_fix_is_given_the_checks_that_fail_now() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    remote_with_main(&env);
+    let (id, _, _) = reopened_for_ci(&env, &gh);
+    // The re-run failed elsewhere.
+    checks(&gh, "fail", "test (macos-latest)");
+    let fixes = json!([{
+        "role": "fixer",
+        "files": {"retry.rs": "fn retry() {\n    deliver(); // portable\n}\n"},
+        "run": ["git commit -qam 'Fix the macOS test'"],
+        "result": "fixed"
+    }]);
+    pass(&env, &gh, "delivery", fixes);
+    assert_eq!(state(&env, &id), "checks");
+    let call = env.fake_calls().last().unwrap().to_string();
+    assert!(call.contains("test (macos-latest)"), "{call}");
+    assert!(!call.contains("test (windows-latest)"), "{call}");
+}
+
+#[test]
+fn a_green_pr_whose_branch_moved_waits_for_you() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    remote_with_main(&env);
+    let (id, wt, _) = reopened_for_ci(&env, &gh);
+    commit_file(&wt, "retry.rs", "fn retry() {\n    deliver_twice();\n}\n");
+    checks(&gh, "pass", "test (windows-latest)");
+    pass(&env, &gh, "delivery", json!([]));
+    assert!(env.fake_calls().is_empty(), "no dev run");
+    assert_eq!(state(&env, &id), "development");
+    assert!(events(&env, &id, "restored").is_empty());
+    let held = events(&env, &id, "held");
+    let reason = held.last().unwrap()["reason"].as_str().unwrap().to_string();
+    assert!(reason.contains("hall ready"), "{reason}");
+    // The CI watch leaves it alone too.
+    pass(&env, &gh, "ci", json!([]));
+    assert_eq!(state(&env, &id), "development");
+}
+
+/// A held CI fix: the fix run changed nothing while a check failed.
+fn held_ci_fix(env: &Env, gh: &Path) -> (String, PathBuf, String) {
+    let (id, wt, sha) = reopened_for_ci(env, gh);
+    checks(gh, "fail", "test (windows-latest)");
+    pass(
+        env,
+        gh,
+        "delivery",
+        json!([{"role": "fixer", "result": "A flaky runner test; nothing to fix here."}]),
+    );
+    assert_eq!(
+        events(env, &id, "held").last().unwrap()["kind"],
+        "ci_failed"
+    );
+    (id, wt, sha)
+}
+
+#[test]
+fn a_green_pr_someone_else_pushed_to_stays_in_development() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    remote_with_main(&env);
+    let (id, _, _) = reopened_for_ci(&env, &gh);
+    pr(
+        &gh,
+        "OPEN",
+        "MERGEABLE",
+        "feedfacefeedfacefeedfacefeedfacefeedface",
+    );
+    checks(&gh, "pass", "test (windows-latest)");
+    // The delivery worker: no dev run, no restore, and the hold names the push.
+    pass(&env, &gh, "delivery", json!([]));
+    assert!(env.fake_calls().is_empty(), "no dev run");
+    assert_eq!(state(&env, &id), "development");
+    assert!(events(&env, &id, "restored").is_empty());
+    let held = events(&env, &id, "held");
+    let reason = held.last().unwrap()["reason"].as_str().unwrap().to_string();
+    assert!(reason.contains("someone pushed"), "{reason}");
+    assert!(reason.contains("bring the PR's commits"), "{reason}");
+}
+
+#[test]
+fn the_ci_watch_does_not_restore_a_held_fix_someone_else_pushed_to() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    remote_with_main(&env);
+    let (id, _, _) = held_ci_fix(&env, &gh);
+    pr(
+        &gh,
+        "OPEN",
+        "MERGEABLE",
+        "feedfacefeedfacefeedfacefeedfacefeedface",
+    );
+    checks(&gh, "pass", "test (windows-latest)");
+    forget(&env);
+    pass(&env, &gh, "ci", json!([]));
+    assert_eq!(state(&env, &id), "development");
+    assert!(events(&env, &id, "restored").is_empty());
+}
+
+#[test]
+fn a_held_ci_fix_being_edited_by_hand_is_not_restored() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    remote_with_main(&env);
+    let (id, wt, _) = held_ci_fix(&env, &gh);
+    std::fs::write(wt.join("retry.rs"), "fn retry() { /* wip */ }\n").unwrap();
+    checks(&gh, "pass", "test (windows-latest)");
+    pass(&env, &gh, "ci", json!([]));
+    assert_eq!(state(&env, &id), "development");
+    assert!(events(&env, &id, "restored").is_empty());
+}
+
+#[test]
+fn the_ci_watch_leaves_a_ci_fix_that_is_not_held_to_the_delivery_worker() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    remote_with_main(&env);
+    let (id, _, _) = reopened_for_ci(&env, &gh);
+    checks(&gh, "pass", "test (windows-latest)");
+    pass(&env, &gh, "ci", json!([]));
+    assert_eq!(state(&env, &id), "development");
+    assert!(events(&env, &id, "restored").is_empty());
 }
 
 #[test]

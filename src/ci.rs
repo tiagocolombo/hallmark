@@ -65,20 +65,31 @@ struct Watch {
     noted: std::collections::BTreeSet<String>,
 }
 
-/// The shipped items whose PR checks haven't finished, oldest check first.
+/// The shipped items whose PR checks haven't finished, oldest check first,
+/// and the items reopened to fix their PR's CI that wait for you (ADR 0047):
+/// a re-run that passes sends them back to the PR.
 pub fn watched(items: &[Item], now: DateTime<Utc>) -> Vec<Item> {
     items
         .iter()
         .filter(|i| {
-            i.state == State::Closed
+            (i.state == State::Development
+                && i.ci_fix.is_some()
+                && i.rebase.is_none()
+                && i.feedback.is_none()
+                && i.parent.is_none()
                 && i.pr_url.as_deref().is_some_and(|u| u.contains("/pull/"))
-                && match &i.ci {
-                    None => now - i.state_since < Duration::hours(GIVE_UP_HOURS),
-                    // A failed PR is watched until it turns green or closes.
-                    // An outage or a PR the office gave up on stays watched
-                    // while it is open, so a green re-run clears its entry.
-                    Some(c) => {
-                        !c.passed
+                && i.hold
+                    .as_ref()
+                    .is_some_and(|h| now - h.since < Duration::hours(GIVE_UP_HOURS)))
+                || i.state == State::Closed
+                    && i.pr_url.as_deref().is_some_and(|u| u.contains("/pull/"))
+                    && match &i.ci {
+                        None => now - i.state_since < Duration::hours(GIVE_UP_HOURS),
+                        // A failed PR is watched until it turns green or closes.
+                        // An outage or a PR the office gave up on stays watched
+                        // while it is open, so a green re-run clears its entry.
+                        Some(c) => {
+                            !c.passed
                             && c.ended.is_none()
                             // A merged PR whose last record is red is read once
                             // more: it either went green or its end is recorded.
@@ -87,8 +98,8 @@ pub fn watched(items: &[Item], now: DateTime<Utc>) -> Vec<Item> {
                                 || i.ci_fixes >= crate::delivery::CI_FIXES
                                 || i.ci_declined.is_some()
                                 || now - c.t < Duration::hours(GIVE_UP_HOURS))
+                        }
                     }
-                }
         })
         .cloned()
         .collect()
@@ -154,6 +165,31 @@ pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
             return Ok(Progress::Idle);
         }
     };
+    // Reopened to fix CI and waiting for you: green on a re-run, and nothing
+    // moved, sends it back to its PR. Anything else stays yours.
+    if item.state == State::Development {
+        if conclude(&checks) == Outcome::Passed {
+            match crate::delivery::off_the_pr(repo, &item) {
+                None => {
+                    return crate::delivery::restore(
+                        repo,
+                        &item,
+                        "CI passed on a re-run; nothing to fix",
+                    );
+                }
+                Some(why) => {
+                    if watch.noted.insert(format!("off-{}-{}", item.id, why)) {
+                        repo.hall.live(&format!(
+                            "{} CI passes on {url} now, but {why}; it waits for you",
+                            item.id
+                        ));
+                        let _ = std::fs::write(&path, serde_json::to_string(&watch)?);
+                    }
+                }
+            }
+        }
+        return Ok(Progress::Idle);
+    }
     // After a failure the watch goes on while the PR is open: a re-run that
     // goes green, or a fix pushed on GitHub, clears the inbox entry.
     if item.ci.as_ref().is_some_and(|c| !c.passed) {
