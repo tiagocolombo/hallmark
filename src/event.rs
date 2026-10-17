@@ -434,6 +434,13 @@ pub enum Body {
         pr_url: String,
         reason: String,
     },
+    /// The merger merged the shipped PR at its hallmarked head (ADR 0048).
+    /// The Delivery office's watch then records `delivered`.
+    PrMerged {
+        pr_url: String,
+        /// The PR's head the merge was matched against.
+        sha: String,
+    },
     /// The shipped PR left the open state: `merged` or `closed`. The
     /// Delivery office stops watching it.
     Delivered {
@@ -537,6 +544,7 @@ impl Body {
             Body::CiFixRequested { .. } => "ci_fix_requested",
             Body::Restored { .. } => "restored",
             Body::CiFixDeclined { .. } => "ci_fix_declined",
+            Body::PrMerged { .. } => "pr_merged",
             Body::Delivered { .. } => "delivered",
             Body::WorktreeRemoved { .. } => "worktree_removed",
             Body::FeedbackRequested { .. } => "feedback_requested",
@@ -814,6 +822,7 @@ impl Body {
             Body::CiFixDeclined { pr_url, reason } => {
                 format!("CI fix declined · {pr_url} · {reason}")
             }
+            Body::PrMerged { pr_url, sha } => format!("merged {} · {pr_url}", short(sha)),
             Body::Delivered { pr_url, outcome } => format!("PR {outcome} · {pr_url}"),
             Body::WorktreeRemoved { path } => format!("worktree removed · {path}"),
             Body::FeedbackRequested { comments, .. } => format!(
@@ -903,6 +912,8 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
         ci_fixes: 0,
         ci_declined: None,
         delivered: None,
+        merged: None,
+        merge_approved: None,
         own_worktree: own_worktree.unwrap_or(!*adopted),
         swept: false,
     };
@@ -959,7 +970,21 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
                     since: e.t,
                 })
             }
-            Body::Released { .. } => item.hold = None,
+            Body::Released { .. } => {
+                // Releasing a lit hold is your approval to merge that head.
+                if item.hold.as_ref().is_some_and(|h| h.kind == HoldKind::Lit) {
+                    item.merge_approved = item.pr_head.clone();
+                }
+                // A retried merge that never landed tries again.
+                if item
+                    .hold
+                    .as_ref()
+                    .is_some_and(|h| h.kind == HoldKind::MergeFailed)
+                {
+                    item.merged = None;
+                }
+                item.hold = None
+            }
             Body::PrChecks {
                 passed,
                 failing,
@@ -998,6 +1023,8 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
                 item.own_worktree &= item.worktree == *worktree;
                 item.swept = false;
                 item.delivered = None;
+                item.merged = None;
+                item.merge_approved = None;
                 item.worktree = worktree.clone();
                 item.pr_url = Some(pr_url.clone());
                 item.pr_head = Some(pr_head.clone());
@@ -1022,6 +1049,7 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
                 })
             }
             Body::CiFixDeclined { reason, .. } => item.ci_declined = Some(reason.clone()),
+            Body::PrMerged { sha, .. } => item.merged = Some(sha.clone()),
             Body::Delivered { outcome, .. } => item.delivered = Some(outcome.clone()),
             Body::WorktreeRemoved { .. } => item.swept = true,
             Body::FeedbackRequested { comments, .. } => {

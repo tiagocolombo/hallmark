@@ -2,7 +2,8 @@
 
 Status: Accepted, 2026-10-11. Amended by 0039: an update of the PR doesn't
 rewrite its description; the review goes in a new comment. Amended by 0043:
-`hall ready` waits while a rebase is pending.
+`hall ready` waits while a rebase is pending. Amended by 0048: the merger
+merges ready PRs, and reopens the next one in line when it is behind.
 
 ## Context
 

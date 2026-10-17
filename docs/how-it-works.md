@@ -21,7 +21,7 @@ macOS, `xdg-open` on Linux, `start` on Windows).
 | Repair Shop | A fixer addresses failing checks and findings | the fixer |
 | Stamping Room | The approved commit gets its hallmark, a git note | the assayer |
 | Dispatch Dock | Rebases onto the latest base, then the ship command opens the PR with a What, Why and How description (or `update` updates an adopted one), posts the review as a PR comment, and the item closes | the shipper |
-| Delivery Office | Watches each PR until it merges. A conflict or new review comments send it back to development, where a headless dev run rebases it or addresses them and sends it to review. Once the PR merges or closes, the item's worktree is removed; its branch and journal stay | the delivery and delivery-watch workers, the CI watch, the sweeper |
+| Delivery Office | Watches each PR until it merges. A conflict or new review comments send it back to development, where a headless dev run rebases it or addresses them and sends it to review. With the merger on, it merges each ready PR itself, one at a time, in dependency order. Once the PR merges or closes, the item's worktree is removed; its branch and journal stay | the delivery and delivery-watch workers, the merger, the CI watch, the sweeper |
 
 ## An item's states
 
@@ -98,8 +98,10 @@ From the replay in the design page:
 7. **10:46** The review approves, and the commit gets its hallmark.
 8. **10:47** The shipper opens PR #191 and the item closes. The whole record
    stays in the journal.
-9. **11:30** PR #191 merges. The Delivery office records it, and the sweeper
-   removes H-0042's worktree. The branch stays
+9. **11:30** PR #191 merges: you merge it, or, with `[merge] mode = "auto"`,
+   the merger does once its CI is green and nothing ahead of it in the queue
+   is ready ([ADR 0048](decisions/0048-the-merger.md)). The Delivery office
+   records it, and the sweeper removes H-0042's worktree. The branch stays
    ([ADR 0040](decisions/0040-sweep-finished-worktrees.md)).
 
 Steps 5–9 are the daemon's work. Each model run in them (the review, a fix)
@@ -107,6 +109,38 @@ is a headless `claude -p` run, and it streams into the item's `runs/`
 directory as it goes: one file per run, with what the agent read, ran and
 said, ended by a line saying how the run ended
 ([ADR 0041](decisions/0041-watch-runs-live.md)).
+
+## The merge queue
+
+The merger is the Delivery office's last step, off until you set
+`[merge] mode = "auto"` ([ADR 0048](decisions/0048-the-merger.md)). It looks
+at the open shipped PRs on each base, oldest first, and merges the first one
+that is ready:
+
+- its head is the commit Hallmark shipped, with its hallmark;
+- GitHub says it is mergeable;
+- CI passed at that head, unless `[merge] require_ci = false`;
+- nobody asked for changes on it;
+- nothing it depends on is still open: the PR it is stacked on, and any PR
+  its description or commits name with `Depends on #N`, `Blocked by #N` or
+  `After #N`;
+- it touches no `[merge] lit` path;
+- it is up to date: it contains its base, or the commits it lacks touch none
+  of its files. A release commit that only bumps the version doesn't send
+  every PR back.
+
+When the next PR in line is behind on its own files, the merger reopens it
+with a rebase request, and the Delivery office rebases it, runs the gates and
+updates the PR. Only one PR per base is brought up to date at a time; fresh
+PRs keep merging meanwhile. After a merge, nothing else on that base merges until the
+merge is recorded, so each PR is judged against the base as it really is.
+`hall queue` shows the order and why each PR waits.
+
+A script decides each step, never a model. That is what lets this loop run
+with nobody watching: its check is cheap, runs often and is hard to game.
+Paths where a wrong merge is expensive stay with you: a PR that touches a
+`[merge] lit` path waits in your inbox, and `hall retry` lets the merger
+merge it.
 
 ## Parallel parts
 
@@ -160,8 +194,9 @@ extension with its author, source and license.
 
 Only escalations land in Your Office as inbox entries: a question from an
 agent, an escalation after repeated rejections, "looks done?", a budget hold,
-CI that still fails after the Delivery office's two fixes, or CI that never
-started (one `ci_down` entry). Hallmark tells you in Claude Code (a hook and
+a merge the merger couldn't do (`merge_failed`), a ready PR that touches a
+`[merge] lit` path (`lit`), CI that still fails after the Delivery office's
+two fixes, or CI that never started (one `ci_down` entry). Hallmark tells you in Claude Code (a hook and
 the status line), in the terminal app, with a desktop notification, and on
 your phone through [ntfy](https://ntfy.sh), Telegram or Slack, plus an
 optional morning digest.

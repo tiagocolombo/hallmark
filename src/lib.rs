@@ -30,6 +30,7 @@ pub mod item;
 pub mod journal;
 pub mod lease;
 pub mod library;
+pub mod merger;
 pub mod notify;
 pub mod now;
 pub mod output;

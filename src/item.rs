@@ -263,6 +263,14 @@ pub struct Item {
     /// Delivery office watches it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub delivered: Option<String>,
+    /// The PR head the merger merged (ADR 0048); the watch then records
+    /// `delivered`. Cleared when the item reopens.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merged: Option<String>,
+    /// The PR head you let the merger merge although it touches a `lit`
+    /// path (`hall retry` on its `lit` hold). Cleared when the item reopens.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merge_approved: Option<String>,
     /// False when the worktree is a checkout the user made and adopted; the
     /// sweeper leaves it alone.
     #[serde(default = "own_default")]
@@ -346,6 +354,11 @@ pub enum HoldKind {
     /// The shipped PR's CI failed and the Delivery office's dev run
     /// couldn't fix it.
     CiFailed,
+    /// The merge command failed (ADR 0048).
+    MergeFailed,
+    /// The PR is ready to merge but touches a `[merge] lit` path, so a
+    /// person merges it, or lets the merger with `hall retry`.
+    Lit,
     /// Anything else that needs a person.
     Other,
 }
@@ -359,6 +372,8 @@ impl HoldKind {
             HoldKind::Conflict => "conflict",
             HoldKind::Feedback => "feedback",
             HoldKind::CiFailed => "ci_failed",
+            HoldKind::MergeFailed => "merge_failed",
+            HoldKind::Lit => "lit",
             HoldKind::Other => "other",
         }
     }

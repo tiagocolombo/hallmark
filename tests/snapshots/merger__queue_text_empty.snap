@@ -1,0 +1,6 @@
+---
+source: tests/merger.rs
+expression: empty.render()
+---
+Merge queue (merger off):
+  no open PRs

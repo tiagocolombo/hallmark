@@ -755,6 +755,9 @@ fn tag(item: &Item) -> (String, Color) {
         // Delivery: the PR and its CI, while the office watches it.
         State::Closed if crate::delivery::is_watched(item) => {
             let pr = pr_number(item).unwrap_or_else(|| "PR".into());
+            if item.merged.is_some() {
+                return (format!("{pr} merging"), OK);
+            }
             match &item.ci {
                 Some(ci) if !ci.passed => (format!("{pr} ci ✗"), STOP),
                 Some(_) => (format!("{pr} ci ✓"), OK),

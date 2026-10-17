@@ -1,0 +1,15 @@
+---
+source: tests/merger.rs
+expression: out.render()
+---
+Merge queue (merger on, CI not required):
+  into main:
+  ✓  1. H-0001 #1 Change H-0001
+       merging: merged at abc1234
+  →  2. H-0002 #2 Change H-0002
+       ready: ready: hallmarked
+     3. H-0003 #3 Change H-0003
+       lit: waiting for you: ci.yml
+  into hm/H-0002-x:
+     1. H-0004 #4 Change H-0004
+       waits for: waits for #2

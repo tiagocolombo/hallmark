@@ -104,6 +104,9 @@ pub enum Cmd {
     Merge(MergeArgs),
     /// Closed and dropped items, and why things were rejected.
     History(HistoryArgs),
+    /// The merge queue: every open shipped PR in the order the merger
+    /// merges them, and why each one waits.
+    Queue,
     /// An item's whole record as Markdown.
     Export(ExportArgs),
     /// Show or set the budget caps, with today's spend.
@@ -853,6 +856,7 @@ pub fn run_in_app(args: &[String], cwd: &std::path::Path) -> Result<Response> {
             | Cmd::Inbox(_)
             | Cmd::Findings(_)
             | Cmd::History(_)
+            | Cmd::Queue
             | Cmd::Export(_)
             | Cmd::Usage(_),
         ) => true,
@@ -906,6 +910,7 @@ fn dispatch(cmd: Option<Cmd>, cwd: &std::path::Path, mode: Mode) -> Result<Respo
         Some(Cmd::Verdict(a)) => review::verdict(cwd, a),
         Some(Cmd::Merge(a)) => merge::merge(cwd, a),
         Some(Cmd::History(a)) => record::history(cwd, a),
+        Some(Cmd::Queue) => queue::queue(cwd),
         Some(Cmd::Export(a)) => record::export(cwd, a),
         Some(Cmd::Budget(a)) => budget::budget(cwd, a),
         Some(Cmd::Notify(a)) => notify::notify(cwd, a),

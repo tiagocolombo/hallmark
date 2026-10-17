@@ -1,6 +1,6 @@
 [package]
 name = "hallmark"
-version = "0.1.7"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.88"
 description = "A local, agent-first development loop: agents build, an independent reviewer approves, every step is recorded."

@@ -115,6 +115,8 @@ mod tests {
             ci_fixes: 0,
             ci_declined: None,
             delivered: None,
+            merged: None,
+            merge_approved: None,
             own_worktree: true,
             swept: false,
             hold: None,

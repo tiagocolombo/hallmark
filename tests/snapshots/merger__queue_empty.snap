@@ -1,0 +1,13 @@
+---
+source: tests/merger.rs
+expression: empty.json
+---
+{
+  "mode": "off",
+  "next": [
+    "hall config set merge.mode auto",
+    "hall daemon status"
+  ],
+  "queue": [],
+  "require_ci": true
+}

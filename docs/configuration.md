@@ -63,6 +63,12 @@ ship   = 2
 mode = "gate"   # gate: edits need an item · ask: Claude asks you · off
 free = ["docs/", "*.md"]   # paths that need no item
 
+[merge]                     # the merger: shipped PRs merge without you
+mode       = "off"          # or "auto"
+command    = "gh pr merge {pr} --squash --match-head-commit {pr_head}"
+require_ci = true           # false: merge without waiting for CI
+lit        = []             # paths a person merges, as globs
+
 [intake]
 split     = "auto"   # or "off"
 max_parts = 4
@@ -87,6 +93,45 @@ retire_after   = "90d"
 # Learnings live in <git-common-dir>/hallmark/library/, never in the repo.
 # `hall library import` brings in ones committed by earlier versions.
 ```
+
+## Merging
+
+The merger is the Delivery office's last step: with `mode = "auto"` it merges
+each shipped PR once it is ready, one at a time per base, so nobody has to
+press Merge ([ADR 0048](decisions/0048-the-merger.md)). It is off by
+default: turning it on is the loop's switch from lit to dark, and you choose
+it per repo. `hall queue` shows the order and why each PR waits, on or off.
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `merge.mode` | `off` | `auto`: the merger merges. `off`: you do. |
+| `merge.command` | `gh pr merge {pr} --squash --match-head-commit {pr_head}` | Merges one PR, run in the main checkout. Placeholders: `{pr}` (the PR's URL) `{pr_head}` (the hallmarked head it must still be at) `{branch}` `{base}` `{id}` `{title}`. |
+| `merge.require_ci` | `true` | Wait for the PR's CI to pass at the shipped head. `false`: merge once the PR is hallmarked, mergeable and up to date, whatever CI says. |
+| `merge.lit` | `[]` | Paths a person merges, as globs relative to the repo root (`.github/`, `release-plz.toml`). A PR that touches one waits in your inbox (`lit`); `hall retry` lets the merger merge that head. |
+
+A PR is ready when its head is the commit Hallmark shipped and carries a
+hallmark, GitHub calls it mergeable, CI passed at that head (unless
+`require_ci = false`), nobody asked for changes, nothing it depends on is
+still open, it touches no `lit` path, and it is up to date: it contains its
+base, or the commits it lacks touch none of its files. A PR waits for the
+PR it is stacked on, and for any PR its description or commits name with
+`Depends on #N`, `Blocked by #N` or `After #N`. Otherwise the oldest PR goes
+first.
+
+**The PR's author can't approve it.** GitHub refuses an approving review
+from the PR's author, and Hallmark posts none: the hallmark is the approval.
+When the base branch requires an approving review, merge with an account that
+may bypass it, such as the repository owner's, by adding `--admin`:
+
+```toml
+[merge]
+mode    = "auto"
+command = "gh pr merge {pr} --squash --admin --match-head-commit {pr_head}"
+lit     = [".github/", "release-plz.toml"]
+```
+
+`--admin` also skips required checks, so `require_ci = false` with it merges
+a PR whose CI is red, and only the base branch's own CI says so afterwards.
 
 ## Extensions
 
@@ -118,6 +163,7 @@ and follow it at once.
 | `ship` | `{branch}` `{id}` `{base}` `{title}` `{body_file}` (the PR description: What, Why and How) `{review_file}` (the review) `{issue}` |
 | `update` | those of `ship`, plus `{pr}` (the PR's URL) and `{pr_head}` (the commit the PR's head was at when the item took it over or last shipped; or the branch's head on `origin` when this item hallmarked that commit, as after an update that pushed and then failed, ADR 0042) |
 | `review_comment` | `{pr}` (the PR's URL) `{review_file}` `{branch}` `{id}` `{base}` |
+| `merge.command` | `{pr}` (the PR's URL) `{pr_head}` (the hallmarked head) `{branch}` `{base}` `{id}` `{title}` |
 | `fixer` | `{id}` `{worktree}` `{findings_file}` (JSON from `hall findings`) |
 
 Commands run through `sh -c` on macOS and Linux and `cmd /C` on Windows.

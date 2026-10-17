@@ -589,6 +589,16 @@ pub fn explain(repo: &Repo, ix: &Index, entry: InboxEntry, number: usize) -> Res
                     "A model run failed twice in a row, so the loop stopped working on it."
                 }
                 "ship_failed" => "The ship command failed, so it hasn't been pushed.",
+                "merge_failed" => {
+                    "The merger's merge command failed, so its PR is still open. Read the \
+                     merge log in its runs, fix the cause, then `hall retry` to let the merger \
+                     try again, or merge it yourself."
+                }
+                "lit" => {
+                    "Its PR is ready to merge, but it touches a `[merge] lit` path, so a person \
+                     merges it. Merge it yourself, or `hall retry` to let the merger merge this \
+                     head."
+                }
                 "feedback" => {
                     "Its PR has new comments, and the Delivery office's dev run didn't change \
                      anything for them (questions, or it disagrees). Reply on the PR, or address \
