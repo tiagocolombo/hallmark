@@ -320,10 +320,10 @@ fn resume_one(ctx: &WorkerCtx, ix: &Index) -> Result<Option<Progress>> {
     match runner::run_metered(repo, ctx.runner, p.q.item, &req)? {
         Metered::Blocked(stop) => Ok(Some(stop.progress())),
         Metered::Done(_) => {
-            if let Some(id) = p.q.item {
-                if let Some((w, read)) = &said {
-                    crate::words::delivered(repo, id, "resume", w.as_ref(), read)?;
-                }
+            if let Some(id) = p.q.item
+                && let Some((w, read)) = &said
+            {
+                crate::words::delivered(repo, id, "resume", w.as_ref(), read)?;
             }
             record(
                 repo,

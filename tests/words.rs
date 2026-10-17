@@ -463,7 +463,7 @@ fn a_reason_given_during_a_run_with_no_words_still_waits() {
     let repo = hallmark::repo::Repo::discover(&env.repo).unwrap();
     let item_id: hallmark::item::ItemId = id.parse().unwrap();
     let read = repo.hall.read_item(item_id).unwrap();
-    std::thread::sleep(std::time::Duration::from_millis(20));
+    hallmark::daemon::nap(std::time::Duration::from_millis(20));
     // The person speaks while the run goes on, then the run ends with no words.
     append(
         &env,
@@ -473,7 +473,7 @@ fn a_reason_given_during_a_run_with_no_words_still_waits() {
             reason: Some("rename it".into()),
         },
     );
-    std::thread::sleep(std::time::Duration::from_millis(20));
+    hallmark::daemon::nap(std::time::Duration::from_millis(20));
     hallmark::words::delivered(&repo, item_id, "resume", None, &read).unwrap();
     let events = repo.hall.read_item(item_id).unwrap();
     let w = hallmark::words::pending(&events, "session").expect("still pending");
@@ -508,7 +508,7 @@ fn a_ready_note_from_before_the_feature_is_not_shown_again_after_a_verdict() {
     let sha = commit_file(&wt, "retry.rs", "fn retry() {}\n");
     let r = env.hall(&wt, &["ready", "--note", "look at the retry path"]);
     assert_eq!(r.code, 0, "{}", r.stdout);
-    std::thread::sleep(std::time::Duration::from_millis(20));
+    hallmark::daemon::nap(std::time::Duration::from_millis(20));
     append(&env, &id, "assayer", checks(&sha, 1, true, vec![]));
     append(
         &env,
