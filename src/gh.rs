@@ -501,12 +501,12 @@ pub fn log_excerpt(log: &str, max: usize) -> String {
         for i in hot {
             let from = i.saturating_sub(2);
             let to = (i + 6).min(lines.len());
-            for k in from..to {
+            for k in keep.iter_mut().take(to).skip(from) {
                 if count >= max {
                     return;
                 }
-                if !keep[k] {
-                    keep[k] = true;
+                if !*k {
+                    *k = true;
                     count += 1;
                 }
             }

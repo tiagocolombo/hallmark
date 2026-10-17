@@ -1072,6 +1072,12 @@ fn reasons(events: &[Event]) -> Vec<String> {
                 ));
             }
             Body::Reopened { .. } => reopened = true,
+            // Back on its PR unchanged (ADR 0047): what came before was
+            // never shipped.
+            Body::Restored { .. } => {
+                out.clear();
+                reopened = false;
+            }
             _ => {}
         }
     }
@@ -1146,6 +1152,22 @@ mod tests {
                 json!([{"id": "F2", "status": "fixed"}]),
             ),
         ]
+    }
+
+    #[test]
+    fn a_restored_ci_fix_is_not_claimed_by_the_next_update() {
+        let events = vec![
+            ev(json!({"event": "ci_fix_requested",
+                "pr_url": "https://github.com/acme/app/pull/12",
+                "failing": [{"name": "test (windows-latest)"}]})),
+            ev(json!({"event": "restored",
+                "pr_url": "https://github.com/acme/app/pull/12",
+                "sha": "abc1234", "reason": "CI passed on a re-run"})),
+            ev(json!({"event": "reopened", "pr_url": "u", "pr_head": "h",
+                "base": "main", "worktree": "/w"})),
+        ];
+        let why = reasons(&events);
+        assert_eq!(why, vec!["- It was reopened for more work.".to_string()]);
     }
 
     #[test]
