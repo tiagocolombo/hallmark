@@ -275,9 +275,17 @@ real. Every run is kept, red or green, one line each, in
 and a green run is a flaky gate. Changing `gates` starts the cache over;
 deleting the directory only means the gates run.
 
+A served gate does nothing in the assay worktree, so gates run in order: once
+a gate has to run, every gate before it runs too (a generator or an install
+that a later gate depends on), and only the gates after the last one that
+runs are served. A pass whose log is the one being rewritten (a round run
+again after a stop) isn't served either.
+
 List gates whose result depends on more than the tree, such as tests that
 reach the network, in `gates_no_cache`. They always run and are never
-recorded. Entries match a gate's command exactly.
+recorded. Entries match a gate's command exactly. Because
+of the order rule, every gate before a `gates_no_cache` gate runs too: put
+such gates last to keep the others cached.
 
 ```toml
 gates          = ["cargo test", "cargo test --features live-api"]
