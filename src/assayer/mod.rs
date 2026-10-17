@@ -12,6 +12,7 @@
 pub mod base;
 pub mod checks;
 pub mod prompt;
+pub mod rebased;
 pub mod review;
 pub mod verdict;
 

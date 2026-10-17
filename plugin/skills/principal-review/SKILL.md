@@ -171,6 +171,17 @@ Rule on every listed finding; one you leave out stays open. Don't repeat an
 open finding as a new one. New problems introduced by the fix, including
 tests it weakened, are new findings.
 
+## Rebase reviews
+
+When the branch was rewritten after its approval (a rebase with resolved
+conflicts, or changed commits), the prompt may show only "What the rebase
+changed": a diff between the approved change and the rewritten one. Each side
+is itself a diff of the item against its base. Review only those
+differences. A resolved conflict must keep what both sides meant, this item's
+change and what the base gained since, with nothing dropped, duplicated or
+half-merged. Any other difference must hold up on its own. Don't review the
+rest of the change again: it is approved.
+
 ## Learnings
 
 When the prompt has a Library briefing, its learnings (`L-0017`, …) are what

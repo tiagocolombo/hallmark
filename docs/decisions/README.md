@@ -35,7 +35,7 @@ a decision, add a new record that supersedes the old one. Don't edit the old one
 | [0027](0027-the-library-stays-local.md) | The Library stays local: learnings live next to the journal | Accepted |
 | [0028](0028-grant-the-daily-budget.md) | Grant the daily budget for today, without changing the cap | Accepted |
 | [0029](0029-adopt-open-prs.md) | Adopt open PRs: reopen shipped items, take over the rest | Accepted; amended by 0039, 0042 |
-| [0030](0030-delivery-and-rebase-before-shipping.md) | The Delivery office (conflicts and PR comments), rebasing before shipping, what becomes an item, a clean inbox, auto-ready, a wrapped timeline, and a daemon that doesn't die in its sleep | Accepted; amended by 0039, 0043, 0048 |
+| [0030](0030-delivery-and-rebase-before-shipping.md) | The Delivery office (conflicts and PR comments), rebasing before shipping, what becomes an item, a clean inbox, auto-ready, a wrapped timeline, and a daemon that doesn't die in its sleep | Accepted; amended by 0039, 0043, 0048, 0049 |
 | [0031](0031-only-escalations-reach-you.md) | Only escalations reach you; the Delivery office fixes red CI; new items start from the latest base | Accepted; amended by 0047, 0048 |
 | [0032](0032-old-processes-and-the-index.md) | An older hall never rewrites a newer one's index; the terminal app restarts on update | Accepted |
 | [0033](0033-configurable-setup.md) | Every setting has a command, and `hall setup --interactive` may ask | Accepted; amends 0002 |
@@ -54,3 +54,4 @@ a decision, add a new record that supersedes the old one. Don't edit the old one
 | [0045](0045-the-gate-verifies-the-note.md) | The push gate verifies the hallmark note: it parses, names `HEAD`, and its item's journal records `hallmarked` there | Accepted; partly supersedes 0004 |
 | [0047](0047-a-ci-fix-clears-when-ci-goes-green.md) | A CI fix request clears when the PR's checks go green: the fix run reads them first, the CI watch follows held fixes, and the log is the failed job's own | Accepted; amends 0031 |
 | [0048](0048-the-merger.md) | The merger: shipped PRs merge without you, one at a time per base, in dependency order; `lit` paths wait for a person; `hall queue` | Accepted; amends 0030, 0031 |
+| [0049](0049-a-rebase-keeps-its-approval.md) | A rebase keeps the approval it earned: the same change carries it with no review, a small difference gets a review of only that difference | Accepted; amends 0030 |

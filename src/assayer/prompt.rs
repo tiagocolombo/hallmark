@@ -1,6 +1,7 @@
 //! What the principal engineer is told: the item, the diff (incremental
-//! from round 2), the open findings, and the rules and knowledge of the
-//! base branch. Also how hard it should think: effort follows risk.
+//! from round 2, or only what a rebase changed in an approved change, ADR
+//! 0049), the open findings, and the rules and knowledge of the base
+//! branch. Also how hard it should think: effort follows risk.
 
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
@@ -33,6 +34,9 @@ pub struct Review {
     pub merge_base: String,
     /// Incremental review: the commit the last verdict reviewed.
     pub since: Option<String>,
+    /// A rebase review (ADR 0049): the hallmarked commit this one rewrites,
+    /// when only what the rebase changed is reviewed.
+    pub rebase_of: Option<String>,
     /// Files in the reviewed diff.
     pub changed: Vec<String>,
     /// Lines added plus removed in the reviewed diff.
@@ -57,35 +61,33 @@ pub fn prepare(
 ) -> Result<Review> {
     let dir = &repo.main_root;
     let base = Base::resolve(repo, &item.base)?;
-    let mut merge_base =
-        git::run(dir, &["merge-base", &base.sha, sha]).unwrap_or_else(|_| base.sha.clone());
-    // A branch rebased onto `origin/<base>` (the Delivery office, `freshen`)
-    // while local `<base>` is behind: diff from the newer fork point, so
-    // other merged PRs aren't part of this item's review.
-    if let Ok(remote) = git::run(
-        dir,
-        &[
-            "merge-base",
-            &format!("refs/remotes/origin/{}", item.base),
-            sha,
-        ],
-    ) && remote != merge_base
-        && git::ok(dir, &["merge-base", "--is-ancestor", &merge_base, &remote])
-    {
-        merge_base = remote;
-    }
+    let merge_base = fork_point(repo, item, &base.sha, sha);
     // Incremental from round 2, unless the branch was rewritten since.
     let reviewed = item.reviewed_sha.clone().filter(|s| s != sha);
     let since = reviewed
         .clone()
         .filter(|s| git::ok(dir, &["merge-base", "--is-ancestor", s, sha]));
     let from = since.clone().unwrap_or_else(|| merge_base.clone());
+    // A rewrite of the approved commit (ADR 0049): when the rebase changed
+    // the approved change only a little, review only that.
+    let compared = if since.is_none() {
+        super::rebased::compare(repo, item, sha, &merge_base)
+    } else {
+        None
+    };
+    let rebase = compared.clone().filter(|r| r.lines <= MEDIUM_LINES);
 
-    let diff = git::run(
-        dir,
-        &["diff", "--no-color", "--no-ext-diff", &from, sha, "--"],
-    )?;
-    let (changed, lines) = numstat(&git::run(dir, &["diff", "--numstat", &from, sha])?);
+    let (diff, changed, lines) = match &rebase {
+        Some(r) => (r.interdiff.clone(), r.files.clone(), r.lines),
+        None => {
+            let diff = git::run(
+                dir,
+                &["diff", "--no-color", "--no-ext-diff", &from, sha, "--"],
+            )?;
+            let (changed, lines) = numstat(&git::run(dir, &["diff", "--numstat", &from, sha])?);
+            (diff, changed, lines)
+        }
+    };
     let all_changed: Vec<String> = git::run(dir, &["diff", "--name-only", &merge_base, sha])?
         .lines()
         .map(String::from)
@@ -268,34 +270,66 @@ pub fn prepare(
         );
     }
 
-    match (&since, &reviewed) {
-        (Some(s), _) => {
-            let _ = writeln!(
-                p,
-                "\n## The diff since round {}'s review ({}..{})\n\n\
+    if let Some(r) = &rebase {
+        let _ = writeln!(
+            p,
+            "\n## What the rebase changed ({}..{})\n\n\
+                 This change was approved at {}. The branch was then rewritten (rebased onto \
+                 {b} with conflicts resolved, or its commits changed), and that changed the \
+                 approved change in {}. Below is a diff between the approved change and the \
+                 rewritten one: each side is itself a diff of this item against its base, lines \
+                 starting `-` were in the approved change and lines starting `+` are in the \
+                 rewritten one. Review only that: is each difference right? A resolved conflict \
+                 must keep what both sides meant, this item's change and what {b} gained since, \
+                 with nothing dropped, duplicated or half-merged; any other difference must \
+                 hold up on its own. The rest is approved; don't review it again. \
+                 `git diff {} {}` shows the whole change if you need its context.",
+            short(&r.approved),
+            short(sha),
+            short(&r.approved),
+            r.files.join(", "),
+            short(&merge_base),
+            short(sha)
+        );
+    } else {
+        match (&since, &reviewed) {
+            (Some(s), _) => {
+                let _ = writeln!(
+                    p,
+                    "\n## The diff since round {}'s review ({}..{})\n\n\
                  Only this diff is new. Review it, and rule on the open findings above.",
-                item.round.saturating_sub(1),
-                short(s),
-                short(sha)
-            );
-        }
-        (None, Some(r)) => {
-            let _ = writeln!(
-                p,
-                "\n## The whole change ({}..{})\n\n\
-                 The branch was rewritten since the last review at {}, so this is the full diff.",
-                short(&merge_base),
-                short(sha),
-                short(r)
-            );
-        }
-        (None, None) => {
-            let _ = writeln!(
-                p,
-                "\n## The change ({}..{})",
-                short(&merge_base),
-                short(sha)
-            );
+                    item.round.saturating_sub(1),
+                    short(s),
+                    short(sha)
+                );
+            }
+            (None, Some(r)) => {
+                let _ = writeln!(
+                    p,
+                    "\n## The whole change ({}..{})\n\n\
+                 The branch was rewritten since the last review at {}, so this is the full diff.{}",
+                    short(&merge_base),
+                    short(sha),
+                    short(r),
+                    compared
+                        .as_ref()
+                        .map(|c| format!(
+                            " The rewrite changed {} lines of the change approved at {}: more than \
+                         a rebase review covers.",
+                            c.lines,
+                            short(&c.approved)
+                        ))
+                        .unwrap_or_default()
+                );
+            }
+            (None, None) => {
+                let _ = writeln!(
+                    p,
+                    "\n## The change ({}..{})",
+                    short(&merge_base),
+                    short(sha)
+                );
+            }
         }
     }
     if !commits.trim().is_empty() {
@@ -334,6 +368,7 @@ pub fn prepare(
         base,
         merge_base,
         since,
+        rebase_of: rebase.map(|r| r.approved),
         changed,
         lines,
         sensitive,
@@ -342,6 +377,30 @@ pub fn prepare(
         learnings: briefing.ids,
         prompt: p,
     })
+}
+
+/// Where `sha` left its base: the merge-base with the base commit the rules
+/// come from, or with `origin/<base>` when that is newer. A branch rebased
+/// onto `origin/<base>` (the Delivery office, `freshen`) while local
+/// `<base>` is behind is diffed from the newer fork point, so other merged
+/// PRs aren't part of this item's review.
+pub fn fork_point(repo: &Repo, item: &Item, base_sha: &str, sha: &str) -> String {
+    let dir = &repo.main_root;
+    let mut merge_base =
+        git::run(dir, &["merge-base", base_sha, sha]).unwrap_or_else(|_| base_sha.to_string());
+    if let Ok(remote) = git::run(
+        dir,
+        &[
+            "merge-base",
+            &format!("refs/remotes/origin/{}", item.base),
+            sha,
+        ],
+    ) && remote != merge_base
+        && git::ok(dir, &["merge-base", "--is-ancestor", &merge_base, &remote])
+    {
+        merge_base = remote;
+    }
+    merge_base
 }
 
 /// The principal-review skill without its frontmatter. A main-thread
