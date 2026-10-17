@@ -114,7 +114,8 @@ pub const ROLES: [Role; 4] = [Role::Reviewer, Role::Fixer, Role::Intake, Role::L
 ///
 /// Checked in order: the daily total (the daemon pauses), the role's room
 /// for today, then the item. Resume runs only answer to the daily total:
-/// delivering your answer never holds an item. An unreadable index fails
+/// delivering your answer never holds an item. The librarian answers to the
+/// daily and room caps only, so distilling never holds an item. An unreadable index fails
 /// open (logged to the Live view), like the gates.
 pub fn check(repo: &Repo, item: Option<ItemId>, role: &str) -> Result<(), Stop> {
     let b = &repo.config.budget;

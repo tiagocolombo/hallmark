@@ -694,6 +694,53 @@ fn three_failed_checks_in_a_row_escalate() {
 }
 
 #[test]
+fn checks_that_pass_after_two_failures_leave_the_item_unheld() {
+    let env = Env::initialized();
+    // Fails until the fixer tracks fixed.txt.
+    set_config(
+        &env,
+        "gates",
+        "[\"git ls-files fixed.txt --error-unmatch\"]",
+    );
+    git(
+        &env.repo,
+        &["commit", "-qam", "a gate that needs fixed.txt"],
+    );
+    let (id, _, _) = ready_item(&env, "Retry webhooks");
+    let noop = json!({
+        "role": "fixer",
+        "run": ["git commit -q --allow-empty -m \"no-op\""],
+        "structured": {"summary": "Tried again.", "fixed": [], "disputed": []}
+    });
+    let fix = json!({
+        "role": "fixer",
+        "run": [
+            "echo fixed> fixed.txt",
+            "git add fixed.txt",
+            "git commit -q -m \"add fixed.txt\""
+        ],
+        "structured": {"summary": "Got it.", "fixed": [], "disputed": []}
+    });
+    let script = env.script(json!([noop, fix]));
+
+    for _ in 0..2 {
+        let step = assayer_pass(&env, &script);
+        assert!(
+            step["what"].as_str().unwrap().contains("checks failed"),
+            "{step}"
+        );
+        assert_eq!(fixer_pass(&env, &script)["progress"], "worked");
+    }
+    let step = assayer_pass(&env, &script);
+    assert!(
+        step["what"].as_str().unwrap().contains("checks passed"),
+        "{step}"
+    );
+    assert_eq!(state(&env, &id), "review");
+    assert!(events(&env, &id, "held").is_empty());
+}
+
+#[test]
 fn max_check_failures_zero_never_holds() {
     let env = Env::initialized();
     set_config(
