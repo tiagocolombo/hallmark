@@ -96,6 +96,8 @@ fn change(dir: &std::path::Path, from: &str, to: &str) -> Option<String> {
             "diff",
             "--no-color",
             "--no-ext-diff",
+            "--no-textconv",
+            "--unified=3",
             "--no-renames",
             "--src-prefix=a/",
             "--dst-prefix=b/",

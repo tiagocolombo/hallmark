@@ -74,7 +74,9 @@ pub fn prepare(
     // A rewrite of the approved commit (ADR 0049): when the rebase changed
     // the approved change only a little, review only that.
     let compared = if since.is_none() {
-        super::rebased::compare(repo, item, sha, &merge_base)
+        // The same change that wasn't carried (an open major, say) has no
+        // difference to review alone: it gets the full review.
+        super::rebased::compare(repo, item, sha, &merge_base).filter(|c| !c.same())
     } else {
         None
     };

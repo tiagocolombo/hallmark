@@ -1104,6 +1104,38 @@ mod tests {
     }
 
     #[test]
+    fn a_rebase_says_how_it_goes_on_in_log_and_status() {
+        let rebased = |carried: bool, reason: Option<&str>| {
+            ev(Body::Rebased {
+                from: "a".repeat(40),
+                to: "b".repeat(40),
+                onto: "main".into(),
+                carried,
+                checks: vec![],
+                reason: reason.map(String::from),
+            })
+            .body
+            .summary()
+        };
+        let s = rebased(
+            false,
+            Some("rebase review: only the resolution (3 lines in 1 files) since aaaaaaa"),
+        );
+        assert!(
+            s.contains("rebase review: only the resolution (3 lines"),
+            "{s}"
+        );
+        let s = rebased(
+            false,
+            Some("full review: the resolution changed 101 lines of the change"),
+        );
+        assert!(s.contains("full review: the resolution changed 101"), "{s}");
+        assert!(rebased(false, Some("other")).ends_with(" · back to review"));
+        assert!(rebased(false, None).ends_with(" · back to review"));
+        assert!(rebased(true, None).ends_with(" · approval carried"));
+    }
+
+    #[test]
     fn a_legacy_adopted_created_event_is_not_the_sweepers() {
         let line = r#"{"v":1,"t":"2026-01-01T00:00:00Z","actor":"you","item":"H-0001","event":"created","title":"T","branch":"b","worktree":"/home/me/app","base":"main","adopted":true}"#;
         let e: Event = serde_json::from_str(line).unwrap();
