@@ -34,7 +34,7 @@ use crate::error::Result;
 use crate::event::{Body, Event, short};
 use crate::gh::{GhComment, GhQueue};
 use crate::git;
-use crate::item::{HoldKind, Item, ItemId, State};
+use crate::item::{HoldKind, Item, ItemId, State as ItemState};
 use crate::lease;
 use crate::repo::Repo;
 use crate::worker::{Progress, WorkerCtx};
@@ -818,7 +818,7 @@ fn merge(repo: &Repo, item: &Item, head: &str, holder: &str) -> Result<Progress>
     }
     // The delivery-watch takes no lease: look again, under ours.
     let (_, still) = repo.hall.transact(id, |it, _| {
-        let ok = it.state == State::Closed
+        let ok = it.state == ItemState::Closed
             && it.hold.is_none()
             && it.merged.is_none()
             && it.delivered.is_none()
