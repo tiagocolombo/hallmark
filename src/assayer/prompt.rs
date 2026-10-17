@@ -37,6 +37,9 @@ pub struct Review {
     /// A rebase review (ADR 0049): the hallmarked commit this one rewrites,
     /// when only what the rebase changed is reviewed.
     pub rebase_of: Option<String>,
+    /// The comparison with the approved commit, when the branch was
+    /// rewritten from it (a rebase review or a full review).
+    pub compared: Option<super::rebased::SinceApproval>,
     /// Files in the reviewed diff.
     pub changed: Vec<String>,
     /// Lines added plus removed in the reviewed diff.
@@ -75,7 +78,11 @@ pub fn prepare(
     } else {
         None
     };
-    let rebase = compared.clone().filter(|r| r.lines <= MEDIUM_LINES);
+    // An interdiff that doesn't fit the prompt can't be reviewed alone: a
+    // full review, as for any large rewrite.
+    let rebase = compared
+        .clone()
+        .filter(|r| r.lines <= MEDIUM_LINES && r.interdiff.len() <= DIFF_MAX);
 
     let (diff, changed, lines) = match &rebase {
         Some(r) => (r.interdiff.clone(), r.files.clone(), r.lines),
@@ -369,6 +376,7 @@ pub fn prepare(
         merge_base,
         since,
         rebase_of: rebase.map(|r| r.approved),
+        compared,
         changed,
         lines,
         sensitive,

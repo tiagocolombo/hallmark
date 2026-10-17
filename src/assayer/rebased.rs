@@ -9,9 +9,10 @@
 //!   that difference, a rebase review;
 //! - **a large one**: a full review, as for any rewritten branch.
 //!
-//! Each side is the diff from the commit's fork point on its base, with no
-//! context lines, so a base that moved around the change doesn't make it a
-//! different change; the gates and CI check that it still works there.
+//! Each side is the diff from the commit's fork point on its base, with its
+//! context lines and without line numbers, as `git patch-id` reads it: a base
+//! that moved the change's lines is not a different change, but a hunk that
+//! landed elsewhere, or a base edit next to it, is.
 
 use std::collections::BTreeMap;
 
@@ -83,16 +84,22 @@ pub fn compare(repo: &Repo, item: &Item, sha: &str, merge_base: &str) -> Option<
     })
 }
 
-/// The change `from..to` with no context lines and no renames.
+/// The change `from..to` with its context lines, as `git patch-id` sees it:
+/// a hunk that moved within its file is another change. Fixed prefixes and
+/// unquoted paths keep the names the same whatever the user's git config says.
 fn change(dir: &std::path::Path, from: &str, to: &str) -> Option<String> {
     git::run(
         dir,
         &[
+            "-c",
+            "core.quotePath=false",
             "diff",
             "--no-color",
             "--no-ext-diff",
             "--no-renames",
-            "-U0",
+            "--src-prefix=a/",
+            "--dst-prefix=b/",
+            "--full-index",
             from,
             to,
             "--",
@@ -104,22 +111,32 @@ fn change(dir: &std::path::Path, from: &str, to: &str) -> Option<String> {
 /// Splits a diff by file, keyed by its `diff --git` line, with what only
 /// says where the change sits (blob ids, hunk line numbers) taken out.
 fn by_file(diff: &str) -> BTreeMap<String, String> {
-    let mut out: BTreeMap<String, String> = BTreeMap::new();
-    let mut key: Option<String> = None;
+    let mut sections: Vec<(String, Vec<&str>)> = Vec::new();
     for line in diff.lines() {
         if line.starts_with("diff --git ") {
-            key = Some(line.to_string());
+            sections.push((line.to_string(), Vec::new()));
         }
-        let Some(k) = &key else { continue };
-        if line.starts_with("index ") {
-            continue;
+        if let Some((_, lines)) = sections.last_mut() {
+            lines.push(line);
         }
-        let text = out.entry(k.clone()).or_default();
-        if line.starts_with("@@") {
-            text.push_str("@@\n");
-        } else {
-            text.push_str(line);
-            text.push('\n');
+    }
+    let mut out: BTreeMap<String, String> = BTreeMap::new();
+    for (key, lines) in sections {
+        // A binary file's blob ids are its content: keep them.
+        let binary = lines
+            .iter()
+            .any(|l| l.starts_with("Binary files ") || l.starts_with("GIT binary patch"));
+        let text = out.entry(key).or_default();
+        for line in lines {
+            if line.starts_with("index ") && !binary {
+                continue;
+            }
+            if line.starts_with("@@") {
+                text.push_str("@@\n");
+            } else {
+                text.push_str(line);
+                text.push('\n');
+            }
         }
     }
     out
@@ -174,6 +191,29 @@ mod tests {
         assert_eq!(by_file(&at(10, "aaaaaaa")), by_file(&at(42, "bbbbbbb")));
         let other = at(10, "aaaaaaa").replace("retry", "retry_twice");
         assert_ne!(by_file(&at(10, "aaaaaaa")), by_file(&other));
+    }
+
+    #[test]
+    fn a_binary_file_is_its_content() {
+        let bin = |blob: &str| {
+            format!(
+                "diff --git a/x.png b/x.png\nindex {blob}..2222222 100644\n\
+                 Binary files a/x.png and b/x.png differ\n"
+            )
+        };
+        assert_eq!(by_file(&bin("aaaaaaa")), by_file(&bin("aaaaaaa")));
+        assert_ne!(by_file(&bin("aaaaaaa")), by_file(&bin("bbbbbbb")));
+    }
+
+    #[test]
+    fn a_hunk_in_another_place_is_another_change() {
+        let at = |ctx: &str| {
+            format!(
+                "diff --git a/src/api.rs b/src/api.rs\n--- a/src/api.rs\n+++ b/src/api.rs\n\
+                 @@ -3,3 +3,2 @@\n fn {ctx}() {{\n-    require_admin(&user)?;\n }}\n"
+            )
+        };
+        assert_ne!(by_file(&at("list_users")), by_file(&at("delete_user")));
     }
 
     #[test]

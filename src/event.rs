@@ -780,15 +780,20 @@ impl Body {
                 to,
                 onto,
                 carried,
+                reason,
                 ..
             } => format!(
                 "rebased {} → {} onto {onto}{}",
                 short(from),
                 short(to),
-                if *carried {
-                    " · approval carried"
-                } else {
-                    " · back to review"
+                match (carried, reason) {
+                    (true, _) => " · approval carried".to_string(),
+                    (false, Some(r))
+                        if r.starts_with("rebase review") || r.starts_with("full review") =>
+                    {
+                        format!(" · {r}")
+                    }
+                    _ => " · back to review".to_string(),
                 }
             ),
             Body::RebaseRequested { onto, files, .. } => {

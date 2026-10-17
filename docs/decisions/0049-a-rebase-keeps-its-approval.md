@@ -1,6 +1,6 @@
 # 0049. A rebase keeps the approval it earned
 
-Status: Accepted, 2026-10-17. Amends 0030.
+Status: Accepted, 2026-10-17. Amends 0030, 0048.
 
 ## Context
 
@@ -30,9 +30,16 @@ When the commit under review rewrites the item's hallmarked commit (the
 hallmarked commit isn't an ancestor of it, and its note belongs to this
 item), the assayer compares the approved change with the change under
 review. Each side is the diff from the commit's fork point on its base, with
-no context lines and no renames, compared file by file with blob ids and hunk
-line numbers taken out. So a base that moved around the change doesn't make
-it a different change; the gates and CI check that it still works there.
+its context lines and no renames, compared file by file with hunk line
+numbers taken out, as `git patch-id` reads it. The blob ids of a binary file
+stay, they are its content. So a base that moved the change's lines doesn't
+make it a different change, but a hunk that landed elsewhere in its file, or
+a base edit next to it, does.
+
+Every comparison that isn't a carry is written on the journal as `rebased
+{carried: false, reason}`: "rebase review: only the resolution (N lines …)"
+or "full review: the resolution changed N lines …". `hall log` shows it. An
+interdiff too large for the prompt gets a full review.
 
 1. **The same change:** the approval is carried, and no review runs. The
    gates already passed at the new commit (checks come before review). The
@@ -70,6 +77,6 @@ review it already had.
   gates have seen: the same approved change with passing gates, or an
   approved rebase review. CI still runs on the rebased head before the merger
   merges it.
-- The comparison ignores context lines. A change whose meaning depends on
-  code the base changed next to it is carried on the strength of the gates
-  and CI, as ADR 0030 already did for clean rebases.
+- The comparison keeps context lines, as ADR 0030 did. A base edit next to
+  the change, or a hunk that moved within its file, gets a rebase review of
+  just that difference rather than a carry.

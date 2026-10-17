@@ -141,23 +141,6 @@ fn carry(repo: &Repo, item: &Item, events: &[Event], sha: &str) -> Result<Option
         return Ok(None);
     }
     let id = item.id;
-    repo.hall.append_item(
-        id,
-        &Event::new(
-            super::ROLE,
-            Some(id),
-            Body::Rebased {
-                from: cmp.approved.clone(),
-                to: sha.to_string(),
-                onto: base.name.clone(),
-                carried: true,
-                checks: vec![],
-                reason: Some(
-                    "the rebase left the approved change as it was, and the gates passed".into(),
-                ),
-            },
-        ),
-    )?;
     let mv = ModelVerdict {
         summary: format!(
             "Approval carried from {}: the rebase onto {} left the approved change as it was, \
@@ -178,6 +161,24 @@ fn carry(repo: &Repo, item: &Item, events: &[Event], sha: &str) -> Result<Option
         super::ROLE,
         Some(CARRIED.into()),
         Some(base.sha.clone()),
+    )?;
+    // Only now is the approval known to be recorded.
+    repo.hall.append_item(
+        id,
+        &Event::new(
+            super::ROLE,
+            Some(id),
+            Body::Rebased {
+                from: cmp.approved.clone(),
+                to: sha.to_string(),
+                onto: base.name.clone(),
+                carried: true,
+                checks: vec![],
+                reason: Some(
+                    "the rebase left the approved change as it was, and the gates passed".into(),
+                ),
+            },
+        ),
     )?;
     crate::stamp::name_rebased_from(repo, sha, &cmp.approved)?;
     Ok(Some(Progress::worked(format!(
@@ -244,6 +245,42 @@ pub fn request(
             .map(|e| format!(", effort {e}"))
             .unwrap_or_default()
     ));
+    if let Some(c) = &review.compared {
+        let reason = if review.rebase_of.is_some() {
+            format!(
+                "rebase review: only the resolution ({} lines in {} files) since {}",
+                c.lines,
+                c.files.len(),
+                short(&c.approved)
+            )
+        } else {
+            format!(
+                "full review: the resolution changed {} lines of the change approved at {}",
+                c.lines,
+                short(&c.approved)
+            )
+        };
+        let seen = events.iter().any(|e| {
+            matches!(&e.body, Body::Rebased { to, reason: Some(r), .. } if to == sha && *r == reason)
+        });
+        if !seen {
+            repo.hall.append_item(
+                item.id,
+                &Event::new(
+                    super::ROLE,
+                    Some(item.id),
+                    Body::Rebased {
+                        from: c.approved.clone(),
+                        to: sha.to_string(),
+                        onto: review.base.name.clone(),
+                        carried: false,
+                        checks: vec![],
+                        reason: Some(reason),
+                    },
+                ),
+            )?;
+        }
+    }
     if let Some(a) = &review.rebase_of {
         repo.hall.live(&format!(
             "{} review round {}: a rebase review, only what the rebase changed since {}",

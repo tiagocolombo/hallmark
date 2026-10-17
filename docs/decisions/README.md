@@ -53,5 +53,5 @@ a decision, add a new record that supersedes the old one. Don't edit the old one
 | [0043](0043-ready-waits-for-a-pending-rebase.md) | `hall ready` waits for a pending rebase: refused while the branch isn't on its base, and the request stays | Accepted; amends 0030 |
 | [0045](0045-the-gate-verifies-the-note.md) | The push gate verifies the hallmark note: it parses, names `HEAD`, and its item's journal records `hallmarked` there | Accepted; partly supersedes 0004 |
 | [0047](0047-a-ci-fix-clears-when-ci-goes-green.md) | A CI fix request clears when the PR's checks go green: the fix run reads them first, the CI watch follows held fixes, and the log is the failed job's own | Accepted; amends 0031 |
-| [0048](0048-the-merger.md) | The merger: shipped PRs merge without you, one at a time per base, in dependency order; `lit` paths wait for a person; `hall queue` | Accepted; amends 0030, 0031 |
-| [0049](0049-a-rebase-keeps-its-approval.md) | A rebase keeps the approval it earned: the same change carries it with no review, a small difference gets a review of only that difference | Accepted; amends 0030 |
+| [0048](0048-the-merger.md) | The merger: shipped PRs merge without you, one at a time per base, in dependency order; `lit` paths wait for a person; `hall queue` | Accepted; amends 0030, 0031; amended by 0049 |
+| [0049](0049-a-rebase-keeps-its-approval.md) | A rebase keeps the approval it earned: the same change carries it with no review, a small difference gets a review of only that difference | Accepted; amends 0030, 0048 |

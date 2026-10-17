@@ -508,7 +508,7 @@ concrete scenario that breaks.
 - From round 2, it reads only the diff since the last round, plus the open
   findings.
 - A rewrite of the hallmarked commit, such as a rebase, is compared with the
-  approved change, file by file and without context lines (ADR 0049). The
+  approved change, file by file with its context lines (ADR 0049). The
   same change keeps its approval with no review run: `rebased {carried:
   true}`, a verdict by `carried`, and a note that names the approved commit.
   A difference of up to 100 lines gets a rebase review, which reads only that
