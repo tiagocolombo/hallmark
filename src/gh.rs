@@ -453,11 +453,13 @@ pub fn failed_log(dir: &Path, link: &str, max_lines: usize) -> Option<String> {
 }
 
 /// The useful part of a CI log, without the runner's timestamps and color
-/// codes, at most `max` lines. The lines that say a step failed (a test
-/// marked FAILED, a panic, `error:`, the runner's `##[error]`) come first,
-/// with a little context, from the first: the first failure is the cause.
-/// Without any, lines that only mention an error or a failure, from the
-/// end; without those, the end of the log.
+/// codes, at most `max` lines, in passes. First the summary (`test result:
+/// FAILED`, `error: test failed`). Then the failure detail (panics,
+/// `failures:`, `error:`, `error[`) from the first, with a little context.
+/// Then the lines that name what failed (`... FAILED`, the runner's
+/// `##[error]`, which is not detail). Last, always, the lines that only
+/// mention an error or a failure, newest first. A hot line's context goes in
+/// whole or not at all. Without any hot line, the end of the log.
 pub fn log_excerpt(log: &str, max: usize) -> String {
     let lines: Vec<String> = log
         .lines()
@@ -496,25 +498,31 @@ pub fn log_excerpt(log: &str, max: usize) -> String {
     };
     let mut keep = vec![false; lines.len()];
     let mut count = 0;
-    // Adds each hot line with a little context until `max` lines are kept.
+    // Adds each hot line with a little context until `max` lines are kept. A
+    // hot line's context goes in whole or not at all; when it doesn't fit, the
+    // hot line alone does, if there is room.
     let mut take = |hot: Vec<usize>| {
         for i in hot {
             let from = i.saturating_sub(2);
             let to = (i + 6).min(lines.len());
-            for k in keep.iter_mut().take(to).skip(from) {
-                if count >= max {
-                    return;
-                }
-                if !*k {
-                    *k = true;
-                    count += 1;
-                }
+            let new = (from..to).filter(|&k| !keep[k]).count();
+            if count + new <= max {
+                (from..to).for_each(|k| keep[k] = true);
+                count += new;
+            } else if !keep[i] && count < max {
+                keep[i] = true;
+                count += 1;
             }
         }
     };
     let pick = |f: &dyn Fn(&str) -> bool| -> Vec<usize> {
         (0..lines.len()).filter(|&i| f(&lines[i])).collect()
     };
+    // The summary first: with many panics, their blocks would fill the budget
+    // before the end of the log.
+    take(pick(&|l: &str| {
+        l.contains("test result: FAILED") || l.trim_start().starts_with("error: test failed")
+    }));
     take(pick(&detail));
     take(pick(&named));
     // Mentions come last, latest first: the end of a log holds the summary.
@@ -633,6 +641,28 @@ mod ci_tests {
         assert!(e.lines().count() <= 60, "{e}");
         assert!(e.contains("panicked at src/x.rs:1:1"), "{e}");
         assert!(e.contains("test result: FAILED"), "{e}");
+    }
+
+    #[test]
+    fn many_panics_do_not_push_out_the_summary() {
+        let mut log = String::new();
+        for n in 0..10 {
+            log.push_str(&format!(
+                "2026-10-16T03:00:00.0Z ---- bad{n} stdout ----\n\
+                 2026-10-16T03:00:00.0Z thread 'bad{n}' panicked at src/x.rs:{n}:1:\n\
+                 2026-10-16T03:00:00.0Z assertion `left == right` failed\n\
+                 2026-10-16T03:00:00.0Z   left: 1\n\
+                 2026-10-16T03:00:00.0Z  right: 2\n\
+                 2026-10-16T03:00:00.0Z note: run with RUST_BACKTRACE=1\n\
+                 2026-10-16T03:00:00.0Z \n"
+            ));
+        }
+        log.push_str("2026-10-16T03:00:01.0Z test result: FAILED. 190 passed; 10 failed\n2026-10-16T03:00:01.0Z error: test failed, to rerun pass `--lib`\n");
+        let e = log_excerpt(&log, 60);
+        assert!(e.lines().count() <= 60, "{e}");
+        assert!(e.contains("test result: FAILED"), "{e}");
+        assert!(e.contains("error: test failed"), "{e}");
+        assert!(e.contains("panicked at src/x.rs:0:1"), "{e}");
     }
 
     #[test]

@@ -47,15 +47,20 @@ Status: Accepted, 2026-10-16. Amends 0031.
 3. **"Nothing moved" is checked, never assumed.** The worktree is clean, and
    both the branch and the PR's head (`gh pr view`) are at the commit the
    PR was at on reopening. If not, the item waits for you. The reason
-   names what moved and offers `hall ready <id>` (review the new commits)
-   or `hall retry <id>` once the branch is back where the PR is.
+   names what moved. When someone pushed to the PR, it says to bring the
+   PR's commits into the branch and `hall ready <id>`; otherwise (the
+   branch moved) it offers `hall retry <id>` once the branch is back where
+   the PR is.
 4. **The log is the failed job's own.** It comes from the API by job id
    (`gh api repos/{owner}/{repo}/actions/jobs/<id>/logs`), falling back to
-   `gh run view`. The excerpt strips color codes and leads with the lines
-   that say a step failed (`... FAILED`, `panicked at`, `failures:`,
-   `test result: FAILED`, `error:`, `##[error]`), from the first, with a
-   little context. Without such lines it falls back to the earlier rule:
-   lines that mention an error or a failure, from the end.
+   `gh run view`. The excerpt strips color codes and is built in passes, up
+   to the line budget: the summary (`test result: FAILED`,
+   `error: test failed`); the failure detail (`panicked at`, `failures:`,
+   `error:`, `error[`), from the first, with a little context; the lines
+   that name what failed (`... FAILED`, `##[error]`, which is not detail
+   because it says nothing about the tool); and always, last, lines that
+   mention an error or a failure, newest first, so a tool's own error (a
+   `tsc` one) is kept. A hot line's context goes in whole or not at all.
 
 ## Consequences
 
