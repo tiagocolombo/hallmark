@@ -167,7 +167,10 @@ pub fn check_with(
             });
         }
     }
-    if let (Some(id), Some(cap)) = (item, b.per_item.as_deref())
+    // The librarian distils items that have left the loop: what they spent
+    // there never holds them (the daily and room caps still apply).
+    if r != Role::Librarian
+        && let (Some(id), Some(cap)) = (item, b.per_item.as_deref())
         && let Some(limit) = Cap::parse(cap)
     {
         let used = item_spent(ix, id);
@@ -586,6 +589,8 @@ mod tests {
         );
         // Resume runs never hold an item.
         assert_eq!(check_with(&ix, &b, Some(id), "resume", &day), Ok(()));
+        // Nor does the librarian: it distils items that left the loop.
+        assert_eq!(check_with(&ix, &b, Some(id), "librarian", &day), Ok(()));
 
         b.review = Some(RoleBudget {
             daily: Some("400k".into()),

@@ -329,6 +329,8 @@ spending without limit. Set a cap to `"none"` to turn it off
 (`hall budget --set per_item=none` writes that); removing the key brings the
 default back. The role tables have no caps unless you set them (to drop one,
 `hall config unset budget.review.daily`; `none` is for `daily` and `per_item`).
+The Library's distilling runs answer to the daily and room caps only: an
+item that spent its `per_item` in the loop is still distilled once it closes.
 
 One daemon can serve several repos. When any of them spends its daily cap, the
 daemon pauses the model workers for every repo it serves until 00:00 UTC, even

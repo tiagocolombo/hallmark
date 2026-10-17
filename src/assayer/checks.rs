@@ -67,13 +67,13 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
         .collect();
     let n = runs.len();
     let max = repo.config.max_check_failures;
-    let (_, (recorded, held)) = repo.hall.transact(item.id, |cur, _| {
+    let (_, (recorded, held, in_a_row)) = repo.hall.transact(item.id, |cur, _| {
         // Pulled back, dropped or resubmitted while the gates ran.
         if cur.state != State::Checks
             || cur.frozen_sha.as_deref() != Some(sha.as_str())
             || cur.round != round
         {
-            return Ok((vec![], (false, false)));
+            return Ok((vec![], (false, false, 0)));
         }
         let mut events = vec![ev(
             super::ROLE,
@@ -100,7 +100,7 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
                 },
             ));
         }
-        Ok((events, (true, held)))
+        Ok((events, (true, held, in_a_row)))
     })?;
     let what = if !recorded {
         format!(
@@ -117,7 +117,7 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
         )
     } else if held {
         format!(
-            "{} held: the checks failed {max} times in a row: {}",
+            "{} held: the checks failed {in_a_row} times in a row: {}",
             item.id,
             failed.join(", ")
         )
