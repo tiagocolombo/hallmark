@@ -177,6 +177,11 @@ Stuck items, Claude Code sessions waiting for permission, CI on merged PRs and
 proposed learnings are notices: `hall inbox --notices` lists them, and they are
 never notified.
 
+When you retry, continue or pull back an item with a reason, or send it to
+review with a note, the next agent on that item gets your words in its prompt,
+once: the reviewer, the fixer, a Delivery office run, or your development
+session ([ADR 0044](decisions/0044-your-reasons-reach-the-next-agent.md)).
+
 When an agent asks a question, its session ID is saved. When you answer
 (`hall answer`, the terminal app, or just telling Claude), the daemon resumes
 that session with your answer, so the agent keeps its context.
