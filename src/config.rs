@@ -990,6 +990,12 @@ split = "off"
         assert_eq!(n.route.channels("ready"), ["desktop", "phone"]);
         assert_eq!(n.route.channels("question"), ["desktop", "phone"]);
         assert_eq!(n.route.channels("checks"), ["desktop", "phone"]);
+        // By default a checks hold takes the escalated route; `ready` is
+        // the desktop only.
+        let d = Route::default();
+        assert_eq!(d.channels("ready"), ["desktop"]);
+        assert_eq!(d.channels("checks"), d.channels("escalated"));
+        assert_eq!(d.channels("checks"), ["desktop", "phone"]);
         assert_eq!(c.library.search, SearchBackend::Qmd);
         assert_eq!(c.library.briefing_limit, "6k");
         assert_eq!(c.intake.split, SplitMode::Off);
