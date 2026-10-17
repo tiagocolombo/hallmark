@@ -1570,6 +1570,42 @@ fn a_gate_after_one_that_runs_is_never_run_without_its_setup() {
     assert!(c["runs"][0].get("cached").is_none());
 }
 
+/// Every gate up to the last one that runs is forced, not only up to the first.
+#[cfg(unix)]
+#[test]
+fn gates_up_to_the_last_one_that_runs_are_all_run() {
+    let env = Env::initialized();
+    let first = counting_gate(&env, "first");
+    let setup = format!("{} && echo x > marker.txt", counting_gate(&env, "setup"));
+    let check = "test -f marker.txt";
+    configure(
+        &env,
+        &[
+            ("gates", &format!("['{first}', '{setup}', '{check}']")),
+            ("gates_no_cache", &format!("['{first}', '{check}']")),
+        ],
+    );
+    let (id, wt, _) = ready_item(&env, "Retry webhooks", "retry.rs", "fn retry() {}\n");
+    let script = env.script(json!([reviewer(verdict(
+        vec![finding("blocker", "retry.rs", "Double delivery")],
+        json!([])
+    ))]));
+    tick(&env, &script);
+    tick(&env, &script);
+    assert_eq!(state(&env, &id), "fixing");
+
+    let fix = same_tree_commit(&wt);
+    resubmit(&env, &id, &fix, &["F1"]);
+    let r = tick(&env, &script);
+    assert!(what(&r).contains("checks passed"), "{}", r.stdout);
+    assert_eq!(runs_of(&env, "first"), 2);
+    assert_eq!(
+        runs_of(&env, "setup"),
+        2,
+        "the setup between two gates that run is run too"
+    );
+}
+
 /// A pass served from this round's own log would point at a truncated file.
 #[test]
 fn a_hit_on_the_log_being_rewritten_is_not_served() {
