@@ -975,6 +975,14 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
                 if item.hold.as_ref().is_some_and(|h| h.kind == HoldKind::Lit) {
                     item.merge_approved = item.pr_head.clone();
                 }
+                // A retried merge that never landed tries again.
+                if item
+                    .hold
+                    .as_ref()
+                    .is_some_and(|h| h.kind == HoldKind::MergeFailed)
+                {
+                    item.merged = None;
+                }
                 item.hold = None
             }
             Body::PrChecks {

@@ -34,7 +34,7 @@ use crate::error::Result;
 use crate::event::{Body, Event, short};
 use crate::gh::{GhComment, GhQueue};
 use crate::git;
-use crate::item::{HoldKind, Item, ItemId};
+use crate::item::{HoldKind, Item, ItemId, State};
 use crate::lease;
 use crate::repo::Repo;
 use crate::worker::{Progress, WorkerCtx};
@@ -276,8 +276,11 @@ pub enum Fresh {
 pub fn freshness(wt: &Path, target: &str, head: &str) -> Result<(Fresh, Vec<String>)> {
     let mb = git::run(wt, &["merge-base", head, target])?;
     let files = |from: &str, to: &str| -> Result<Vec<String>> {
-        Ok(git::run(wt, &["diff", "--name-only", from, to])?
-            .lines()
+        // No rename detection and NUL-separated, so a file moved out of a
+        // path still lists its old name and nothing is C-quoted.
+        let out = git::run(wt, &["diff", "--name-only", "--no-renames", "-z", from, to])?;
+        Ok(out
+            .split('\0')
             .map(str::to_string)
             .filter(|l| !l.is_empty())
             .collect())
@@ -300,11 +303,12 @@ pub fn freshness(wt: &Path, target: &str, head: &str) -> Result<(Fresh, Vec<Stri
     })
 }
 
-/// The time of the item's last ship (a ship, an update, or a restore).
+/// The time of the item's last ship (a ship or an update; a restore puts the
+/// same head back with its own checks, so it doesn't count).
 fn last_shipped(events: &[Event]) -> Option<DateTime<Utc>> {
     events
         .iter()
-        .filter(|e| matches!(e.body, Body::Shipped { .. } | Body::Restored { .. }))
+        .filter(|e| matches!(e.body, Body::Shipped { .. }))
         .map(|e| e.t)
         .max()
 }
@@ -337,13 +341,21 @@ struct Look<'a> {
     open: BTreeMap<u64, &'a Item>,
     /// Bases fetched this look.
     targets: BTreeMap<String, Option<Target>>,
+    /// Resolve bases with the capped fetch (the CLI), not the daemon's.
+    capped: bool,
 }
 
 impl<'a> Look<'a> {
     fn target(&mut self, base: &str) -> Option<Target> {
         self.targets
             .entry(base.to_string())
-            .or_insert_with(|| delivery::base_ref(&self.repo.main_root, base))
+            .or_insert_with(|| {
+                if self.capped {
+                    delivery::base_ref_capped(&self.repo.main_root, base)
+                } else {
+                    delivery::base_ref(&self.repo.main_root, base)
+                }
+            })
             .clone()
     }
 
@@ -362,7 +374,12 @@ impl<'a> Look<'a> {
         if item.base != self.repo.config.base {
             match self.open.values().find(|o| o.branch == item.base) {
                 Some(o) => out.push(o.pr_url.clone().unwrap_or_default()),
-                None => out.push(format!("{} (its base branch)", item.base)),
+                // Its parent isn't open: if that PR merged, a person
+                // retargets this one onto the base.
+                None => out.push(format!(
+                    "{} (its base branch; if that PR already merged, retarget this one onto {})",
+                    item.base, self.repo.config.base
+                )),
             }
         }
         let me = number(url);
@@ -390,12 +407,6 @@ impl<'a> Look<'a> {
     fn judge(&mut self, item: &Item) -> (Status, String, Vec<String>, Option<Verdict>) {
         let url = item.pr_url.clone().unwrap_or_default();
         let none = |s: Status, why: String| (s, why, vec![], None);
-        if let Some(sha) = &item.merged {
-            return none(
-                Status::Merging,
-                format!("merged at {}; waiting for GitHub to say so", short(sha)),
-            );
-        }
         if let Some(h) = &item.hold {
             return none(
                 if h.kind == HoldKind::Lit {
@@ -405,6 +416,27 @@ impl<'a> Look<'a> {
                 },
                 format!("held ({}): {}", h.kind.as_str(), h.reason),
             );
+        }
+        if let Some(sha) = &item.merged {
+            let waiting = format!("merged at {}; waiting for GitHub to say so", short(sha));
+            // A command that exits 0 without merging (a merge queue, `--auto`)
+            // can leave the PR open for good: say so once it has been a while.
+            let events = self.repo.hall.read_item(item.id).unwrap_or_default();
+            let at = events
+                .iter()
+                .rev()
+                .find(|e| matches!(e.body, Body::PrMerged { .. }))
+                .map(|e| e.t);
+            if at.is_some_and(|t| Utc::now() - t > Duration::seconds(STUCK_SECS))
+                && crate::gh::pr_state(&self.repo.main_root, &url).is_ok_and(|s| s == "OPEN")
+            {
+                let why = format!(
+                    "the merge command succeeded, but the PR is still open after {} minutes",
+                    STUCK_SECS / 60
+                );
+                return (Status::Merging, why.clone(), vec![], Some(Verdict::Stuck(why)));
+            }
+            return none(Status::Merging, waiting);
         }
         let Some(head) = item.pr_head.clone() else {
             return none(Status::NotOurs, "no shipped head is recorded".into());
@@ -451,10 +483,18 @@ impl<'a> Look<'a> {
                 ),
             );
         }
+        let Some(target) = self.target(&item.base) else {
+            return none(
+                Status::Unreadable,
+                format!("no {} branch to compare with", item.base),
+            );
+        };
+        // Only the PR's own commits, not the base's history.
+        let own = format!("{}..{head}", target.git_ref);
         let text = format!(
             "{}\n{}",
             pr.body,
-            git::run(&wt, &["log", "--format=%B", "-n", "50", &head]).unwrap_or_default()
+            git::run(&wt, &["log", "--format=%B", &own]).unwrap_or_default()
         );
         let waits = self.waits_for(item, &url, &text);
         if !waits.is_empty() {
@@ -483,12 +523,14 @@ impl<'a> Look<'a> {
                 );
             }
         }
-        let Some(target) = self.target(&item.base) else {
+        if !git::dirty_files(&wt).map(|d| d.is_empty()).unwrap_or(false) {
+            // The merge doesn't need the worktree, but a dirty one means
+            // someone is working in it; a rebase would only hold it.
             return none(
-                Status::Unreadable,
-                format!("no {} branch to compare with", item.base),
+                Status::NotOurs,
+                format!("its worktree {} has uncommitted changes", item.worktree),
             );
-        };
+        }
         let (fresh, files) = match freshness(&wt, &target.git_ref, &head) {
             Ok(f) => f,
             Err(e) => return none(Status::Unreadable, e.message),
@@ -514,14 +556,6 @@ impl<'a> Look<'a> {
                 Some(Verdict::Rebase(both, head)),
             );
         }
-        if !git::dirty_files(&wt).map(|d| d.is_empty()).unwrap_or(false) {
-            // The merge doesn't need the worktree, but a dirty one means
-            // someone is working in it.
-            return none(
-                Status::NotOurs,
-                format!("its worktree {} has uncommitted changes", item.worktree),
-            );
-        }
         (
             Status::Ready,
             format!(
@@ -540,7 +574,12 @@ enum Verdict {
     Merge(String),
     Rebase(Vec<String>, String),
     Lit(String),
+    /// Merged by the command, yet the PR is still open.
+    Stuck(String),
 }
+
+/// How long a PR may stay open after a merge command succeeded.
+const STUCK_SECS: i64 = 600;
 
 /// The open shipped PRs, grouped by base and in merge order.
 fn lines(items: &[Item]) -> BTreeMap<String, Vec<Item>> {
@@ -567,14 +606,21 @@ pub fn queue(repo: &Repo) -> Result<Vec<Entry>> {
             .filter_map(|i| Some((number(i.pr_url.as_deref()?)?, i)))
             .collect(),
         targets: BTreeMap::new(),
+        capped: true,
     };
     let mut out = Vec::new();
     for (base, line) in lines(&items) {
         let busy = line.iter().any(|i| i.merged.is_some());
         let rebasing = state.rebasing(&base, &items);
         let mut first = true;
+        let mut unknown_ahead = false;
         for (n, item) in line.iter().enumerate() {
             let (mut status, mut why, waits, _) = look.judge(item);
+            if unknown_ahead && status == Status::Ready {
+                status = Status::Queued;
+                why = "ready; waits for an older PR GitHub is still checking".into();
+            }
+            unknown_ahead |= status == Status::Unknown;
             if status == Status::Behind
                 && let Some(r) = rebasing
             {
@@ -636,16 +682,35 @@ pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
             .filter_map(|i| Some((number(i.pr_url.as_deref()?)?, i)))
             .collect(),
         targets: BTreeMap::new(),
+        capped: false,
     };
     let mut done = Vec::new();
     for (base, line) in lines(&items) {
         // One at a time: a merged PR is delivered before the next one goes.
         if line.iter().any(|i| i.merged.is_some()) {
+            // Unless its merge never landed: then it is yours to look at.
+            for item in line.iter().filter(|i| i.merged.is_some() && i.hold.is_none()) {
+                let (_, _, _, verdict) = look.judge(item);
+                if let Some(Verdict::Stuck(why)) = verdict {
+                    let kind = HoldKind::MergeFailed;
+                    if let Progress::Worked { what } = hold(repo, item.id, kind, why)? {
+                        done.push(what);
+                    }
+                }
+            }
             continue;
         }
         let rebasing = state.rebasing(&base, &items);
+        let mut unknown_ahead = false;
         for item in &line {
             let (mut status, mut why, _, mut verdict) = look.judge(item);
+            // An older PR GitHub hasn't finished checking goes first.
+            if unknown_ahead && matches!(verdict, Some(Verdict::Merge(_))) {
+                status = Status::Queued;
+                why = "ready; waits for an older PR GitHub is still checking".into();
+                verdict = None;
+            }
+            unknown_ahead |= status == Status::Unknown;
             // One rebase at a time per base; fresh PRs still merge meanwhile.
             if let (Some(Verdict::Rebase(..)), Some(r)) = (&verdict, rebasing) {
                 status = Status::Queued;
@@ -663,6 +728,10 @@ pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
             let acted = match verdict {
                 None => None,
                 Some(Verdict::Lit(why)) => Some(hold(repo, item.id, HoldKind::Lit, why)?),
+                Some(Verdict::Stuck(why)) => {
+                    let kind = HoldKind::MergeFailed;
+                    Some(hold(repo, item.id, kind, why)?)
+                }
                 Some(Verdict::Rebase(files, head)) => {
                     let p = rebase(repo, item, &head, files, &why)?;
                     if matches!(p, Progress::Worked { .. }) {
@@ -745,6 +814,21 @@ fn merge(repo: &Repo, item: &Item, head: &str, holder: &str) -> Result<Progress>
     let url = item.pr_url.clone().unwrap_or_default();
     let ttl = Duration::seconds(MERGE_TIMEOUT_SECS as i64 + 60);
     if lease::claim(&repo.hall, id, ACTOR, holder, ttl).is_err() {
+        return Ok(Progress::Idle);
+    }
+    // The delivery-watch takes no lease: look again, under ours.
+    let (_, still) = repo.hall.transact(id, |it, _| {
+        let ok = it.state == State::Closed
+            && it.hold.is_none()
+            && it.merged.is_none()
+            && it.delivered.is_none()
+            && it.rebase.is_none()
+            && it.feedback.is_none()
+            && it.pr_head.as_deref() == Some(head);
+        Ok((vec![], ok))
+    })?;
+    if !still {
+        let _ = lease::release(&repo.hall, id, holder);
         return Ok(Progress::Idle);
     }
     let cmd = crate::commands::new::fill_shell(

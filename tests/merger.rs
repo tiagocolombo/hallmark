@@ -523,3 +523,76 @@ fn one_pr_at_a_time_is_brought_up_to_date_while_fresh_ones_merge() {
     pass(&env, &gh);
     assert_eq!(state(&env, &second), "development");
 }
+
+#[test]
+fn a_restored_pr_keeps_its_green_ci() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    let (id, _, sha) = shipped(&env, &gh, 1, "a.rs");
+    // CI went red, was reopened for a fix, and the re-run came back green:
+    // the item is restored, with its own checks recorded just before.
+    append(
+        &env,
+        &id,
+        "delivery",
+        Body::Restored {
+            pr_url: url(1),
+            sha,
+            reason: "the re-run passed".into(),
+        },
+    );
+    assert_eq!(status_of(&queue(&env, &gh), &id)["status"], "ready");
+    pass(&env, &gh);
+    assert_eq!(events(&env, &id, "pr_merged").len(), 1);
+}
+
+#[test]
+fn a_dependency_named_by_a_commit_on_the_base_is_not_the_prs() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    git(&env.repo, &["commit", "--allow-empty", "-q", "-m", "Blocked by #9"]);
+    git(&env.repo, &["push", "-q", "origin", "main"]);
+    let (id, _, _) = shipped(&env, &gh, 1, "a.rs");
+    std::fs::write(gh.parent().unwrap().join("state-9.txt"), "OPEN").unwrap();
+
+    assert_eq!(status_of(&queue(&env, &gh), &id)["status"], "ready");
+    pass(&env, &gh);
+    assert_eq!(events(&env, &id, "pr_merged").len(), 1);
+}
+
+#[test]
+fn moving_a_file_out_of_a_lit_path_is_still_touching_it() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    set_config(&env, "merge.lit", "[\"deploy/\"]");
+    std::fs::create_dir_all(env.repo.join("deploy")).unwrap();
+    commit_file(&env.repo, "deploy/x.yml", "name: deploy\n");
+    git(&env.repo, &["push", "-q", "origin", "main"]);
+    let (id, wt) = env.new_item("Move the workflow");
+    git(&wt, &["mv", "deploy/x.yml", "x.yml"]);
+    git(&wt, &["commit", "-q", "-m", "move the workflow"]);
+    assert_eq!(env.hall(&wt, &["ready"]).code, 0);
+    let sha = git(&wt, &["rev-parse", "HEAD"]);
+    approve(&env, &id, &wt, 1, vec![], counts(0, 0, 0, 0));
+    let branch = git(&wt, &["rev-parse", "--abbrev-ref", "HEAD"]);
+    git(&wt, &["push", "-q", "origin", &branch]);
+    append(
+        &env,
+        &id,
+        "shipper",
+        Body::Shipped {
+            sha: sha.clone(),
+            pr_url: Some(url(1)),
+        },
+    );
+    green(&env, &id, 1);
+    pr(&gh, 1, "MERGEABLE", &sha, "", json!([]));
+
+    let step = pass(&env, &gh);
+    let what = step["what"].as_str().unwrap();
+    assert!(what.contains("held (lit)"), "{step}");
+    assert!(events(&env, &id, "pr_merged").is_empty());
+}
