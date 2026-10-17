@@ -636,7 +636,7 @@ mod ci_tests {
                 log.push_str(&format!("2026-10-16T03:00:00.0Z test bad{n} ... FAILED\n"));
             }
         }
-        log.push_str("2026-10-16T03:00:01.0Z failures:\n2026-10-16T03:00:01.0Z ---- bad0 stdout ----\n2026-10-16T03:00:01.0Z thread 'bad0' panicked at src/x.rs:1:1:\n2026-10-16T03:00:01.0Z test result: FAILED. 190 passed; 10 failed\n2026-10-16T03:00:02.0Z ##[error]Process completed with exit code 101.\n");
+        log.push_str("2026-10-16T03:00:01.0Z failures:\n2026-10-16T03:00:01.0Z ---- bad0 stdout ----\n2026-10-16T03:00:01.0Z thread 'bad0' panicked at src/x.rs:1:1:\n2026-10-16T03:00:01.0Z test result: FAILED. 188 passed; 12 failed\n2026-10-16T03:00:02.0Z ##[error]Process completed with exit code 101.\n");
         let e = log_excerpt(&log, 60);
         assert!(e.lines().count() <= 60, "{e}");
         assert!(e.contains("panicked at src/x.rs:1:1"), "{e}");
@@ -645,8 +645,10 @@ mod ci_tests {
 
     #[test]
     fn many_panics_do_not_push_out_the_summary() {
+        // Twelve panic blocks: without the summary pass they fill all 60
+        // lines before the summary at the end of the log.
         let mut log = String::new();
-        for n in 0..10 {
+        for n in 0..12 {
             log.push_str(&format!(
                 "2026-10-16T03:00:00.0Z ---- bad{n} stdout ----\n\
                  2026-10-16T03:00:00.0Z thread 'bad{n}' panicked at src/x.rs:{n}:1:\n\
@@ -657,7 +659,7 @@ mod ci_tests {
                  2026-10-16T03:00:00.0Z \n"
             ));
         }
-        log.push_str("2026-10-16T03:00:01.0Z test result: FAILED. 190 passed; 10 failed\n2026-10-16T03:00:01.0Z error: test failed, to rerun pass `--lib`\n");
+        log.push_str("2026-10-16T03:00:01.0Z test result: FAILED. 188 passed; 12 failed\n2026-10-16T03:00:01.0Z error: test failed, to rerun pass `--lib`\n");
         let e = log_excerpt(&log, 60);
         assert!(e.lines().count() <= 60, "{e}");
         assert!(e.contains("test result: FAILED"), "{e}");
