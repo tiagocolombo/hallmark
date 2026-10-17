@@ -752,7 +752,7 @@ pub struct RoleBudget {
     pub model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
-    /// Per run, passed as `--max-budget-usd`. Unset: review 3.00, fix
+    /// Per run, passed as `--max-budget-usd`. Unset: review 6.00, fix
     /// 2.00, intake 0.10, librarian 0.20; "none": no per-run cap.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_usd: Option<MaxUsd>,

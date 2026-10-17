@@ -481,7 +481,7 @@ It runs headless with a fresh context:
 claude -p --plugin-dir "$PLUGIN" --agent principal-engineer \
   --json-schema "$PLUGIN/schemas/verdict.json" \
   --output-format stream-json --verbose \
-  --max-budget-usd 3 "Review H-0042 round 2: commit b81f3e4 against main" < /dev/null
+  --max-budget-usd 6 "Review H-0042 round 2: commit b81f3e4 against main" < /dev/null
 ```
 
 **Lenses.** Every review applies seven lenses:

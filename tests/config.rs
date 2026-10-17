@@ -60,6 +60,8 @@ fn per_run_caps_show_their_defaults_and_take_none() {
     assert_eq!(r.code, 0, "{}", r.stdout);
     assert_eq!(entry(&r)["value"], 6.0);
     assert_eq!(entry(&r)["source"], "default");
+    let help = entry(&r)["help"].as_str().unwrap().to_string();
+    assert!(help.contains("review 6.00"), "{help}");
     let r = env.hall(&env.repo, &["config", "get", "budget.intake.max_usd"]);
     assert_eq!(entry(&r)["value"], 0.1);
 
