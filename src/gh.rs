@@ -472,16 +472,20 @@ pub fn log_excerpt(log: &str, max: usize) -> String {
             strip_ansi(l)
         })
         .collect();
-    let failed = |l: &str| {
+    // The failure detail (panics, summaries, compiler errors) first, then the
+    // lines that name what failed, then lines that only mention an error. The
+    // runner's own `##[error]` line says nothing about the tool, so it isn't
+    // detail.
+    let detail = |l: &str| {
         let t = l.trim_start();
         l.contains("panicked at")
-            || l.trim_end().ends_with("... FAILED")
             || l.contains("test result: FAILED")
             || t.starts_with("failures:")
-            || t.starts_with("##[error]")
             || t.starts_with("error:")
             || t.starts_with("error[")
     };
+    let named =
+        |l: &str| l.trim_end().ends_with("... FAILED") || l.trim_start().starts_with("##[error]");
     let mentions = |l: &str| {
         let l = l.to_ascii_lowercase();
         l.contains("panicked")
@@ -490,33 +494,44 @@ pub fn log_excerpt(log: &str, max: usize) -> String {
             || l.contains("failures:")
             || l.contains("assert")
     };
-    let mut hot: Vec<usize> = (0..lines.len()).filter(|&i| failed(&lines[i])).collect();
-    let first = !hot.is_empty();
-    if !first {
-        hot = (0..lines.len()).filter(|&i| mentions(&lines[i])).collect();
-    }
     let mut keep = vec![false; lines.len()];
-    for i in hot {
-        let from = i.saturating_sub(2);
-        for k in keep.iter_mut().skip(from).take(i + 6 - from) {
-            *k = true;
+    let mut count = 0;
+    // Adds each hot line with a little context until `max` lines are kept.
+    let mut take = |hot: Vec<usize>| {
+        for i in hot {
+            let from = i.saturating_sub(2);
+            let to = (i + 6).min(lines.len());
+            for k in from..to {
+                if count >= max {
+                    return;
+                }
+                if !keep[k] {
+                    keep[k] = true;
+                    count += 1;
+                }
+            }
         }
-    }
-    let mut out: Vec<&str> = lines
+    };
+    let pick = |f: &dyn Fn(&str) -> bool| -> Vec<usize> {
+        (0..lines.len()).filter(|&i| f(&lines[i])).collect()
+    };
+    take(pick(&detail));
+    take(pick(&named));
+    // Mentions come last, latest first: the end of a log holds the summary.
+    let mut m = pick(&mentions);
+    m.reverse();
+    take(m);
+    let out: Vec<&str> = lines
         .iter()
         .zip(&keep)
         .filter(|(_, k)| **k)
         .map(|(l, _)| l.as_str())
         .collect();
     if out.is_empty() {
-        out = lines.iter().map(String::as_str).collect();
+        let start = lines.len().saturating_sub(max);
+        return lines[start..].join("\n");
     }
-    if first {
-        out.truncate(max);
-        return out.join("\n");
-    }
-    let start = out.len().saturating_sub(max);
-    out[start..].join("\n")
+    out.join("\n")
 }
 
 /// `text` without terminal color codes (`ESC [ ... m` and the like).
@@ -570,6 +585,54 @@ mod ci_tests {
             Some(("38017825353".into(), "114111945371".into()))
         );
         assert_eq!(run_and_job("https://example.com/status/1"), None);
+    }
+
+    #[test]
+    fn a_tsc_error_survives_the_runner_error_line() {
+        let mut log = String::new();
+        for n in 0..30 {
+            log.push_str(&format!("2026-10-16T03:00:00.0Z building step {n}\n"));
+        }
+        log.push_str("2026-10-16T03:00:01.0Z src/retry.ts(10,5): error TS2322: Type 'string' is not assignable to type 'number'.\n");
+        for n in 0..20 {
+            log.push_str(&format!("2026-10-16T03:00:02.0Z npm error line {n}\n"));
+        }
+        log.push_str("2026-10-16T03:00:03.0Z ##[error]Process completed with exit code 2.\n");
+        let e = log_excerpt(&log, 60);
+        assert!(e.contains("error TS2322"), "{e}");
+        assert!(e.contains("##[error]Process completed"), "{e}");
+    }
+
+    #[test]
+    fn a_pytest_assert_survives_the_runner_error_line() {
+        let mut log = String::new();
+        for n in 0..80 {
+            log.push_str(&format!("2026-10-16T03:00:00.0Z tests/test_{n}.py .\n"));
+        }
+        log.push_str("2026-10-16T03:00:01.0Z def test_x():\n2026-10-16T03:00:01.0Z > assert 1 == 2\n2026-10-16T03:00:01.0Z E assert 1 == 2\n2026-10-16T03:00:01.0Z E AssertionError\n");
+        for n in 0..70 {
+            log.push_str(&format!("2026-10-16T03:00:02.0Z cleanup {n}\n"));
+        }
+        log.push_str("2026-10-16T03:00:03.0Z ##[error]Process completed with exit code 1.\n");
+        let e = log_excerpt(&log, 60);
+        assert!(e.contains("E AssertionError"), "{e}");
+        assert!(e.contains("##[error]Process completed"), "{e}");
+    }
+
+    #[test]
+    fn many_failed_tests_do_not_push_out_the_panics() {
+        let mut log = String::new();
+        for n in 0..200 {
+            log.push_str(&format!("2026-10-16T03:00:00.0Z test t{n} ... ok\n"));
+            if n % 20 == 0 {
+                log.push_str(&format!("2026-10-16T03:00:00.0Z test bad{n} ... FAILED\n"));
+            }
+        }
+        log.push_str("2026-10-16T03:00:01.0Z failures:\n2026-10-16T03:00:01.0Z ---- bad0 stdout ----\n2026-10-16T03:00:01.0Z thread 'bad0' panicked at src/x.rs:1:1:\n2026-10-16T03:00:01.0Z test result: FAILED. 190 passed; 10 failed\n2026-10-16T03:00:02.0Z ##[error]Process completed with exit code 101.\n");
+        let e = log_excerpt(&log, 60);
+        assert!(e.lines().count() <= 60, "{e}");
+        assert!(e.contains("panicked at src/x.rs:1:1"), "{e}");
+        assert!(e.contains("test result: FAILED"), "{e}");
     }
 
     #[test]
