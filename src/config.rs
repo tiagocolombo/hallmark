@@ -281,10 +281,11 @@ impl Role {
     }
 
     /// The per-run cap in USD when `max_usd` is unset. A run that needs
-    /// more than this has already gone wrong.
+    /// more than this is rare; real reviews of sensitive changes at max
+    /// effort cost over $5.
     pub fn default_max_usd(self) -> f64 {
         match self {
-            Role::Reviewer => 3.0,
+            Role::Reviewer => 6.0,
             Role::Fixer => 2.0,
             Role::Intake => 0.10,
             Role::Librarian => 0.20,
@@ -1019,7 +1020,7 @@ split = "off"
     #[test]
     fn per_run_caps_have_defaults_by_role() {
         let c = Config::parse("").unwrap();
-        assert_eq!(c.budget.max_usd(Role::Reviewer), Some(3.0));
+        assert_eq!(c.budget.max_usd(Role::Reviewer), Some(6.0));
         assert_eq!(c.budget.max_usd(Role::Fixer), Some(2.0));
         assert_eq!(c.budget.max_usd(Role::Intake), Some(0.10));
         assert_eq!(c.budget.max_usd(Role::Librarian), Some(0.20));

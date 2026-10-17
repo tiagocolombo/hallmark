@@ -581,7 +581,7 @@ pub fn apply_sets(text: &str, sets: &[String]) -> Result<(String, Vec<String>)> 
         if table.is_none() && value.is_some() {
             drop_hint(&mut doc, field);
         }
-        let removed = if usd { "default" } else { "none" };
+        let removed = if off { "none" } else { "default" };
         let budget = doc
             .entry("budget")
             .or_insert(toml_edit::table())
@@ -720,7 +720,7 @@ mod tests {
         let (back, applied) = apply_sets(&off, &["review.max_usd=default".into()]).unwrap();
         assert_eq!(applied, ["budget.review.max_usd = default"]);
         let c = Config::parse(&back).unwrap();
-        assert_eq!(c.budget.max_usd(config::Role::Reviewer), Some(3.0));
+        assert_eq!(c.budget.max_usd(config::Role::Reviewer), Some(6.0));
         // `off` lifts the cap too; it must not restore the default.
         let (off2, applied) = apply_sets("", &["review.max_usd=off".into()]).unwrap();
         assert_eq!(applied, ["budget.review.max_usd = \"none\""]);
@@ -733,7 +733,7 @@ mod tests {
     fn default_removes_any_key() {
         let start =
             "[budget]\ndaily = \"4M\"\n\n[budget.review]\nmodel = \"opus\"\ntimeout = \"10m\"\n";
-        let (out, _) = apply_sets(
+        let (out, applied) = apply_sets(
             start,
             &[
                 "daily=default".into(),
@@ -742,6 +742,14 @@ mod tests {
             ],
         )
         .unwrap();
+        assert_eq!(
+            applied,
+            [
+                "budget.daily = default",
+                "budget.review.model = default",
+                "budget.review.timeout = default"
+            ]
+        );
         assert!(!out.contains("daily"), "{out}");
         assert!(!out.contains("model"), "{out}");
         assert!(!out.contains("timeout"), "{out}");

@@ -350,13 +350,14 @@ Every run has a per-run cap, `max_usd`, passed to Claude as
 
 | Role | `max_usd` default |
 | --- | --- |
-| `[budget.review]` | 3.00 |
+| `[budget.review]` | 6.00 |
 | `[budget.fix]` | 2.00 |
 | `[budget.intake]` | 0.10 |
 | `[budget.librarian]` | 0.20 |
 
-A run that needs more than this has already gone wrong: a reviewer that
-wanders, or a fixer looping on a flaky gate. A run that reaches its cap stops
+The caps sit above what normal runs cost (a max-effort review of a sensitive
+change can pass $5), so a run that hits one is a reviewer that wanders or a
+fixer looping on a flaky gate. A run that reaches its cap stops
 and is retried once; a second stop holds the item for you. Set
 `max_usd = "none"` to run a role with no per-run cap (only `timeout` bounds
 it), or `hall budget --set review.max_usd=none`;

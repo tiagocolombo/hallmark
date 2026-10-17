@@ -58,7 +58,7 @@ fn per_run_caps_show_their_defaults_and_take_none() {
     let env = Env::initialized();
     let r = env.hall(&env.repo, &["config", "get", "budget.review.max_usd"]);
     assert_eq!(r.code, 0, "{}", r.stdout);
-    assert_eq!(entry(&r)["value"], 3.0);
+    assert_eq!(entry(&r)["value"], 6.0);
     assert_eq!(entry(&r)["source"], "default");
     let r = env.hall(&env.repo, &["config", "get", "budget.intake.max_usd"]);
     assert_eq!(entry(&r)["value"], 0.1);
@@ -74,7 +74,7 @@ fn per_run_caps_show_their_defaults_and_take_none() {
     assert!(text.contains(r#"max_usd = "none""#), "{text}");
 
     let r = env.hall(&env.repo, &["config", "unset", "budget.review.max_usd"]);
-    assert_eq!(entry(&r)["value"], 3.0);
+    assert_eq!(entry(&r)["value"], 6.0);
     assert_eq!(entry(&r)["source"], "default");
 }
 

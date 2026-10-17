@@ -573,7 +573,7 @@ system prompt.
 
 | Limit | Set by | When it's reached |
 | --- | --- | --- |
-| Per run | `max_usd` → `--max-budget-usd` (default: review $3.00, fix $2.00, intake $0.10, librarian $0.20; `"none"` for no cap), plus a timeout | The run stops. The item is retried once, then goes to you. |
+| Per run | `max_usd` → `--max-budget-usd` (default: review $6.00, fix $2.00, intake $0.10, librarian $0.20; `"none"` for no cap), plus a timeout | The run stops. The item is retried once, then goes to you. |
 | Per item | `per_item` | The item goes to Your Office, marked "budget". |
 | Per room per day | `[budget.review] daily`, … | The room closes for the day. Items wait in order. |
 | Daily total | `daily` | The daemon pauses. Your session isn't blocked. |
