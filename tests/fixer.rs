@@ -177,6 +177,7 @@ fn a_dispute_alone_needs_no_commit_unless_checks_failed() {
                 exit_code: 1,
                 duration_ms: 10,
                 log: None,
+                cached: false,
             }],
         ),
     );

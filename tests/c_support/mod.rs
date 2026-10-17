@@ -189,6 +189,7 @@ pub fn failing_checks_item(env: &Env, title: &str) -> (String, PathBuf, String) 
                 exit_code: 101,
                 duration_ms: 4200,
                 log: Some("checks/r1.log".into()),
+                cached: false,
             }],
         ),
     );
@@ -218,6 +219,7 @@ pub fn approve(
                 exit_code: 0,
                 duration_ms: 3100,
                 log: Some(format!("checks/r{round}.log")),
+                cached: false,
             }],
         ),
     );

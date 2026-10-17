@@ -158,6 +158,8 @@ $(git rev-parse --git-common-dir)/hallmark/   shared by every worktree, never co
 │                         sessions with no item, gate denials
 ├─ sessions/<id>.json     session → item binding, transcript byte offset
 ├─ queue/H-0042.json      tickets waiting for the assayer
+├─ checks-cache/<key>.jsonl  every gate run, red or green, by tree, command,
+│                         gates and OS; passes are served instead of rerun
 ├─ counters.json          next item and question numbers
 └─ index.sqlite           derived; `hall reindex` rebuilds it
 ```
@@ -190,7 +192,8 @@ The journal records:
 
 - prompts and turn summaries
 - every commit, and which findings it claims to fix
-- every check run, with its exit code, duration and failing output
+- every check run, with its exit code, duration and failing output, or
+  `cached` when a pass on the same tree was reused
 - every verdict, with each finding's lens, severity, file, line and scenario
 - your decisions, with reasons
 - questions and answers
@@ -383,6 +386,7 @@ branch      = "hm/{id}-{slug}"
 ship        = "git push -u origin {branch} && gh pr create --base {base} --head {branch} --title {title} --body-file {body_file}"
 review_comment = "gh pr comment {pr} --body-file {review_file}"   # each review is a PR comment
 gates       = []                # hall init fills these
+gates_no_cache = []             # gates the checks cache never serves (network tests)
 dev_commands = []               # what headless dev runs may run besides the gates
 reviewer    = "claude -p"
 fixer       = "claude -p"       # or an external fix engine (Ralph Orchestrator…)

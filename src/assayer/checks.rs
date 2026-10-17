@@ -7,6 +7,7 @@ use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
+use super::cache;
 use crate::config::Role;
 use crate::error::Result;
 use crate::event::{Body, CheckRun, short};
@@ -29,19 +30,14 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
     let timeout = repo.config.budget.timeout_secs(Role::Reviewer).max(0) as u64;
     let mut runs = Vec::new();
     if !gates.is_empty() {
-        // A slot of the assay pool, locked until the checks end.
-        let slot = super::checkout_checks(repo, &sha)?;
-        let wt = slot.path.clone();
-        let dir = repo.hall.item_checks(item.id);
-        fs::create_dir_all(&dir)?;
-        let rel = format!("checks/r{round}.log");
-        let mut log = File::create(dir.join(format!("r{round}.log")))?;
-        writeln!(
-            log,
-            "# {} round {round}: checks at {sha} in {}",
+        let mut bench = Bench::open(
+            repo,
             item.id,
-            crate::paths::display(&wt)
+            &sha,
+            &format!("r{round}"),
+            &format!("round {round}"),
         )?;
+        let forced = bench.forced(&gates);
         for (i, g) in gates.iter().enumerate() {
             // Renew the lease: each gate may take up to the timeout.
             let _ = crate::lease::claim(
@@ -57,22 +53,9 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
                 i + 1,
                 gates.len()
             ));
-            writeln!(log, "\n$ {g}")?;
-            log.flush()?;
-            let (exit_code, duration_ms) = run_gate(g, &wt, &log, timeout)?;
-            writeln!(
-                log,
-                "\n[exit {exit_code} after {:.1}s]",
-                duration_ms as f64 / 1000.0
-            )?;
-            runs.push(CheckRun {
-                command: g.clone(),
-                exit_code,
-                duration_ms,
-                log: Some(rel.clone()),
-            });
+            runs.push(bench.gate(g, timeout, i < forced)?);
         }
-        log.flush()?;
+        bench.log.flush()?;
     }
     let passed = runs.iter().all(|r| r.exit_code == 0);
     let failed: Vec<String> = runs
@@ -124,8 +107,9 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
 /// Runs every gate at `sha` in a slot of the assay pool, outside the
 /// review loop, and writes `checks/<name>.log`. `renew` runs before each
 /// gate, so the caller can renew its lease. Used by the Dispatch Dock to
-/// check a rebased commit before carrying its hallmark (ADR 0030).
-/// `CLAIMED` when every slot is busy.
+/// check a rebased commit before carrying its hallmark (ADR 0030). Passes
+/// on the same tree come from the checks cache, as in [`run`].
+/// `CLAIMED` when every slot is busy and a gate has to run.
 pub fn gates_at(
     repo: &crate::repo::Repo,
     id: crate::item::ItemId,
@@ -138,17 +122,9 @@ pub fn gates_at(
         return Ok(vec![]);
     }
     let timeout = repo.config.budget.timeout_secs(Role::Reviewer).max(0) as u64;
-    let slot = super::checkout_checks(repo, sha)?;
-    let dir = repo.hall.item_checks(id);
-    fs::create_dir_all(&dir)?;
-    let rel = format!("checks/{name}.log");
-    let mut log = File::create(dir.join(format!("{name}.log")))?;
-    writeln!(
-        log,
-        "# {id} {name}: checks at {sha} in {}",
-        crate::paths::display(&slot.path)
-    )?;
+    let mut bench = Bench::open(repo, id, sha, name, name)?;
     let mut runs = Vec::new();
+    let forced = bench.forced(&gates);
     for (i, g) in gates.iter().enumerate() {
         renew();
         repo.hall.live(&format!(
@@ -156,23 +132,150 @@ pub fn gates_at(
             i + 1,
             gates.len()
         ));
-        writeln!(log, "\n$ {g}")?;
-        log.flush()?;
-        let (exit_code, duration_ms) = run_gate(g, &slot.path, &log, timeout)?;
-        writeln!(
+        runs.push(bench.gate(g, timeout, i < forced)?);
+    }
+    bench.log.flush()?;
+    Ok(runs)
+}
+
+/// One run of the gates at one commit: its log, and a slot of the assay
+/// pool, taken only when a gate has to run. A gate that passed before on the
+/// same tree is served from the checks cache ([`super::cache`]) instead,
+/// unless `gates_no_cache` lists it; every gate that runs is recorded there.
+struct Bench<'a> {
+    repo: &'a crate::repo::Repo,
+    id: crate::item::ItemId,
+    sha: String,
+    log: File,
+    /// The log, relative to the item's journal directory.
+    rel: String,
+    /// None when git can't name the tree: nothing is cached.
+    tree: Option<String>,
+    slot: Option<super::Checkout>,
+}
+
+impl<'a> Bench<'a> {
+    /// Starts `checks/<name>.log`.
+    fn open(
+        repo: &'a crate::repo::Repo,
+        id: crate::item::ItemId,
+        sha: &str,
+        name: &str,
+        title: &str,
+    ) -> Result<Bench<'a>> {
+        let dir = repo.hall.item_checks(id);
+        fs::create_dir_all(&dir)?;
+        let mut log = File::create(dir.join(format!("{name}.log")))?;
+        writeln!(log, "# {id} {title}: checks at {sha}")?;
+        Ok(Bench {
+            repo,
+            id,
+            sha: sha.to_string(),
             log,
+            rel: format!("checks/{name}.log"),
+            tree: cache::tree(&repo.main_root, sha),
+            slot: None,
+        })
+    }
+
+    /// The key of a gate that may be cached.
+    fn key(&self, g: &str) -> Option<cache::Key> {
+        let config = &self.repo.config;
+        self.tree
+            .as_deref()
+            .filter(|_| !config.gates_no_cache.iter().any(|n| n.trim() == g.trim()))
+            .map(|t| cache::Key::new(t, g, &config.gates))
+    }
+
+    /// The passing run that serves `g`, if any. Never one whose log is the
+    /// file this bench is writing (a round run again): that log was just
+    /// truncated, so it no longer holds that run's output.
+    fn hit(&self, key: Option<&cache::Key>) -> Option<cache::CachedRun> {
+        let own = format!("items/{}/{}", self.id, self.rel);
+        cache::passed(&self.repo.hall, key?).filter(|h| h.log.as_deref() != Some(own.as_str()))
+    }
+
+    /// How many leading gates must run. A served gate does nothing in the
+    /// slot, so every gate before one that has to run runs too (a generator
+    /// or an install its successors depend on); only the gates after the
+    /// last one that runs are served.
+    fn forced(&self, gates: &[String]) -> usize {
+        gates
+            .iter()
+            .rposition(|g| self.hit(self.key(g).as_ref()).is_none())
+            .map_or(0, |i| i + 1)
+    }
+
+    /// One gate's result: from the cache when it passed on this tree
+    /// before and `force` is off, else by running it.
+    fn gate(&mut self, g: &str, timeout: u64, force: bool) -> Result<CheckRun> {
+        let key = self.key(g);
+        let hit = if force { None } else { self.hit(key.as_ref()) };
+        if let Some(hit) = hit {
+            writeln!(
+                self.log,
+                "\n$ {g}\n[cached: passed on tree {} for {} at {}; log {}]",
+                short(&hit.tree),
+                hit.item,
+                short(&hit.sha),
+                hit.log.as_deref().unwrap_or("none")
+            )?;
+            return Ok(CheckRun {
+                command: g.to_string(),
+                exit_code: 0,
+                duration_ms: hit.duration_ms,
+                log: hit.log,
+                cached: true,
+            });
+        }
+        let wt = match &self.slot {
+            Some(s) => s.path.clone(),
+            None => {
+                // A slot of the assay pool, locked until the checks end.
+                let slot = super::checkout_checks(self.repo, &self.sha)?;
+                writeln!(self.log, "# in {}", crate::paths::display(&slot.path))?;
+                let wt = slot.path.clone();
+                self.slot = Some(slot);
+                wt
+            }
+        };
+        writeln!(self.log, "\n$ {g}")?;
+        self.log.flush()?;
+        let (exit_code, duration_ms) = run_gate(g, &wt, &self.log, timeout)?;
+        writeln!(
+            self.log,
             "\n[exit {exit_code} after {:.1}s]",
             duration_ms as f64 / 1000.0
         )?;
-        runs.push(CheckRun {
-            command: g.clone(),
+        if let Some(k) = key {
+            let run = cache::CachedRun {
+                key: k.id(),
+                tree: k.tree,
+                command: k.command,
+                gates: k.gates,
+                os: k.os,
+                item: self.id.to_string(),
+                sha: self.sha.clone(),
+                at: chrono::Utc::now(),
+                exit_code,
+                duration_ms,
+                log: Some(format!("items/{}/{}", self.id, self.rel)),
+            };
+            // The cache only saves time: failing to write it fails nothing.
+            if let Err(e) = cache::record(&self.repo.hall, &run) {
+                self.repo
+                    .hall
+                    .live(&format!("{} checks cache not written: {e}", self.id));
+            }
+        }
+        Ok(CheckRun {
+            command: g.to_string(),
             exit_code,
             duration_ms,
-            log: Some(rel.clone()),
-        });
+            log: Some(self.rel.clone()),
+            cached: false,
+        })
     }
-    log.flush()?;
-    Ok(runs)
 }
 
 /// Runs one gate through the platform shell with stdout and stderr both

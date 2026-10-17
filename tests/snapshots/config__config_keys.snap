@@ -45,6 +45,7 @@ expression: keys
   "repo extensions.mattpocock list",
   "repo fixer string",
   "repo gates list",
+  "repo gates_no_cache list",
   "repo intake.max_parts integer",
   "repo intake.split choice",
   "repo lenses string_or_list",
