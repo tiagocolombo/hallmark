@@ -1,0 +1,53 @@
+---
+source: tests/condense.rs
+expression: "format!(\"{}---\\n{}\", c.text, c.measure())"
+---
+warning: unused variable: `unused`
+  --> src/lib.rs:18:9
+   | ^ help: if this is intentional, prefix it with an underscore: `_unused`
+per file: src/lib.rs 1 warning
+warning: `widgets` (lib) generated 1 warning (run `cargo fix --lib -p widgets` to apply 1 suggestion)
+warning: `widgets` (lib test) generated 1 warning (1 duplicate)
+test tests::parse_rejects_garbage ... FAILED
+test tests::sizes_are_sorted ... FAILED
+test tests::lookup_finds_nut ... FAILED
+test tests::add_carries ... FAILED
+---- tests::parse_rejects_garbage stdout ----
+Error: "parsed garbage as 12"
+---- tests::sizes_are_sorted stdout ----
+thread 'tests::sizes_are_sorted' (4821473) panicked at src/lib.rs:56:9:
+sizes not sorted: [3, 1, 2]
+---- tests::lookup_finds_nut stdout ----
+thread 'tests::lookup_finds_nut' (4821471) panicked at src/lib.rs:40:30:
+called `Option::unwrap()` on a `None` value
+---- tests::add_carries stdout ----
+thread 'tests::add_carries' (4821470) panicked at src/lib.rs:35:9:
+assertion `left == right` failed: two plus two
+  left: 4
+ right: 5
+test result: FAILED. 3000 passed; 4 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.10s
+error: test failed, to rerun pass `--lib`
+test catalog_totals ... FAILED
+---- catalog_totals stdout ----
+thread 'catalog_totals' (4824496) panicked at tests/catalog.rs:11:5:
+assertion `left == right` failed
+  left: 10
+ right: 11
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+error: test failed, to rerun pass `--test catalog`
+test src/lib.rs - add (line 5) ... FAILED
+---- src/lib.rs - add (line 5) stdout ----
+thread 'main' (4824717) panicked at src/lib.rs:5:1:
+assertion `left == right` failed
+  left: 4
+ right: 5
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.86s
+error: doctest failed, to rerun pass `--doc`
+error: 3 targets failed:
+    `--lib`
+    `--test catalog`
+    `--doc`
+total: 3003 passed; 6 failed; 1 ignored in 3 targets
+exit code: 101
+---
+condensed 98670 bytes (3166 lines) to 1986 bytes (47 lines); ~24171 tokens saved (estimate: bytes/4)

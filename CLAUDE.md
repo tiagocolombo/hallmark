@@ -111,13 +111,16 @@ src/
   budget.rs      budget checks at four levels (ADR 0016)
   stamp.rs       the hallmark note
   skills.rs      repo skills from .hallmark/skills on the base (ADR 0037)
+  condense/      condensing command output for an agent's context: one
+                 filter per tool family, evidence never (ADR 0046)
   tui/           the terminal app (a reader)
   commands/      one module per group of commands; meta.rs has
                  `hall help --json` and `hall schema`
 plugin/          the Claude Code plugin: skills, agents, schemas, hooks
                  (every file is embedded via plugin::FILES)
 tests/           integration tests (assert_cmd + tempfile), insta snapshots
-tests/fixtures/  real hook stdin, claude -p results and transcripts from Step 0
+tests/fixtures/  real hook stdin, claude -p results and transcripts from Step 0;
+                 command output logs under output/
 docs/            design, ADRs, spikes
 ```
 

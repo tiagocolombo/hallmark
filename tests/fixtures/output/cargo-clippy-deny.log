@@ -1,0 +1,109 @@
+    Checking sprockets v0.1.0 (/home/dev/src/sprockets)
+error: unused import: `std::collections::HashMap`
+ --> src/ratio.rs:1:5
+  |
+1 | use std::collections::HashMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `-D unused-imports` implied by `-D warnings`
+  = help: to override `-D warnings` add `#[allow(unused_imports)]`
+
+error: unused variable: `scale`
+ --> src/ratio.rs:4:9
+  |
+4 |     let scale = 10;
+  |         ^^^^^ help: if this is intentional, prefix it with an underscore: `_scale`
+  |
+  = note: `-D unused-variables` implied by `-D warnings`
+  = help: to override `-D warnings` add `#[allow(unused_variables)]`
+
+error: unused variable: `spare`
+  --> src/teeth.rs:10:9
+   |
+10 |     let spare = 0;
+   |         ^^^^^ help: if this is intentional, prefix it with an underscore: `_spare`
+
+error: unneeded `return` statement
+ --> src/ratio.rs:9:5
+  |
+9 |     return r;
+  |     ^^^^^^^^
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_return
+  = note: `-D clippy::needless-return` implied by `-D warnings`
+  = help: to override `-D warnings` add `#[allow(clippy::needless_return)]`
+help: remove `return`
+  |
+9 -     return r;
+9 +     r
+  |
+
+error: length comparison to zero
+  --> src/ratio.rs:14:8
+   |
+14 |     if label.len() == 0 {
+   |        ^^^^^^^^^^^^^^^^ help: using `is_empty` is clearer and more explicit: `label.is_empty()`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#len_zero
+   = note: `-D clippy::len-zero` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::len_zero)]`
+
+error: unneeded `return` statement
+ --> src/teeth.rs:6:5
+  |
+6 |     return total;
+  |     ^^^^^^^^^^^^
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_return
+help: remove `return`
+  |
+6 -     return total;
+6 +     total
+  |
+
+error: writing `&Vec` instead of `&[_]` involves a new object where a slice will do
+ --> src/teeth.rs:1:21
+  |
+1 | pub fn count(teeth: &Vec<u32>) -> usize {
+  |                     ^^^^^^^^^
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#ptr_arg
+  = note: `-D clippy::ptr-arg` implied by `-D warnings`
+  = help: to override `-D warnings` add `#[allow(clippy::ptr_arg)]`
+help: change this to
+  |
+1 - pub fn count(teeth: &Vec<u32>) -> usize {
+1 + pub fn count(teeth: &[u32]) -> usize {
+  |
+
+error: the loop variable `i` is only used to index `teeth`
+ --> src/teeth.rs:3:14
+  |
+3 |     for i in 0..teeth.len() {
+  |              ^^^^^^^^^^^^^^
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_range_loop
+  = note: `-D clippy::needless-range-loop` implied by `-D warnings`
+  = help: to override `-D warnings` add `#[allow(clippy::needless_range_loop)]`
+help: consider using an iterator
+  |
+3 -     for i in 0..teeth.len() {
+3 +     for <item> in &teeth {
+  |
+
+error: writing `&Vec` instead of `&[_]` involves a new object where a slice will do
+ --> src/teeth.rs:9:23
+  |
+9 | pub fn largest(teeth: &Vec<u32>) -> u32 {
+  |                       ^^^^^^^^^
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#ptr_arg
+help: change this to
+  |
+9 - pub fn largest(teeth: &Vec<u32>) -> u32 {
+9 + pub fn largest(teeth: &[u32]) -> u32 {
+  |
+
+error: could not compile `sprockets` (lib) due to 9 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `sprockets` (lib test) due to 9 previous errors

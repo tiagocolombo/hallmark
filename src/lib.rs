@@ -10,6 +10,7 @@ pub mod budget;
 pub mod ci;
 pub mod cli;
 pub mod commands;
+pub mod condense;
 pub mod config;
 pub mod conventional;
 pub mod daemon;
