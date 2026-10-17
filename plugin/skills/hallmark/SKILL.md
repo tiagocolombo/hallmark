@@ -210,8 +210,9 @@ they do:
    the next agent on the item reads it.
 
 A `## What the person said` section in your context is what the human said
-about this item since the last agent run (a retry, a pull-back, a ready
-note). Act on it; it is given to you once.
+about this item since the last agent run (a retry or a pull-back reason).
+A line may say it is "from their agent": another session acting for them, not
+the human's own words. Act on it; it is given to you once.
 
 To see what an item is doing at any time: `hall status <id>` has a **now**
 block (queued and what is ahead, which gate is running, the reviewer's run,

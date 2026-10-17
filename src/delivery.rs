@@ -322,7 +322,7 @@ fn resolve(
         }
         // Whatever the run said, the worktree decides.
         Metered::Done(_) => {
-            crate::words::delivered(repo, id, ACTOR, words.as_ref())?;
+            crate::words::delivered(repo, id, ACTOR, words.as_ref(), &events)?;
             settle(repo, id, wt, target)
         }
     }
@@ -736,7 +736,7 @@ fn dev_run(
             )));
         }
         Metered::Done(outcome) => {
-            crate::words::delivered(repo, id, ACTOR, words.as_ref())?;
+            crate::words::delivered(repo, id, ACTOR, words.as_ref(), events)?;
             outcome
                 .result
                 .as_ref()

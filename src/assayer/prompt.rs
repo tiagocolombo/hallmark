@@ -178,11 +178,6 @@ pub fn prepare(
     if let Some(s) = &item.summary {
         let _ = writeln!(p, "Author's summary: {s}");
     }
-    // What the person said since the last run (`hall ready --note`, a
-    // retry's reason), given once (ADR 0044).
-    if let Some(w) = crate::words::pending(events, "reviewer") {
-        let _ = writeln!(p, "\n{}", w.section);
-    }
     // The note on this round's Ready event, when someone other than the
     // person gave it (the author's session, the Delivery office, the shipper).
     // Only the latest Ready counts: an earlier round's note isn't this one's.
@@ -199,6 +194,12 @@ pub fn prepare(
         } else {
             let _ = writeln!(p, "Note when sent to review (by {actor}): {}", n.trim());
         }
+    }
+    // What the person said since the last run (`hall ready --note`, a
+    // retry's reason), given once (ADR 0044). After the author's own note,
+    // so nothing but the person's words sits under the heading.
+    if let Some(w) = crate::words::pending(events, "reviewer") {
+        let _ = writeln!(p, "\n{}", w.section);
     }
 
     let _ = writeln!(

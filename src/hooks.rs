@@ -474,7 +474,7 @@ impl Ctx {
         }
         let events = self.repo.hall.read_item(i.id).ok()?;
         let w = crate::words::pending(&events, "session")?;
-        let _ = crate::words::delivered(&self.repo, i.id, "session", Some(&w));
+        let _ = crate::words::delivered(&self.repo, i.id, "session", Some(&w), &events);
         Some(w.section.trim_end().to_string())
     }
 

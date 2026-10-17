@@ -260,6 +260,7 @@ fn said_to_fixer(repo: &Repo, id: ItemId, events: &[Event]) -> Result<()> {
         id,
         "fixer",
         crate::words::pending(events, "fixer").as_ref(),
+        events,
     )
 }
 

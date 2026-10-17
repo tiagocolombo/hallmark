@@ -40,6 +40,9 @@ Status: Accepted, 2026-10-16.
   or when a hook hands the words to a session. `until` is when the newest
   reason it was given was recorded, so a reason given while the run went on
   stays for the next one. A run that fails is retried with the same words.
+  A headless run that finishes with no words still records one, with `until`
+  set to the last event it read, so only a journal with no run in it falls
+  back to the old-journal baseline.
 - **Nothing else changes.** A dispute already reaches the reviewer with its
   finding, so `hall fixed --dispute --reason` isn't repeated here. `hall drop`
   ends the item, so no agent comes next.

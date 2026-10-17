@@ -141,10 +141,20 @@ pub fn pending(events: &[Event], to: &str) -> Option<Words> {
 }
 
 /// Records that the run of `to` (reviewer, fixer, delivery, resume,
-/// session) was given `words`, so later runs aren't. Nothing to record
-/// without words.
-pub fn delivered(repo: &Repo, id: ItemId, to: &str, words: Option<&Words>) -> Result<()> {
-    let Some(w) = words else { return Ok(()) };
+/// session) was given `words`, so later runs aren't. Without words it still
+/// records the run, up to the last event of `read` (the journal as the run
+/// read it), so a journal with a run in it never falls back to the
+/// old-journal baseline and a reason given while the run went on waits.
+pub fn delivered(
+    repo: &Repo,
+    id: ItemId,
+    to: &str,
+    words: Option<&Words>,
+    read: &[Event],
+) -> Result<()> {
+    let Some(until) = words.map(|w| w.until).or_else(|| read.last().map(|e| e.t)) else {
+        return Ok(());
+    };
     repo.hall.append_item(
         id,
         &Event::new(
@@ -152,7 +162,7 @@ pub fn delivered(repo: &Repo, id: ItemId, to: &str, words: Option<&Words>) -> Re
             Some(id),
             Body::ReasonsDelivered {
                 to: to.into(),
-                until: w.until,
+                until,
             },
         ),
     )
