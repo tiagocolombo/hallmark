@@ -639,7 +639,8 @@ pub struct ExportArgs {
 #[derive(Debug, Args)]
 pub struct BudgetArgs {
     /// Set a cap in .hallmark.toml, such as daily=4M, per_item=800k,
-    /// review.max_usd=3, review.daily=2M (repeatable).
+    /// review.max_usd=3, review.daily=2M (repeatable). none lifts a cap;
+    /// default goes back to the default.
     #[arg(long, num_args = 1..)]
     pub set: Vec<String>,
     /// Let the loop go past the daily budget today without changing it:
