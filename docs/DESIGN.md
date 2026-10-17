@@ -629,7 +629,10 @@ what its review is told. There are four kinds:
 
 1. A Haiku librarian distils closed items into learnings.
 2. Each review receives a briefing within a token cap. The briefing combines
-   learnings scoped to the changed paths with a search of the rest.
+   learnings scoped to the changed paths, which come first, with a search of
+   the rest. The cap follows the review's effort: 2k tokens at `low`, 4k at
+   `medium`, and `briefing_limit` (6k) otherwise, never more than
+   `briefing_limit`.
 3. Each verdict says which learnings it used. Unused or contradicted learnings
    are retired; `history/` keeps every earlier version.
 

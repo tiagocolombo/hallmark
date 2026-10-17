@@ -89,7 +89,7 @@ librarian_model = "haiku"
 [library]
 search         = "builtin"   # or "qmd"
 # collection   = "hallmark-<repo>"   # the qmd collection
-briefing_limit = "6k"
+briefing_limit = "6k"        # tokens; a low-effort review gets 2k, a medium one 4k
 auto_accept    = []          # kinds that skip your approval: rule, false-positive, map, decision
 retire_after   = "90d"
 # Learnings live in <git-common-dir>/hallmark/library/, never in the repo.
