@@ -56,7 +56,10 @@ merger treats a conflicting PR like one that is behind its base: it is
 reopened with a rebase request at its turn, and `hall queue` shows it as
 `conflicting`. Freshness stays the merger's own git check (ADR 0048).
 GitHub's `mergeable` only says when to wait (`UNKNOWN`) or to look closer
-(`CONFLICTING`).
+(`CONFLICTING`). A PR whose CI hasn't reported is still read for a conflict:
+GitHub runs no `pull_request` workflows on a conflicting PR, so its CI may
+never report until it is brought up to date. That costs one GitHub read per
+pending PR; a PR with red CI still costs none.
 
 ### A PR waits for the earlier PRs that touch its files
 
@@ -66,15 +69,20 @@ then the oldest PR. Files are **claimed**:
 1. first by every item of that base already reopened through its PR and
    being brought back by the loop (a rebase, comments or a CI fix; in
    development with that request, checks, review, fixing or hallmarked), with
-   no hold;
+   no hold. Its claim holds only the PRs newer than it. An older PR on the
+   same files still goes first: the reopened item must be rebased onto it
+   anyway, and holding the older one would make it wait for a PR that is
+   brought up to date after it;
 2. then, walking the queue, by every PR still on its way to a merge on its
    own: ready, merging, behind, conflicting, CI pending, `UNKNOWN`, queued, or
-   waiting for a PR in this queue.
+   waiting for a PR in this queue or for a reopened item being brought back.
 
-A PR that touches a claimed file neither merges nor is rebased. It shows
-`waits_for` the PR that claims the file, and why ("first waits for #64
-(docs/DESIGN.md)"). So a PR is rebased only after every earlier PR it
-overlaps with has merged: once, onto a base that already has them.
+A PR that touches a claimed file neither merges, nor is rebased, nor is put
+to a person for a `lit` path. It shows `waits_for` the PR that claims the
+file, and why ("first waits for #64 (docs/DESIGN.md)"). So a PR is rebased
+only after every earlier PR it overlaps with has merged: once, onto a base
+that already has them. And a person approves a lit head only when it can
+merge, not one that a rebase replaces.
 
 ### Lanes
 

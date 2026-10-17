@@ -147,9 +147,14 @@ each merge ahead of it would put it behind again. So each PR is rebased once,
 onto a base that already has everything it overlaps with:
 
 - walking the queue in order, every PR still on its way to a merge claims its
-  files, and so does every item already reopened and being brought back;
+  files, including one that waits for another PR in the queue;
+- every item already reopened and being brought back claims its files
+  against the PRs newer than it. An older PR on those files still merges
+  first: the reopened one has to be rebased onto it anyway;
 - a PR that touches a claimed file waits for the PR that claims it
   (`waits_for`, "first waits for #64 (docs/DESIGN.md)");
+- a conflicting PR is brought up to date at its turn even when its CI hasn't
+  reported, because GitHub runs no pull request CI on a conflicting PR;
 - PRs that share no files move in parallel lanes: several can be rebased at
   once, and a fresh one merges while others are brought up to date;
 - a PR waiting on a person (held, lit, changes requested, red CI) claims
@@ -165,7 +170,8 @@ A script decides each step, never a model. That is what lets this loop run
 with nobody watching: its check is cheap, runs often and is hard to game.
 Paths where a wrong merge is expensive stay with you: a PR that touches a
 `[merge] lit` path waits in your inbox, and `hall retry` lets the merger
-merge it.
+merge it. You are asked only once nothing ahead of it claims its files, so
+the head you approve is one that can merge.
 
 ## Parallel parts
 

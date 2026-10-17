@@ -394,7 +394,8 @@ impl<'a> Look<'a> {
     }
 
     /// Judges one PR. Cheap, local checks come first, so a PR that can't
-    /// merge yet costs no GitHub call.
+    /// merge yet costs no GitHub call; one whose CI hasn't reported costs
+    /// one, to see whether it conflicts.
     fn judge(&mut self, item: &Item) -> Judged {
         let url = item.pr_url.clone().unwrap_or_default();
         let none = Judged::wait;
@@ -449,10 +450,16 @@ impl<'a> Look<'a> {
             );
         }
         let events = self.repo.hall.read_item(item.id).unwrap_or_default();
-        if self.repo.config.merge.require_ci
-            && let Some((s, why)) = ci_status(item, &events)
-        {
-            return none(s, why);
+        // CI that hasn't reported still needs GitHub's word on a conflict:
+        // GitHub runs no pull_request workflows on a conflicting PR, so its
+        // CI may never report until it is brought up to date.
+        let mut ci_pending = None;
+        if self.repo.config.merge.require_ci {
+            match ci_status(item, &events) {
+                Some((Status::CiPending, why)) => ci_pending = Some(why),
+                Some((s, why)) => return none(s, why),
+                None => {}
+            }
         }
         let pr: GhQueue = match crate::gh::pr_queue(&self.repo.main_root, &url) {
             Ok(p) => p,
@@ -502,9 +509,10 @@ impl<'a> Look<'a> {
         }
         // A conflict is brought up to date at its turn, like a PR that is
         // behind: GitHub's word only says when to look closer.
-        let conflicting = match pr.mergeable.as_str() {
-            "MERGEABLE" => false,
-            "CONFLICTING" => true,
+        let conflicting = match (pr.mergeable.as_str(), ci_pending) {
+            ("CONFLICTING", _) => true,
+            (_, Some(why)) => return none(Status::CiPending, why),
+            ("MERGEABLE", None) => false,
             _ => {
                 return none(
                     Status::Unknown,
@@ -601,6 +609,9 @@ impl<'a> Look<'a> {
         // Files a PR may not touch yet, and the PR that claims each one.
         let mut claimed: BTreeMap<String, Vec<Claim>> = BTreeMap::new();
         let mut out = Vec::new();
+        // Reopened items the loop is bringing back: a wait for one of them
+        // moves, like a wait for a PR in line.
+        let mut in_flight: Vec<String> = Vec::new();
         // Items already sent back claim their files first: whatever overlaps
         // them would be stale again once they merge. One held, or in a
         // person's hands, claims nothing.
@@ -612,6 +623,7 @@ impl<'a> Look<'a> {
                 )
             } else if is_in_flight(item) {
                 let url = item.pr_url.clone().unwrap_or_default();
+                in_flight.push(url.clone());
                 for f in self.files_of(item) {
                     claimed.entry(f).or_default().push(Claim {
                         url: url.clone(),
@@ -679,7 +691,12 @@ impl<'a> Look<'a> {
                 verdict = None;
             }
             unknown_ahead |= status == Status::Unknown;
-            if matches!(verdict, Some(Verdict::Merge(_) | Verdict::Rebase(..))) {
+            // A person is asked about a lit PR only once nothing ahead of it
+            // claims its files, so the head they approve can merge.
+            if matches!(
+                verdict,
+                Some(Verdict::Merge(_) | Verdict::Rebase(..) | Verdict::Lit(_))
+            ) {
                 let mut by: BTreeMap<&str, Vec<String>> = BTreeMap::new();
                 let me = item.pr_url.clone().unwrap_or_default();
                 for f in self.files_of(item) {
@@ -703,7 +720,7 @@ impl<'a> Look<'a> {
                         .map(|(u, fs)| format!("{} ({})", pr_name(u), fs.join(", ")))
                         .collect();
                     why = match status {
-                        Status::Ready => "ready".to_string(),
+                        Status::Ready | Status::Lit => "ready".to_string(),
                         _ => why.replace("; bringing it up to date", ""),
                     };
                     why = format!("{why}; first waits for {}", ahead.join(", "));
@@ -724,7 +741,7 @@ impl<'a> Look<'a> {
                 }
                 merging = true;
             }
-            if self.claims(status, &waits) {
+            if self.claims(status, &waits, &in_flight) {
                 let url = item.pr_url.clone().unwrap_or_default();
                 for f in self.files_of(item) {
                     claimed.entry(f).or_default().push(Claim {
@@ -749,7 +766,7 @@ impl<'a> Look<'a> {
     /// Whether a PR in this status is on its way to a merge on its own, so
     /// the PRs behind it that touch its files wait for it. One waiting on a
     /// person, or broken, claims nothing.
-    fn claims(&self, status: Status, waits: &[String]) -> bool {
+    fn claims(&self, status: Status, waits: &[String], in_flight: &[String]) -> bool {
         match status {
             Status::Ready
             | Status::Merging
@@ -759,12 +776,14 @@ impl<'a> Look<'a> {
             | Status::Unknown
             | Status::Queued
             | Status::Updating => true,
-            // Waiting for PRs in this queue moves; waiting for one outside
-            // it may not.
+            // Waiting for PRs in this queue, or reopened ones being brought
+            // back, moves; waiting for one outside it may not.
             Status::WaitsFor => waits.iter().all(|w| {
-                self.open
-                    .values()
-                    .any(|o| o.pr_url.as_deref() == Some(w.as_str()))
+                in_flight.contains(w)
+                    || self
+                        .open
+                        .values()
+                        .any(|o| o.pr_url.as_deref() == Some(w.as_str()))
             }),
             Status::CiRed
             | Status::Lit

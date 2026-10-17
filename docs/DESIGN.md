@@ -702,11 +702,15 @@ fresh (the base is in it, or the base's new commits touch none of its files).
 The first ready PR merges through `[merge] command` (`pr_merged`). A PR
 behind on its own files, or `CONFLICTING`, is reopened with a rebase request
 only at its turn (ADR 0050): walking the queue, every PR still on its way to
-a merge claims its files, and so does every item already reopened and being
-brought back; a PR that touches a claimed file waits (`waits_for`). So each
-PR is rebased once, after the earlier PRs it overlaps with have merged, and
-PRs on separate files move in parallel lanes. A PR waiting on a person claims
-nothing. With the merger on, the delivery watch leaves conflicts to the
+a merge claims its files (one waiting for another PR in the queue too), and
+so does every item already reopened and being brought back, against the PRs
+newer than it (an older PR merges first, since the reopened one is rebased
+onto it anyway); a PR that touches a claimed file waits (`waits_for`). So
+each PR is rebased once, after the earlier PRs it overlaps with have merged,
+and PRs on separate files move in parallel lanes. A PR waiting on a person
+claims nothing. A conflicting PR is rebased at its turn even when its CI
+hasn't reported, since GitHub runs no pull request CI on it, and a `lit` PR
+is put to you only once nothing claims its files. With the merger on, the delivery watch leaves conflicts to the
 queue. After a merge, nothing else on that base merges until the watch
 records `delivered`. A
 failed command holds the item (`merge_failed`); a `lit` path holds it for you

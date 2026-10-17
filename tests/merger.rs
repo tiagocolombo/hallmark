@@ -90,8 +90,16 @@ fn setup(env: &Env) {
 
 /// A hallmarked item that changes `file`, shipped as PR `n` with green CI.
 fn shipped(env: &Env, gh: &Path, n: u64, file: &str) -> (String, PathBuf, String) {
-    let (id, wt) = env.new_item(&format!("Change {file}"));
-    commit_file(&wt, file, &format!("// {file}\n"));
+    shipped_files(env, gh, n, &[file])
+}
+
+/// A hallmarked item that changes each of `files`, shipped as PR `n` with
+/// green CI.
+fn shipped_files(env: &Env, gh: &Path, n: u64, files: &[&str]) -> (String, PathBuf, String) {
+    let (id, wt) = env.new_item(&format!("Change {}", files.join(" and ")));
+    for file in files {
+        commit_file(&wt, file, &format!("// {file}\n"));
+    }
     assert_eq!(env.hall(&wt, &["ready"]).code, 0);
     let sha = git(&wt, &["rev-parse", "HEAD"]);
     approve(env, &id, &wt, 1, vec![], counts(0, 0, 0, 0));
@@ -331,8 +339,6 @@ fn ci_must_pass_at_the_shipped_head_unless_it_is_not_required() {
     assert_eq!(status_of(&queue(&env, &gh), &id)["status"], "ci_pending");
     pass(&env, &gh);
     assert!(events(&env, &id, "pr_merged").is_empty());
-    // No GitHub call for a PR that can't merge yet.
-    assert!(!calls(&gh).contains("pr view"), "{}", calls(&gh));
 
     append(
         &env,
@@ -351,6 +357,11 @@ fn ci_must_pass_at_the_shipped_head_unless_it_is_not_required() {
     );
     let e = queue(&env, &gh);
     assert_eq!(status_of(&e, &id)["status"], "ci_red");
+    // No GitHub call for a PR whose CI failed. (One whose CI hasn't
+    // reported costs one: a conflict would keep its CI from ever running.)
+    std::fs::remove_file(gh.parent().unwrap().join("calls.log")).unwrap();
+    pass(&env, &gh);
+    assert!(!calls(&gh).contains("pr view"), "{}", calls(&gh));
 
     set_config(&env, "merge.require_ci", "false");
     let q = queue(&env, &gh);
@@ -1137,4 +1148,109 @@ fn a_conflicting_pr_on_a_lit_path_is_brought_up_to_date_before_you_are_asked() {
     pass(&env, &gh);
     assert_eq!(state(&env, &id), "development");
     assert!(events(&env, &id, "held").is_empty());
+}
+
+/// Shipped again after its green run: its CI hasn't reported at the new
+/// head.
+fn ci_pending(env: &Env, id: &str, n: u64, sha: &str) {
+    append(
+        env,
+        id,
+        "shipper",
+        Body::Shipped {
+            sha: sha.into(),
+            pr_url: Some(url(n)),
+        },
+    );
+}
+
+#[test]
+fn a_conflicting_pr_whose_ci_never_reports_is_still_brought_up_to_date() {
+    // GitHub runs no pull_request workflows on a conflicting PR, so waiting
+    // for its CI would wait for good, and block every PR on its files.
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    let (id, _, sha) = shipped(&env, &gh, 1, "a.rs");
+    let (after, _, _) = shipped(&env, &gh, 2, "a.rs");
+    ci_pending(&env, &id, 1, &sha);
+    pr(&gh, 1, "CONFLICTING", &sha, "", json!([]));
+
+    let q = queue(&env, &gh);
+    assert_eq!(status_of(&q, &id)["status"], "conflicting", "{q}");
+    assert_eq!(status_of(&q, &after)["status"], "waits_for", "{q}");
+    pass(&env, &gh);
+    assert_eq!(events(&env, &id, "rebase_requested").len(), 1);
+    assert_eq!(state(&env, &id), "development");
+    assert!(events(&env, &after, "pr_merged").is_empty());
+}
+
+#[test]
+fn while_a_merge_waits_for_delivery_other_lanes_are_still_brought_up_to_date() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    let (merged, _, _) = shipped(&env, &gh, 1, "a.rs");
+    let (other_lane, _, _) = shipped(&env, &gh, 2, "b.rs");
+    let (same_lane, _, _) = shipped(&env, &gh, 3, "a.rs");
+    pass(&env, &gh);
+    assert_eq!(events(&env, &merged, "pr_merged").len(), 1);
+    // Main moves on both files before the watch records #1 delivered.
+    commit_file(&env.repo, "a.rs", "// main's a.rs\n");
+    commit_file(&env.repo, "b.rs", "// main's b.rs\n");
+    git(&env.repo, &["push", "-q", "origin", "main"]);
+
+    pass(&env, &gh);
+    assert_eq!(events(&env, &other_lane, "rebase_requested").len(), 1);
+    assert_eq!(state(&env, &same_lane), "closed");
+    assert!(events(&env, &same_lane, "rebase_requested").is_empty());
+    let q = queue(&env, &gh);
+    assert_eq!(status_of(&q, &merged)["status"], "merging", "{q}");
+    let e = status_of(&q, &same_lane);
+    assert_eq!(e["status"], "waits_for", "{q}");
+    assert_eq!(e["waits_for"], json!([url(1)]), "{q}");
+}
+
+#[test]
+fn a_pr_waiting_for_a_reopened_one_still_claims_its_files() {
+    // #3 doesn't jump #2: whichever merged second would be rebased twice.
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    let (back, wt, sha) = shipped(&env, &gh, 1, "a.rs");
+    let (both, _, _) = shipped_files(&env, &gh, 2, &["a.rs", "b.rs"]);
+    let (later, _, _) = shipped(&env, &gh, 3, "b.rs");
+    reopen_in_review(&env, &back, &wt, 1, &sha);
+    commit_file(&env.repo, "b.rs", "// main's b.rs\n");
+    git(&env.repo, &["push", "-q", "origin", "main"]);
+
+    let q = queue(&env, &gh);
+    let e = status_of(&q, &both);
+    assert_eq!(e["status"], "waits_for", "{q}");
+    assert_eq!(e["waits_for"], json!([url(1)]), "{q}");
+    let e = status_of(&q, &later);
+    assert_eq!(e["status"], "waits_for", "{q}");
+    assert_eq!(e["waits_for"], json!([url(2)]), "{q}");
+    pass(&env, &gh);
+    assert!(events(&env, &both, "rebase_requested").is_empty());
+    assert!(events(&env, &later, "rebase_requested").is_empty());
+}
+
+#[test]
+fn a_lit_pr_on_a_claimed_file_waits_before_you_are_asked() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    set_config(&env, "merge.lit", "[\"*.yml\"]");
+    let (pending, _, sha) = shipped(&env, &gh, 1, "a.rs");
+    let (lit, _, _) = shipped_files(&env, &gh, 2, &["a.rs", "ci.yml"]);
+    ci_pending(&env, &pending, 1, &sha);
+
+    let q = queue(&env, &gh);
+    assert_eq!(status_of(&q, &pending)["status"], "ci_pending", "{q}");
+    let e = status_of(&q, &lit);
+    assert_eq!(e["status"], "waits_for", "{q}");
+    assert_eq!(e["waits_for"], json!([url(1)]), "{q}");
+    pass(&env, &gh);
+    assert!(events(&env, &lit, "held").is_empty());
 }
