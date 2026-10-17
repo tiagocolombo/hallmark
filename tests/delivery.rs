@@ -537,6 +537,25 @@ fn a_pr_that_conflicts_is_reopened_rebased_and_reviewed_again() {
 }
 
 #[test]
+fn with_the_merger_on_a_conflict_waits_for_its_turn_in_the_queue() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    remote_with_main(&env);
+    set_config(&env, "merge.mode", "\"auto\"");
+    let (id, _, sha) = hallmarked_item(&env, "Retry webhooks");
+    pass(&env, &gh, "shipper", json!([]));
+    conflicting_main(&env);
+
+    // ADR 0050: the merge queue brings it up to date at its turn; the
+    // watch leaves it, or every merge ahead of it would undo the rebase.
+    pr(&gh, "OPEN", "CONFLICTING", &sha);
+    pass(&env, &gh, "delivery-watch", json!([]));
+    assert_eq!(state(&env, &id), "closed");
+    assert!(events(&env, &id, "rebase_requested").is_empty());
+    assert!(events(&env, &id, "reopened").is_empty());
+}
+
+#[test]
 fn a_conflicting_pr_someone_else_pushed_to_is_left_for_you() {
     let env = Env::initialized();
     let gh = fake_gh(&env);

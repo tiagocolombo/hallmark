@@ -489,39 +489,86 @@ fn a_stacked_pr_waits_for_the_pr_below_it() {
 }
 
 #[test]
-fn one_pr_at_a_time_is_brought_up_to_date_while_fresh_ones_merge() {
+fn a_pr_is_brought_up_to_date_once_at_its_turn_and_lanes_move_in_parallel() {
     let env = Env::initialized();
     let gh = fake_gh(&env);
     setup(&env);
     let (first, _, _) = shipped(&env, &gh, 1, "a.rs");
-    let (second, _, _) = shipped(&env, &gh, 2, "b.rs");
-    let (fresh, _, _) = shipped(&env, &gh, 3, "c.rs");
+    let (other_lane, _, _) = shipped(&env, &gh, 2, "b.rs");
+    let (same_file, _, _) = shipped(&env, &gh, 3, "a.rs");
+    let (fresh, _, _) = shipped(&env, &gh, 4, "c.rs");
     // Main moves on both a.rs and b.rs.
     commit_file(&env.repo, "a.rs", "// main's a.rs\n");
     commit_file(&env.repo, "b.rs", "// main's b.rs\n");
     git(&env.repo, &["push", "-q", "origin", "main"]);
 
+    // ADR 0050: the first PR on a.rs and the one on b.rs share nothing, so
+    // both go back at once; the second PR on a.rs waits for the first to
+    // merge, or that merge would make its rebase stale; the fresh one merges.
     pass(&env, &gh);
     assert_eq!(state(&env, &first), "development");
-    // The second waits for the first's rebase; the fresh one merges.
-    pass(&env, &gh);
-    assert_eq!(state(&env, &second), "closed");
-    assert!(events(&env, &second, "rebase_requested").is_empty());
+    assert_eq!(state(&env, &other_lane), "development");
+    assert_eq!(state(&env, &same_file), "closed");
+    assert!(events(&env, &same_file, "rebase_requested").is_empty());
     assert_eq!(events(&env, &fresh, "pr_merged").len(), 1);
     let q = queue(&env, &gh);
-    let e = status_of(&q, &second);
-    assert_eq!(e["status"], "queued", "{q}");
-    assert!(e["why"].as_str().unwrap().contains(&first), "{q}");
+    let e = status_of(&q, &same_file);
+    assert_eq!(e["status"], "waits_for", "{q}");
+    assert_eq!(e["waits_for"], json!([url(1)]), "{q}");
+    assert!(e["why"].as_str().unwrap().contains("#1 (a.rs)"), "{q}");
+    // The ones sent back are in the queue, on their way.
+    assert_eq!(status_of(&q, &first)["status"], "updating", "{q}");
 
-    // Once the first is dropped (or shipped again), the second goes back.
+    // Still waiting while the first is on its way back.
+    delivered(&env, &fresh, 4);
+    pass(&env, &gh);
+    assert_eq!(state(&env, &same_file), "closed");
+
+    // Once the first is gone (merged, or here dropped), its turn comes.
     assert_eq!(
         env.hall(&env.repo, &["drop", &first, "--reason", "superseded"])
             .code,
         0
     );
-    delivered(&env, &fresh, 3);
     pass(&env, &gh);
-    assert_eq!(state(&env, &second), "development");
+    assert_eq!(state(&env, &same_file), "development");
+    assert_eq!(events(&env, &same_file, "rebase_requested").len(), 1);
+}
+
+#[test]
+fn a_conflicting_pr_is_brought_up_to_date_at_its_turn() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    let (first, _, sha) = shipped(&env, &gh, 1, "a.rs");
+    let (second, _, _) = shipped(&env, &gh, 2, "a.rs");
+    pr(&gh, 1, "CONFLICTING", &sha, "", json!([]));
+
+    let q = queue(&env, &gh);
+    assert_eq!(status_of(&q, &first)["status"], "conflicting", "{q}");
+    // The ready one on the same file goes after it, not around it.
+    assert_eq!(status_of(&q, &second)["status"], "waits_for", "{q}");
+
+    pass(&env, &gh);
+    assert_eq!(state(&env, &first), "development");
+    let req = events(&env, &first, "rebase_requested");
+    assert_eq!(req[0]["actor"], "merger");
+    assert!(events(&env, &second, "pr_merged").is_empty());
+}
+
+#[test]
+fn a_pr_waiting_on_a_person_holds_up_nothing_behind_it() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    let (asked, _, sha) = shipped(&env, &gh, 1, "a.rs");
+    let (next, _, _) = shipped(&env, &gh, 2, "a.rs");
+    let review = json!([{"author": {"login": "ana"}, "state": "CHANGES_REQUESTED", "body": ""}]);
+    pr(&gh, 1, "MERGEABLE", &sha, "", review);
+
+    pass(&env, &gh);
+    assert!(events(&env, &asked, "pr_merged").is_empty());
+    assert_eq!(events(&env, &next, "pr_merged").len(), 1);
 }
 
 #[test]

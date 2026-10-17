@@ -44,6 +44,7 @@ impl Render for QueueOut {
             let mark = match e.status {
                 Status::Ready => "→",
                 Status::Merging => "✓",
+                Status::Updating => "↻",
                 _ => " ",
             };
             s.push_str(&format!(

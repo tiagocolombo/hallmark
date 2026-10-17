@@ -103,10 +103,14 @@ each shipped PR once it is ready, one at a time per base, so nobody has to
 press Merge ([ADR 0048](decisions/0048-the-merger.md)). It is off by
 default: turning it on is the loop's switch from lit to dark, and you choose
 it per repo. `hall queue` shows the order and why each PR waits, on or off.
+With it on, the queue also owns bringing PRs up to date: a PR that conflicts
+or is behind on its own files is rebased only at its turn, once the earlier
+PRs that touch the same files have merged, and the delivery watch no longer
+reopens conflicting PRs itself ([ADR 0050](decisions/0050-the-queue-updates-prs-at-their-turn.md)).
 
 | Key | Default | What it does |
 | --- | --- | --- |
-| `merge.mode` | `off` | `auto`: the merger merges. `off`: you do. |
+| `merge.mode` | `off` | `auto`: the merger merges, and brings each PR up to date at its turn. `off`: you merge, and the Delivery office rebases a PR as soon as it conflicts. |
 | `merge.command` | `gh pr merge {pr} --squash --match-head-commit {pr_head}` | Merges one PR, run in the main checkout. Placeholders: `{pr}` (the PR's URL) `{pr_head}` (the hallmarked head it must still be at) `{branch}` `{base}` `{id}` `{title}`. |
 | `merge.require_ci` | `true` | Wait for the PR's CI to pass at the shipped head. `false`: merge once the PR is hallmarked, mergeable and up to date, whatever CI says. |
 | `merge.lit` | `[]` | Paths a person merges, as globs relative to the repo root (`.github/`, `release-plz.toml`). A PR that touches one waits in your inbox (`lit`); `hall retry` lets the merger merge that head. |

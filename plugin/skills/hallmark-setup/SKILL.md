@@ -76,8 +76,9 @@ are happy with.
      dollars such as `$15`.
 7. **Merging** (`[merge]`, ADR 0048): whether shipped PRs merge without
    them. `merge.mode` is `off` (they merge) or `auto` (the merger merges each
-   ready PR, one at a time, in dependency order). Ask before `auto`: it is
-   the step from a lit loop to a dark one.
+   ready PR, one at a time, in dependency order, and brings each PR up to
+   date only at its turn, ADR 0050). Ask before `auto`: it is the step from
+   a lit loop to a dark one.
    - `merge.command`, with `{pr} {pr_head} {branch} {base} {id} {title}`.
      When the base branch requires an approving review, the PR's author
      can't give it: suggest `--admin` only if they own the repo or may bypass

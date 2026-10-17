@@ -82,7 +82,7 @@ The docs and the terminal app describe Hallmark as a building.
 | Repair Shop | The fixer | Fixing |
 | Stamping Room | The hallmark is struck | Hallmarked |
 | Dispatch Dock | Rebases onto the latest base; the ship command opens the PR, whose description is What, Why and How; `update` updates an adopted or reopened one. Each review is posted as a PR comment (`review_comment`, ADR 0039). If that PR already merged with the hallmarked work in it, the item closes with nothing pushed | Closed |
-| Delivery Office | Watches each shipped PR until it merges; a headless dev run rebases conflicting ones, addresses new review comments (ADR 0030) and fixes red CI (ADR 0031); a CI fix whose checks pass on a re-run goes back to its PR without a run (ADR 0047). With `[merge] mode = "auto"`, the merger merges each ready PR, one at a time per base, in dependency order (ADR 0048). Once the PR merges or closes, the sweeper removes the item's worktree (ADR 0040) | Closed, Development (rebasing, addressing comments) |
+| Delivery Office | Watches each shipped PR until it merges; a headless dev run rebases conflicting ones, addresses new review comments (ADR 0030) and fixes red CI (ADR 0031); a CI fix whose checks pass on a re-run goes back to its PR without a run (ADR 0047). With `[merge] mode = "auto"`, the merger merges each ready PR, one at a time per base, in dependency order (ADR 0048), and brings each PR up to date only at its turn (ADR 0050). Once the PR merges or closes, the sweeper removes the item's worktree (ADR 0040) | Closed, Development (rebasing, addressing comments) |
 
 A **watchman** patrols the corridor. It flags any item with no new event for
 `stuck_after` (30 minutes by default), and a daemon that has stopped.
@@ -125,7 +125,7 @@ Transitions:
 | awaiting_you, checks, review, fixing, escalated, hallmarked | `pull-back` | development |
 | hallmarked | shipped (PR opened) | closed |
 | hallmarked | the rebase onto the base conflicts, or changes the patch (`pulled_back`; the review then reads only what changed, ADR 0049) | development |
-| closed | the PR conflicts, has new review comments or red CI (the Delivery office reopens it), or it is next to merge but behind its base on files it touches (the merger reopens it, ADR 0048) | development |
+| closed | the PR conflicts, has new review comments or red CI (the Delivery office reopens it), or it is behind its base on files it touches, or conflicts, and its turn in the merge queue has come (the merger reopens it, ADR 0048, ADR 0050; with the merger on, the watch leaves conflicts to it) | development |
 | development | reopened for red CI, and the checks passed on a re-run with nothing moved (`restored`, ADR 0047) | closed |
 | any non-terminal | `drop --reason` | dropped |
 
@@ -699,11 +699,16 @@ judges each with a script, never a model: the shipped head with its hallmark,
 standing request for changes, nothing it depends on still open (the PR it is
 stacked on; `Depends on #N`, `Blocked by #N`, `After #N`), no `lit` path, and
 fresh (the base is in it, or the base's new commits touch none of its files).
-The first ready PR merges through `[merge] command` (`pr_merged`); the first
-that is only behind on its own files is reopened with a rebase request, one
-per base at a time: until it ships again, other PRs that are behind wait
-while fresh ones merge. After a merge, nothing else on that base merges until
-the watch records `delivered`. A
+The first ready PR merges through `[merge] command` (`pr_merged`). A PR
+behind on its own files, or `CONFLICTING`, is reopened with a rebase request
+only at its turn (ADR 0050): walking the queue, every PR still on its way to
+a merge claims its files, and so does every item already reopened and being
+brought back; a PR that touches a claimed file waits (`waits_for`). So each
+PR is rebased once, after the earlier PRs it overlaps with have merged, and
+PRs on separate files move in parallel lanes. A PR waiting on a person claims
+nothing. With the merger on, the delivery watch leaves conflicts to the
+queue. After a merge, nothing else on that base merges until the watch
+records `delivered`. A
 failed command holds the item (`merge_failed`); a `lit` path holds it for you
 (`lit`), and `hall retry` lets that head merge. `hall queue` shows the same
 judgement for every PR.

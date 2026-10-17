@@ -21,7 +21,8 @@
 //!    sooner while GitHub is still working out whether it conflicts. Merged
 //!    or closed: `delivered`, once, and the watch ends. Conflicting: the
 //!    item is reopened to development with a rebase request, so step 1 takes
-//!    it on its next tick. New review comments, or CI that failed (ADR 0031),
+//!    it on its next tick; with the merger on, the merge queue does that at
+//!    the PR's turn instead (ADR 0050). New review comments, or CI that failed (ADR 0031),
 //!    reopen it the same way: a headless dev run addresses them in commits
 //!    and the item goes back to review. CI that still fails after `CI_FIXES`
 //!    fixes waits for you.
@@ -1154,7 +1155,13 @@ fn read_pr(
             repo.hall.live(&what);
             Ok(Progress::worked(what))
         }
-        "OPEN" if pr.mergeable == "CONFLICTING" => {
+        // With the merger on, the queue brings a conflicting PR up to date
+        // at its turn (ADR 0050); reopening it now would be undone by every
+        // merge ahead of it.
+        "OPEN"
+            if pr.mergeable == "CONFLICTING"
+                && repo.config.merge.mode != crate::config::MergeMode::Auto =>
+        {
             let wt = PathBuf::from(&item.worktree);
             if item.pr_head.as_deref() != Some(pr.head_oid.as_str()) {
                 watch.note_once(
