@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/tiagocolombo/hallmark/compare/v0.1.7...v0.2.0) - 2026-10-17
+
+### Added
+
+- The merger: merge green, hallmarked PRs in dependency order (dark factory) ([#82](https://github.com/tiagocolombo/hallmark/pull/82))
+
 ## [0.1.7](https://github.com/tiagocolombo/hallmark/compare/v0.1.6...v0.1.7) - 2026-10-17
 
 ### Fixed
