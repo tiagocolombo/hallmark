@@ -37,6 +37,7 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
             &format!("r{round}"),
             &format!("round {round}"),
         )?;
+        let forced = bench.forced(&gates);
         for (i, g) in gates.iter().enumerate() {
             // Renew the lease: each gate may take up to the timeout.
             let _ = crate::lease::claim(
@@ -52,7 +53,7 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
                 i + 1,
                 gates.len()
             ));
-            runs.push(bench.gate(g, timeout)?);
+            runs.push(bench.gate(g, timeout, i < forced)?);
         }
         bench.log.flush()?;
     }
@@ -123,6 +124,7 @@ pub fn gates_at(
     let timeout = repo.config.budget.timeout_secs(Role::Reviewer).max(0) as u64;
     let mut bench = Bench::open(repo, id, sha, name, name)?;
     let mut runs = Vec::new();
+    let forced = bench.forced(&gates);
     for (i, g) in gates.iter().enumerate() {
         renew();
         repo.hall.live(&format!(
@@ -130,7 +132,7 @@ pub fn gates_at(
             i + 1,
             gates.len()
         ));
-        runs.push(bench.gate(g, timeout)?);
+        runs.push(bench.gate(g, timeout, i < forced)?);
     }
     bench.log.flush()?;
     Ok(runs)
@@ -176,16 +178,40 @@ impl<'a> Bench<'a> {
         })
     }
 
-    /// One gate's result: from the cache when it passed on this tree
-    /// before, else by running it.
-    fn gate(&mut self, g: &str, timeout: u64) -> Result<CheckRun> {
+    /// The key of a gate that may be cached.
+    fn key(&self, g: &str) -> Option<cache::Key> {
         let config = &self.repo.config;
-        let key = self
-            .tree
+        self.tree
             .as_deref()
             .filter(|_| !config.gates_no_cache.iter().any(|n| n.trim() == g.trim()))
-            .map(|t| cache::Key::new(t, g, &config.gates));
-        if let Some(hit) = key.as_ref().and_then(|k| cache::passed(&self.repo.hall, k)) {
+            .map(|t| cache::Key::new(t, g, &config.gates))
+    }
+
+    /// The passing run that serves `g`, if any. Never one whose log is the
+    /// file this bench is writing (a round run again): that log was just
+    /// truncated, so it no longer holds that run's output.
+    fn hit(&self, key: Option<&cache::Key>) -> Option<cache::CachedRun> {
+        let own = format!("items/{}/{}", self.id, self.rel);
+        cache::passed(&self.repo.hall, key?).filter(|h| h.log.as_deref() != Some(own.as_str()))
+    }
+
+    /// How many leading gates must run. A served gate does nothing in the
+    /// slot, so every gate before one that has to run runs too (a generator
+    /// or an install its successors depend on); only the gates after the
+    /// last one that runs are served.
+    fn forced(&self, gates: &[String]) -> usize {
+        gates
+            .iter()
+            .rposition(|g| self.hit(self.key(g).as_ref()).is_none())
+            .map_or(0, |i| i + 1)
+    }
+
+    /// One gate's result: from the cache when it passed on this tree
+    /// before and `force` is off, else by running it.
+    fn gate(&mut self, g: &str, timeout: u64, force: bool) -> Result<CheckRun> {
+        let key = self.key(g);
+        let hit = if force { None } else { self.hit(key.as_ref()) };
+        if let Some(hit) = hit {
             writeln!(
                 self.log,
                 "\n$ {g}\n[cached: passed on tree {} for {} at {}; log {}]",

@@ -1089,7 +1089,7 @@ fn a_passing_gate_is_not_rerun_on_the_same_tree() {
     configure(
         &env,
         &[
-            ("gates", &format!("['{cached}', '{network}']")),
+            ("gates", &format!("['{network}', '{cached}']")),
             ("gates_no_cache", &format!("['{network}']")),
         ],
     );
@@ -1117,18 +1117,18 @@ fn a_passing_gate_is_not_rerun_on_the_same_tree() {
 
     let checks = events_of(&env, &id, "checks");
     assert_eq!(checks.len(), 2);
-    assert!(checks[0]["runs"][0].get("cached").is_none());
+    assert!(checks[0]["runs"][1].get("cached").is_none());
     let runs = checks[1]["runs"].as_array().unwrap();
     assert_eq!(checks[1]["sha"], fix.as_str());
-    assert_eq!(runs[0]["cached"], true);
-    assert_eq!(runs[0]["exit_code"], 0);
+    assert_eq!(runs[1]["cached"], true);
+    assert_eq!(runs[1]["exit_code"], 0);
     assert_eq!(
-        runs[0]["log"],
+        runs[1]["log"],
         format!("items/{id}/checks/r1.log"),
         "the original run's log"
     );
-    assert!(runs[1].get("cached").is_none());
-    assert_eq!(runs[1]["log"], "checks/r2.log");
+    assert!(runs[0].get("cached").is_none());
+    assert_eq!(runs[0]["log"], "checks/r2.log");
     let log = std::fs::read_to_string(
         env.repo
             .join(".git/hallmark/items")
@@ -1144,6 +1144,82 @@ fn a_passing_gate_is_not_rerun_on_the_same_tree() {
     assert_eq!(lines[0]["command"], cached.as_str());
     assert_eq!(lines[0]["exit_code"], 0);
     assert_eq!(lines[0]["item"], id.as_str());
+}
+
+/// A setup gate then a check that needs what it left in the slot.
+#[cfg(unix)]
+#[test]
+fn a_gate_after_one_that_runs_is_never_run_without_its_setup() {
+    let env = Env::initialized();
+    let setup = format!("{} && echo x > marker.txt", counting_gate(&env, "setup"));
+    let check = "test -f marker.txt";
+    configure(
+        &env,
+        &[
+            ("gates", &format!("['{setup}', '{check}']")),
+            ("gates_no_cache", &format!("['{check}']")),
+        ],
+    );
+    let (id, wt, _) = ready_item(&env, "Retry webhooks", "retry.rs", "fn retry() {}\n");
+    let script = env.script(json!([reviewer(verdict(
+        vec![finding("blocker", "retry.rs", "Double delivery")],
+        json!([])
+    ))]));
+    tick(&env, &script);
+    tick(&env, &script);
+    assert_eq!(state(&env, &id), "fixing");
+
+    let fix = same_tree_commit(&wt);
+    resubmit(&env, &id, &fix, &["F1"]);
+    let r = tick(&env, &script);
+    assert!(what(&r).contains("checks passed"), "{}", r.stdout);
+    assert_eq!(
+        runs_of(&env, "setup"),
+        2,
+        "setup runs before the gate that runs"
+    );
+    let c = &events_of(&env, &id, "checks")[1];
+    assert!(c["runs"][0].get("cached").is_none());
+}
+
+/// A pass served from this round's own log would point at a truncated file.
+#[test]
+fn a_hit_on_the_log_being_rewritten_is_not_served() {
+    use hallmark::assayer::cache::{CachedRun, Key};
+    let env = Env::initialized();
+    let gate = counting_gate(&env, "plain");
+    configure(&env, &[("gates", &format!("['{gate}']"))]);
+    let (id, _, sha) = ready_item(&env, "Retry webhooks", "retry.rs", "fn retry() {}\n");
+    // As left by a round 1 that stopped part way: recorded, log is r1.log.
+    let tree = git(&env.repo, &["rev-parse", &format!("{sha}^{{tree}}")]);
+    let key = Key::new(&tree, &gate, std::slice::from_ref(&gate));
+    let run = CachedRun {
+        key: key.id(),
+        tree: key.tree.clone(),
+        command: key.command.clone(),
+        gates: key.gates.clone(),
+        os: key.os.clone(),
+        item: id.clone(),
+        sha: sha.clone(),
+        at: chrono::Utc::now(),
+        exit_code: 0,
+        duration_ms: 1,
+        log: Some(format!("items/{id}/checks/r1.log")),
+    };
+    let dir = env.repo.join(".git/hallmark/checks-cache");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join(format!("{}.jsonl", key.id())),
+        format!("{}\n", serde_json::to_string(&run).unwrap()),
+    )
+    .unwrap();
+
+    let script = env.script(json!([reviewer(verdict(vec![], json!([])))]));
+    let r = tick(&env, &script);
+    assert!(what(&r).contains("checks passed"), "{}", r.stdout);
+    assert_eq!(runs_of(&env, "plain"), 1, "the gate ran");
+    let c = &events_of(&env, &id, "checks")[0];
+    assert!(c["runs"][0].get("cached").is_none(), "{c}");
 }
 
 #[test]
