@@ -1,10 +1,14 @@
 # release-plz turns conventional commits on main into versions (ADR 0035,
 # ADR 0040). Each merge to main gets a release PR that bumps Cargo.toml and
-# CHANGELOG.md by semver: `feat` → minor, `fix` and everything else → patch,
-# `!` or `BREAKING CHANGE` → major (minor while the version is 0.x). The
-# workflow merges that PR at once, and the merge tags `vX.Y.Z`. A tag is a
-# version, not a GitHub Release: release.yml builds and publishes one only
-# when it's run on a tag by hand.
+# CHANGELOG.md by semver. While the version is 0.x, `!` or `BREAKING CHANGE`
+# bumps the minor and everything else, `feat` included, the patch
+# (`features_always_increment_minor` is off); from 1.0, `feat` bumps the
+# minor and a breaking change the major. To start a new minor or major by
+# hand, set Cargo.toml's version in a PR: when it's above the highest tag,
+# release-plz keeps it, writes only the changelog, and the release PR's
+# merge tags it. The workflow merges that PR at once, and the merge tags
+# `vX.Y.Z`. A tag is a version, not a GitHub Release: release.yml builds and
+# publishes one only when it's run on a tag by hand.
 [workspace]
 # Not on crates.io, so the last version is the highest `vX.Y.Z` tag. Reading
 # the registry instead, release-plz finds no hallmark, takes Cargo.toml's

@@ -69,6 +69,7 @@ impl Env {
             // Sessions never look up hall's releases on the network.
             .env("HALL_UPDATE_CHECK", "off")
             .env_remove("HALL_RUNNER")
+            .env_remove("HALL_WORKER_NOW")
             .env_remove("HALL_NO_HOOKS")
             .env_remove("HALL_HEADLESS")
             .env_remove("HALL_ACTOR")
@@ -101,6 +102,26 @@ impl Env {
             .cmd(dir)
             .env("HALL_RUNNER", format!("fake:{}", script.display()))
             .env("HALL_PLUGIN_DIR", self.root.join("plugin"))
+            .args(args)
+            .output()
+            .unwrap();
+        reply(out)
+    }
+
+    /// [`Env::hall_fake`] with the workers' clock pinned at `now`
+    /// (`HALL_WORKER_NOW`), so a "not yet" doesn't race a slow machine.
+    pub fn hall_fake_at(
+        &self,
+        dir: &Path,
+        script: &Path,
+        now: chrono::DateTime<chrono::Utc>,
+        args: &[&str],
+    ) -> Reply {
+        let out = self
+            .cmd(dir)
+            .env("HALL_RUNNER", format!("fake:{}", script.display()))
+            .env("HALL_PLUGIN_DIR", self.root.join("plugin"))
+            .env("HALL_WORKER_NOW", now.to_rfc3339())
             .args(args)
             .output()
             .unwrap();

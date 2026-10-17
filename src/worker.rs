@@ -10,6 +10,17 @@ use crate::error::Result;
 use crate::repo::Repo;
 use crate::runner::Runner;
 
+/// The time a worker decides by: the watchman's `stuck_after` and a
+/// question's wait are measured against it. `HALL_WORKER_NOW` (RFC 3339)
+/// pins it, for tests, so a check of "not yet" doesn't race the clock on a
+/// slow machine.
+pub fn now() -> DateTime<Utc> {
+    std::env::var("HALL_WORKER_NOW")
+        .ok()
+        .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
+        .map_or_else(Utc::now, |t| t.with_timezone(&Utc))
+}
+
 /// What a worker gets.
 pub struct WorkerCtx<'a> {
     pub repo: &'a Repo,

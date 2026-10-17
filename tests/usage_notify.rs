@@ -598,24 +598,25 @@ fn a_default_is_used_after_the_wait() {
             "--default",
             "billed",
             "--wait",
-            "1s",
+            "1h",
         ],
     );
     assert_eq!(ask.code, 0, "{}", ask.stdout);
+    // The workers' clock is pinned around the deadline, so a slow machine
+    // can't make "not yet" late.
+    let deadline: chrono::DateTime<chrono::Utc> =
+        ask.json["deadline"].as_str().unwrap().parse().unwrap();
     let script = env.script(json!([]));
+    let resume = ["daemon", "run", "--once", "--only", "resume"];
     // Not yet.
-    let r = env.hall_fake(
+    let r = env.hall_fake_at(
         &env.repo,
         &script,
-        &["daemon", "run", "--once", "--only", "resume"],
+        deadline - chrono::Duration::seconds(1),
+        &resume,
     );
     assert_eq!(r.json["steps"][0]["progress"], "idle", "{}", r.stdout);
-    hallmark::daemon::nap(std::time::Duration::from_millis(1500));
-    let r = env.hall_fake(
-        &env.repo,
-        &script,
-        &["daemon", "run", "--once", "--only", "resume"],
-    );
+    let r = env.hall_fake_at(&env.repo, &script, deadline, &resume);
     assert_eq!(r.json["steps"][0]["progress"], "worked", "{}", r.stdout);
     let j = env.journal(&id);
     let answers = events(&j, "answer");
@@ -627,10 +628,11 @@ fn a_default_is_used_after_the_wait() {
     let inbox = env.hall(&env.repo, &["inbox"]);
     assert_eq!(inbox.json["entries"], json!([]), "{}", inbox.stdout);
     // No session, so nothing to resume; a second tick does nothing.
-    let r = env.hall_fake(
+    let r = env.hall_fake_at(
         &env.repo,
         &script,
-        &["daemon", "run", "--once", "--only", "resume"],
+        deadline + chrono::Duration::minutes(1),
+        &resume,
     );
     assert_eq!(r.json["steps"][0]["progress"], "idle");
     assert!(env.fake_calls().is_empty());
