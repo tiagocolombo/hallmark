@@ -1083,6 +1083,91 @@ fn a_green_pr_whose_branch_moved_waits_for_you() {
     assert_eq!(state(&env, &id), "development");
 }
 
+/// A held CI fix: the fix run changed nothing while a check failed.
+fn held_ci_fix(env: &Env, gh: &Path) -> (String, PathBuf, String) {
+    let (id, wt, sha) = reopened_for_ci(env, gh);
+    checks(gh, "fail", "test (windows-latest)");
+    pass(
+        env,
+        gh,
+        "delivery",
+        json!([{"role": "fixer", "result": "A flaky runner test; nothing to fix here."}]),
+    );
+    assert_eq!(
+        events(env, &id, "held").last().unwrap()["kind"],
+        "ci_failed"
+    );
+    (id, wt, sha)
+}
+
+#[test]
+fn a_green_pr_someone_else_pushed_to_stays_in_development() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    remote_with_main(&env);
+    let (id, _, _) = reopened_for_ci(&env, &gh);
+    pr(
+        &gh,
+        "OPEN",
+        "MERGEABLE",
+        "feedfacefeedfacefeedfacefeedfacefeedface",
+    );
+    checks(&gh, "pass", "test (windows-latest)");
+    // The delivery worker: no dev run, no restore, and the hold names the push.
+    pass(&env, &gh, "delivery", json!([]));
+    assert!(env.fake_calls().is_empty(), "no dev run");
+    assert_eq!(state(&env, &id), "development");
+    assert!(events(&env, &id, "restored").is_empty());
+    let held = events(&env, &id, "held");
+    let reason = held.last().unwrap()["reason"].as_str().unwrap().to_string();
+    assert!(reason.contains("someone pushed"), "{reason}");
+    assert!(reason.contains("bring the PR's commits"), "{reason}");
+}
+
+#[test]
+fn the_ci_watch_does_not_restore_a_held_fix_someone_else_pushed_to() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    remote_with_main(&env);
+    let (id, _, _) = held_ci_fix(&env, &gh);
+    pr(
+        &gh,
+        "OPEN",
+        "MERGEABLE",
+        "feedfacefeedfacefeedfacefeedfacefeedface",
+    );
+    checks(&gh, "pass", "test (windows-latest)");
+    forget(&env);
+    pass(&env, &gh, "ci", json!([]));
+    assert_eq!(state(&env, &id), "development");
+    assert!(events(&env, &id, "restored").is_empty());
+}
+
+#[test]
+fn a_held_ci_fix_being_edited_by_hand_is_not_restored() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    remote_with_main(&env);
+    let (id, wt, _) = held_ci_fix(&env, &gh);
+    std::fs::write(wt.join("retry.rs"), "fn retry() { /* wip */ }\n").unwrap();
+    checks(&gh, "pass", "test (windows-latest)");
+    pass(&env, &gh, "ci", json!([]));
+    assert_eq!(state(&env, &id), "development");
+    assert!(events(&env, &id, "restored").is_empty());
+}
+
+#[test]
+fn the_ci_watch_leaves_a_ci_fix_that_is_not_held_to_the_delivery_worker() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    remote_with_main(&env);
+    let (id, _, _) = reopened_for_ci(&env, &gh);
+    checks(&gh, "pass", "test (windows-latest)");
+    pass(&env, &gh, "ci", json!([]));
+    assert_eq!(state(&env, &id), "development");
+    assert!(events(&env, &id, "restored").is_empty());
+}
+
 #[test]
 fn a_new_item_starts_from_the_latest_base_not_the_main_checkout() {
     let env = Env::initialized();

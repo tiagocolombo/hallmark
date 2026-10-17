@@ -547,18 +547,33 @@ fn fix_ci(ctx: &WorkerCtx, item: &Item, wt: &Path, req: &CiFixRequest) -> Result
 fn back_to_pr(repo: &Repo, item: &Item, url: &str) -> Result<Progress> {
     match off_the_pr(repo, item) {
         None => restore(repo, item, "CI passed on a re-run; nothing to fix"),
-        Some(why) => hold(
-            repo,
-            item.id,
-            HoldKind::CiFailed,
-            format!(
-                "CI passes on {url} now, but {why}; `hall ready {id}` sends the branch to \
-                 review, or put it back where the PR is and `hall retry {id}`",
-                id = item.id
-            ),
-        ),
+        Some(why) => {
+            let id = item.id;
+            let advice = if why.starts_with(PUSHED) {
+                // The PR has commits the branch lacks: reviewing the branch
+                // as it is would leave them out.
+                format!(
+                    "bring the PR's commits into {} and `hall ready {id}`",
+                    item.branch
+                )
+            } else {
+                format!(
+                    "`hall ready {id}` sends the branch to review, or put it back where \
+                     the PR is and `hall retry {id}`"
+                )
+            };
+            hold(
+                repo,
+                item.id,
+                HoldKind::CiFailed,
+                format!("CI passes on {url} now, but {why}; {advice}"),
+            )
+        }
     }
 }
+
+/// How [`off_the_pr`] starts when someone else pushed to the PR.
+const PUSHED: &str = "someone pushed to it";
 
 /// None when an item reopened on its PR is still exactly what the PR holds:
 /// a clean worktree, and its branch and the PR's head both at the commit the
@@ -590,7 +605,7 @@ pub fn off_the_pr(repo: &Repo, item: &Item) -> Option<String> {
     match crate::gh::pr_merge(&repo.main_root, url) {
         Ok(pr) if pr.head_oid == at => None,
         Ok(pr) => Some(format!(
-            "someone pushed to it ({}, not {})",
+            "{PUSHED} ({}, not {})",
             short(&pr.head_oid),
             short(at)
         )),
