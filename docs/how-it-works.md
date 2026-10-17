@@ -112,7 +112,8 @@ said, ended by a line saying how the run ended
 
 The checks are a script, and a gate that passed on a tree isn't run again
 on the same tree: its result comes from the checks cache, marked `cached`,
-with the original run's log. Only passes are served, so a failing gate runs
+with the original run's log. Gates run in order, so every gate before one
+that has to run runs too, and only the gates after it are served. Only passes are served, so a failing gate runs
 again on every retry. `gates_no_cache` lists gates that must always run, such
 as network tests ([configuration](configuration.md#cached-gate-results)).
 
