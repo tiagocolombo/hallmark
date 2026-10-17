@@ -1,6 +1,6 @@
 ---
 source: tests/merger.rs
-expression: "scrub(&q, &[&s1, &s2, &s3, &s4, &s5])"
+expression: "scrub(&q, &[&s1, &s2, &s3, &s4, &s5, &s6, &s7])"
 ---
 {
   "mode": "auto",
@@ -59,6 +59,27 @@ expression: "scrub(&q, &[&s1, &s2, &s3, &s4, &s5])"
       "status": "lit",
       "title": "Change ci.yml",
       "why": "ready to merge, waiting for you: touches ci.yml"
+    },
+    {
+      "base": "main",
+      "item": "H-0006",
+      "position": 5,
+      "pr_url": "https://github.com/acme/app/pull/6",
+      "status": "updating",
+      "title": "Change e.rs",
+      "why": "being brought up to date (checks); it ships again, then merges"
+    },
+    {
+      "base": "main",
+      "item": "H-0007",
+      "position": 6,
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "status": "waits_for",
+      "title": "Change e.rs",
+      "waits_for": [
+        "https://github.com/acme/app/pull/6"
+      ],
+      "why": "ready; first waits for #6 (e.rs)"
     }
   ],
   "require_ci": true

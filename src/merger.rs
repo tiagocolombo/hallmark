@@ -531,15 +531,6 @@ impl<'a> Look<'a> {
             waits: vec![],
             verdict: Some(verdict),
         };
-        let lit = crate::assayer::base::globset(&self.repo.config.merge.lit);
-        let touched: Vec<String> = files.iter().filter(|f| lit.is_match(f)).cloned().collect();
-        if !touched.is_empty() && item.merge_approved.as_deref() != Some(head.as_str()) {
-            let why = format!(
-                "ready to merge, waiting for you: touches {}",
-                touched.join(", ")
-            );
-            return judged(Status::Lit, why.clone(), Verdict::Lit(why));
-        }
         if conflicting {
             let both = match fresh {
                 Fresh::Behind(both) => both,
@@ -561,6 +552,16 @@ impl<'a> Look<'a> {
                 ),
                 Verdict::Rebase(both, head),
             );
+        }
+        // A person is asked only about a head that can merge.
+        let lit = crate::assayer::base::globset(&self.repo.config.merge.lit);
+        let touched: Vec<String> = files.iter().filter(|f| lit.is_match(f)).cloned().collect();
+        if !touched.is_empty() && item.merge_approved.as_deref() != Some(head.as_str()) {
+            let why = format!(
+                "ready to merge, waiting for you: touches {}",
+                touched.join(", ")
+            );
+            return judged(Status::Lit, why.clone(), Verdict::Lit(why));
         }
         judged(
             Status::Ready,
@@ -598,7 +599,7 @@ impl<'a> Look<'a> {
     /// worker carries it out.
     fn plan(&mut self, base: &str, line: &[Item], items: &[Item]) -> Vec<Planned> {
         // Files a PR may not touch yet, and the PR that claims each one.
-        let mut claimed: BTreeMap<String, String> = BTreeMap::new();
+        let mut claimed: BTreeMap<String, Vec<Claim>> = BTreeMap::new();
         let mut out = Vec::new();
         // Items already sent back claim their files first: whatever overlaps
         // them would be stale again once they merge. One held, or in a
@@ -612,7 +613,11 @@ impl<'a> Look<'a> {
             } else if is_in_flight(item) {
                 let url = item.pr_url.clone().unwrap_or_default();
                 for f in self.files_of(item) {
-                    claimed.entry(f).or_insert_with(|| url.clone());
+                    claimed.entry(f).or_default().push(Claim {
+                        url: url.clone(),
+                        waits: vec![],
+                        reopened: true,
+                    });
                 }
                 (
                     Status::Updating,
@@ -654,9 +659,19 @@ impl<'a> Look<'a> {
             unknown_ahead |= status == Status::Unknown;
             if matches!(verdict, Some(Verdict::Merge(_) | Verdict::Rebase(..))) {
                 let mut by: BTreeMap<&str, Vec<String>> = BTreeMap::new();
+                let me = item.pr_url.clone().unwrap_or_default();
                 for f in self.files_of(item) {
-                    if let Some(u) = claimed.get(&f) {
-                        by.entry(u).or_default().push(f);
+                    // A claim by a PR that waits for this one, or by a
+                    // reopened PR newer than this one, doesn't count:
+                    // honoring it would deadlock, or make this PR wait for a
+                    // newer one that must be rebased onto it anyway.
+                    let first = claimed.get(&f).and_then(|v| {
+                        v.iter().find(|c| {
+                            !c.waits.contains(&me) && !(c.reopened && number(&c.url) > number(&me))
+                        })
+                    });
+                    if let Some(c) = first {
+                        by.entry(c.url.as_str()).or_default().push(f);
                     }
                 }
                 if !by.is_empty() {
@@ -689,7 +704,11 @@ impl<'a> Look<'a> {
             if self.claims(status, &waits) {
                 let url = item.pr_url.clone().unwrap_or_default();
                 for f in self.files_of(item) {
-                    claimed.entry(f).or_insert_with(|| url.clone());
+                    claimed.entry(f).or_default().push(Claim {
+                        url: url.clone(),
+                        waits: waits.clone(),
+                        reopened: false,
+                    });
                 }
             }
             out.push(Planned {
@@ -732,6 +751,15 @@ impl<'a> Look<'a> {
             | Status::Unreadable => false,
         }
     }
+}
+
+/// A PR's hold on a file while the plan walks the queue.
+struct Claim {
+    url: String,
+    /// The PRs it waits for.
+    waits: Vec<String>,
+    /// An item reopened and being brought back, not a PR in line.
+    reopened: bool,
 }
 
 /// One PR, judged.

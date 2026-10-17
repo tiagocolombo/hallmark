@@ -556,6 +556,30 @@ fn with_the_merger_on_a_conflict_waits_for_its_turn_in_the_queue() {
 }
 
 #[test]
+fn with_the_merger_on_a_conflicting_pr_still_gets_its_comments_addressed() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    remote_with_main(&env);
+    set_config(&env, "merge.mode", "\"auto\"");
+    let (id, _, sha) = hallmarked_item(&env, "Retry webhooks");
+    pass(&env, &gh, "shipper", json!([]));
+    conflicting_main(&env);
+
+    let reviews = json!([
+        {"author": {"login": "ana"}, "authorAssociation": "MEMBER", "state": "CHANGES_REQUESTED", "body": "Cap retries at 6.",
+         "submittedAt": at(1)}
+    ]);
+    pr_with(&gh, "OPEN", "CONFLICTING", &sha, reviews, json!([]));
+    let step = pass(&env, &gh, "delivery-watch", json!([]));
+    assert!(
+        step["what"].as_str().unwrap().contains("1 new comment"),
+        "{step}"
+    );
+    assert_eq!(state(&env, &id), "development");
+    assert_eq!(events(&env, &id, "feedback_requested").len(), 1);
+}
+
+#[test]
 fn a_conflicting_pr_someone_else_pushed_to_is_left_for_you() {
     let env = Env::initialized();
     let gh = fake_gh(&env);
