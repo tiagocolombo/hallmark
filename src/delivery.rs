@@ -1481,6 +1481,20 @@ fn reopen(
     request: Body,
     what: String,
 ) -> Result<Progress> {
+    reopen_by(repo, ACTOR, item, url, head, request, what)
+}
+
+/// Reopens a shipped item to development with `request`, as `actor`: the
+/// Delivery office, or the merger when the PR next in line is behind.
+pub(crate) fn reopen_by(
+    repo: &Repo,
+    actor: &str,
+    item: &Item,
+    url: &str,
+    head: &str,
+    request: Body,
+    what: String,
+) -> Result<Progress> {
     let id = item.id;
     let base = item.base.clone();
     let (_, reopened) = repo.hall.transact(id, |it, _| {
@@ -1490,7 +1504,7 @@ fn reopen(
         Ok((
             vec![
                 Event::new(
-                    ACTOR,
+                    actor,
                     Some(id),
                     Body::Reopened {
                         pr_url: url.to_string(),
@@ -1499,7 +1513,7 @@ fn reopen(
                         worktree: it.worktree.clone(),
                     },
                 ),
-                Event::new(ACTOR, Some(id), request.clone()),
+                Event::new(actor, Some(id), request.clone()),
             ],
             true,
         ))

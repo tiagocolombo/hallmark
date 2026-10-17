@@ -74,9 +74,21 @@ are happy with.
      `budget.librarian_model`;
    - `budget.daily` and `budget.per_item`: tokens such as `4M` or `800k`, or
      dollars such as `$15`.
-7. **Tools**, user scope: `tools.claude` and `tools.gh` when they aren't on
+7. **Merging** (`[merge]`, ADR 0048): whether shipped PRs merge without
+   them. `merge.mode` is `off` (they merge) or `auto` (the merger merges each
+   ready PR, one at a time, in dependency order). Ask before `auto`: it is
+   the step from a lit loop to a dark one.
+   - `merge.command`, with `{pr} {pr_head} {branch} {base} {id} {title}`.
+     When the base branch requires an approving review, the PR's author
+     can't give it: suggest `--admin` only if they own the repo or may bypass
+     the rule.
+   - `merge.require_ci`: `false` merges without waiting for CI. With
+     `--admin` that includes red CI; say so.
+   - `merge.lit`: paths a person merges, as globs (`.github/`, release
+     settings). Such a PR waits in the inbox, and `hall retry` lets it merge.
+8. **Tools**, user scope: `tools.claude` and `tools.gh` when they aren't on
    the PATH the daemon gets. Use absolute paths.
-8. **Notifications**, user scope: `notify.desktop`, `notify.phone`
+9. **Notifications**, user scope: `notify.desktop`, `notify.phone`
    (`ntfy://ntfy.sh/<random topic>` or `telegram://<token>@<chat>`),
    `notify.slack` and `notify.quiet_hours` (`22:00-07:30`). Running
    `hall notify test` creates a private ntfy topic if they have none.

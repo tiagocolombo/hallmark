@@ -72,6 +72,8 @@ pub struct Config {
     pub intake: Intake,
     /// How many items each phase works on at once, per repo.
     pub parallel: Parallel,
+    /// The merger: whether shipped PRs merge without you, and how.
+    pub merge: Merge,
     /// Notification channels. Usually set in the user config
     /// (`<user data dir>/hallmark/config.toml`), which this overrides.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -119,6 +121,7 @@ impl Default for Config {
             budget: Budget::default(),
             intake: Intake::default(),
             parallel: Parallel::default(),
+            merge: Merge::default(),
             notify: None,
             library: Library::default(),
             extensions: Extensions::default(),
@@ -360,6 +363,55 @@ impl Parallel {
     }
 }
 
+/// Whether the merger merges shipped PRs: the loop's light/dark switch
+/// (ADR 0048).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MergeMode {
+    /// A person merges every PR. `hall queue` still shows the order.
+    #[default]
+    Off,
+    /// The merger merges each ready PR, one at a time per base, in order.
+    Auto,
+}
+
+impl MergeMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            MergeMode::Off => "off",
+            MergeMode::Auto => "auto",
+        }
+    }
+}
+
+/// `[merge]`: the merger (ADR 0048).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct Merge {
+    pub mode: MergeMode,
+    /// Merges one PR, run in the main checkout. Placeholders: {pr} (the
+    /// PR's URL) {pr_head} (the hallmarked head it must still be at)
+    /// {branch} {base} {id} {title}.
+    pub command: String,
+    /// Wait for the PR's CI to pass before merging. `false`: merge once the
+    /// PR is hallmarked, mergeable and up to date, whatever CI says.
+    pub require_ci: bool,
+    /// Paths a person merges: a PR that touches one waits for you (a `lit`
+    /// hold). Globs relative to the repo root.
+    pub lit: Vec<String>,
+}
+
+impl Default for Merge {
+    fn default() -> Self {
+        Merge {
+            mode: MergeMode::Off,
+            command: "gh pr merge {pr} --squash --match-head-commit {pr_head}".into(),
+            require_ci: true,
+            lit: Vec::new(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SplitMode {
@@ -459,7 +511,7 @@ impl Route {
             "question" => &self.question,
             "escalated" => &self.escalated,
             "stuck" | "daemon_stopped" => &self.stuck,
-            "ci_failed" | "conflict" | "feedback" => &self.escalated,
+            "ci_failed" | "conflict" | "feedback" | "merge_failed" | "lit" => &self.escalated,
             "ready" => &self.ready,
             "budget" | "run_failed" | "ship_failed" | "held" => &self.budget,
             "session_waiting" => &self.session_waiting,

@@ -441,6 +441,38 @@ fn now_with(repo: &Repo, item: &Item, items: &[Item], events: &[Event], git: boo
                 format!("hall export {id}"),
                 "the whole record as Markdown",
             )];
+            // The merger's part (ADR 0048): merging, held, or why it waits.
+            if let Some(u) = &item.pr_url
+                && item.parent.is_none()
+                && item.delivered.is_none()
+            {
+                if let Some(sha) = &item.merged {
+                    n.doing = format!(
+                        "Merging: the merger merged {u} at {}; waiting for GitHub to report it",
+                        crate::event::short(sha)
+                    );
+                } else if let Some(h) = &item.hold {
+                    n.status = "held".into();
+                    n.doing = format!("Held ({}): {}", h.kind.as_str(), h.reason);
+                    n.actions.push(act(
+                        format!("hall retry {id} --reason \"<why>\""),
+                        if h.kind == HoldKind::Lit {
+                            "let the merger merge this head"
+                        } else {
+                            "let the merger try again"
+                        },
+                    ));
+                } else if repo.config.merge.mode == crate::config::MergeMode::Auto
+                    && let Some(seen) = crate::merger::last_seen(repo, item.id)
+                {
+                    n.detail
+                        .push(format!("merger: {}: {}", seen.status.as_str(), seen.why));
+                }
+                n.actions.push(act(
+                    "hall queue",
+                    "the merge queue: order and why each PR waits",
+                ));
+            }
             // Its PR can still need a rebase or a conflict fix (ADR 0029).
             if let Some(u) = &item.pr_url
                 && item.parent.is_none()

@@ -1170,6 +1170,13 @@ expression: v
       "usage": "hall history [OPTIONS]"
     },
     {
+      "about": "The merge queue: every open shipped PR in the order the merger merges them, and why each one waits",
+      "args": [],
+      "name": "queue",
+      "schema": "hall schema queue",
+      "usage": "hall queue [OPTIONS]"
+    },
+    {
       "about": "An item's whole record as Markdown",
       "args": [
         {

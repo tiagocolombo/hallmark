@@ -31,6 +31,16 @@ mode = "gate"
 # Markdown under plugin/ and the rules files steer the reviewer: not free.
 free = ["docs/"]
 
+# The merger (ADR 0048): green, hallmarked PRs merge in order without a
+# person. The owner's --admin bypasses "Protect main"'s required review, which
+# the PR's author can't give. CI must pass first; workflows, release and
+# toolchain settings stay with a person.
+[merge]
+mode       = "auto"
+command    = "gh pr merge {pr} --squash --admin --match-head-commit {pr_head}"
+require_ci = true
+lit        = [".github/", "release-plz.toml", "rig.toml", "flake.nix", "flake.lock"]
+
 [intake]
 split     = "auto"
 max_parts = 4

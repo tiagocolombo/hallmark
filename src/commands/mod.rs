@@ -17,6 +17,7 @@ pub mod meta;
 pub mod new;
 pub mod next;
 pub mod notify;
+pub mod queue;
 pub mod record;
 pub mod review;
 pub mod setup;

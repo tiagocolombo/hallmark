@@ -65,7 +65,7 @@ pub struct Index {
 pub struct InboxEntry {
     /// Escalations: question, escalated, ready, budget, run_failed,
     /// ship_failed, conflict, feedback, ci_failed (after the Delivery
-    /// office's fixes), ci_down, daemon_stopped. Notices: stuck,
+    /// office's fixes), merge_failed, lit, ci_down, daemon_stopped. Notices: stuck,
     /// session_waiting, ci_failed (merged, or being fixed), learnings.
     pub kind: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -676,6 +676,29 @@ impl Index {
         // when its fixes didn't turn CI green. CI that never ran (billing,
         // runners) is one entry for every PR, since only you can fix it.
         let all = self.items(true)?;
+        // A shipped PR the merger held (a failed merge, a `lit` path): it
+        // waits for you until you retry it or the PR merges or closes.
+        for item in all
+            .iter()
+            .filter(|i| i.state == State::Closed && i.delivered.is_none())
+        {
+            let Some(h) = &item.hold else { continue };
+            out.push(InboxEntry {
+                kind: h.kind.as_str().into(),
+                item: Some(item.id),
+                qid: None,
+                text: format!("{}: {}", item.title, h.reason),
+                options: vec![],
+                default: None,
+                session: None,
+                since: h.since,
+                answer_with: vec![
+                    format!("hall retry {} --reason \"<why>\"", item.id),
+                    format!("hall log {}", item.id),
+                ],
+                notice: false,
+            });
+        }
         let mut down: Vec<(&Item, &str)> = Vec::new();
         for item in &all {
             let (Some(ci), Some(url)) = (&item.ci, &item.pr_url) else {

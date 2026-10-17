@@ -38,6 +38,16 @@ from Claude Code. It works like this:
 Every step is appended to the item's **journal**, so you can always see what was
 rejected, fixed and passed, and why.
 
+**Light and dark.** In Addy Osmani's terms, a *dark* software factory runs a
+loop with nobody watching, and a *lit* one keeps a person where a wrong
+answer is expensive. Hallmark sets the switch per loop, never for the whole
+line. The checks, the review, the fixes, shipping and the Delivery office run
+dark: each is judged by a script or the reviewer's rubric, which is cheap,
+frequent and hard to game. A person stays in three places: deciding what to
+build, any escalation, and merging. Merging goes dark only when you turn on
+the merger (`[merge] mode = "auto"`, ADR 0048), and `[merge] lit` keeps chosen
+paths, such as CI workflows or release settings, lit.
+
 The product is one Rust binary, `hall` (crate `hallmark`), for macOS, Linux and
 Windows:
 
@@ -72,7 +82,7 @@ The docs and the terminal app describe Hallmark as a building.
 | Repair Shop | The fixer | Fixing |
 | Stamping Room | The hallmark is struck | Hallmarked |
 | Dispatch Dock | Rebases onto the latest base; the ship command opens the PR, whose description is What, Why and How; `update` updates an adopted or reopened one. Each review is posted as a PR comment (`review_comment`, ADR 0039). If that PR already merged with the hallmarked work in it, the item closes with nothing pushed | Closed |
-| Delivery Office | Watches each shipped PR until it merges; a headless dev run rebases conflicting ones, addresses new review comments (ADR 0030) and fixes red CI (ADR 0031); a CI fix whose checks pass on a re-run goes back to its PR without a run (ADR 0047). Once the PR merges or closes, the sweeper removes the item's worktree (ADR 0040) | Closed, Development (rebasing, addressing comments) |
+| Delivery Office | Watches each shipped PR until it merges; a headless dev run rebases conflicting ones, addresses new review comments (ADR 0030) and fixes red CI (ADR 0031); a CI fix whose checks pass on a re-run goes back to its PR without a run (ADR 0047). With `[merge] mode = "auto"`, the merger merges each ready PR, one at a time per base, in dependency order (ADR 0048). Once the PR merges or closes, the sweeper removes the item's worktree (ADR 0040) | Closed, Development (rebasing, addressing comments) |
 
 A **watchman** patrols the corridor. It flags any item with no new event for
 `stuck_after` (30 minutes by default), and a daemon that has stopped.
@@ -115,7 +125,7 @@ Transitions:
 | awaiting_you, checks, review, fixing, escalated, hallmarked | `pull-back` | development |
 | hallmarked | shipped (PR opened) | closed |
 | hallmarked | the rebase onto the base conflicts, or changes the patch (`pulled_back`) | development |
-| closed | the PR conflicts, has new review comments or red CI (the Delivery office reopens it) | development |
+| closed | the PR conflicts, has new review comments or red CI (the Delivery office reopens it), or it is next to merge but behind its base on files it touches (the merger reopens it, ADR 0048) | development |
 | development | reopened for red CI, and the checks passed on a re-run with nothing moved (`restored`, ADR 0047) | closed |
 | any non-terminal | `drop --reason` | dropped |
 
@@ -368,6 +378,12 @@ rules       = ["CLAUDE.md", "AGENTS.md"]
 mode = "gate"                   # gate | ask | off
 free = ["docs/", "*.md"]        # paths that need no item
 
+[merge]                         # the merger (ADR 0048)
+mode       = "off"              # or "auto"
+command    = "gh pr merge {pr} --squash --match-head-commit {pr_head}"
+require_ci = true
+lit        = []                 # paths a person merges
+
 [intake]
 split     = "auto"              # the Front Desk splits requests when it can; or "off"
 max_parts = 4
@@ -537,6 +553,7 @@ changes (ADR 0030).
 | escalated | the item is `escalated` | that item |
 | ready? | the item is `awaiting_you` | nothing |
 | budget, run_failed, ship_failed, conflict, feedback, ci_failed | a hold: a per-item cap, two failed runs in a row, a failed ship, a rebase the Delivery office couldn't finish, PR comments or failing CI its dev run didn't act on | that item, until `hall retry` (which, for a budget hold, grants the item more tokens); a `ci_failed` hold also clears when a re-run of the PR's checks passes (ADR 0047) |
+| merge_failed, lit | a hold on a shipped item: the merger's merge command failed, or the PR is ready but touches a `[merge] lit` path (ADR 0048) | that item, until `hall retry` (try again; for `lit`, merge this head) or the PR merges or closes |
 | ci_failed | an open PR's CI still fails after the Delivery office's fixes | a follow-up item |
 | ci_down | CI jobs that never started (an Actions billing limit, no runners): one entry for every PR | GitHub |
 | session waiting | an answer the loop couldn't deliver to the asking session | that session |
@@ -631,11 +648,27 @@ doubt makes one item.
 One process (`hall daemon start`, optionally at login) runs passes over every
 registered repo; every repo, worker and slot is scheduled on its own (ADR
 0026): watchman, resume, assayer, fixer, shipper, delivery, delivery-watch,
-ci, sweeper, librarian, notify. Leases
+merger, ci, sweeper, librarian, notify. Leases
 keep one worker per item and count per phase against `[parallel]` (checks,
 review, fix, ship), not one assayer per repo. A rate limit or the daily budget
 pauses the model workers until the reset, recorded as `paused`. Stopping is a
 flag in the state file, so it works the same on every OS.
+
+The **merger** (ADR 0048) is off unless `[merge] mode = "auto"`. At most
+every 20 seconds it walks each base's open shipped PRs, oldest first, and
+judges each with a script, never a model: the shipped head with its hallmark,
+`MERGEABLE`, CI green at that head (unless `require_ci = false`), no
+standing request for changes, nothing it depends on still open (the PR it is
+stacked on; `Depends on #N`, `Blocked by #N`, `After #N`), no `lit` path, and
+fresh (the base is in it, or the base's new commits touch none of its files).
+The first ready PR merges through `[merge] command` (`pr_merged`); the first
+that is only behind on its own files is reopened with a rebase request, one
+per base at a time: until it ships again, other PRs that are behind wait
+while fresh ones merge. After a merge, nothing else on that base merges until
+the watch records `delivered`. A
+failed command holds the item (`merge_failed`); a `lit` path holds it for you
+(`lit`), and `hall retry` lets that head merge. `hall queue` shows the same
+judgement for every PR.
 
 The **sweeper** removes the worktree of each item that is done with it
 (ADR 0040): closed, not a part, and its PR merged or closed (`delivered`), or

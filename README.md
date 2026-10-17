@@ -60,6 +60,10 @@ holds up:
 - **Watched until it merges.** The Delivery Office follows each PR: a
   conflict gets rebased, red CI goes to a fixer, and new review comments go
   back through review. `hall adopt --pr` takes over a PR that's already open.
+- **Merged in order, if you want.** With `[merge] mode = "auto"`, the merger
+  merges each green, hallmarked PR, one at a time, in dependency order, and
+  brings the next one up to date first. Paths you list in `[merge] lit` still
+  wait for you. `hall queue` shows the order.
 - **PRs that read well.** A shipped PR's description is What, Why and How;
   every review, with its findings and how each was fixed, is a PR comment.
 - **A full record.** Every prompt, commit, check, verdict, fix and decision is
