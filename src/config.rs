@@ -989,6 +989,7 @@ split = "off"
         assert!(n.desktop);
         assert_eq!(n.route.channels("ready"), ["desktop", "phone"]);
         assert_eq!(n.route.channels("question"), ["desktop", "phone"]);
+        assert_eq!(n.route.channels("checks"), ["desktop", "phone"]);
         assert_eq!(c.library.search, SearchBackend::Qmd);
         assert_eq!(c.library.briefing_limit, "6k");
         assert_eq!(c.intake.split, SplitMode::Off);
