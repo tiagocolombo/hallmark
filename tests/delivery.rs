@@ -998,6 +998,48 @@ fn a_ci_fix_whose_checks_passed_on_a_re_run_goes_back_to_its_pr_without_a_run() 
 }
 
 #[test]
+fn a_rebase_the_assayer_carried_ships_with_its_note() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    let remote = remote_with_main(&env);
+    let (id, wt, sha) = hallmarked_item(&env, "Retry webhooks");
+    main_moves(&env, "other.rs", "fn other() {}\n");
+    assert_eq!(env.hall(&env.repo, &["pull-back", &id]).code, 0);
+    git(&wt, &["rebase", "-q", "origin/main"]);
+    assert_eq!(
+        env.hall(&wt, &["ready", "--note", "rebased onto origin/main"])
+            .code,
+        0
+    );
+    // Checks, then the carry: no reviewer run is scripted, so none can run.
+    pass(&env, &gh, "assayer", json!([]));
+    let step = pass(&env, &gh, "assayer", json!([]));
+    assert!(
+        step["what"].as_str().unwrap().contains("approval carried"),
+        "{step}"
+    );
+    assert!(env.fake_calls().is_empty(), "no review ran");
+    assert_eq!(state(&env, &id), "hallmarked");
+    let head = git(&wt, &["rev-parse", "HEAD"]);
+    let note: Value = serde_json::from_str(&git(
+        &wt,
+        &["notes", "--ref", "refs/notes/hallmark", "show", &head],
+    ))
+    .unwrap();
+    assert_eq!(note["rebased_from"], sha.as_str());
+
+    let step = pass(&env, &gh, "shipper", json!([]));
+    assert!(step["what"].as_str().unwrap().contains("shipped"), "{step}");
+    assert_eq!(state(&env, &id), "closed");
+    let branch = git(&wt, &["rev-parse", "--abbrev-ref", "HEAD"]);
+    assert_eq!(
+        git(&remote, &["rev-parse", &format!("refs/heads/{branch}")]),
+        head
+    );
+    assert_eq!(events(&env, &id, "shipped")[0]["sha"], head.as_str());
+}
+
+#[test]
 fn a_held_ci_fix_clears_when_a_re_run_passes() {
     let env = Env::initialized();
     let gh = fake_gh(&env);

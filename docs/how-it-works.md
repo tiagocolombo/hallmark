@@ -66,6 +66,15 @@ while its branch isn't on its base, so review never sees a commit that
 conflicts, and the request stays until the Delivery office (or you) rebases
 it ([ADR 0043](decisions/0043-ready-waits-for-a-pending-rebase.md)).
 
+A rebase keeps the approval it earned
+([ADR 0049](decisions/0049-a-rebase-keeps-its-approval.md)). When the commit
+in review is a rebase of the hallmarked one, the review step compares the
+approved change with the rebased one. If they are the same change, the gates
+that just passed are enough: the approval is carried and no review runs. If
+resolving conflicts changed a little of it, the reviewer reads only that
+difference and checks that both sides survived. A larger change gets a full
+review.
+
 An item sent back to fix its PR's red CI goes back to the PR, unchanged, if
 the checks pass on a re-run (a flaky test, a runner outage). The Delivery
 office reads the checks again before its fix run, and the CI watch keeps

@@ -7,7 +7,7 @@ use chrono::Utc;
 use crate::config::Role;
 use crate::error::Result;
 use crate::event::{Body, Event, short};
-use crate::findings::ModelVerdict;
+use crate::findings::{Ledger, ModelVerdict, Severity};
 use crate::item::{HoldKind, Item, State};
 use crate::repo::Repo;
 use crate::runner::{self, Failure, Metered, RunRequest};
@@ -40,6 +40,9 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
         return Ok(Progress::Idle);
     };
     let events = repo.hall.read_item(item.id)?;
+    if let Some(p) = carry(repo, item, &events, &sha)? {
+        return Ok(p);
+    }
     let (req, review_base) = request(repo, item, &events, &sha)?;
     // The review checkout goes away on every exit, verdict or not.
     struct Cleanup<'a>(&'a crate::repo::Repo, crate::item::ItemId);
@@ -118,6 +121,78 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
     }
 }
 
+/// A rebase that left the approved change as it was keeps its approval
+/// (ADR 0049): the gates just passed at `sha`, and the reviewer already
+/// approved this exact change, so no review runs. Records `rebased
+/// {carried: true}`, an approving verdict by `carried`, and the hallmark,
+/// whose note names the approved commit. None when it doesn't apply.
+fn carry(repo: &Repo, item: &Item, events: &[Event], sha: &str) -> Result<Option<Progress>> {
+    let base = super::base::Base::resolve(repo, &item.base)?;
+    let merge_base = super::prompt::fork_point(repo, item, &base.sha, sha);
+    let Some(cmp) = super::rebased::compare(repo, item, sha, &merge_base) else {
+        return Ok(None);
+    };
+    // Something serious was reopened since the approval: a reviewer rules.
+    let serious = Ledger::from_events(events)
+        .open()
+        .iter()
+        .any(|t| matches!(t.finding.severity, Severity::Blocker | Severity::Major));
+    if !cmp.same() || serious {
+        return Ok(None);
+    }
+    let id = item.id;
+    let mv = ModelVerdict {
+        summary: format!(
+            "Approval carried from {}: the rebase onto {} left the approved change as it was, \
+             and the gates passed at {}. No review ran.",
+            short(&cmp.approved),
+            base.name,
+            short(sha)
+        ),
+        findings: vec![],
+        prior: vec![],
+        learnings: vec![],
+    };
+    let rec = super::record_verdict(
+        repo,
+        id,
+        sha,
+        &mv,
+        super::ROLE,
+        Some(CARRIED.into()),
+        Some(base.sha.clone()),
+    )?;
+    // Only now is the approval known to be recorded.
+    repo.hall.append_item(
+        id,
+        &Event::new(
+            super::ROLE,
+            Some(id),
+            Body::Rebased {
+                from: cmp.approved.clone(),
+                to: sha.to_string(),
+                onto: base.name.clone(),
+                carried: true,
+                checks: vec![],
+                reason: Some(
+                    "the rebase left the approved change as it was, and the gates passed".into(),
+                ),
+            },
+        ),
+    )?;
+    crate::stamp::name_rebased_from(repo, sha, &cmp.approved)?;
+    Ok(Some(Progress::worked(format!(
+        "{id} review round {}: {}, approval carried from {} (the same change after the rebase)",
+        rec.round,
+        super::verdict::kind(rec.verdict),
+        short(&cmp.approved)
+    ))))
+}
+
+/// The reviewer named on a verdict that carried an approval across a
+/// rebase, with no review run.
+pub const CARRIED: &str = "carried";
+
 /// The run request for reviewing `item` at `sha`, and the base commit its
 /// rules came from. The prompt is also saved under `runs/`.
 pub fn request(
@@ -170,6 +245,50 @@ pub fn request(
             .map(|e| format!(", effort {e}"))
             .unwrap_or_default()
     ));
+    if let Some(c) = &review.compared {
+        let reason = if review.rebase_of.is_some() {
+            format!(
+                "rebase review: only the resolution ({} lines in {} files) since {}",
+                c.lines,
+                c.files.len(),
+                short(&c.approved)
+            )
+        } else {
+            format!(
+                "full review: the resolution changed {} lines of the change approved at {}",
+                c.lines,
+                short(&c.approved)
+            )
+        };
+        let seen = events.iter().any(|e| {
+            matches!(&e.body, Body::Rebased { to, reason: Some(r), .. } if to == sha && *r == reason)
+        });
+        if !seen {
+            repo.hall.append_item(
+                item.id,
+                &Event::new(
+                    super::ROLE,
+                    Some(item.id),
+                    Body::Rebased {
+                        from: c.approved.clone(),
+                        to: sha.to_string(),
+                        onto: review.base.name.clone(),
+                        carried: false,
+                        checks: vec![],
+                        reason: Some(reason),
+                    },
+                ),
+            )?;
+        }
+    }
+    if let Some(a) = &review.rebase_of {
+        repo.hall.live(&format!(
+            "{} review round {}: a rebase review, only what the rebase changed since {}",
+            item.id,
+            item.round,
+            short(a)
+        ));
+    }
     Ok((req, review.base.sha))
 }
 

@@ -119,6 +119,23 @@ pub fn carry(repo: &Repo, item: ItemId, from: &str, to: &str, actor: &str) -> Re
     Ok(note)
 }
 
+/// Names, in the note on `sha`, the hallmarked commit it is a rebase of,
+/// once the approval was carried to it in review (ADR 0049).
+pub fn name_rebased_from(repo: &Repo, sha: &str, from: &str) -> Result<()> {
+    let Some(mut note) = read(&repo.main_root, sha) else {
+        return Ok(());
+    };
+    note.rebased_from = Some(from.to_string());
+    let body = serde_json::to_string(&note)?;
+    repo.hall.with_repo_lock(|| {
+        git::run(
+            &repo.main_root,
+            &["notes", "--ref", NOTES_REF, "add", "-f", "-m", &body, sha],
+        )
+    })?;
+    Ok(())
+}
+
 /// The hallmark on `rev`, if it has one that parses.
 pub fn read(dir: &Path, rev: &str) -> Option<Note> {
     serde_json::from_str(&git::hallmark_note(dir, rev)?).ok()

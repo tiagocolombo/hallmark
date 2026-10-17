@@ -1595,8 +1595,12 @@ mod tests {
         let start = Instant::now();
         let mut asked = Vec::new();
         let r = wait_until(start + limit, |left| {
+            // The first wait wakes at once, early; the next ones sleep out
+            // what is left, so a slow runner can't skip the second ask.
+            if !asked.is_empty() {
+                crate::daemon::nap(left);
+            }
             asked.push(left);
-            crate::daemon::nap(left / 2);
             Ok::<_, std::io::Error>(None::<u8>)
         });
         assert!(matches!(r, Ok(None)), "{r:?}");

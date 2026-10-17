@@ -188,6 +188,19 @@ pub fn patch_id(dir: &Path, from: &str, to: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+/// `git diff --no-index` of two files in `dir`: their diff, empty when
+/// they are the same. None when git fails.
+pub fn diff_no_index(dir: &Path, a: &str, b: &str) -> Option<String> {
+    let out = command(dir)
+        .args(["diff", "--no-index", "--no-color", "--no-ext-diff", a, b])
+        .output()
+        .ok()?;
+    match out.status.code() {
+        Some(0 | 1) => Some(String::from_utf8_lossy(&out.stdout).into_owned()),
+        _ => None,
+    }
+}
+
 /// Fetches `origin <base>` into `refs/remotes/origin/<base>`, bounded to 20 s
 /// and never prompting: a stalled network or missing credentials leave the
 /// local copy as it was.

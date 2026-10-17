@@ -780,15 +780,20 @@ impl Body {
                 to,
                 onto,
                 carried,
+                reason,
                 ..
             } => format!(
                 "rebased {} → {} onto {onto}{}",
                 short(from),
                 short(to),
-                if *carried {
-                    " · approval carried"
-                } else {
-                    " · back to review"
+                match (carried, reason) {
+                    (true, _) => " · approval carried".to_string(),
+                    (false, Some(r))
+                        if r.starts_with("rebase review") || r.starts_with("full review") =>
+                    {
+                        format!(" · {r}")
+                    }
+                    _ => " · back to review".to_string(),
                 }
             ),
             Body::RebaseRequested { onto, files, .. } => {
@@ -1096,6 +1101,38 @@ mod tests {
             pr_head: None,
             own_worktree: Some(true),
         })
+    }
+
+    #[test]
+    fn a_rebase_says_how_it_goes_on_in_log_and_status() {
+        let rebased = |carried: bool, reason: Option<&str>| {
+            ev(Body::Rebased {
+                from: "a".repeat(40),
+                to: "b".repeat(40),
+                onto: "main".into(),
+                carried,
+                checks: vec![],
+                reason: reason.map(String::from),
+            })
+            .body
+            .summary()
+        };
+        let s = rebased(
+            false,
+            Some("rebase review: only the resolution (3 lines in 1 files) since aaaaaaa"),
+        );
+        assert!(
+            s.contains("rebase review: only the resolution (3 lines"),
+            "{s}"
+        );
+        let s = rebased(
+            false,
+            Some("full review: the resolution changed 101 lines of the change"),
+        );
+        assert!(s.contains("full review: the resolution changed 101"), "{s}");
+        assert!(rebased(false, Some("other")).ends_with(" · back to review"));
+        assert!(rebased(false, None).ends_with(" · back to review"));
+        assert!(rebased(true, None).ends_with(" · approval carried"));
     }
 
     #[test]

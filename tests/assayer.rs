@@ -1043,3 +1043,335 @@ fn a_running_review_can_be_followed_and_read_afterwards() {
         "{after}"
     );
 }
+
+/// An item approved at its first commit, then pulled back while `main`
+/// moved on another file, rebased onto it, changed by `rewrite`, and sent
+/// to review again. Returns (id, worktree, approved sha, new head).
+fn approved_then_rewritten(
+    env: &Env,
+    script: &Path,
+    rewrite: impl FnOnce(&Path),
+) -> (String, PathBuf, String, String) {
+    let (id, wt) = env.new_item("Retry webhooks");
+    commit_file(&wt, "notes.rs", "UNCHANGED_MARKER\n");
+    let approved = commit_file(&wt, "retry.rs", "fn retry() {}\n");
+    assert_eq!(env.hall(&wt, &["ready"]).code, 0);
+    tick(env, script);
+    let r = tick(env, script);
+    assert!(what(&r).contains("approve"), "{}", r.stdout);
+    commit_file(&env.repo, "other.rs", "fn other() {}\n");
+    assert_eq!(env.hall(&env.repo, &["pull-back", &id]).code, 0);
+    git(&wt, &["rebase", "-q", "main"]);
+    rewrite(&wt);
+    assert_eq!(
+        env.hall(&wt, &["ready", "--note", "rebased onto main"])
+            .code,
+        0
+    );
+    let head = git(&wt, &["rev-parse", "HEAD"]);
+    (id, wt, approved, head)
+}
+
+#[test]
+fn a_rebase_that_leaves_the_approved_change_as_it_was_keeps_its_approval() {
+    let env = Env::initialized();
+    // One review only: the second must never run.
+    let script = env.script(json!([reviewer(verdict(vec![], json!([])))]));
+    let (id, _, approved, head) = approved_then_rewritten(&env, &script, |_| {});
+    assert_ne!(approved, head);
+
+    tick(&env, &script);
+    let r = tick(&env, &script);
+    assert!(what(&r).contains("approval carried"), "{}", r.stdout);
+    assert_eq!(state(&env, &id), "hallmarked");
+    assert_eq!(env.fake_calls().len(), 1, "no review ran");
+    let v = events_of(&env, &id, "verdict");
+    assert_eq!(v[1]["verdict"], "approve");
+    assert_eq!(v[1]["reviewer"], "carried");
+    assert_eq!(v[1]["sha"], head.as_str());
+    let rebased = events_of(&env, &id, "rebased");
+    assert_eq!(rebased[0]["carried"], true);
+    assert_eq!(rebased[0]["from"], approved.as_str());
+    let note = git(
+        &env.repo,
+        &["notes", "--ref", "refs/notes/hallmark", "show", &head],
+    );
+    let note: Value = serde_json::from_str(&note).unwrap();
+    assert_eq!(note["rebased_from"], approved.as_str());
+}
+
+#[test]
+fn a_rebase_that_changed_the_approved_change_is_reviewed_only_where_it_did() {
+    let env = Env::initialized();
+    let script = env.script(json!([
+        reviewer(verdict(vec![], json!([]))),
+        reviewer(verdict(vec![], json!([]))),
+    ]));
+    configure_table(&env, "\n[budget.review]\neffort = \"high\"\n");
+    let (id, wt, approved, _) = approved_then_rewritten(&env, &script, |wt| {
+        // A conflict resolved by hand: the item's own line changed.
+        std::fs::write(wt.join("retry.rs"), "fn retry() { RESOLVED_MARKER(); }\n").unwrap();
+        git(wt, &["commit", "-q", "-a", "--amend", "--no-edit"]);
+    });
+    let _ = wt;
+
+    tick(&env, &script);
+    let r = tick(&env, &script);
+    assert!(what(&r).contains("approve"), "{}", r.stdout);
+    assert_eq!(state(&env, &id), "hallmarked");
+    let calls = env.fake_calls();
+    assert_eq!(calls.len(), 2);
+    let prompt = calls[1]["prompt"].as_str().unwrap();
+    assert!(
+        prompt.contains(&format!("## What the rebase changed ({}..", &approved[..7])),
+        "{prompt}"
+    );
+    assert!(prompt.contains("RESOLVED_MARKER"), "{prompt}");
+    assert!(
+        !prompt.contains("UNCHANGED_MARKER"),
+        "the unchanged file isn't reviewed again"
+    );
+    assert_eq!(
+        arg_after(&calls[1], "--effort"),
+        Some("low"),
+        "effort follows the size of the difference"
+    );
+    let verdicts = events_of(&env, &id, "verdict");
+    assert_ne!(verdicts[1]["reviewer"], "carried");
+}
+
+#[test]
+fn an_open_major_gets_a_review_even_when_the_rewrite_is_the_approved_change() {
+    let env = Env::initialized();
+    let script = env.script(json!([
+        reviewer(verdict(vec![], json!([]))),
+        reviewer(verdict(
+            vec![finding("major", "retry.rs", "Two")],
+            json!([])
+        )),
+        reviewer(verdict(vec![], json!([]))),
+    ]));
+    let (id, wt) = env.new_item("Retry webhooks");
+    let approved = commit_file(&wt, "retry.rs", "fn retry() {}\n");
+    assert_eq!(env.hall(&wt, &["ready"]).code, 0);
+    tick(&env, &script);
+    tick(&env, &script);
+    assert_eq!(state(&env, &id), "hallmarked");
+    // Pulled back, changed, and found wanting: a major stays open.
+    assert_eq!(env.hall(&env.repo, &["pull-back", &id]).code, 0);
+    commit_file(&wt, "retry.rs", "fn retry() { twice(); }\n");
+    assert_eq!(env.hall(&wt, &["ready"]).code, 0);
+    tick(&env, &script);
+    tick(&env, &script);
+    assert_eq!(state(&env, &id), "fixing");
+    // Then back to the approved change, rebased onto a moved main.
+    commit_file(&env.repo, "other.rs", "fn other() {}\n");
+    assert_eq!(env.hall(&env.repo, &["pull-back", &id]).code, 0);
+    git(&wt, &["reset", "-q", "--hard", &approved]);
+    git(&wt, &["rebase", "-q", "main"]);
+    let rr = env.hall(&wt, &["ready"]);
+    assert_eq!(rr.code, 0, "{}", rr.stdout);
+    tick(&env, &script);
+    let r = tick(&env, &script);
+    assert!(!what(&r).contains("carried"), "{}", r.stdout);
+    assert_eq!(env.fake_calls().len(), 3, "a reviewer ruled");
+    let v = events_of(&env, &id, "verdict");
+    assert_ne!(v.last().unwrap()["reviewer"], "carried");
+}
+
+#[test]
+fn a_rewrite_that_changed_much_of_the_approved_change_gets_a_full_review() {
+    let env = Env::initialized();
+    let script = env.script(json!([
+        reviewer(verdict(vec![], json!([]))),
+        reviewer(verdict(vec![], json!([]))),
+    ]));
+    approved_then_rewritten(&env, &script, |wt| {
+        let big: String = (0..150).map(|i| format!("fn g{i}() {{}}\n")).collect();
+        std::fs::write(wt.join("retry.rs"), big).unwrap();
+        git(wt, &["commit", "-q", "-a", "--amend", "--no-edit"]);
+    });
+
+    tick(&env, &script);
+    tick(&env, &script);
+    let calls = env.fake_calls();
+    assert_eq!(calls.len(), 2);
+    let prompt = calls[1]["prompt"].as_str().unwrap();
+    assert!(prompt.contains("## The whole change"), "{prompt}");
+    assert!(
+        prompt.contains("more than a rebase review covers"),
+        "{prompt}"
+    );
+    assert!(prompt.contains("UNCHANGED_MARKER"), "{prompt}");
+}
+
+#[test]
+fn a_rebase_whose_gates_fail_is_not_carried() {
+    let env = Env::initialized();
+    let script = env.script(json!([reviewer(verdict(vec![], json!([])))]));
+    let (id, _, _, _) = approved_then_rewritten(&env, &script, |_| {});
+    configure(&env, &[("gates", &format!("[\"{FAIL}\"]"))]);
+
+    let r = tick(&env, &script);
+    assert!(what(&r).contains("checks failed"), "{}", r.stdout);
+    assert_eq!(state(&env, &id), "fixing");
+    assert_eq!(events_of(&env, &id, "verdict").len(), 1);
+    assert!(events_of(&env, &id, "rebased").is_empty());
+}
+
+/// Rewrites `retry.rs` to `n` new lines after the approval, with the review
+/// notes of the base naming `sensitive`. Returns the prompt and effort of
+/// the second review, and the item's `rebased` events.
+fn rewritten_with(n: usize, sensitive: &str) -> (String, Option<String>, Vec<Value>) {
+    rewritten_in(&Env::initialized(), n, sensitive)
+}
+
+fn rewritten_in(env: &Env, n: usize, sensitive: &str) -> (String, Option<String>, Vec<Value>) {
+    std::fs::write(
+        env.repo.join(".hallmark/review.md"),
+        format!("# Review notes\n\n## Sensitive paths\n\n- `{sensitive}`: here\n\n## Invariants\n"),
+    )
+    .unwrap();
+    git(&env.repo, &["commit", "-q", "-am", "sensitive paths"]);
+    configure_table(env, "\n[budget.review]\neffort = \"high\"\n");
+    let script = env.script(json!([
+        reviewer(verdict(vec![], json!([]))),
+        reviewer(verdict(vec![], json!([]))),
+    ]));
+    let (id, _, _, _) = approved_then_rewritten(env, &script, |wt| {
+        let text: String = (0..n).map(|i| format!("fn r{i}() {{}}\n")).collect();
+        std::fs::write(wt.join("retry.rs"), text).unwrap();
+        git(wt, &["commit", "-q", "-a", "--amend", "--no-edit"]);
+    });
+    tick(env, &script);
+    tick(env, &script);
+    let calls = env.fake_calls();
+    assert_eq!(calls.len(), 2);
+    (
+        calls[1]["prompt"].as_str().unwrap().to_string(),
+        arg_after(&calls[1], "--effort").map(String::from),
+        events_of(env, &id, "rebased"),
+    )
+}
+
+#[test]
+fn a_sensitive_path_is_found_whatever_git_is_configured_to_print() {
+    let env = Env::initialized();
+    git(&env.repo, &["config", "diff.noprefix", "true"]);
+    let (_, effort, _) = rewritten_in(&env, 3, "retry.rs");
+    assert_eq!(effort.as_deref(), Some("max"));
+}
+
+#[test]
+fn a_difference_too_big_for_the_prompt_gets_a_full_review() {
+    let env = Env::initialized();
+    let script = env.script(json!([
+        reviewer(verdict(vec![], json!([]))),
+        reviewer(verdict(vec![], json!([]))),
+    ]));
+    approved_then_rewritten(&env, &script, |wt| {
+        let long = format!("fn retry() {{ {} }}\n", "x".repeat(70_000));
+        std::fs::write(wt.join("retry.rs"), long).unwrap();
+        git(wt, &["commit", "-q", "-a", "--amend", "--no-edit"]);
+    });
+    tick(&env, &script);
+    tick(&env, &script);
+    let calls = env.fake_calls();
+    assert_eq!(calls.len(), 2);
+    let prompt = calls[1]["prompt"].as_str().unwrap();
+    assert!(prompt.contains("## The whole change"), "{prompt}");
+    assert!(!prompt.contains("(no changes)"), "{prompt}");
+}
+
+/// `api.rs` on main has the same check in two functions. The item removes it
+/// from the first and is approved; the branch is then rewritten to remove it
+/// from the second. `git_config` is set in the repo first.
+fn moved_hunk(git_config: &[(&str, &str)]) {
+    let env = Env::initialized();
+    for (k, v) in git_config {
+        git(&env.repo, &["config", k, v]);
+    }
+    let api = |a: bool, b: bool| {
+        let check = |keep: bool| if keep { "    require_admin();\n" } else { "" };
+        format!(
+            "fn one() {{\n    a();\n    b();\n    c();\n{}    d();\n    e();\n    f();\n}}\n\n\
+             fn two() {{\n    g();\n    h();\n    i();\n{}    j();\n    k();\n    l();\n}}\n",
+            check(a),
+            check(b)
+        )
+    };
+    commit_file(&env.repo, "api.rs", &api(true, true));
+    let script = env.script(json!([
+        reviewer(verdict(vec![], json!([]))),
+        reviewer(verdict(vec![], json!([]))),
+    ]));
+    let (id, wt) = env.new_item("Open the first call");
+    commit_file(&wt, "api.rs", &api(false, true));
+    assert_eq!(env.hall(&wt, &["ready"]).code, 0);
+    tick(&env, &script);
+    tick(&env, &script);
+    assert_eq!(state(&env, &id), "hallmarked");
+    assert_eq!(env.hall(&env.repo, &["pull-back", &id]).code, 0);
+    commit_file(&wt, "api.rs", &api(true, false));
+    git(&wt, &["reset", "-q", "--soft", "HEAD~2"]);
+    git(&wt, &["commit", "-q", "-m", "open the second call"]);
+    assert_eq!(env.hall(&wt, &["ready"]).code, 0);
+    tick(&env, &script);
+    let r = tick(&env, &script);
+    assert!(!what(&r).contains("carried"), "{}", r.stdout);
+    assert_eq!(env.fake_calls().len(), 2, "a reviewer ruled");
+    let prompt = env.fake_calls()[1]["prompt"].as_str().unwrap().to_string();
+    assert!(prompt.contains("## What the rebase changed"), "{prompt}");
+    assert!(
+        prompt.contains("+     j();"),
+        "the moved hunk's place: {prompt}"
+    );
+}
+
+#[test]
+fn a_hunk_that_moved_to_another_function_is_reviewed_not_carried() {
+    moved_hunk(&[]);
+}
+
+#[test]
+fn a_users_diff_context_setting_doesnt_carry_a_moved_hunk() {
+    moved_hunk(&[("diff.context", "0")]);
+}
+
+#[test]
+fn a_difference_of_a_hundred_lines_is_a_rebase_review_and_one_more_is_not() {
+    let (prompt, _, rebased) = rewritten_with(99, "nothing/**");
+    assert!(prompt.contains("## What the rebase changed"), "{prompt}");
+    assert_eq!(rebased.len(), 1);
+    assert_eq!(rebased[0]["carried"], false);
+    assert!(
+        rebased[0]["reason"]
+            .as_str()
+            .unwrap()
+            .starts_with("rebase review: only the resolution (100 lines"),
+        "{rebased:?}"
+    );
+    let (prompt, _, rebased) = rewritten_with(100, "nothing/**");
+    assert!(prompt.contains("## The whole change"), "{prompt}");
+    assert!(
+        rebased[0]["reason"]
+            .as_str()
+            .unwrap()
+            .starts_with("full review: the resolution changed 101 lines"),
+        "{rebased:?}"
+    );
+}
+
+#[test]
+fn a_sensitive_path_in_the_difference_makes_the_rebase_review_max() {
+    let (prompt, effort, _) = rewritten_with(3, "retry.rs");
+    assert!(prompt.contains("## What the rebase changed"), "{prompt}");
+    assert_eq!(effort.as_deref(), Some("max"));
+}
+
+#[test]
+fn a_sensitive_path_the_rebase_didnt_touch_leaves_the_effort_to_the_difference() {
+    let (prompt, effort, _) = rewritten_with(3, "notes.rs");
+    assert!(prompt.contains("## What the rebase changed"), "{prompt}");
+    assert_eq!(effort.as_deref(), Some("low"));
+}

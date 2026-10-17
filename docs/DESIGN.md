@@ -124,7 +124,7 @@ Transitions:
 | escalated | `retry` (allow one more round) | fixing |
 | awaiting_you, checks, review, fixing, escalated, hallmarked | `pull-back` | development |
 | hallmarked | shipped (PR opened) | closed |
-| hallmarked | the rebase onto the base conflicts, or changes the patch (`pulled_back`) | development |
+| hallmarked | the rebase onto the base conflicts, or changes the patch (`pulled_back`; the review then reads only what changed, ADR 0049) | development |
 | closed | the PR conflicts, has new review comments or red CI (the Delivery office reopens it), or it is next to merge but behind its base on files it touches (the merger reopens it, ADR 0048) | development |
 | development | reopened for red CI, and the checks passed on a re-run with nothing moved (`restored`, ADR 0047) | closed |
 | any non-terminal | `drop --reason` | dropped |
@@ -507,6 +507,13 @@ concrete scenario that breaks.
   branch can't soften its own review.
 - From round 2, it reads only the diff since the last round, plus the open
   findings.
+- A rewrite of the hallmarked commit, such as a rebase, is compared with the
+  approved change, file by file with its context lines (ADR 0049). The
+  same change keeps its approval with no review run: `rebased {carried:
+  true}`, a verdict by `carried`, and a note that names the approved commit.
+  A difference of up to 100 lines gets a rebase review, which reads only that
+  difference, at the effort its size calls for. A larger one gets a full
+  review.
 
 **Failures.** A run without `structured_output` counts as failed.
 
