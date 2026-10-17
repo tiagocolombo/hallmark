@@ -667,7 +667,8 @@ impl<'a> Look<'a> {
                     // newer one that must be rebased onto it anyway.
                     let first = claimed.get(&f).and_then(|v| {
                         v.iter().find(|c| {
-                            !c.waits.contains(&me) && !(c.reopened && number(&c.url) > number(&me))
+                            let newer_reopened = c.reopened && number(&c.url) > number(&me);
+                            !c.waits.contains(&me) && !newer_reopened
                         })
                     });
                     if let Some(c) = first {
