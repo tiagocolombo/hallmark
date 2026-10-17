@@ -552,7 +552,10 @@ fn a_dependency_named_by_a_commit_on_the_base_is_not_the_prs() {
     let env = Env::initialized();
     let gh = fake_gh(&env);
     setup(&env);
-    git(&env.repo, &["commit", "--allow-empty", "-q", "-m", "Blocked by #9"]);
+    git(
+        &env.repo,
+        &["commit", "--allow-empty", "-q", "-m", "Blocked by #9"],
+    );
     git(&env.repo, &["push", "-q", "origin", "main"]);
     let (id, _, _) = shipped(&env, &gh, 1, "a.rs");
     std::fs::write(gh.parent().unwrap().join("state-9.txt"), "OPEN").unwrap();

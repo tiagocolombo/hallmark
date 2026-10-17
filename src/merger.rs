@@ -434,7 +434,12 @@ impl<'a> Look<'a> {
                     "the merge command succeeded, but the PR is still open after {} minutes",
                     STUCK_SECS / 60
                 );
-                return (Status::Merging, why.clone(), vec![], Some(Verdict::Stuck(why)));
+                return (
+                    Status::Merging,
+                    why.clone(),
+                    vec![],
+                    Some(Verdict::Stuck(why)),
+                );
             }
             return none(Status::Merging, waiting);
         }
@@ -689,7 +694,10 @@ pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
         // One at a time: a merged PR is delivered before the next one goes.
         if line.iter().any(|i| i.merged.is_some()) {
             // Unless its merge never landed: then it is yours to look at.
-            for item in line.iter().filter(|i| i.merged.is_some() && i.hold.is_none()) {
+            for item in line
+                .iter()
+                .filter(|i| i.merged.is_some() && i.hold.is_none())
+            {
                 let (_, _, _, verdict) = look.judge(item);
                 if let Some(Verdict::Stuck(why)) = verdict {
                     let kind = HoldKind::MergeFailed;
