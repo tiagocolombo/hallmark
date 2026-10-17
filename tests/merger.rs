@@ -599,3 +599,241 @@ fn moving_a_file_out_of_a_lit_path_is_still_touching_it() {
     assert!(what.contains("held (lit)"), "{step}");
     assert!(events(&env, &id, "pr_merged").is_empty());
 }
+
+/// Rewrites an item's journal, `f` seeing each event.
+fn edit_journal(env: &Env, id: &str, f: impl Fn(&mut Value)) {
+    let p = hall(env).item_events(id.parse().unwrap());
+    let text = std::fs::read_to_string(&p).unwrap();
+    let lines: Vec<String> = text
+        .lines()
+        .map(|l| {
+            let mut v: Value = serde_json::from_str(l).unwrap();
+            f(&mut v);
+            v.to_string()
+        })
+        .collect();
+    std::fs::write(&p, lines.join("\n") + "\n").unwrap();
+    assert_eq!(env.hall(&env.repo, &["reindex", "--force"]).code, 0);
+}
+
+/// Item `upper`, made on `lower`'s branch.
+fn stack_on(env: &Env, upper: &str, branch: &str) {
+    edit_journal(env, upper, |v| {
+        if v["event"] == "created" {
+            v["base"] = json!(branch);
+        }
+    });
+}
+
+fn inbox_has(env: &Env, kind: &str) -> bool {
+    let inbox = env.hall(&env.repo, &["inbox"]);
+    inbox.json["entries"]
+        .to_string()
+        .contains(&format!("\"{kind}\""))
+}
+
+#[test]
+fn a_merge_that_never_lands_is_held_and_retry_merges_again() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    let (id, _, _) = shipped(&env, &gh, 1, "a.rs");
+    pass(&env, &gh);
+    assert_eq!(events(&env, &id, "pr_merged").len(), 1);
+
+    // The command exited 0, yet the PR is still open half an hour on.
+    let old = (chrono::Utc::now() - chrono::Duration::minutes(30)).to_rfc3339();
+    edit_journal(&env, &id, |v| {
+        if v["event"] == "pr_merged" {
+            v["t"] = json!(old);
+        }
+    });
+    std::fs::write(gh.parent().unwrap().join("state-1.txt"), "OPEN").unwrap();
+    let step = pass(&env, &gh);
+    assert!(
+        step["what"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("merge_failed"),
+        "{step}"
+    );
+    let held = events(&env, &id, "held");
+    assert_eq!(held[0]["kind"], "merge_failed");
+    assert!(inbox_has(&env, "merge_failed"));
+
+    // Retry clears the merge, so the base is free and the PR merges again.
+    assert_eq!(
+        env.hall(&env.repo, &["retry", &id, "--reason", "try again"])
+            .code,
+        0
+    );
+    pass(&env, &gh);
+    assert_eq!(events(&env, &id, "pr_merged").len(), 2);
+
+    // Delivered: the inbox entry is gone.
+    delivered(&env, &id, 1);
+    assert!(!inbox_has(&env, "merge_failed"));
+}
+
+#[test]
+fn an_older_pr_github_is_still_checking_goes_first() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    let (older, _, sha) = shipped(&env, &gh, 1, "a.rs");
+    let (newer, _, _) = shipped(&env, &gh, 2, "b.rs");
+    pr(&gh, 1, "UNKNOWN", &sha, "", json!([]));
+
+    pass(&env, &gh);
+    assert!(events(&env, &older, "pr_merged").is_empty());
+    assert!(events(&env, &newer, "pr_merged").is_empty());
+    let q = queue(&env, &gh);
+    assert_eq!(status_of(&q, &older)["status"], "unknown", "{q}");
+    assert_eq!(status_of(&q, &newer)["status"], "queued", "{q}");
+
+    pr(&gh, 1, "MERGEABLE", &sha, "", json!([]));
+    pass(&env, &gh);
+    assert_eq!(events(&env, &older, "pr_merged").len(), 1);
+    assert!(events(&env, &newer, "pr_merged").is_empty());
+}
+
+#[test]
+fn a_dirty_worktree_is_not_reopened_for_a_rebase() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    let (id, wt, _) = shipped(&env, &gh, 1, "a.rs");
+    commit_file(&env.repo, "a.rs", "// main's a.rs\n");
+    git(&env.repo, &["push", "-q", "origin", "main"]);
+    std::fs::write(wt.join("a.rs"), "// someone is editing\n").unwrap();
+
+    pass(&env, &gh);
+    assert!(events(&env, &id, "rebase_requested").is_empty());
+    assert_eq!(state(&env, &id), "closed");
+    let q = queue(&env, &gh);
+    assert_eq!(status_of(&q, &id)["status"], "not_ours", "{q}");
+}
+
+#[test]
+fn a_stacked_pr_whose_parent_merged_says_a_person_retargets_it() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    let (lower, lower_wt, _) = shipped(&env, &gh, 1, "a.rs");
+    let branch = git(&lower_wt, &["rev-parse", "--abbrev-ref", "HEAD"]);
+    let (upper, _, _) = shipped(&env, &gh, 2, "b.rs");
+    stack_on(&env, &upper, &branch);
+    delivered(&env, &lower, 1);
+
+    let q = queue(&env, &gh);
+    let e = status_of(&q, &upper);
+    assert_eq!(e["status"], "waits_for", "{q}");
+    let why = e["why"].as_str().unwrap();
+    assert!(why.contains("retarget"), "{why}");
+    pass(&env, &gh);
+    assert!(events(&env, &upper, "pr_merged").is_empty());
+}
+
+#[test]
+fn hall_status_says_what_the_merger_is_doing() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    set_config(&env, "merge.lit", "[\"*.yml\"]");
+    let (lit, _, _) = shipped(&env, &gh, 1, "ci.yml");
+    let (waiter, _, sha) = shipped(&env, &gh, 2, "a.rs");
+    pr(&gh, 2, "MERGEABLE", &sha, "Depends on #9", json!([]));
+    let (merged, _, _) = shipped(&env, &gh, 3, "b.rs");
+    pass(&env, &gh);
+
+    let waiting = env.hall(&env.repo, &["status", &waiter]).stdout;
+    assert!(waiting.contains("merger: waits_for"), "{waiting}");
+    let merging = env.hall(&env.repo, &["status", &merged]).stdout;
+    assert!(merging.contains("Merging: the merger merged"), "{merging}");
+    let held = env.hall(&env.repo, &["status", &lit]).stdout;
+    assert!(held.contains("(lit): ready to merge"), "{held}");
+    assert!(inbox_has(&env, "lit"));
+
+    // The PR merged and was delivered: nothing is left for you to do.
+    delivered(&env, &lit, 1);
+    assert!(!inbox_has(&env, "lit"));
+}
+
+/// Shas differ between runs.
+fn scrub(v: &Value, shas: &[&str]) -> Value {
+    let mut s = v.to_string();
+    for sha in shas {
+        s = s.replace(&sha[..7], "<sha>");
+    }
+    serde_json::from_str(&s).unwrap()
+}
+
+#[test]
+fn hall_queue_json_is_pinned() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    let empty = env.hall(&env.repo, &["queue"]);
+    insta::assert_json_snapshot!("queue_empty", empty.json);
+
+    setup(&env);
+    set_config(&env, "merge.lit", "[\"*.yml\"]");
+    let (_, first_wt, s1) = shipped(&env, &gh, 1, "a.rs");
+    let (_, _, s2) = shipped(&env, &gh, 2, "b.rs");
+    let (_, _, s3) = shipped(&env, &gh, 3, "c.rs");
+    pr(&gh, 3, "MERGEABLE", &s3, "Depends on #1", json!([]));
+    let (_, _, s4) = shipped(&env, &gh, 4, "ci.yml");
+    let (stacked, _, s5) = shipped(&env, &gh, 5, "d.rs");
+    let branch = git(&first_wt, &["rev-parse", "--abbrev-ref", "HEAD"]);
+    stack_on(&env, &stacked, &branch);
+
+    let q = queue(&env, &gh);
+    insta::assert_json_snapshot!("queue_two_bases", scrub(&q, &[&s1, &s2, &s3, &s4, &s5]));
+}
+
+#[test]
+fn hall_queue_text_is_pinned() {
+    use hallmark::commands::queue::QueueOut;
+    use hallmark::merger::{Entry, Status};
+    use hallmark::output::Render;
+    let e = |position, id: &str, n, base: &str, status, why: &str| Entry {
+        position,
+        item: id.parse().unwrap(),
+        title: format!("Change {id}"),
+        pr_url: url(n),
+        base: base.into(),
+        status,
+        why: why.into(),
+        waits_for: vec![],
+    };
+    let out = QueueOut {
+        mode: "auto".into(),
+        require_ci: false,
+        queue: vec![
+            e(1, "H-0001", 1, "main", Status::Merging, "merged at abc1234"),
+            e(2, "H-0002", 2, "main", Status::Ready, "ready: hallmarked"),
+            e(
+                3,
+                "H-0003",
+                3,
+                "main",
+                Status::Lit,
+                "waiting for you: ci.yml",
+            ),
+            e(
+                1,
+                "H-0004",
+                4,
+                "hm/H-0002-x",
+                Status::WaitsFor,
+                "waits for #2",
+            ),
+        ],
+    };
+    insta::assert_snapshot!("queue_text", out.render());
+    let empty = QueueOut {
+        mode: "off".into(),
+        require_ci: true,
+        queue: vec![],
+    };
+    insta::assert_snapshot!("queue_text_empty", empty.render());
+}

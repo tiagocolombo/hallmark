@@ -1,0 +1,65 @@
+---
+source: tests/merger.rs
+expression: "scrub(&q, &[&s1, &s2, &s3, &s4, &s5])"
+---
+{
+  "mode": "auto",
+  "next": [
+    "hall status H-0005",
+    "hall daemon status"
+  ],
+  "queue": [
+    {
+      "base": "hm/H-0001-change-a-rs",
+      "item": "H-0005",
+      "position": 1,
+      "pr_url": "https://github.com/acme/app/pull/5",
+      "status": "waits_for",
+      "title": "Change d.rs",
+      "waits_for": [
+        "https://github.com/acme/app/pull/1"
+      ],
+      "why": "waits for https://github.com/acme/app/pull/1"
+    },
+    {
+      "base": "main",
+      "item": "H-0001",
+      "position": 1,
+      "pr_url": "https://github.com/acme/app/pull/1",
+      "status": "ready",
+      "title": "Change a.rs",
+      "why": "ready: hallmarked at <sha>, mergeable, up to date"
+    },
+    {
+      "base": "main",
+      "item": "H-0002",
+      "position": 2,
+      "pr_url": "https://github.com/acme/app/pull/2",
+      "status": "queued",
+      "title": "Change b.rs",
+      "why": "ready; merges after the PRs ahead of it"
+    },
+    {
+      "base": "main",
+      "item": "H-0003",
+      "position": 3,
+      "pr_url": "https://github.com/acme/app/pull/3",
+      "status": "waits_for",
+      "title": "Change c.rs",
+      "waits_for": [
+        "https://github.com/acme/app/pull/1"
+      ],
+      "why": "waits for https://github.com/acme/app/pull/1"
+    },
+    {
+      "base": "main",
+      "item": "H-0004",
+      "position": 4,
+      "pr_url": "https://github.com/acme/app/pull/4",
+      "status": "lit",
+      "title": "Change ci.yml",
+      "why": "ready to merge, waiting for you: touches ci.yml"
+    }
+  ],
+  "require_ci": true
+}
