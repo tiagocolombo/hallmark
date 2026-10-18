@@ -43,7 +43,6 @@ ship        = "git push -u origin {branch} && gh pr create --base {base} --head 
 update      = "git push --force-with-lease={branch}:{pr_head} origin {branch} && gh pr edit {pr} --base {base}"
 review_comment = "gh pr comment {pr} --body-file {review_file}"   # every review is a PR comment; "" for none
 gates       = []
-reviewer    = "claude -p"
 fixer       = "claude -p"   # or another fix engine, run in the worktree
 claude_args = []            # extra arguments for every headless claude -p run
 dev_commands = []           # what headless dev runs may run besides the gates
@@ -138,6 +137,12 @@ lit     = [".github/", "release-plz.toml"]
 
 `--admin` also skips required checks, so `require_ci = false` with it merges
 a PR whose CI is red, and only the base branch's own CI says so afterwards.
+
+Keys Hallmark doesn't know are ignored, so a file written for another version
+still loads. That includes `reviewer`, which earlier versions listed but never
+read: the review always runs through `claude -p` (the principal-engineer
+agent), and only the fix engine can be swapped, with `fixer`. A file that
+still sets `reviewer` loads as before; delete the line when convenient.
 
 ## The push guard
 

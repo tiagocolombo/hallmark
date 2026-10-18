@@ -1149,7 +1149,6 @@ base         = "main"
 worktree     = "git worktree add ../{repo}-{id} -b {branch}"
 ship         = "git push -u origin {branch} &amp;&amp; gh pr create --fill"
 gates        = []                  # hall init fills these
-reviewer     = "claude -p"
 max_rejects  = 3
 stuck_after  = "30m"
 lenses       = "all"
