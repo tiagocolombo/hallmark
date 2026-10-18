@@ -74,6 +74,9 @@ are happy with.
      `budget.librarian_model`;
    - `budget.daily` and `budget.per_item`: tokens such as `4M` or `800k`, or
      dollars such as `$15`.
+   - `budget.<role>.max_usd`, the cap on one run in dollars (role: review,
+     fix, intake, librarian). Unset, it defaults to 6, 2, 0.10 and 0.20;
+     `none` lifts it.
 7. **Merging** (`[merge]`, ADR 0048): whether shipped PRs merge without
    them. `merge.mode` is `off` (they merge) or `auto` (the merger merges each
    ready PR, one at a time, in dependency order, and brings each PR up to

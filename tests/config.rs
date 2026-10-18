@@ -52,6 +52,34 @@ fn set_get_unset_keep_the_file_and_are_idempotent() {
     assert_eq!(entry(&r)["value"], Value::Null);
 }
 
+/// A per-run cap that isn't set shows its role's default; "none" lifts it.
+#[test]
+fn per_run_caps_show_their_defaults_and_take_none() {
+    let env = Env::initialized();
+    let r = env.hall(&env.repo, &["config", "get", "budget.review.max_usd"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(entry(&r)["value"], 6.0);
+    assert_eq!(entry(&r)["source"], "default");
+    let help = entry(&r)["help"].as_str().unwrap().to_string();
+    assert!(help.contains("review 6.00"), "{help}");
+    let r = env.hall(&env.repo, &["config", "get", "budget.intake.max_usd"]);
+    assert_eq!(entry(&r)["value"], 0.1);
+
+    let r = env.hall(
+        &env.repo,
+        &["config", "set", "budget.review.max_usd", "none"],
+    );
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(entry(&r)["value"], "none");
+    assert_eq!(entry(&r)["source"], "repo");
+    let text = std::fs::read_to_string(env.repo.join(".hallmark.toml")).unwrap();
+    assert!(text.contains(r#"max_usd = "none""#), "{text}");
+
+    let r = env.hall(&env.repo, &["config", "unset", "budget.review.max_usd"]);
+    assert_eq!(entry(&r)["value"], 6.0);
+    assert_eq!(entry(&r)["source"], "default");
+}
+
 #[test]
 fn bad_keys_and_values_are_usage_errors() {
     let env = Env::initialized();

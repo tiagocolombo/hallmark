@@ -826,6 +826,26 @@ fn failed_runs_retry_once_then_hold() {
 }
 
 #[test]
+fn a_budget_hold_names_the_config_table() {
+    let env = Env::initialized();
+    let (id, _, _) = ready_item(&env, "Retry webhooks", "retry.rs", "fn retry() {}\n");
+    let script = env.script(json!([
+        {"role": "reviewer", "fail": "budget"},
+        {"role": "reviewer", "fail": "budget"},
+    ]));
+    tick(&env, &script);
+    tick(&env, &script);
+    tick(&env, &script);
+    let held = events_of(&env, &id, "held");
+    assert_eq!(held.len(), 1);
+    let reason = held[0]["reason"].as_str().unwrap_or_default().to_string();
+    assert!(reason.contains("$6.00"), "{reason}");
+    assert!(reason.contains("[budget.review] max_usd"), "{reason}");
+    assert!(reason.contains("--set review.max_usd="), "{reason}");
+    assert!(!reason.contains("budget.reviewer"), "{reason}");
+}
+
+#[test]
 fn a_rate_limit_pauses_the_daemon() {
     let env = Env::initialized();
     let (id, _, _) = ready_item(&env, "Retry webhooks", "retry.rs", "fn retry() {}\n");

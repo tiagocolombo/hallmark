@@ -54,7 +54,8 @@ pub struct Key {
     pub kind: Kind,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub help: Option<String>,
-    /// The allowed values of a choice.
+    /// The allowed values of a choice, or the words a number also takes
+    /// (`max_usd` takes "none").
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub values: Vec<String>,
 }
@@ -134,7 +135,20 @@ fn walk(node: &Value, defs: &Value, prefix: &str, help: Option<&str>, out: &mut 
                 .collect()
         })
         .unwrap_or_default();
-    let kind = if !choices.is_empty() {
+    // A number that also takes words, such as `max_usd = "none"`.
+    let words: Option<Vec<String>> = r
+        .get("anyOf")
+        .and_then(Value::as_array)
+        .filter(|a| a.iter().any(|v| type_of(v) == Some("number")))
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.get("const").and_then(Value::as_str))
+                .map(String::from)
+                .collect()
+        });
+    let kind = if words.is_some() {
+        Kind::Number
+    } else if !choices.is_empty() {
         Kind::Choice
     } else if r.get("anyOf").is_some() {
         Kind::StringOrList
@@ -151,7 +165,7 @@ fn walk(node: &Value, defs: &Value, prefix: &str, help: Option<&str>, out: &mut 
         key: prefix.to_string(),
         kind,
         help,
-        values: choices,
+        values: words.unwrap_or(choices),
     });
 }
 
@@ -194,12 +208,23 @@ pub fn parse(key: &Key, input: &[String]) -> Result<toml_edit::Value, String> {
         }
         Kind::Number => {
             let v = one()?;
-            v.trim_start_matches('$')
-                .parse::<f64>()
-                .ok()
-                .filter(|n| n.is_finite() && *n >= 0.0)
-                .ok_or_else(|| format!("{}: {v} is not a number", key.key))?
-                .into()
+            if let Some(w) = key.values.iter().find(|w| w.eq_ignore_ascii_case(v)) {
+                w.as_str().into()
+            } else {
+                v.trim_start_matches('$')
+                    .parse::<f64>()
+                    .ok()
+                    .filter(|n| n.is_finite() && *n >= 0.0)
+                    .ok_or_else(|| {
+                        let or = key
+                            .values
+                            .iter()
+                            .map(|w| format!(" or {w}"))
+                            .collect::<String>();
+                        format!("{}: {v} is not a number{or}", key.key)
+                    })?
+                    .into()
+            }
         }
         Kind::Choice => {
             let v = one()?;
@@ -422,6 +447,20 @@ mod tests {
     }
 
     #[test]
+    fn a_per_run_cap_takes_none() {
+        let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let k = key(Scope::Repo, "budget.review.max_usd");
+        assert_eq!(k.kind, Kind::Number);
+        let v = parse(&k, &s(&["none"])).unwrap();
+        assert_eq!(v.as_str(), Some("none"));
+        assert_eq!(parse(&k, &s(&["$1.50"])).unwrap().as_float(), Some(1.5));
+        assert!(parse(&k, &s(&["lots"])).is_err());
+        let out = edit(Scope::Repo, "", "budget.review.max_usd", Some(v)).unwrap();
+        let c = Config::parse(&out).unwrap();
+        assert_eq!(c.budget.max_usd(crate::config::Role::Reviewer), None);
+    }
+
+    #[test]
     fn edits_keep_comments_and_create_tables() {
         let text = crate::config::render_initial("main", &[], crate::config::CaptureMode::Gate);
         let out = edit(Scope::Repo, &text, "base", Some("trunk".into())).unwrap();
@@ -433,7 +472,10 @@ mod tests {
         let c = Config::parse(&out).unwrap();
         assert_eq!(c.base, "trunk");
         assert_eq!(c.budget.daily.as_deref(), Some("4M"));
-        assert_eq!(c.budget.review.unwrap().max_usd, Some(3.0));
+        assert_eq!(
+            c.budget.review.unwrap().max_usd,
+            Some(crate::config::MaxUsd::Usd(3.0))
+        );
         // The same value again changes nothing; unset goes back to the default.
         assert_eq!(
             edit(Scope::Repo, &out, "base", Some("trunk".into())).unwrap(),

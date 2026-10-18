@@ -709,7 +709,7 @@ model = "haiku"</code></pre>
   <table>
     <thead><tr><th>Limit</th><th>Set by</th><th>When it's reached</th></tr></thead>
     <tbody>
-      <tr><td>Per run</td><td><code>max_usd</code>, passed as <code>--max-budget-usd</code>, plus a time limit</td><td>The run stops, and the stop is recorded. The item is retried once, then goes to you.</td></tr>
+      <tr><td>Per run</td><td><code>max_usd</code>, passed as <code>--max-budget-usd</code> (by default $6.00 a review, $2.00 a fix), plus a time limit</td><td>The run stops, and the stop is recorded. The item is retried once, then goes to you.</td></tr>
       <tr><td>Per item</td><td><code>per_item</code></td><td>The item goes to Your Office marked "budget", with its spend so far.</td></tr>
       <tr><td>Per room, per day</td><td><code>[budget.review] daily</code></td><td>That room closes for the day. Items wait in the Post Room, in order.</td></tr>
       <tr><td>Daily total</td><td><code>daily</code></td><td>The daemon pauses. Your Workshop session isn't blocked; a hook adds a note that the budget is spent.</td></tr>
@@ -1154,7 +1154,7 @@ stuck_after  = "30m"
 lenses       = "all"
 rules        = ["CLAUDE.md", "AGENTS.md"]
 
-[budget]                           # no caps unless you set them
+[budget]                           # runs are capped by default; daily caps only if you set them
 review_model = "opus"
 fix_model    = "sonnet"</code></pre>
     </div>

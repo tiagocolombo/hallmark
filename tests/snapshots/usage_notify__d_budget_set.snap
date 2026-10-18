@@ -71,18 +71,21 @@ expression: v
     },
     {
       "key": "fix",
+      "max_usd": 2.0,
       "model": "sonnet",
       "role": "fixer",
       "timeout_secs": 1200
     },
     {
       "key": "intake",
+      "max_usd": 0.1,
       "model": "haiku",
       "role": "intake",
       "timeout_secs": 120
     },
     {
       "key": "librarian",
+      "max_usd": 0.2,
       "model": "haiku",
       "role": "librarian",
       "timeout_secs": 1200

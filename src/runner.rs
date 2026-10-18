@@ -1089,7 +1089,20 @@ pub fn run_metered(
             actor,
             Body::Held {
                 kind: HoldKind::RunFailed,
-                reason: format!("the {} run failed twice: {}", req.role, failure.describe()),
+                reason: match (&failure, req.max_budget_usd) {
+                    (Failure::Budget, Some(usd)) => {
+                        let key = crate::budget::role_of(&req.role)
+                            .map(crate::budget::table_key)
+                            .unwrap_or(&req.role);
+                        format!(
+                            "the {role} run failed twice: reached its ${usd:.2} per-run cap; \
+                             raise it with `hall budget --set {key}.max_usd=<usd>` \
+                             ([budget.{key}] max_usd)",
+                            role = req.role
+                        )
+                    }
+                    _ => format!("the {} run failed twice: {}", req.role, failure.describe()),
+                },
             },
         )?;
     }

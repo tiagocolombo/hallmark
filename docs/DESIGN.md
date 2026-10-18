@@ -422,7 +422,7 @@ lit        = []                 # paths a person merges
 split     = "auto"              # the Front Desk splits requests when it can; or "off"
 max_parts = 4
 
-[budget]                        # no caps unless you set them
+[budget]                        # runs are capped by default; daily caps only if you set them
 review_model    = "opus"
 fix_model       = "sonnet"
 intake_model    = "haiku"
@@ -481,7 +481,7 @@ It runs headless with a fresh context:
 claude -p --plugin-dir "$PLUGIN" --agent principal-engineer \
   --json-schema "$PLUGIN/schemas/verdict.json" \
   --output-format stream-json --verbose \
-  --max-budget-usd 3 "Review H-0042 round 2: commit b81f3e4 against main" < /dev/null
+  --max-budget-usd 6 "Review H-0042 round 2: commit b81f3e4 against main" < /dev/null
 ```
 
 **Lenses.** Every review applies seven lenses:
@@ -573,7 +573,7 @@ system prompt.
 
 | Limit | Set by | When it's reached |
 | --- | --- | --- |
-| Per run | `max_usd` → `--max-budget-usd`, plus a timeout | The run stops. The item is retried once, then goes to you. |
+| Per run | `max_usd` → `--max-budget-usd` (default: review $6.00, fix $2.00, intake $0.10, librarian $0.20; `"none"` for no cap), plus a timeout | The run stops. The item is retried once, then goes to you. |
 | Per item | `per_item` | The item goes to Your Office, marked "budget". |
 | Per room per day | `[budget.review] daily`, … | The room closes for the day. Items wait in order. |
 | Daily total | `daily` | The daemon pauses. Your session isn't blocked. |

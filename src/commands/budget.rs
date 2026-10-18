@@ -508,8 +508,9 @@ const KEYS: &str = "daily, per_item, <role>.daily, <role>.max_usd, <role>.timeou
                     (roles: review, fix, intake, librarian)";
 
 /// Applies `key=value` settings to `.hallmark.toml` text with toml_edit,
-/// keeping comments and layout. `none` (or `off`) removes a cap. The result
-/// must still parse as a [`Config`].
+/// keeping comments and layout. `none` (or `off`) removes a cap, and turns
+/// off a per-run `max_usd`; `default` removes any key. The result must still
+/// parse as a [`Config`].
 pub fn apply_sets(text: &str, sets: &[String]) -> Result<(String, Vec<String>)> {
     let mut doc: toml_edit::DocumentMut = text.parse().map_err(|e| {
         HallError::new(
@@ -528,11 +529,17 @@ pub fn apply_sets(text: &str, sets: &[String]) -> Result<(String, Vec<String>)> 
                 .next(["hall budget", "hall schema config"])
         })?;
         let v = v.trim().trim_matches('"');
-        let remove = matches!(v.to_ascii_lowercase().as_str(), "none" | "off" | "");
+        let word = v.to_ascii_lowercase();
+        let off = matches!(word.as_str(), "none" | "off");
+        // A per-run cap has a default, so turning it off is written down as
+        // "none"; `default` (or nothing) removes any key.
+        let usd = matches!(kind, Kind::Usd);
+        let remove = matches!(word.as_str(), "default" | "") || (off && !usd);
         let value: Option<toml_edit::Value> = if remove {
             None
         } else {
             Some(match kind {
+                Kind::Usd if off => "none".into(),
                 Kind::Tokens => {
                     if crate::budget::Cap::parse(v).is_none() {
                         return Err(HallError::usage(format!(
@@ -574,6 +581,7 @@ pub fn apply_sets(text: &str, sets: &[String]) -> Result<(String, Vec<String>)> 
         if table.is_none() && value.is_some() {
             drop_hint(&mut doc, field);
         }
+        let removed = if off { "none" } else { "default" };
         let budget = doc
             .entry("budget")
             .or_insert(toml_edit::table())
@@ -584,7 +592,7 @@ pub fn apply_sets(text: &str, sets: &[String]) -> Result<(String, Vec<String>)> 
             Some(t) => {
                 if budget.get(t).is_none() {
                     if value.is_none() {
-                        applied.push(format!("{name} = none"));
+                        applied.push(format!("{name} = {removed}"));
                         continue;
                     }
                     budget.insert(t, toml_edit::table());
@@ -600,7 +608,7 @@ pub fn apply_sets(text: &str, sets: &[String]) -> Result<(String, Vec<String>)> 
         match value {
             None => {
                 target.remove(field);
-                applied.push(format!("{name} = none"));
+                applied.push(format!("{name} = {removed}"));
             }
             Some(val) => {
                 applied.push(format!("{name} = {}", val.to_string().trim()));
@@ -701,6 +709,52 @@ mod tests {
         )
         .unwrap();
         assert_eq!(c2, "[budget]\ndaily = \"2M\" # whole loop\n");
+    }
+
+    #[test]
+    fn a_per_run_cap_can_be_turned_off_and_back_to_its_default() {
+        let (off, applied) = apply_sets("", &["review.max_usd=none".into()]).unwrap();
+        assert_eq!(applied, ["budget.review.max_usd = \"none\""]);
+        let c = Config::parse(&off).unwrap();
+        assert_eq!(c.budget.max_usd(config::Role::Reviewer), None);
+        let (back, applied) = apply_sets(&off, &["review.max_usd=default".into()]).unwrap();
+        assert_eq!(applied, ["budget.review.max_usd = default"]);
+        let c = Config::parse(&back).unwrap();
+        assert_eq!(c.budget.max_usd(config::Role::Reviewer), Some(6.0));
+        // `off` lifts the cap too; it must not restore the default.
+        let (off2, applied) = apply_sets("", &["review.max_usd=off".into()]).unwrap();
+        assert_eq!(applied, ["budget.review.max_usd = \"none\""]);
+        assert!(off2.contains("max_usd = \"none\""), "{off2}");
+        let c = Config::parse(&off2).unwrap();
+        assert_eq!(c.budget.max_usd(config::Role::Reviewer), None);
+    }
+
+    #[test]
+    fn default_removes_any_key() {
+        let start =
+            "[budget]\ndaily = \"4M\"\n\n[budget.review]\nmodel = \"opus\"\ntimeout = \"10m\"\n";
+        let (out, applied) = apply_sets(
+            start,
+            &[
+                "daily=default".into(),
+                "review.model=default".into(),
+                "review.timeout=default".into(),
+            ],
+        )
+        .unwrap();
+        assert_eq!(
+            applied,
+            [
+                "budget.daily = default",
+                "budget.review.model = default",
+                "budget.review.timeout = default"
+            ]
+        );
+        assert!(!out.contains("daily"), "{out}");
+        assert!(!out.contains("model"), "{out}");
+        assert!(!out.contains("timeout"), "{out}");
+        let c = Config::parse(&out).unwrap();
+        assert_eq!(c.budget.daily, None);
     }
 
     #[test]
