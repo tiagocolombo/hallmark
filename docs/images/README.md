@@ -32,7 +32,7 @@ the daemon's part while the board is recorded (`hall-demo seed`, `animate`,
 `HOME`), and one tape per GIF.
 
 ```sh
-cargo build --example hall-demo              # hall, and the seeder
+cargo build --bins --example hall-demo              # hall, and the seeder
 VHS=$(nix build --no-link --print-out-paths nixpkgs#vhs)/bin/vhs
 cd docs/images/tui-demo
 for t in board office review; do

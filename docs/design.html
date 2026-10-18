@@ -662,7 +662,7 @@ lists every command.</code></pre>
 <!-- ============ USAGE ============ -->
 <section id="usage">
   <h2>Usage and budgets</h2>
-  <div class="col"><p>Every model run is measured and recorded in the journal. Each step has its own limits, and you can see totals by item, room, role, model or day. Only four places use a model: the Workshop, the Assay Office's review, the Repair Shop, the Delivery Office's headless dev runs (a conflict, comments, red CI), and a little at the Front Desk and in the Library. Everything else, the merger included, is a script.</p></div>
+  <div class="col"><p>Every model run is measured and recorded in the journal. Each step has its own limits, and you can see totals by item, room, role, model or day. Only a few places use a model: the Workshop, the Assay Office's review, the Repair Shop, the Delivery Office's headless dev runs (a conflict, comments, red CI), and a little at the Front Desk and in the Library. Everything else, the merger included, is a script.</p></div>
   <div class="three">
     <div>
       <div class="eyebrow">Measured</div>
@@ -1612,7 +1612,7 @@ rules    = ["CLAUDE.md",
     // At its turn it conflicts: the Delivery office rebases it, the gates run,
     // and the same change keeps its approval with no review.
     rebase: [["front", 2], ["bench", 6], ["office", 2], ["test", 3], ["review", 4], ["stamp", 2], ["dispatch", 2], ["deliver", 3], ["test", 2], ["review", 1]].concat(SHIP),
-    // Red CI on the PR: a fixer takes it, and it is reviewed and shipped again.
+    // Red CI on the PR: a Delivery office dev run fixes it, then it is reviewed and shipped again.
     ci: [["front", 2], ["bench", 7], ["office", 2], ["test", 3], ["review", 4], ["stamp", 2], ["dispatch", 2], ["deliver", 3], ["bench", 5], ["test", 3], ["review", 3]].concat(SHIP)
   };
   var ORDER = ["fix", "rebase", "clean", "checks", "ask", "ci", "escalate", "rebase", "clean"];
