@@ -730,9 +730,12 @@ watch gave up on. A conflicting PR is rebased at its turn even when its CI
 hasn't reported, since GitHub runs no pull request CI on it, and a `lit` PR
 is put to you only once nothing claims its files. With the merger on, the
 delivery watch leaves conflicts to the queue. After a merge, nothing else on
-that base merges until the watch records `delivered`. A failed command holds the item (`merge_failed`); a `lit` path holds it for you
-(`lit`), and `hall retry` lets that head merge. `hall queue` shows the same
-judgement for every PR.
+that base merges until the watch records `delivered`. A failed command holds
+the item (`merge_failed`); a `lit` path holds it for you (`lit`), and
+`hall retry` lets that head merge. `hall queue` shows the same judgement for
+every PR. Each pass also keeps its whole plan in `merger.json`, which the
+terminal app shows on `m` while the merger is on: a reader, it never calls
+GitHub (ADR 0022).
 
 The **sweeper** removes the worktree of each item that is done with it
 (ADR 0040): closed, not a part, and its PR merged or closed (`delivered`), or
@@ -834,6 +837,7 @@ Two outside tools fit at the edges:
    - desktop and phone notifications
 3. **The terminal app and releases** (done; releases are dry-run only)
    - views: board, journal, findings, history, live, usage and repos, and
-     a run's trace on `t`, followed live (ADR 0041)
+     a run's trace on `t`, followed live (ADR 0041), and the merge queue on
+     `m` while the merger is on
    - qmd as an option
    - dist releases and a Nix package

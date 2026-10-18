@@ -14,6 +14,7 @@ use crate::event::short;
 use crate::findings::{Status as FStatus, Tracked};
 use crate::index::{InboxEntry, UsageRow};
 use crate::item::{Item, State};
+use crate::merger::Status as MStatus;
 use crate::trace::{Step, StepKind};
 use crate::usage::fmt_tokens;
 
@@ -174,11 +175,12 @@ pub fn draw(f: &mut Frame, app: &App) {
         View::Diff | View::Output => diff(f, body, app),
         View::Inbox => inbox_view(f, body, app),
         View::Trace => trace_view(f, body, app),
+        View::Queue => queue_view(f, body, app),
     }
     status_line(f, status, app);
     key_bar(f, keys, app);
     if app.help {
-        help(f, f.area());
+        help(f, f.area(), app.merge_queue().is_some());
     }
 }
 
@@ -310,6 +312,7 @@ fn key_bar(f: &mut Frame, area: Rect, app: &App) {
             ("↑↓", "item"),
             ("enter", "journal"),
             ("i", "your office"),
+            ("m", "merge queue"),
             ("←→", "step"),
             ("f", "findings"),
             ("d", "diff"),
@@ -323,6 +326,16 @@ fn key_bar(f: &mut Frame, area: Rect, app: &App) {
             ("o", "PR"),
             ("h", "history"),
             ("u", "usage"),
+            ("?", "help"),
+            ("q", "quit"),
+        ],
+        View::Queue => &[
+            ("↑↓", "PR"),
+            ("enter", "journal"),
+            ("o", "PR"),
+            ("w", "worktree"),
+            ("t", "trace"),
+            ("esc", "board"),
             ("?", "help"),
             ("q", "quit"),
         ],
@@ -401,8 +414,11 @@ fn key_bar(f: &mut Frame, area: Rect, app: &App) {
     // An action key shows only when it fits the selected item, in its
     // word for that item (`g retry` on an escalated item, `g go on` on a
     // held one).
+    // The merge queue is offered only while the merger is on.
+    let queue = app.merge_queue().is_some();
     let keys: Vec<(&str, &str)> = all
         .iter()
+        .filter(|&&(k, _)| queue || k != "m" || app.view == View::Usage)
         .filter_map(
             |&(k, w)| match Act::ALL.into_iter().find(|a| a.key() == k) {
                 Some(act) if matches!(app.view, View::Board | View::Journal | View::Findings) => {
@@ -442,7 +458,7 @@ fn key_bar(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
-fn help(f: &mut Frame, area: Rect) {
+fn help(f: &mut Frame, area: Rect, queue: bool) {
     let rows: &[(&str, &str)] = &[
         ("↑ ↓", "select an item (or a finding, a row, a repo)"),
         ("enter", "open the item's journal"),
@@ -471,6 +487,11 @@ fn help(f: &mut Frame, area: Rect) {
         ("esc", "back · stop replaying · clear filter"),
         ("q", "quit (work carries on)"),
     ];
+    // The merge queue, after history, while the merger is on.
+    let mut rows = rows.to_vec();
+    if queue && let Some(at) = rows.iter().position(|(k, _)| *k == "h") {
+        rows.insert(at + 1, ("m", "merge queue: the merger's last plan"));
+    }
     let w = 64.min(area.width);
     let h = (rows.len() as u16 + 4).min(area.height);
     let r = Rect {
@@ -480,7 +501,7 @@ fn help(f: &mut Frame, area: Rect) {
         height: h,
     };
     let mut lines = vec![Line::default()];
-    for (k, what) in rows {
+    for (k, what) in &rows {
         lines.push(Line::from(vec![
             Span::styled(format!("  {k:<10}"), bold().fg(BRASS)),
             Span::raw(*what),
@@ -1392,6 +1413,131 @@ fn history(f: &mut Frame, area: Rect, app: &App) {
     .block(pane(title));
     let mut state = TableState::default().with_selected(Some(app.history_sel.min(items.len() - 1)));
     f.render_stateful_widget(t, area, &mut state);
+}
+
+// --- merge queue -------------------------------------------------------------
+
+/// A queue status's mark (the same as `hall queue`), word and colour:
+/// green on its way in, yellow being brought up to date, cyan waiting on
+/// GitHub, red waiting on a person.
+fn queue_status(s: MStatus) -> (&'static str, String, Color) {
+    let mark = match s {
+        MStatus::Ready => "→",
+        MStatus::Merging => "✓",
+        MStatus::Updating => "↻",
+        _ => " ",
+    };
+    let c = match s {
+        MStatus::Ready | MStatus::Merging => OK,
+        MStatus::Behind | MStatus::Conflicting | MStatus::Updating => BRASS,
+        MStatus::CiPending | MStatus::Unknown => INFO,
+        MStatus::WaitsFor | MStatus::Queued => DIM,
+        MStatus::CiRed
+        | MStatus::Lit
+        | MStatus::ChangesRequested
+        | MStatus::Held
+        | MStatus::NotOurs
+        | MStatus::Unreadable => STOP,
+    };
+    (mark, s.as_str().replace('_', " "), c)
+}
+
+fn queue_view(f: &mut Frame, area: Rect, app: &App) {
+    let Some(q) = app.merge_queue() else {
+        f.render_widget(
+            Paragraph::new(Span::styled(
+                "The merger is off in this repo: `hall config set merge.mode auto` turns it on.",
+                fg(DIM),
+            ))
+            .block(pane("Merge queue")),
+            area,
+        );
+        return;
+    };
+    let when = match q.at {
+        Some(t) => format!("planned {} ({})", app.clock(t), app.age(t)),
+        None => "the merger hasn't looked yet".into(),
+    };
+    let n = q.entries.len();
+    let title = format!(
+        "Merge queue · {n} PR{} · {when}",
+        if n == 1 { "" } else { "s" }
+    );
+    if q.entries.is_empty() {
+        f.render_widget(
+            Paragraph::new(Span::styled("no open PRs", fg(DIM))).block(pane(title)),
+            area,
+        );
+        return;
+    }
+    let [a_table, a_why] =
+        Layout::vertical([Constraint::Min(4), Constraint::Length(6)]).areas(area);
+    let bases = q
+        .entries
+        .iter()
+        .map(|e| e.base.as_str())
+        .collect::<std::collections::BTreeSet<_>>()
+        .len();
+    let rows: Vec<Row> = q
+        .entries
+        .iter()
+        .map(|e| {
+            let (mark, word, c) = queue_status(e.status);
+            let mut cells = vec![
+                Text::from(Span::styled(format!("{mark} {:>2}", e.position), fg(c))),
+                Text::from(pr_name(&e.pr_url)),
+                Text::from(e.item.to_string()),
+            ];
+            if bases > 1 {
+                cells.push(Text::from(Span::styled(e.base.clone(), fg(DIM))));
+            }
+            cells.push(Text::from(Span::styled(word, fg(c))));
+            cells.push(Text::from(app.show_text(&e.why)));
+            Row::new(cells)
+        })
+        .collect();
+    let mut widths = vec![
+        Constraint::Length(5),
+        Constraint::Length(6),
+        Constraint::Length(7),
+    ];
+    let mut header = vec!["", "PR", "item"];
+    if bases > 1 {
+        widths.push(Constraint::Length(14));
+        header.push("into");
+    }
+    widths.extend([Constraint::Length(17), Constraint::Min(20)]);
+    header.extend(["status", "why"]);
+    let t = Table::new(rows, widths)
+        .header(Row::new(header).style(bold().fg(DIM)))
+        .row_highlight_style(selected())
+        .block(pane(title));
+    let at = app.queue_sel.min(n - 1);
+    let mut state = TableState::default().with_selected(Some(at));
+    f.render_stateful_widget(t, a_table, &mut state);
+
+    // The selected PR in full: its title, and why (which names what it
+    // waits for).
+    let e = &q.entries[at];
+    let width = a_why.width.saturating_sub(2) as usize;
+    let (_, word, c) = queue_status(e.status);
+    let mut lines = vec![Line::from(vec![
+        Span::styled(format!("{} {} ", e.item, pr_name(&e.pr_url)), bold()),
+        Span::raw(clip(&e.title, width.saturating_sub(16))),
+    ])];
+    lines.extend(wrap_lines(
+        &app.show_text(&e.why),
+        width,
+        &word,
+        WAIT_INDENT + 6,
+        fg(c),
+    ));
+    f.render_widget(Paragraph::new(lines).block(pane(e.pr_url.clone())), a_why);
+}
+
+/// `#64` for a PR URL.
+fn pr_name(url: &str) -> String {
+    crate::merger::number(url).map_or_else(|| url.to_string(), |n| format!("#{n}"))
 }
 
 // --- live --------------------------------------------------------------------

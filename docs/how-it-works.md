@@ -173,7 +173,9 @@ With the merger on, the watch no longer reopens a PR GitHub calls
 conflicting: the queue does, at its turn. After a merge, nothing else on that
 base merges until the merge is recorded, so each PR is judged against the
 base as it really is. `hall queue` shows the plan: the order, what each PR
-waits for, and the items on their way back (`updating`).
+waits for, and the items on their way back (`updating`). In the terminal app,
+<kbd>m</kbd> shows the plan of the merger's last pass, and when it was made;
+the key is there only while the merger is on.
 
 A script decides each step, never a model. That is what lets this loop run
 with nobody watching: its check is cheap, runs often and is hard to game.

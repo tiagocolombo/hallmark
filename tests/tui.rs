@@ -1499,3 +1499,69 @@ fn now_block_actions_for_runs_open_in_the_app() {
         app.status
     );
 }
+
+#[test]
+fn the_merge_queue_shows_only_while_the_merger_is_on() {
+    let env = building();
+    let mut app = load(&env, &env.repo);
+    // Off by default: no key for it, and `m` says how to turn it on.
+    assert!(app.merge_queue().is_none());
+    assert!(!screen(&env, &app, W, H).contains("merge queue"));
+    key(&mut app, KeyCode::Char('m'));
+    assert_eq!(app.view, View::Board);
+    assert!(
+        app.status.as_ref().is_some_and(|s| s.error),
+        "{:?}",
+        app.status
+    );
+
+    // On, with the plan of the merger's last pass in merger.json.
+    assert_eq!(
+        env.hall(&env.repo, &["config", "set", "merge.mode", "auto"])
+            .code,
+        0
+    );
+    let plan = serde_json::json!({
+        "last": Utc::now(),
+        "items": {},
+        "queue": [
+            {"position": 1, "item": "H-0002", "title": "Export tenant usage",
+             "pr_url": "https://github.com/acme/app/pull/190", "base": "main",
+             "status": "updating",
+             "why": "being brought up to date (review); it ships again, then merges"},
+            {"position": 2, "item": "H-0005", "title": "Tenant check in export query",
+             "pr_url": "https://github.com/acme/app/pull/191", "base": "main",
+             "status": "waits_for",
+             "why": "behind main on files it touches (src/export.rs); first waits for #190 (src/export.rs)",
+             "waits_for": ["https://github.com/acme/app/pull/190"]}
+        ]
+    });
+    std::fs::write(env.repo.join(".git/hallmark/merger.json"), plan.to_string()).unwrap();
+    app.reload_active();
+    assert_eq!(app.merge_queue().map(|q| q.entries.len()), Some(2));
+    assert!(screen(&env, &app, W, H).contains("m merge queue"));
+
+    // `m` opens it on the selected item's row.
+    select(&mut app, 5);
+    key(&mut app, KeyCode::Char('m'));
+    assert_eq!(app.view, View::Queue);
+    assert_eq!(app.queue_sel, 1);
+    assert_snapshot!("merge_queue", screen(&env, &app, W, H));
+
+    // Moving through it selects each PR's item; enter opens its journal.
+    key(&mut app, KeyCode::Up);
+    assert_eq!(app.selected, Some(ItemId(2)));
+    key(&mut app, KeyCode::Enter);
+    assert_eq!(app.view, View::Journal);
+
+    // Turned off again: the view says so.
+    assert_eq!(
+        env.hall(&env.repo, &["config", "set", "merge.mode", "off"])
+            .code,
+        0
+    );
+    app.reload_active();
+    assert!(app.merge_queue().is_none());
+    key(&mut app, KeyCode::Char('m'));
+    assert_ne!(app.view, View::Queue);
+}

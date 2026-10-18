@@ -114,7 +114,7 @@ impl Status {
 }
 
 /// One PR in the merge queue.
-#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Entry {
     /// Its place on its base, from 1: the order the merger takes them in.
     pub position: u32,
@@ -126,17 +126,21 @@ pub struct Entry {
     /// Why, in one line.
     pub why: String,
     /// The PRs it waits for.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub waits_for: Vec<String>,
 }
 
-/// What the merger last decided about each item, for `hall status`.
+/// What the merger last decided about each item, for `hall status`, and
+/// the whole plan of its last pass, for the terminal app.
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct State {
     #[serde(default)]
     last: Option<DateTime<Utc>>,
     #[serde(default)]
     items: BTreeMap<String, Seen>,
+    /// Every PR the last pass planned, by base and in queue order.
+    #[serde(default)]
+    queue: Vec<Entry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -151,10 +155,21 @@ fn state_path(repo: &Repo) -> PathBuf {
 }
 
 fn load(repo: &Repo) -> State {
-    std::fs::read_to_string(state_path(repo))
+    load_from(&state_path(repo))
+}
+
+fn load_from(path: &Path) -> State {
+    std::fs::read_to_string(path)
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default()
+}
+
+/// The merge queue as the merger's last pass planned it, and when: what
+/// the terminal app shows. Reads one local file; never calls GitHub.
+pub fn last_plan(hall: &crate::journal::Hall) -> (Option<DateTime<Utc>>, Vec<Entry>) {
+    let s = load_from(&hall.root.join("merger.json"));
+    (s.last, s.queue)
 }
 
 fn save(repo: &Repo, s: &State) {
@@ -987,13 +1002,22 @@ pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
     let items = repo.index()?.items(true)?;
     let watched = delivery::watched(&items);
     if watched.is_empty() {
+        // The last PR left: the app shows an empty queue, not the last plan.
+        if !state.queue.is_empty() || !state.items.is_empty() {
+            state.last = Some(now);
+            state.queue.clear();
+            state.items.clear();
+            save(repo, &state);
+        }
         return Ok(Progress::Idle);
     }
     state.last = Some(now);
     let mut look = look(repo, &watched, false);
     let mut done = Vec::new();
+    let mut queue = Vec::new();
     for (base, line) in lines(&items) {
         for Planned { entry, verdict } in look.plan(&base, &line, &items) {
+            queue.push(entry.clone());
             state.items.insert(
                 entry.item.to_string(),
                 Seen {
@@ -1025,6 +1049,7 @@ pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
     // Forget items that left the queue.
     let open: BTreeSet<String> = watched.iter().map(|i| i.id.to_string()).collect();
     state.items.retain(|k, _| open.contains(k));
+    state.queue = queue;
     save(repo, &state);
     Ok(if done.is_empty() {
         Progress::Idle
