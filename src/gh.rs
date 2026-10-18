@@ -317,6 +317,9 @@ pub struct TipChecks {
     pub failed: Vec<String>,
     /// Whether a run is still queued or going.
     pub running: bool,
+    /// How many runs GitHub lists. None yet means a new commit whose CI
+    /// hasn't started, or a repo with no CI.
+    pub total: usize,
 }
 
 /// The check runs on a commit of the repo `pr` belongs to.
@@ -354,6 +357,8 @@ pub fn commit_failures(dir: &Path, pr: &str, sha: &str) -> Result<TipChecks> {
         name: String,
         #[serde(default)]
         conclusion: Option<String>,
+        #[serde(default)]
+        status: Option<String>,
     }
     let runs: Runs = serde_json::from_slice(&out.stdout).map_err(|e| {
         HallError::new(
@@ -361,7 +366,16 @@ pub fn commit_failures(dir: &Path, pr: &str, sha: &str) -> Result<TipChecks> {
             format!("unreadable gh output: {e}"),
         )
     })?;
-    let running = runs.check_runs.iter().any(|r| r.conclusion.is_none());
+    let total = runs.check_runs.len();
+    // A job waiting on a person (`waiting`: a protected environment's
+    // approval) isn't CI that is going to finish.
+    let running = runs.check_runs.iter().any(|r| {
+        r.conclusion.is_none()
+            && matches!(
+                r.status.as_deref(),
+                None | Some("queued" | "in_progress" | "pending" | "requested")
+            )
+    });
     let mut failed: Vec<String> = runs
         .check_runs
         .into_iter()
@@ -370,7 +384,11 @@ pub fn commit_failures(dir: &Path, pr: &str, sha: &str) -> Result<TipChecks> {
         .collect();
     failed.sort();
     failed.dedup();
-    Ok(TipChecks { failed, running })
+    Ok(TipChecks {
+        failed,
+        running,
+        total,
+    })
 }
 
 /// Where an open PR stands for merging.

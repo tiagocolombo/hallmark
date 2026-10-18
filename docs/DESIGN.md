@@ -736,7 +736,10 @@ delivery watch leaves conflicts to the queue. After a merge, nothing else on
 that base merges until the watch records `delivered`. The merger stops the
 line: when a check failed on a base's tip, nothing merges into it or is
 rebased onto it until it is green again, and your office shows `base_red`
-(ADR 0051). A failed command holds the item (`merge_failed`); a `lit` path
+(ADR 0051). A merge also waits for the base tip's checks to finish (a new
+tip with no runs yet counts as running for five minutes; a run waiting on a
+person doesn't; six hours is the limit), so with `files` too, PRs on
+separate files merge a full base CI run apart. A failed command holds the item (`merge_failed`); a `lit` path
 holds it for you (`lit`), and `hall retry` lets that head merge.
 `hall queue` shows the same judgement for every PR. Each pass also keeps its
 whole plan in `merger.json`, which the terminal app shows on `m` while the

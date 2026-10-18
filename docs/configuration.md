@@ -138,9 +138,15 @@ count), nothing merges into that base and nothing is rebased onto it, and
 your office shows `base_red` with the checks that failed. Fix the base, or
 re-run a flaky check: the next pass after the tip is green carries on, and
 the entry leaves. A PR that fixes the base can't pass the stopped queue: merge
-it by hand (`gh pr merge <pr> --squash --admin`). While the tip's checks are
-still running, the merger doesn't merge into the base (rebases go on), so
-each merge's CI finishes before the next lands. When GitHub can't be read,
+it by hand with your own `[merge] command` (the entry shows it). While the
+tip's checks are still running, or haven't started (a tip with no check runs
+counts as running for five minutes, then as green, so a repo with no CI on
+the base still merges), the merger doesn't merge into the base (rebases go
+on), so each merge's CI finishes before the next lands. A job waiting on a
+person (`waiting`, such as a protected environment's approval) isn't
+running, and checks still running after six hours stop holding the line (the
+log says so once). A red base stays in your office while the checks on its
+new tip are running. When GitHub can't be read,
 the merger goes on, and `hall queue` says the guard is off for that base
 (a base already stopped at the same tip stays stopped).
 

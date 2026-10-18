@@ -1504,12 +1504,14 @@ fn base_red_leaves_when_the_base_goes_green_with_every_pr_waiting_on_ci() {
     pass(&env, &gh);
     assert!(inbox_has(&env, "base_red"));
     assert!(events(&env, &ready, "pr_merged").is_empty());
-    // The only ready PR closes: nothing is ready, and the base turns green.
-    std::fs::write(gh.parent().unwrap().join("state-2.txt"), "CLOSED").unwrap();
+    // The only ready PR leaves the line (the merger reads the journal): nothing
+    // is ready, and the base turns green.
+    delivered(&env, &ready, 2);
     tip_checks(&gh, json!([{"name": "test", "conclusion": "success"}]));
     pass(&env, &gh);
     assert!(!inbox_has(&env, "base_red"));
     assert!(events(&env, &pending, "pr_merged").is_empty());
+    assert!(events(&env, &ready, "pr_merged").is_empty());
 }
 
 #[test]
@@ -1565,6 +1567,11 @@ fn an_unreadable_tip_keeps_a_red_base_stopped() {
 
     // The check-runs call now fails: main is still the same red tip.
     std::fs::remove_file(gh.parent().unwrap().join("tip-checks.json")).unwrap();
+    // `hall queue` agrees with the worker: still stopped, guard not "off".
+    let q = queue(&env, &gh);
+    let e = status_of(&q, &ready);
+    assert_eq!(e["status"], "queued", "{q}");
+    assert!(!e["why"].as_str().unwrap().contains("guard is off"), "{q}");
     pass(&env, &gh);
     assert!(events(&env, &ready, "pr_merged").is_empty());
     assert!(inbox_has(&env, "base_red"));
@@ -1586,4 +1593,115 @@ fn an_unreadable_tip_says_the_guard_is_off() {
     );
     pass(&env, &gh);
     assert_eq!(events(&env, &ready, "pr_merged").len(), 1);
+}
+
+/// Make the merger think it first saw its tip pending `secs` ago.
+fn age_pending(env: &Env, secs: i64) {
+    let state = env.repo.join(".git/hallmark/merger.json");
+    let mut v: Value = serde_json::from_str(&std::fs::read_to_string(&state).unwrap()).unwrap();
+    let old = (chrono::Utc::now() - chrono::Duration::seconds(secs)).to_rfc3339();
+    for (_, p) in v["pending"].as_object_mut().unwrap() {
+        p[1] = json!(old);
+    }
+    std::fs::write(&state, v.to_string()).unwrap();
+}
+
+#[test]
+fn a_tip_with_no_check_runs_yet_is_waited_for_then_counts_as_green() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    let (first, _, _) = shipped(&env, &gh, 1, "a.rs");
+    tip_checks(&gh, json!([]));
+    pass(&env, &gh);
+    assert!(events(&env, &first, "pr_merged").is_empty());
+    // Still nothing long after: the repo has no CI on the base.
+    age_pending(&env, 3600);
+    pass(&env, &gh);
+    assert_eq!(events(&env, &first, "pr_merged").len(), 1);
+}
+
+#[test]
+fn a_check_waiting_on_a_person_is_not_running_ci() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    let (first, _, _) = shipped(&env, &gh, 1, "a.rs");
+    tip_checks(
+        &gh,
+        json!([
+            {"name": "test", "status": "completed", "conclusion": "success"},
+            {"name": "deploy", "status": "waiting", "conclusion": null}
+        ]),
+    );
+    pass(&env, &gh);
+    assert_eq!(events(&env, &first, "pr_merged").len(), 1);
+}
+
+#[test]
+fn checks_running_for_too_long_stop_holding_the_line() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    let (first, _, _) = shipped(&env, &gh, 1, "a.rs");
+    tip_checks(
+        &gh,
+        json!([{"name": "test", "status": "in_progress", "conclusion": null}]),
+    );
+    pass(&env, &gh);
+    assert!(events(&env, &first, "pr_merged").is_empty());
+    age_pending(&env, 7 * 3600);
+    pass(&env, &gh);
+    assert_eq!(events(&env, &first, "pr_merged").len(), 1);
+}
+
+#[test]
+fn a_red_base_stays_in_the_inbox_while_the_fix_is_still_running() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    let (ready, _, _) = shipped(&env, &gh, 1, "a.rs");
+    tip_checks(&gh, json!([{"name": "test", "conclusion": "failure"}]));
+    pass(&env, &gh);
+    assert!(inbox_has(&env, "base_red"));
+    // A person merged the fix by hand: main moved, its checks are running.
+    commit_file(&env.repo, "fix.rs", "// fix\n");
+    git(&env.repo, &["push", "-q", "origin", "main"]);
+    tip_checks(&gh, json!([{"name": "test", "conclusion": null}]));
+    pass(&env, &gh);
+    assert!(inbox_has(&env, "base_red"));
+    assert!(events(&env, &ready, "pr_merged").is_empty());
+    tip_checks(&gh, json!([{"name": "test", "conclusion": "success"}]));
+    pass(&env, &gh);
+    assert!(!inbox_has(&env, "base_red"));
+}
+
+#[test]
+fn base_red_leaves_when_the_queue_empties() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    let (only, _, _) = shipped(&env, &gh, 1, "a.rs");
+    tip_checks(&gh, json!([{"name": "test", "conclusion": "failure"}]));
+    pass(&env, &gh);
+    assert!(inbox_has(&env, "base_red"));
+    delivered(&env, &only, 1);
+    pass(&env, &gh);
+    assert!(!inbox_has(&env, "base_red"));
+}
+
+#[test]
+fn the_by_hand_hint_names_the_repos_own_merge_command() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    set_config(&env, "merge.command", "\"gh pr merge {pr} --merge\"");
+    shipped(&env, &gh, 1, "a.rs");
+    tip_checks(&gh, json!([{"name": "test", "conclusion": "failure"}]));
+    let q = queue(&env, &gh);
+    assert!(q.to_string().contains("gh pr merge {pr} --merge"), "{q}");
+    pass(&env, &gh);
+    let inbox = env.hall(&env.repo, &["inbox"]).json["entries"].to_string();
+    assert!(inbox.contains("gh pr merge {pr} --merge"), "{inbox}");
+    assert!(!inbox.contains("--admin"), "{inbox}");
 }

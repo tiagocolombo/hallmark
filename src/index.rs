@@ -820,9 +820,14 @@ impl Index {
                 text: format!(
                     "{base} is red at {}: {} failed. The merger stopped merging into {base} \
                      until its CI is green again: fix it, or re-run a flaky check. A PR that \
-                     fixes it can't pass the queue: merge it by hand (gh pr merge <pr> --squash --admin)",
+                     fixes it can't pass the queue: merge it by hand ({})",
                     crate::event::short(&red.sha),
-                    red.failing.join(", ")
+                    red.failing.join(", "),
+                    if red.by_hand.is_empty() {
+                        "with your own merge command".to_string()
+                    } else {
+                        red.by_hand.clone()
+                    }
                 ),
                 options: vec![],
                 default: None,

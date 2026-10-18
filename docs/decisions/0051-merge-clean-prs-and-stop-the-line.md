@@ -73,6 +73,11 @@ have to be green first). It is merged by hand with `gh pr merge <pr> --squash
 - With `conflicts`, PRs on shared files merge one CI run apart instead of
   half an hour apart, and most of them are never rebased, gated or reviewed
   again.
+- In either mode a merge waits for the base tip's checks to finish: with
+  `files` as well, PRs on separate files, which used to merge a look or two
+  apart, now merge a full base CI run apart. A new tip with no check runs
+  counts as running for five minutes, a run waiting on a person doesn't count,
+  and checks running past six hours stop holding the line.
 - A bad combination isn't prevented; it is caught. It lands on the base, the
   base's CI fails, and the queue stops. The next merge waits for that CI, so
   nothing lands on top of the break and it stays one commit to find.
