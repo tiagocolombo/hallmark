@@ -256,7 +256,7 @@ what the agent reads, runs and says, and how the run ended. <kbd>[</kbd> and
 <kbd>m</kbd> shows the merge queue: the order PRs merge in, and what each one
 waits for. <kbd>?</kbd> lists every key.
 
-<img alt="The hall terminal app: items move from development through checks and review to a PR while the inbox fills and empties" src="docs/images/tui-board.gif">
+<img alt="The hall terminal app: items move from development through checks and review to a PR while the inbox fills and empties, then the merge queue shows the order the PRs merge in" src="docs/images/tui-board.gif">
 
 <details>
 <summary><b>More: your office, findings, diffs, usage and history</b></summary>
