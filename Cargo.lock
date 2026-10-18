@@ -1111,7 +1111,7 @@ dependencies = [
 
 [[package]]
 name = "hallmark"
-version = "0.2.19"
+version = "0.3.0"
 dependencies = [
  "assert_cmd",
  "chrono",
