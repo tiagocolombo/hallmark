@@ -1,0 +1,59 @@
+   Compiling gears v0.1.0 (/home/dev/src/gears)
+error[E0425]: cannot find value `drivn` in this scope
+  --> src/ratio.rs:15:30
+   |
+15 |     format!("{}:{}", driver, drivn)
+   |                              ^^^^^
+   |
+help: a local variable with a similar name exists
+   |
+15 |     format!("{}:{}", driver, driven)
+   |                                  +
+
+error[E0425]: cannot find value `missing` in this scope
+  --> src/teeth.rs:13:36
+   |
+13 |     *teeth.iter().max().unwrap_or(&missing)
+   |                                    ^^^^^^^ not found in this scope
+
+warning: unused import: `std::collections::HashMap`
+ --> src/ratio.rs:1:5
+  |
+1 | use std::collections::HashMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `std::fmt::Write`
+ --> src/ratio.rs:2:5
+  |
+2 | use std::fmt::Write;
+  |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::HashMap`
+ --> src/teeth.rs:1:5
+  |
+1 | use std::collections::HashMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0308]: mismatched types
+ --> src/ratio.rs:9:18
+  |
+9 |     let r: u32 = driver as f64 / driven as f64;
+  |            ---   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `u32`, found `f64`
+  |            |
+  |            expected due to this
+
+error[E0599]: no method named `len` found for type `usize` in the current scope
+ --> src/teeth.rs:8:11
+  |
+8 |     total.len()
+  |           ^^^
+  |
+help: there is a method `le` with a similar name, but with different arguments
+ --> /rustc/59807616e1fa2540724bfbac14d7976d7e4a3860/library/core/src/cmp.rs:1428:4
+
+Some errors have detailed explanations: E0308, E0425, E0599.
+For more information about an error, try `rustc --explain E0308`.
+warning: `gears` (lib) generated 3 warnings
+error: could not compile `gears` (lib) due to 4 previous errors; 3 warnings emitted

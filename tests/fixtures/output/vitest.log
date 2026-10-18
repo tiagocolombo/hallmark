@@ -1,0 +1,80 @@
+
+ RUN  v2.0.5 /home/dev/src/inventory-web
+
+ ✓ src/utils/format.test.ts (12 tests) 4ms
+ ✓ src/utils/currency.test.ts (8 tests) 3ms
+ ✓ src/utils/dates.test.ts (9 tests) 5ms
+ ❯ src/cart/cart.test.ts (9 tests | 2 failed) 21ms
+   × Cart > applies a percentage discount 6ms
+     → expected 16.9915 to be 16.99 // Object.is equality
+   × Cart > removes an item by sku 3ms
+     → expected [ { sku: 'B-200', price: 12.5 }, …(1) ] to deeply equal [ { sku: 'B-200', price: 12.5 } ]
+stdout | src/api/client.test.ts > api client > lists items
+GET /items 200 (12ms)
+
+stdout | src/api/client.test.ts > api client > retries on 503
+GET /items 503 (3ms)
+GET /items 503 (2ms)
+GET /items 200 (4ms)
+
+ ✓ src/api/client.test.ts (5 tests) 31ms
+ ✓ src/api/retry.test.ts (4 tests) 8ms
+ ✓ src/components/Button.test.tsx (6 tests) 38ms
+ ✓ src/components/CartBadge.test.tsx (4 tests) 22ms
+ ✓ src/components/ProductCard.test.tsx (7 tests) 41ms
+ ✓ src/store/inventory.test.ts (14 tests) 9ms
+ ✓ src/store/session.test.ts (12 tests) 6ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/cart/cart.test.ts > Cart > applies a percentage discount
+AssertionError: expected 16.9915 to be 16.99 // Object.is equality
+
+- Expected
++ Received
+
+- 16.99
++ 16.9915
+
+ ❯ src/cart/cart.test.ts:42:42
+     40|     const cart = new Cart();
+     41|     cart.add({ sku: "A-100", price: 19.99 });
+     42|     expect(cart.total({ discount: 15 })).toBe(16.99);
+       |                                          ^
+     43|   });
+     44|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  src/cart/cart.test.ts > Cart > removes an item by sku
+AssertionError: expected [ { sku: 'B-200', price: 12.5 }, …(1) ] to deeply equal [ { sku: 'B-200', price: 12.5 } ]
+
+- Expected
++ Received
+
+  [
+    {
+      "price": 12.5,
+      "sku": "B-200",
+    },
++   {
++     "price": 4.5,
++     "sku": "C-300",
++   },
+  ]
+
+ ❯ src/cart/cart.test.ts:57:24
+     55|     cart.add({ sku: "C-300", price: 4.5 });
+     56|     cart.remove("A-100");
+     57|     expect(cart.items).toEqual([bolt]);
+       |                        ^
+     58|   });
+     59| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+ Test Files  1 failed | 10 passed (11)
+      Tests  2 failed | 88 passed (90)
+   Start at  09:41:07
+   Duration  2.84s (transform 512ms, setup 0ms, collect 1.90s, tests 188ms, environment 2.31s, prepare 1.02s)
+

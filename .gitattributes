@@ -1,3 +1,6 @@
 # The plugin is embedded with include_str! and parsed by Claude Code: keep
 # its line endings LF on every OS (Windows checkouts would otherwise get CRLF).
 plugin/** text eol=lf
+# Command output fixtures: tests count their bytes, so keep them LF everywhere.
+# The CRLF case is tested by converting a fixture in the test.
+tests/fixtures/output/** text eol=lf
