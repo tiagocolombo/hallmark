@@ -644,6 +644,19 @@ impl App {
         }
         if i == self.active {
             self.fix_selection();
+            if self.view == View::Queue
+                && let Some(q) = self.merge_queue()
+            {
+                // Keep the highlighted row on the item being acted on.
+                if let Some(at) = self
+                    .selected
+                    .and_then(|id| q.entries.iter().position(|e| e.item == id))
+                {
+                    self.queue_sel = at;
+                } else {
+                    self.move_queue(0);
+                }
+            }
             self.reload_selection();
             if self.view == View::Inbox {
                 self.load_inbox_detail();

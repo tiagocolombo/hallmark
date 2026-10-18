@@ -1565,3 +1565,61 @@ fn the_merge_queue_shows_only_while_the_merger_is_on() {
     key(&mut app, KeyCode::Char('m'));
     assert_ne!(app.view, View::Queue);
 }
+
+#[test]
+fn the_queue_view_follows_its_item_through_reloads_and_moves() {
+    let env = building();
+    let mut app = load(&env, &env.repo);
+    assert_eq!(
+        env.hall(&env.repo, &["config", "set", "merge.mode", "auto"])
+            .code,
+        0
+    );
+    let entry = |pos: u32, item: &str, n: u32, base: &str| {
+        serde_json::json!({
+            "position": pos, "item": item, "title": format!("Title {item}"),
+            "pr_url": format!("https://github.com/acme/app/pull/{n}"), "base": base,
+            "status": "queued", "why": "next in line"
+        })
+    };
+    let write = |queue: Vec<serde_json::Value>| {
+        let plan = serde_json::json!({"last": Utc::now(), "items": {}, "queue": queue});
+        std::fs::write(env.repo.join(".git/hallmark/merger.json"), plan.to_string()).unwrap();
+    };
+    write(vec![
+        entry(1, "H-0002", 190, "main"),
+        entry(2, "H-0005", 191, "main"),
+    ]);
+    app.reload_active();
+    select(&mut app, 2);
+    key(&mut app, KeyCode::Char('m'));
+    assert_eq!((app.queue_sel, app.selected), (0, Some(ItemId(2))));
+
+    // Down moves to the next PR and stops at the last one.
+    key(&mut app, KeyCode::Down);
+    assert_eq!((app.queue_sel, app.selected), (1, Some(ItemId(5))));
+    key(&mut app, KeyCode::Down);
+    assert_eq!((app.queue_sel, app.selected), (1, Some(ItemId(5))));
+
+    // The queue is rewritten with another PR ahead: the highlight stays on
+    // the item being acted on. A second base shows the `into` column.
+    write(vec![
+        entry(1, "H-0002", 190, "main"),
+        entry(2, "H-0001", 192, "release"),
+        entry(3, "H-0005", 191, "main"),
+    ]);
+    app.reload_active();
+    assert_eq!(app.selected, Some(ItemId(5)));
+    assert_eq!(app.queue_sel, 2);
+    assert!(screen(&env, &app, W, H).contains("into"));
+
+    // The selected item leaves the queue: the highlighted row is selected.
+    write(vec![entry(1, "H-0002", 190, "main")]);
+    app.reload_active();
+    assert_eq!((app.queue_sel, app.selected), (0, Some(ItemId(2))));
+
+    // The help lists `m` while the merger is on.
+    key(&mut app, KeyCode::Esc);
+    key(&mut app, KeyCode::Char('?'));
+    assert!(screen(&env, &app, W, H).contains("merge queue"));
+}
