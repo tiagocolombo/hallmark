@@ -318,7 +318,7 @@ footer { color: var(--muted); font-size: 0.9rem; border-top: 1px solid var(--lin
 <!-- ============ THE HALL ============ -->
 <section id="hall">
   <h2>Inside the Hall</h2>
-  <div class="col"><p>Picture Hallmark as a building seen from above. Requests come in at the Front Desk, get built in the Workshop and tested in the Assay Office. If the assayer finds problems, they go to the Repair Shop and back. Approved work is stamped and leaves from the Dispatch Dock for GitHub. Every handoff passes through the Post Room, which files a copy in Records. When an item closes, the Library keeps what it taught, and briefs the principal engineer before each review (the gold slips). The boxes are items and the figures are agents. Select a room to see what happens there.</p></div>
+  <div class="col"><p>Picture Hallmark as a building seen from above. Requests come in at the Front Desk, get built in the Workshop and tested in the Assay Office. If the assayer finds problems, they go to the Repair Shop and back. Approved work is stamped and leaves from the Dispatch Dock as a pull request, and waits in the Delivery Office's merge queue for its CI and its turn: the merger merges PRs in order, one at a time. A PR that conflicts at its turn is rebased and checked again, and keeps its approval when the change is the same; red CI goes back to the Repair Shop. Every handoff passes through the Post Room, which files a copy in Records. When an item closes, the Library keeps what it taught, and briefs the principal engineer before each review (the gold slips). The boxes are items and the figures are agents. Select a room to see what happens there.</p></div>
   <div class="plan-wrap">
     <div class="plan-main">
       <div class="plan-bar">
@@ -932,6 +932,8 @@ $ echo $?
       <tr><td>hall history</td><td>you</td><td>Closed and dropped items. <code>--rejected</code>, <code>--lens</code>, <code>--since</code></td></tr>
       <tr><td>hall usage</td><td>you, any agent</td><td>Tokens and cost. <code>--by room|item|role|model|day</code>, <code>--since</code></td></tr>
       <tr><td>hall budget</td><td>you</td><td>Shows or sets the caps in <code>[budget]</code></td></tr>
+      <tr><td>hall queue</td><td>you, any agent</td><td>The merge queue: the order PRs merge in, and why each one waits</td></tr>
+      <tr><td>hall trace &lt;id&gt;</td><td>you, any agent</td><td>A reviewer's or fixer's run, step by step. <code>--follow</code> watches it live</td></tr>
       <tr><td>hall library search</td><td>you, any agent</td><td>Searches the repo's learnings. Built-in search, or qmd when configured</td></tr>
       <tr><td>hall library review</td><td>you</td><td>Approves or rejects proposed learnings</td></tr>
       <tr><td>hall library retire &lt;id&gt;</td><td>you, librarian</td><td>Retires a learning, keeping its history</td></tr>
@@ -945,7 +947,7 @@ $ echo $?
       <tr><td>hall verdict</td><td>assayer</td><td>Records a schema-checked verdict</td></tr>
       <tr class="grp"><td colspan="3">Machinery and setup</td></tr>
       <tr><td>hall hook &lt;event&gt;</td><td>Claude Code hooks</td><td>Journal entries, session context and the gate</td></tr>
-      <tr><td>hall daemon</td><td>you, once</td><td><code>start</code>, <code>stop</code>, <code>status</code>. Runs the checks, review, fixer, shipper and watchman</td></tr>
+      <tr><td>hall daemon</td><td>you, once</td><td><code>start</code>, <code>stop</code>, <code>status</code>. Runs the checks, review, fixer, shipper, Delivery office, merger and watchman</td></tr>
       <tr><td>hall setup claude</td><td>you, once</td><td>Installs the Claude Code plugin</td></tr>
       <tr><td>hall init</td><td>you, per repo</td><td>Writes <code>.hallmark.toml</code> from what it detects</td></tr>
       <tr><td>hall notify test</td><td>you, once</td><td>Sends a test notification to every channel you configured</td></tr>
@@ -1124,7 +1126,7 @@ $ echo $?
     <div class="risk">
       <h3>What to watch</h3>
       <ul>
-        <li><b>Same model, same blind spots.</b> Fixed lenses and checks help, but keep the final merge on GitHub with you.</li>
+        <li><b>Same model, same blind spots.</b> Fixed lenses and checks help. The merger is off until you turn it on, and paths you list in <code>[merge] lit</code> always wait for a person.</li>
         <li><b>Shared state.</b> Test runs often share caches, coverage files and ports, so each repo's assayer takes one ticket at a time. Separate repos can run in parallel.</li>
         <li><b>Usage.</b> Every round is a test run plus a long review against your plan's limits. Three rejected reviews send the item to you.</li>
         <li><b>The journal records your prompts.</b> It stays in <code>.git/hallmark/</code> on your machine and is exported only when you ask.</li>
@@ -1233,11 +1235,11 @@ rules    = ["CLAUDE.md",
       enter: ["Review approves"],
       leave: ["The shipper runs the repo's ship command → Closed"],
       logs: ["Hallmark: commit, round, reviewer, finding counts"] },
-    closed: { name: "Closed", cls: "end", who: "Nobody",
-      what: "The PR is open on GitHub, or wherever the ship command sends it. Hallmark's job ends here, and the item moves to History.",
+    closed: { name: "Closed", cls: "end", who: "The Delivery office and the merger",
+      what: "The PR is open on GitHub, or wherever the ship command sends it. The Delivery office watches it until it merges, and with the merger on, it waits in the merge queue and merges without you. Once it has merged, the item moves to History.",
       enter: ["The shipper opens the PR"],
-      leave: ["None. Later PR feedback starts a new item: <code>/hallmark follow-up #191</code>"],
-      logs: ["PR link, final commit, rounds", "Time spent in each state"] },
+      leave: ["A conflict at its turn, red CI or new review comments → Development, and back through the loop", "Merged or closed → History"],
+      logs: ["PR link, final commit, rounds", "CI results, the merge, and delivered", "Time spent in each state"] },
     dropped: { name: "Dropped", cls: "you", who: "You",
       what: "Abandoned. The worktree is removed, while the branch and the journal stay.",
       enter: ["<code>/hallmark drop</code>, from Development or Escalated"],

@@ -30,10 +30,10 @@ Only commits that earn a **hallmark** leave your machine.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/inside-the-hall-dark.gif">
-  <img alt="Inside the Hall: an animated floor plan of Hallmark. Items move from the Front Desk to the Workshop, the Assay Office, the Repair Shop and out through the Dispatch Dock to GitHub." src="docs/images/inside-the-hall.gif">
+  <img alt="Inside the Hall: an animated floor plan of Hallmark. Items move from the Front Desk to the Workshop, the Assay Office, the Repair Shop, the Stamping Room and the Dispatch Dock, then wait in the Delivery Office's merge queue until the merger merges them into GitHub." src="docs/images/inside-the-hall.gif">
 </picture>
 
-<p align="center"><sub>Inside the Hall: each box is an item, each figure an agent. Every handoff passes through the Post Room and is written to the journal.</sub></p>
+<p align="center"><sub>Inside the Hall: each box is an item, each figure an agent. Every handoff passes through the Post Room and is written to the journal. Shipped PRs wait in the Delivery Office's merge queue until the merger merges them.</sub></p>
 
 ---
 
@@ -62,16 +62,25 @@ holds up:
   back through review. `hall adopt --pr` takes over a PR that's already open.
 - **Merged in order, if you want.** With `[merge] mode = "auto"`, the merger
   merges each green, hallmarked PR, one at a time, in dependency order. It
-  brings each PR up to date once, at its turn, so a merge doesn't send every
-  other PR back for a rebase. Paths you list in `[merge] lit` still wait for
-  you. `hall queue` shows the order.
+  brings each PR up to date once, at its turn, and PRs on separate files move
+  in parallel lanes, so a merge doesn't send every other PR back for a rebase.
+  `[merge] update = "conflicts"` merges a clean, green PR as it is, and the
+  merger stops whenever the base's own CI is red. Paths you list in
+  `[merge] lit` still wait for you. `hall queue` shows the order.
+- **A rebase keeps its approval.** When a rebase leaves the approved change
+  as it was, the hallmark carries over with no new review. When it changed
+  something, the reviewer reads only that difference.
 - **PRs that read well.** A shipped PR's description is What, Why and How;
   every review, with its findings and how each was fixed, is a PR comment.
 - **A full record.** Every prompt, commit, check, verdict, fix and decision is
   appended to a journal. You can always see what was rejected, what was fixed
   and why.
-- **Budgets you set.** Every model run is measured. Caps per run, per item, per
-  role and per day stop the loop before it runs away.
+- **Your reasons reach the agent.** When you pull an item back, retry it or
+  send it to review with a note, your words go into the next agent's prompt,
+  not just the journal.
+- **Budgets you set.** Every model run is measured. Caps per run (with a
+  default for each role), per item, per role and per day stop the loop before
+  it runs away. Gates that already passed on the same tree aren't run again.
 - **Local and private.** No server, no account. Model runs go through your own
   Claude Code. The journal lives in your git directory and is never committed.
 - **Works with your tooling.** Worktree, gate and ship commands come from
@@ -122,6 +131,9 @@ flowchart LR
     fixer -->|fix committed| checks
     review -->|approved| stamp[Hallmark<br/>git note on the SHA]
     stamp --> pr([PR opened])
+    pr --> queue[Delivery Office<br/>merge queue]
+    queue -->|its turn, green| merged([Merged])
+    queue -.->|conflict, red CI,<br/>new comments| checks
     review -.->|3rd rejection| you
 ```
 
@@ -141,7 +153,11 @@ flowchart LR
 6. **Ship.** The approved commit is rebased onto the latest base and gets its
    hallmark. The shipper opens the PR, and the Delivery Office watches it until
    it merges: conflicts, red CI and new review comments come back through the
-   loop.
+   loop. A rebase that leaves the approved change as it was keeps its
+   hallmark without another review.
+7. **Merge.** With the merger on, each PR waits in the merge queue for its CI
+   and its turn, and merges without you. PRs that touch the same files go one
+   after another, and the rest in parallel.
 
 When something needs a person (a question, an escalation, an exhausted budget),
 it goes to **your inbox**. You hear about it in Claude Code, in the terminal
@@ -211,8 +227,9 @@ hall trace H-0042 --follow   # the reviewer or fixer at work, step by step
 hall export H-0042           # the whole record as Markdown
 
 hall ready H-0042            # freeze HEAD and queue it for review
-hall pull-back H-0042        # back to development
+hall pull-back H-0042 --reason "split the parser out first"   # back to development; the agent reads why
 hall drop H-0041 --reason "superseded by H-0044"
+hall queue                   # the merge queue: the order PRs merge in, and why each waits
 
 hall usage --by model --since 7d
 hall budget --set per_item=800k
@@ -312,11 +329,12 @@ default, including models per role, notifications and the Library.
 
 ## Project status
 
-Hallmark is in early, active development (`0.1`). The full loop runs today:
+Hallmark is in early, active development (`0.2`). The full loop runs today:
 items and the journal, the gates, checks, test-first review, fixes, shipping,
-delivery tracking, parallel parts, budgets, notifications, the Library, repo
-skills, extensions and the terminal app. Expect the configuration and the CLI to change before `1.0`. Breaking
-changes will be called out in the release notes.
+delivery tracking, the merger and its merge queue, parallel parts, budgets,
+notifications, the Library, repo skills, extensions and the terminal app.
+Expect the configuration and the CLI to change before `1.0`. Breaking changes
+will be called out in the release notes.
 
 Hallmark currently drives [Claude Code](https://claude.com/claude-code). Every
 model run goes through `claude -p` and counts toward your Claude plan or API
