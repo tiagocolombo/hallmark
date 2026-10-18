@@ -259,7 +259,7 @@ a merge the merger couldn't do (`merge_failed`), a ready PR that touches a
 `[merge] lit` path (`lit`), CI that still fails after the Delivery office's
 two fixes, CI that never started (one `ci_down` entry), or a base whose own
 CI failed, which stops its merge queue (`base_red`). Hallmark tells you in Claude Code (a hook and
-the status line), in the terminal app, with a desktop notification, and on
+the status line), in the terminal app and the web app (`hall web`), with a desktop notification, and on
 your phone through [ntfy](https://ntfy.sh), Telegram or Slack, plus an
 optional morning digest.
 
@@ -280,5 +280,5 @@ once: the reviewer, the fixer, a Delivery office run, or your development
 session ([ADR 0044](decisions/0044-your-reasons-reach-the-next-agent.md)).
 
 When an agent asks a question, its session ID is saved. When you answer
-(`hall answer`, the terminal app, or just telling Claude), the daemon resumes
+(`hall answer`, the terminal app, the web app, or just telling Claude), the daemon resumes
 that session with your answer, so the agent keeps its context.

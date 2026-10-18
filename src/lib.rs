@@ -50,6 +50,7 @@ pub mod trace;
 pub mod tui;
 pub mod usage;
 pub mod watchman;
+pub mod web;
 pub mod words;
 pub mod worker;
 

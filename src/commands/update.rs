@@ -554,9 +554,76 @@ fn swap_in(staging: &Path, exe: &Path, source: &str) -> Result<()> {
 #[cfg(windows)]
 fn set_aside(exe: &Path) -> Option<PathBuf> {
     let old = exe.with_extension("exe.old");
-    // A previous update's copy; still locked if that hall still runs.
+    // Previous updates' copies; still locked if that hall still runs.
+    remove_stale(exe);
     let _ = std::fs::remove_file(&old);
-    std::fs::rename(exe, &old).ok().map(|_| old)
+    if !old.exists() && std::fs::rename(exe, &old).is_ok() {
+        return Some(old);
+    }
+    // Still locked (a `hall web` from the update before runs from it): set
+    // this one aside under a name of its own.
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or_default();
+    let own = exe.with_extension(format!("exe.{nanos}.old"));
+    std::fs::rename(exe, &own).ok().map(|_| own)
+}
+
+/// Removes the uniquely named `.old` copies next to the program, ignoring
+/// the ones still locked by a running hall.
+#[cfg(windows)]
+fn remove_stale(exe: &Path) {
+    let (Some(dir), Some(stem)) = (exe.parent(), exe.file_name().and_then(|n| n.to_str())) else {
+        return;
+    };
+    let prefix = format!("{stem}.");
+    let plain = format!("{stem}.old");
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for e in entries.flatten() {
+        let name = e.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with(&prefix) && name.ends_with(".old") && *name != plain {
+            let _ = std::fs::remove_file(e.path());
+        }
+    }
+}
+
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::*;
+    use std::os::windows::fs::OpenOptionsExt;
+
+    #[test]
+    fn a_locked_old_copy_does_not_block_the_swap() {
+        let d = tempfile::tempdir().unwrap();
+        let exe = d.path().join("hall.exe");
+        let old = d.path().join("hall.exe.old");
+        std::fs::write(&exe, "new").unwrap();
+        std::fs::write(&old, "locked").unwrap();
+        let _held = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&old)
+            .unwrap();
+        let aside = set_aside(&exe).expect("set aside");
+        assert_ne!(aside, old);
+        assert!(!exe.exists());
+        assert!(aside.exists());
+    }
+
+    #[test]
+    fn stale_unique_copies_are_removed() {
+        let d = tempfile::tempdir().unwrap();
+        let exe = d.path().join("hall.exe");
+        let stale = d.path().join("hall.exe.123.old");
+        std::fs::write(&exe, "new").unwrap();
+        std::fs::write(&stale, "x").unwrap();
+        set_aside(&exe).expect("set aside");
+        assert!(!stale.exists());
+    }
 }
 
 #[cfg(not(windows))]

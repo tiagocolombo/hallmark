@@ -122,6 +122,9 @@ pub enum Cmd {
     Extensions(ExtensionsArgs),
     /// Everything the Claude Code heads-up display shows, in one call.
     Hud(HudArgs),
+    /// The web app: every repo's items, your office, the merge queue and
+    /// the settings, in a browser on this machine. Runs until stopped.
+    Web(WebArgs),
 }
 
 #[derive(Debug, Args)]
@@ -670,6 +673,16 @@ pub struct HudArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct WebArgs {
+    /// The port on 127.0.0.1 (default 4747, or a free one when that's taken).
+    #[arg(long)]
+    pub port: Option<u16>,
+    /// Don't open the browser; only print the address.
+    #[arg(long)]
+    pub no_open: bool,
+}
+
+#[derive(Debug, Args)]
 pub struct NotifyArgs {
     #[command(subcommand)]
     pub action: NotifyAction,
@@ -835,17 +848,7 @@ pub fn run() -> i32 {
 /// are allowed: the item flow, answers, the readers and the daemon's
 /// start, stop and status. Anything else is `USAGE`.
 pub fn run_in_app(args: &[String], cwd: &std::path::Path) -> Result<Response> {
-    let cli = Cli::try_parse_from(std::iter::once("hall".to_string()).chain(args.iter().cloned()))
-        .map_err(|e| {
-            let msg = e.to_string();
-            HallError::usage(
-                msg.lines()
-                    .next()
-                    .unwrap_or("bad arguments")
-                    .trim_start_matches("error: ")
-                    .to_string(),
-            )
-        })?;
+    let cli = parse_args(args)?;
     let allowed = match &cli.cmd {
         Some(
             Cmd::Ready(_)
@@ -874,6 +877,79 @@ pub fn run_in_app(args: &[String], cwd: &std::path::Path) -> Result<Response> {
         )));
     }
     dispatch(cli.cmd, cwd, Mode::Json)
+}
+
+/// `hall <args>` parsed, without the program name; a parse error is `USAGE`.
+fn parse_args(args: &[String]) -> Result<Cli> {
+    Cli::try_parse_from(std::iter::once("hall".to_string()).chain(args.iter().cloned())).map_err(
+        |e| {
+            let msg = e.to_string();
+            HallError::usage(
+                msg.lines()
+                    .next()
+                    .unwrap_or("bad arguments")
+                    .trim_start_matches("error: ")
+                    .to_string(),
+            )
+        },
+    )
+}
+
+/// Whether the web app may run `hall <args>` for its page (ADR 0052). It
+/// runs what a person does: the item flow, answers, the readers, settings,
+/// budgets, the Library, the daemon and updates. Never the agents' and
+/// hooks' commands, nothing that needs a terminal (`watch`, `trace
+/// --follow`, `new --open`, `setup`), and `update` only from its usual
+/// source. Anything else is `USAGE`.
+pub fn allowed_on_web(args: &[String]) -> Result<()> {
+    let cli = parse_args(args)?;
+    let named = |flag: &str| {
+        args.iter()
+            .any(|a| a == flag || a.starts_with(&format!("{flag}=")))
+    };
+    let allowed = match &cli.cmd {
+        Some(
+            Cmd::Doctor
+            | Cmd::Status(_)
+            | Cmd::Log(_)
+            | Cmd::Inbox(_)
+            | Cmd::Ready(_)
+            | Cmd::PullBack(_)
+            | Cmd::Drop(_)
+            | Cmd::Retry(_)
+            | Cmd::Continue(_)
+            | Cmd::Answer(_)
+            | Cmd::Usage(_)
+            | Cmd::Reindex(_)
+            | Cmd::Help(_)
+            | Cmd::Schema(_)
+            | Cmd::Config(_)
+            | Cmd::Findings(_)
+            | Cmd::Merge(_)
+            | Cmd::History(_)
+            | Cmd::Queue
+            | Cmd::Export(_)
+            | Cmd::Budget(_)
+            | Cmd::Notify(_)
+            | Cmd::Library(_)
+            | Cmd::Extensions(_)
+            | Cmd::Hud(_),
+        ) => true,
+        Some(Cmd::New(a)) => !a.open,
+        Some(Cmd::Adopt(a)) => a.pr.is_some(),
+        Some(Cmd::Trace(a)) => !a.follow,
+        Some(Cmd::Daemon(a)) => !matches!(a.action, DaemonAction::Run { .. }),
+        Some(Cmd::Update(_)) => !named("--source") && !named("--branch"),
+        _ => false,
+    };
+    if allowed {
+        Ok(())
+    } else {
+        Err(HallError::usage(format!(
+            "`hall {}` doesn't run from the web app; run it in a terminal",
+            args.join(" ")
+        )))
+    }
 }
 
 fn dispatch(cmd: Option<Cmd>, cwd: &std::path::Path, mode: Mode) -> Result<Response> {
@@ -921,5 +997,27 @@ fn dispatch(cmd: Option<Cmd>, cwd: &std::path::Path, mode: Mode) -> Result<Respo
         Some(Cmd::Library(a)) => library::library(cwd, a),
         Some(Cmd::Extensions(a)) => extensions::extensions(cwd, a),
         Some(Cmd::Hud(a)) => hud::hud(cwd, a),
+        Some(Cmd::Web(a)) => crate::web::web(cwd, a, mode),
+    }
+}
+
+#[cfg(test)]
+mod web_tests {
+    use super::allowed_on_web;
+
+    fn ok(args: &[&str]) -> bool {
+        let a: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+        allowed_on_web(&a).is_ok()
+    }
+
+    #[test]
+    fn the_web_refuses_updates_from_another_source() {
+        assert!(!ok(&["update", "--branch", "x"]));
+        assert!(!ok(&["update", "--source=x"]));
+        assert!(!ok(&["update", "--source", "x"]));
+        assert!(ok(&["update"]));
+        assert!(ok(&["update", "--check"]));
+        assert!(ok(&["adopt", "--pr", "7"]));
+        assert!(ok(&["new", "x"]));
     }
 }

@@ -292,6 +292,8 @@ pub const SCHEMA_NAMES: &[&str] = &[
     "library",
     "extensions",
     "hud",
+    "web",
+    "web-line",
     "watch",
     "watch-line",
     "trace",
@@ -348,6 +350,9 @@ pub fn schema_value(name: &str) -> Option<serde_json::Value> {
         "library" => schema_for!(Out<LibraryOut>),
         "extensions" => schema_for!(Out<super::extensions::ExtensionsOut>),
         "hud" => schema_for!(Out<HudOut>),
+        "web" => schema_for!(Out<crate::web::WebOut>),
+        // The line `hall web` prints once it is listening.
+        "web-line" => schema_for!(crate::web::WebStart),
         // What the principal engineer returns (plugin/schemas/verdict.json).
         "verdict-input" => schema_for!(crate::findings::ModelVerdict),
         "error" => schema_for!(ErrorEnvelope),

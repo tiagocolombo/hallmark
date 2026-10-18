@@ -143,6 +143,11 @@ daemon in the middle of a run (a review, a fix) finishes that run on the old
 binary first: `hall update` says so, and you run `hall daemon start` once
 `hall daemon status` shows it has exited. Restart Claude Code afterwards.
 
+The web app (`hall web`) has the same update: its **Update and restart**
+button runs `hall update` and starts the new `hall web` on the same port and
+token. A `hall update` run in a terminal doesn't touch a running `hall web`,
+which keeps serving the old page until you stop it and run `hall web` again.
+
 Main carries the versions: every merge is tagged `vX.Y.Z` on it, versioned
 by semver from conventional commits
 ([ADR 0035](decisions/0035-semver-from-conventional-commits.md),

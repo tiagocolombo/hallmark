@@ -197,6 +197,10 @@ run `hall queue` and report that PR's status and why: it may wait for CI,
 for an earlier PR on the same files, for a person (a `lit` path), or be
 being brought up to date (`updating`).
 
+When the human wants to look around themselves, in a browser, tell them to
+run `hall web` in a terminal: it opens the web app on their machine and runs
+until they stop it, so don't start it for them in a session.
+
 ## When something waits for the human
 
 Hallmark's hooks tell you when entries wait in the human's inbox (a

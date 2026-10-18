@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Hallmark</title>
+<link rel="icon" type="image/svg+xml" href="/icon.svg">
+<link rel="stylesheet" href="/app.css">
+<script src="/app.js" defer></script>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="#/floor"><img src="/icon.svg" alt="" width="22" height="22">Hallmark</a>
+  <select id="repo" class="chip-select" aria-label="Repository"></select>
+  <span id="daemon-chip" class="chip" aria-live="polite"></span>
+  <nav class="topnav" id="nav" aria-label="Views">
+    <a href="#/floor" data-view="floor">Floor</a>
+    <a href="#/office" data-view="office">Your office<b class="badge" id="badge-inbox" hidden></b></a>
+    <a href="#/queue" data-view="queue">Merge queue</a>
+    <a href="#/records" data-view="records">Records</a>
+    <a href="#/library" data-view="library">Library</a>
+    <a href="#/usage" data-view="usage">Usage</a>
+    <a href="#/settings" data-view="settings">Settings</a>
+  </nav>
+  <span id="update-chip"></span>
+  <a class="btn sm primary" href="#/new">New item</a>
+</header>
+<div class="sub">
+  <span class="sub-text"><b id="sub-title">Live floor.</b> <span id="sub-note" class="muted"></span></span>
+  <label class="sub-ctl">Refresh every
+    <select id="refresh">
+      <option value="2">2s</option><option value="5">5s</option><option value="10">10s</option>
+      <option value="30">30s</option><option value="0">off</option>
+    </select>
+  </label>
+  <div class="seg" role="group" aria-label="Theme">
+    <button type="button" data-theme-set="light">Light</button>
+    <button type="button" data-theme-set="dark">Dark</button>
+    <button type="button" data-theme-set="system">System</button>
+  </div>
+</div>
+<div class="layout" id="body">
+  <aside class="rail" id="rail" aria-label="Items"></aside>
+  <main id="main" tabindex="-1"><p class="muted">Loading…</p></main>
+  <aside class="feed" id="feed" aria-label="Activity"></aside>
+</div>
+<div id="toasts" aria-live="polite"></div>
+<dialog id="dialog"></dialog>
+</body>
+</html>

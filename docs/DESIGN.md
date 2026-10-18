@@ -53,6 +53,8 @@ Windows:
 
 - With no arguments, it opens the terminal app on a terminal, and prints the
   status as JSON otherwise.
+- `hall web` serves the same views, and the settings, as a web app on
+  127.0.0.1 whose every call is a hall command (ADR 0052).
 - Its subcommands serve agents, Claude Code hooks and the daemon.
 
 ## Vocabulary
@@ -390,6 +392,7 @@ $ echo $?
 | `hall export [<id>]` | you, shipper | The whole record as Markdown, with what each model run did, step by step. |
 | `hall budget [--set k=v] [--grant [<tokens>]]` | you | The caps and today's spend. `--grant` lets the loop go past the daily cap for today (default: another `daily`) and lifts the budget pause; the cap is unchanged. |
 | `hall notify test` | you | A test notification on every channel. |
+| `hall web [--port] [--no-open]` | you | The web app on 127.0.0.1, behind a token: every call runs a hall command a person may run from a page (ADR 0052). |
 | `hall statusline` | Claude Code | One line for the status line. |
 | `hall library search\|review\|retire\|distill\|import\|export` | you, agents | The Library. |
 
@@ -640,7 +643,7 @@ then resumes the asking agent's session with
 **Notifications** (ADR 0020):
 
 - hooks and the status line (`hall statusline`)
-- the terminal app (and its bell)
+- the terminal app (and its bell), and the web app's office (`hall web`)
 - the desktop (notify-rust)
 - the phone: ntfy by default (a random topic), Telegram, or a Slack webhook.
   Only the item, the question and its options are sent, never code.
@@ -850,3 +853,6 @@ Two outside tools fit at the edges:
      `m` while the merger is on
    - qmd as an option
    - dist releases and a Nix package
+4. **The web app** (done, ADR 0052)
+   - `hall web`: the terminal app's views and every setting in a browser,
+     each action a hall command; updates and restarts itself
