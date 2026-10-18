@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.19](https://github.com/tiagocolombo/hallmark/compare/v0.2.18...v0.2.19) - 2026-10-18
+
+### Other
+
+- Docs pass: every page shows the latest features, with a new Inside the Hall animation ([#108](https://github.com/tiagocolombo/hallmark/pull/108))
+
 ## [0.2.18](https://github.com/tiagocolombo/hallmark/compare/v0.2.17...v0.2.18) - 2026-10-18
 
 ### Added
