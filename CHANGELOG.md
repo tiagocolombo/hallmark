@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.16](https://github.com/tiagocolombo/hallmark/compare/v0.2.15...v0.2.16) - 2026-10-18
+
+### Added
+
+- The terminal app shows the merge queue when the merger is on ([#92](https://github.com/tiagocolombo/hallmark/pull/92))
+
 ## [0.2.15](https://github.com/tiagocolombo/hallmark/compare/v0.2.14...v0.2.15) - 2026-10-18
 
 ### Added
