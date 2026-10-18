@@ -12,14 +12,21 @@
 //!
 //! **Order**: a PR stacked on another waits for it; a PR whose body says
 //! `Depends on #N` (or `Blocked by`, `After`) waits for #N; otherwise the
-//! oldest PR (lowest number) goes first. The first PR in line that is ready
-//! merges. The first one that is only behind its base, on files it touches,
-//! is reopened with a rebase request, and the Delivery office brings it up
-//! to date (rebase, gates, carried hallmark, update, CI).
+//! oldest PR (lowest number) goes first.
 //!
-//! **One at a time**: after a merge, nothing else on that base merges until
-//! the watch records `delivered`, so each next PR is judged against the
-//! base as it really is.
+//! **The queue owns the update** (ADR 0050). A PR that is behind its base on
+//! files it touches, or that GitHub says conflicts, is reopened with a
+//! rebase request only at its turn: once every earlier PR that touches the
+//! same files has merged. Walking the queue in order, each PR still on its
+//! way to a merge claims its files, and so does each item already sent back
+//! to be brought up to date; a PR that touches a claimed file waits. So a PR
+//! is rebased once, onto a base that already has everything it overlaps
+//! with, and PRs that share no files move in parallel lanes. A PR waiting on
+//! a person claims nothing: the ones behind it go first.
+//!
+//! **One merge at a time**: after a merge, nothing else on that base merges
+//! until the watch records `delivered`, so each next PR is judged against
+//! the base as it really is.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -62,7 +69,7 @@ pub enum Status {
     CiPending,
     /// CI failed at the shipped head; the Delivery office fixes it.
     CiRed,
-    /// GitHub says it conflicts; the Delivery office rebases it.
+    /// GitHub says it conflicts: it is rebased at its turn.
     Conflicting,
     /// GitHub is still working out whether it conflicts.
     Unknown,
@@ -79,6 +86,9 @@ pub enum Status {
     Queued,
     /// GitHub couldn't be read.
     Unreadable,
+    /// Reopened through its PR (a rebase, comments or a CI fix) and not
+    /// shipped again yet.
+    Updating,
 }
 
 impl Status {
@@ -98,6 +108,7 @@ impl Status {
             Status::NotOurs => "not_ours",
             Status::Queued => "queued",
             Status::Unreadable => "unreadable",
+            Status::Updating => "updating",
         }
     }
 }
@@ -126,28 +137,6 @@ struct State {
     last: Option<DateTime<Utc>>,
     #[serde(default)]
     items: BTreeMap<String, Seen>,
-    /// The item the merger sent back to be brought up to date, per base.
-    /// Until it is shipped again (or dropped), no other PR on that base is
-    /// sent back: each merge would make them stale again.
-    #[serde(default)]
-    rebasing: BTreeMap<String, String>,
-}
-
-impl State {
-    /// The item a rebase the merger asked for is still going on, on `base`.
-    /// Forgets one that is shipped again or dropped.
-    fn rebasing(&mut self, base: &str, items: &[Item]) -> Option<ItemId> {
-        let id = self.rebasing.get(base)?;
-        let live = items
-            .iter()
-            .find(|i| i.id.to_string() == *id)
-            .filter(|i| !i.state.is_terminal())
-            .map(|i| i.id);
-        if live.is_none() {
-            self.rebasing.remove(base);
-        }
-        live
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -313,6 +302,14 @@ fn last_shipped(events: &[Event]) -> Option<DateTime<Utc>> {
         .max()
 }
 
+/// Whether the CI watch gave up on the PR's last ship: checks that never
+/// report (a `paths-ignore` that skips every file it changes) leave it
+/// pending for good.
+fn ci_gave_up(events: &[Event]) -> bool {
+    last_shipped(events)
+        .is_some_and(|t| Utc::now() - t >= Duration::hours(crate::ci::GIVE_UP_HOURS))
+}
+
 /// Whether CI passed on the PR after its last ship, and if not, why.
 fn ci_status(item: &Item, events: &[Event]) -> Option<(Status, String)> {
     let shipped = last_shipped(events);
@@ -341,6 +338,8 @@ struct Look<'a> {
     open: BTreeMap<u64, &'a Item>,
     /// Bases fetched this look.
     targets: BTreeMap<String, Option<Target>>,
+    /// The files each item changes, once known.
+    files: BTreeMap<ItemId, Vec<String>>,
     /// Resolve bases with the capped fetch (the CLI), not the daemon's.
     capped: bool,
 }
@@ -403,10 +402,11 @@ impl<'a> Look<'a> {
     }
 
     /// Judges one PR. Cheap, local checks come first, so a PR that can't
-    /// merge yet costs no GitHub call.
-    fn judge(&mut self, item: &Item) -> (Status, String, Vec<String>, Option<Verdict>) {
+    /// merge yet costs no GitHub call; one whose CI hasn't reported costs
+    /// one, to see whether it conflicts.
+    fn judge(&mut self, item: &Item) -> Judged {
         let url = item.pr_url.clone().unwrap_or_default();
-        let none = |s: Status, why: String| (s, why, vec![], None);
+        let none = Judged::wait;
         if let Some(h) = &item.hold {
             return none(
                 if h.kind == HoldKind::Lit {
@@ -434,12 +434,10 @@ impl<'a> Look<'a> {
                     "the merge command succeeded, but the PR is still open after {} minutes",
                     STUCK_SECS / 60
                 );
-                return (
-                    Status::Merging,
-                    why.clone(),
-                    vec![],
-                    Some(Verdict::Stuck(why)),
-                );
+                return Judged {
+                    verdict: Some(Verdict::Stuck(why.clone())),
+                    ..none(Status::Merging, why)
+                };
             }
             return none(Status::Merging, waiting);
         }
@@ -460,10 +458,28 @@ impl<'a> Look<'a> {
             );
         }
         let events = self.repo.hall.read_item(item.id).unwrap_or_default();
-        if self.repo.config.merge.require_ci
-            && let Some((s, why)) = ci_status(item, &events)
-        {
-            return none(s, why);
+        // CI that hasn't reported still needs GitHub's word on a conflict:
+        // GitHub runs no pull_request workflows on a conflicting PR, so its
+        // CI may never report until it is brought up to date.
+        let mut ci_pending = None;
+        if self.repo.config.merge.require_ci {
+            match ci_status(item, &events) {
+                Some((Status::CiPending, why)) => {
+                    ci_pending = Some(match ci_gave_up(&events) {
+                        true => (
+                            format!(
+                                "CI never reported at the shipped head in {}h; \
+                                 the CI watch gave up",
+                                crate::ci::GIVE_UP_HOURS
+                            ),
+                            true,
+                        ),
+                        false => (why, false),
+                    })
+                }
+                Some((s, why)) => return none(s, why),
+                None => {}
+            }
         }
         let pr: GhQueue = match crate::gh::pr_queue(&self.repo.main_root, &url) {
             Ok(p) => p,
@@ -503,31 +519,32 @@ impl<'a> Look<'a> {
         );
         let waits = self.waits_for(item, &url, &text);
         if !waits.is_empty() {
-            return (
-                Status::WaitsFor,
-                format!("waits for {}", waits.join(", ")),
-                waits,
-                None,
-            );
+            return Judged {
+                waits: waits.clone(),
+                ..none(Status::WaitsFor, format!("waits for {}", waits.join(", ")))
+            };
         }
         if let Some(who) = changes_requested(&pr.reviews) {
             return none(Status::ChangesRequested, format!("{who} asked for changes"));
         }
-        match pr.mergeable.as_str() {
-            "MERGEABLE" => {}
-            "CONFLICTING" => {
-                return none(
-                    Status::Conflicting,
-                    "conflicts with its base; the Delivery office rebases it".into(),
-                );
+        // A conflict is brought up to date at its turn, like a PR that is
+        // behind: GitHub's word only says when to look closer.
+        let conflicting = match (pr.mergeable.as_str(), ci_pending) {
+            ("CONFLICTING", _) => true,
+            (_, Some((why, gave_up))) => {
+                return Judged {
+                    stalled: gave_up,
+                    ..none(Status::CiPending, why)
+                };
             }
+            ("MERGEABLE", None) => false,
             _ => {
                 return none(
                     Status::Unknown,
                     "GitHub is still working out whether it conflicts".into(),
                 );
             }
-        }
+        };
         if !git::dirty_files(&wt).map(|d| d.is_empty()).unwrap_or(false) {
             // The merge doesn't need the worktree, but a dirty one means
             // someone is working in it; a rebase would only hold it.
@@ -540,6 +557,37 @@ impl<'a> Look<'a> {
             Ok(f) => f,
             Err(e) => return none(Status::Unreadable, e.message),
         };
+        self.files.insert(item.id, files.clone());
+        let judged = |status, why: String, verdict| Judged {
+            status,
+            why,
+            waits: vec![],
+            verdict: Some(verdict),
+            stalled: false,
+        };
+        if conflicting {
+            let both = match fresh {
+                Fresh::Behind(both) => both,
+                Fresh::Yes => vec![],
+            };
+            return judged(
+                Status::Conflicting,
+                format!("conflicts with {}; bringing it up to date", target.name),
+                Verdict::Rebase(both, head),
+            );
+        }
+        if let Fresh::Behind(both) = fresh {
+            return judged(
+                Status::Behind,
+                format!(
+                    "behind {} on files it touches ({}); bringing it up to date",
+                    target.name,
+                    both.join(", ")
+                ),
+                Verdict::Rebase(both, head),
+            );
+        }
+        // A person is asked only about a head that can merge.
         let lit = crate::assayer::base::globset(&self.repo.config.merge.lit);
         let touched: Vec<String> = files.iter().filter(|f| lit.is_match(f)).cloned().collect();
         if !touched.is_empty() && item.merge_approved.as_deref() != Some(head.as_str()) {
@@ -547,30 +595,321 @@ impl<'a> Look<'a> {
                 "ready to merge, waiting for you: touches {}",
                 touched.join(", ")
             );
-            return (Status::Lit, why.clone(), vec![], Some(Verdict::Lit(why)));
+            return judged(Status::Lit, why.clone(), Verdict::Lit(why));
         }
-        if let Fresh::Behind(both) = fresh {
-            return (
-                Status::Behind,
-                format!(
-                    "behind {} on files it touches ({}); bringing it up to date first",
-                    target.name,
-                    both.join(", ")
-                ),
-                vec![],
-                Some(Verdict::Rebase(both, head)),
-            );
-        }
-        (
+        judged(
             Status::Ready,
             format!(
                 "ready: hallmarked at {}, mergeable, up to date",
                 short(&head)
             ),
-            vec![],
-            Some(Verdict::Merge(head)),
+            Verdict::Merge(head),
         )
     }
+
+    /// The files `item` changes since it left its base: its shipped head, or
+    /// for an item being brought up to date, its branch as it is now.
+    fn files_of(&mut self, item: &Item) -> Vec<String> {
+        if let Some(f) = self.files.get(&item.id) {
+            return f.clone();
+        }
+        let head = if item.state == ItemState::Closed {
+            item.pr_head.clone()
+        } else {
+            Some(format!("refs/heads/{}", item.branch))
+        };
+        let files = match (head, self.target(&item.base)) {
+            (Some(head), Some(target)) => freshness(&self.repo.main_root, &target.git_ref, &head)
+                .map(|(_, f)| f)
+                .unwrap_or_default(),
+            _ => vec![],
+        };
+        self.files.insert(item.id, files.clone());
+        files
+    }
+
+    /// Plans one base: what each PR in `line` waits for or what the merger
+    /// does with it, in queue order. `hall queue` shows this plan; the
+    /// worker carries it out.
+    fn plan(&mut self, base: &str, line: &[Item], items: &[Item]) -> Vec<Planned> {
+        // Files a PR may not touch yet, and the PR that claims each one.
+        let mut claimed: BTreeMap<String, Vec<Claim>> = BTreeMap::new();
+        let mut out = Vec::new();
+        // Reopened items the loop is bringing back: a wait for one of them
+        // moves, like a wait for a PR in line.
+        let mut in_flight: Vec<String> = Vec::new();
+        // Items already sent back claim their files first: whatever overlaps
+        // them would be stale again once they merge. One held, or in a
+        // person's hands, claims nothing.
+        for item in reopened(items, base) {
+            let (status, why) = if let Some(h) = &item.hold {
+                (
+                    Status::Held,
+                    format!("held ({}): {}", h.kind.as_str(), h.reason),
+                )
+            } else if is_in_flight(item) {
+                let url = item.pr_url.clone().unwrap_or_default();
+                in_flight.push(url.clone());
+                for f in self.files_of(item) {
+                    claimed.entry(f).or_default().push(Claim {
+                        url: url.clone(),
+                        waits: vec![],
+                        reopened: true,
+                    });
+                }
+                (
+                    Status::Updating,
+                    format!(
+                        "being brought up to date ({}); it ships again, then merges",
+                        item.state
+                    ),
+                )
+            } else {
+                (
+                    Status::Updating,
+                    format!(
+                        "reopened, with you ({}); it ships again, then merges",
+                        item.state
+                    ),
+                )
+            };
+            out.push(Planned {
+                entry: entry(item, status, why, vec![]),
+                verdict: None,
+            });
+        }
+        let busy = line.iter().any(|i| i.merged.is_some());
+        let mut merging = false;
+        let mut unknown_ahead = false;
+        // Walk dependency-first: a PR comes after every PR in this line it
+        // waits for, otherwise oldest first. A cycle falls back to number
+        // order.
+        let mut pending: Vec<(&Item, Judged)> = line.iter().map(|i| (i, self.judge(i))).collect();
+        let urls: Vec<String> = line
+            .iter()
+            .map(|i| i.pr_url.clone().unwrap_or_default())
+            .collect();
+        // A wait moves when it is on a PR of this line that claimed (the walk
+        // is dependency-first, so it comes before the PRs waiting for it), on
+        // an item being brought back, or on an open PR of another base (the
+        // PR a stacked one sits on). A wait on a PR that waits on a person
+        // doesn't move.
+        let mut moving: BTreeSet<String> = in_flight.iter().cloned().collect();
+        moving.extend(
+            self.open
+                .values()
+                .filter_map(|o| o.pr_url.clone())
+                .filter(|u| !urls.contains(u)),
+        );
+        let mut walk: Vec<(&Item, Judged)> = Vec::new();
+        while !pending.is_empty() {
+            let at = pending
+                .iter()
+                .position(|(_, j)| {
+                    j.waits.iter().all(|w| {
+                        !urls.contains(w)
+                            || walk.iter().any(|(i, _)| i.pr_url.as_deref() == Some(w))
+                            || !pending.iter().any(|(i, _)| i.pr_url.as_deref() == Some(w))
+                    })
+                })
+                .unwrap_or(0);
+            walk.push(pending.remove(at));
+        }
+        for (item, judged) in walk {
+            let Judged {
+                mut status,
+                mut why,
+                mut waits,
+                mut verdict,
+                stalled,
+            } = judged;
+            // An older PR GitHub hasn't finished checking goes first.
+            if unknown_ahead && matches!(verdict, Some(Verdict::Merge(_))) {
+                status = Status::Queued;
+                why = "ready; waits for an older PR GitHub is still checking".into();
+                verdict = None;
+            }
+            unknown_ahead |= status == Status::Unknown;
+            // A person is asked about a lit PR only once nothing ahead of it
+            // claims its files, so the head they approve can merge.
+            if matches!(
+                verdict,
+                Some(Verdict::Merge(_) | Verdict::Rebase(..) | Verdict::Lit(_))
+            ) {
+                let mut by: BTreeMap<&str, Vec<String>> = BTreeMap::new();
+                let me = item.pr_url.clone().unwrap_or_default();
+                for f in self.files_of(item) {
+                    // A claim by a PR that waits for this one, or by a
+                    // reopened PR newer than this one, doesn't count:
+                    // honoring it would deadlock, or make this PR wait for a
+                    // newer one that must be rebased onto it anyway.
+                    let first = claimed.get(&f).and_then(|v| {
+                        v.iter().find(|c| {
+                            let newer_reopened = c.reopened && number(&c.url) > number(&me);
+                            !c.waits.contains(&me) && !newer_reopened
+                        })
+                    });
+                    if let Some(c) = first {
+                        by.entry(c.url.as_str()).or_default().push(f);
+                    }
+                }
+                if !by.is_empty() {
+                    let ahead: Vec<String> = by
+                        .iter()
+                        .map(|(u, fs)| format!("{} ({})", pr_name(u), fs.join(", ")))
+                        .collect();
+                    why = match status {
+                        Status::Ready | Status::Lit => "ready".to_string(),
+                        _ => why.replace("; bringing it up to date", ""),
+                    };
+                    why = format!("{why}; first waits for {}", ahead.join(", "));
+                    waits = by.keys().map(|u| u.to_string()).collect();
+                    status = Status::WaitsFor;
+                    verdict = None;
+                }
+            }
+            if matches!(verdict, Some(Verdict::Merge(_))) {
+                if busy {
+                    status = Status::Queued;
+                    why = "ready; merges once the PR being merged is delivered".into();
+                    verdict = None;
+                } else if merging {
+                    status = Status::Queued;
+                    why = "ready; merges after the PRs ahead of it".into();
+                    verdict = None;
+                }
+                merging = true;
+            }
+            if !stalled && claims(status, &waits, &moving) {
+                let url = item.pr_url.clone().unwrap_or_default();
+                moving.insert(url.clone());
+                for f in self.files_of(item) {
+                    claimed.entry(f).or_default().push(Claim {
+                        url: url.clone(),
+                        waits: waits.clone(),
+                        reopened: false,
+                    });
+                }
+            }
+            out.push(Planned {
+                entry: entry(item, status, why, waits),
+                verdict,
+            });
+        }
+        out.sort_by_key(|p| (number(&p.entry.pr_url), p.entry.item));
+        for (n, p) in out.iter_mut().enumerate() {
+            p.entry.position = n as u32 + 1;
+        }
+        out
+    }
+}
+
+/// Whether a PR in this status is on its way to a merge on its own, so the
+/// PRs behind it that touch its files wait for it. One waiting on a person,
+/// or broken, claims nothing; so does one waiting for it.
+fn claims(status: Status, waits: &[String], moving: &BTreeSet<String>) -> bool {
+    match status {
+        Status::Ready
+        | Status::Merging
+        | Status::Behind
+        | Status::Conflicting
+        | Status::CiPending
+        | Status::Unknown
+        | Status::Queued
+        | Status::Updating => true,
+        // Waiting for PRs that move, moves; waiting for one outside the
+        // queue, or one waiting on a person, may not.
+        Status::WaitsFor => waits.iter().all(|w| moving.contains(w)),
+        Status::CiRed
+        | Status::Lit
+        | Status::ChangesRequested
+        | Status::Held
+        | Status::NotOurs
+        | Status::Unreadable => false,
+    }
+}
+
+/// A PR's hold on a file while the plan walks the queue.
+struct Claim {
+    url: String,
+    /// The PRs it waits for.
+    waits: Vec<String>,
+    /// An item reopened and being brought back, not a PR in line.
+    reopened: bool,
+}
+
+/// One PR, judged.
+struct Judged {
+    status: Status,
+    why: String,
+    waits: Vec<String>,
+    verdict: Option<Verdict>,
+    /// Pending for good, so it claims nothing: CI the watch gave up on.
+    stalled: bool,
+}
+
+impl Judged {
+    /// Nothing to do yet.
+    fn wait(status: Status, why: String) -> Self {
+        Judged {
+            status,
+            why,
+            waits: vec![],
+            verdict: None,
+            stalled: false,
+        }
+    }
+}
+
+/// One PR in the plan, and what the merger does with it.
+struct Planned {
+    entry: Entry,
+    verdict: Option<Verdict>,
+}
+
+fn entry(item: &Item, status: Status, why: String, waits_for: Vec<String>) -> Entry {
+    Entry {
+        position: 0,
+        item: item.id,
+        title: item.title.clone(),
+        pr_url: item.pr_url.clone().unwrap_or_default(),
+        base: item.base.clone(),
+        status,
+        why,
+        waits_for,
+    }
+}
+
+/// `#64` for a PR URL.
+fn pr_name(url: &str) -> String {
+    number(url).map_or_else(|| url.to_string(), |n| format!("#{n}"))
+}
+
+/// Items of `base` reopened through their open PR and not shipped again
+/// yet.
+fn reopened<'i>(items: &'i [Item], base: &str) -> impl Iterator<Item = &'i Item> {
+    items.iter().filter(move |i| {
+        i.base == base
+            && i.parent.is_none()
+            && i.delivered.is_none()
+            && !i.state.is_terminal()
+            && i.pr_url.as_deref().is_some_and(|u| u.contains("/pull/"))
+    })
+}
+
+/// A reopened item the loop, not a person, is bringing back: a rebase,
+/// comments or a CI fix, with no hold.
+fn is_in_flight(i: &Item) -> bool {
+    i.hold.is_none()
+        && match i.state {
+            ItemState::Checks | ItemState::Review | ItemState::Fixing | ItemState::Hallmarked => {
+                true
+            }
+            ItemState::Development => {
+                i.rebase.is_some() || i.feedback.is_some() || i.ci_fix.is_some()
+            }
+            _ => false,
+        }
 }
 
 /// What the merger does with a PR it judged.
@@ -586,7 +925,8 @@ enum Verdict {
 /// How long a PR may stay open after a merge command succeeded.
 const STUCK_SECS: i64 = 600;
 
-/// The open shipped PRs, grouped by base and in merge order.
+/// The open shipped PRs, grouped by base and in merge order, with every
+/// base that has an item on its way back, too.
 fn lines(items: &[Item]) -> BTreeMap<String, Vec<Item>> {
     let mut by_base: BTreeMap<String, Vec<Item>> = BTreeMap::new();
     for i in delivery::watched(items) {
@@ -595,72 +935,42 @@ fn lines(items: &[Item]) -> BTreeMap<String, Vec<Item>> {
     for v in by_base.values_mut() {
         v.sort_by_key(|i| (i.pr_url.as_deref().and_then(number), i.id));
     }
+    for i in items {
+        if reopened(std::slice::from_ref(i), &i.base).next().is_some() {
+            by_base.entry(i.base.clone()).or_default();
+        }
+    }
     by_base
 }
 
-/// The whole queue, every PR judged (`hall queue`). Reads GitHub once per
-/// PR that passes the local checks; never acts.
-pub fn queue(repo: &Repo) -> Result<Vec<Entry>> {
-    let items = repo.index()?.items(true)?;
-    let mut state = load(repo);
-    let watched = delivery::watched(&items);
-    let mut look = Look {
+fn look<'a>(repo: &'a Repo, watched: &'a [Item], capped: bool) -> Look<'a> {
+    Look {
         repo,
         open: watched
             .iter()
             .filter_map(|i| Some((number(i.pr_url.as_deref()?)?, i)))
             .collect(),
         targets: BTreeMap::new(),
-        capped: true,
-    };
+        files: BTreeMap::new(),
+        capped,
+    }
+}
+
+/// The whole queue, every PR judged (`hall queue`). Reads GitHub once per
+/// PR that passes the local checks; never acts.
+pub fn queue(repo: &Repo) -> Result<Vec<Entry>> {
+    let items = repo.index()?.items(true)?;
+    let watched = delivery::watched(&items);
+    let mut look = look(repo, &watched, true);
     let mut out = Vec::new();
     for (base, line) in lines(&items) {
-        let busy = line.iter().any(|i| i.merged.is_some());
-        let rebasing = state.rebasing(&base, &items);
-        let mut first = true;
-        let mut unknown_ahead = false;
-        for (n, item) in line.iter().enumerate() {
-            let (mut status, mut why, waits, _) = look.judge(item);
-            if unknown_ahead && status == Status::Ready {
-                status = Status::Queued;
-                why = "ready; waits for an older PR GitHub is still checking".into();
-            }
-            unknown_ahead |= status == Status::Unknown;
-            if status == Status::Behind
-                && let Some(r) = rebasing
-            {
-                status = Status::Queued;
-                why = format!("{why}, once {r} is");
-            }
-            // Only the first ready PR on a base is next; the rest queue.
-            if status == Status::Ready {
-                if busy {
-                    status = Status::Queued;
-                    why = "ready; merges once the PR being merged is delivered".into();
-                } else if !first {
-                    status = Status::Queued;
-                    why = "ready; merges after the PRs ahead of it".into();
-                }
-            }
-            if matches!(status, Status::Ready | Status::Behind) {
-                first = false;
-            }
-            out.push(Entry {
-                position: n as u32 + 1,
-                item: item.id,
-                title: item.title.clone(),
-                pr_url: item.pr_url.clone().unwrap_or_default(),
-                base: base.clone(),
-                status,
-                why,
-                waits_for: waits,
-            });
-        }
+        out.extend(look.plan(&base, &line, &items).into_iter().map(|p| p.entry));
     }
     Ok(out)
 }
 
-/// The `merger` worker: at most one merge or one rebase request per base.
+/// The `merger` worker: carries out each base's plan, at most one merge
+/// per base, and a rebase for each PR whose turn has come.
 pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
     let repo = ctx.repo;
     if repo.config.merge.mode != MergeMode::Auto {
@@ -680,83 +990,31 @@ pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
         return Ok(Progress::Idle);
     }
     state.last = Some(now);
-    let mut look = Look {
-        repo,
-        open: watched
-            .iter()
-            .filter_map(|i| Some((number(i.pr_url.as_deref()?)?, i)))
-            .collect(),
-        targets: BTreeMap::new(),
-        capped: false,
-    };
+    let mut look = look(repo, &watched, false);
     let mut done = Vec::new();
     for (base, line) in lines(&items) {
-        // One at a time: a merged PR is delivered before the next one goes.
-        if line.iter().any(|i| i.merged.is_some()) {
-            // Unless its merge never landed: then it is yours to look at.
-            for item in line
-                .iter()
-                .filter(|i| i.merged.is_some() && i.hold.is_none())
-            {
-                let (_, _, _, verdict) = look.judge(item);
-                if let Some(Verdict::Stuck(why)) = verdict {
-                    let kind = HoldKind::MergeFailed;
-                    if let Progress::Worked { what } = hold(repo, item.id, kind, why)? {
-                        done.push(what);
-                    }
-                }
-            }
-            continue;
-        }
-        let rebasing = state.rebasing(&base, &items);
-        let mut unknown_ahead = false;
-        for item in &line {
-            let (mut status, mut why, _, mut verdict) = look.judge(item);
-            // An older PR GitHub hasn't finished checking goes first.
-            if unknown_ahead && matches!(verdict, Some(Verdict::Merge(_))) {
-                status = Status::Queued;
-                why = "ready; waits for an older PR GitHub is still checking".into();
-                verdict = None;
-            }
-            unknown_ahead |= status == Status::Unknown;
-            // One rebase at a time per base; fresh PRs still merge meanwhile.
-            if let (Some(Verdict::Rebase(..)), Some(r)) = (&verdict, rebasing) {
-                status = Status::Queued;
-                why = format!("{why}, once {r} is");
-                verdict = None;
-            }
+        for Planned { entry, verdict } in look.plan(&base, &line, &items) {
             state.items.insert(
-                item.id.to_string(),
+                entry.item.to_string(),
                 Seen {
-                    status,
-                    why: why.clone(),
+                    status: entry.status,
+                    why: entry.why.clone(),
                     at: now,
                 },
             );
+            let Some(item) = line.iter().find(|i| i.id == entry.item) else {
+                continue;
+            };
             let acted = match verdict {
-                None => None,
-                Some(Verdict::Lit(why)) => Some(hold(repo, item.id, HoldKind::Lit, why)?),
-                Some(Verdict::Stuck(why)) => {
-                    let kind = HoldKind::MergeFailed;
-                    Some(hold(repo, item.id, kind, why)?)
-                }
-                Some(Verdict::Rebase(files, head)) => {
-                    let p = rebase(repo, item, &head, files, &why)?;
-                    if matches!(p, Progress::Worked { .. }) {
-                        state.rebasing.insert(base.clone(), item.id.to_string());
-                    }
-                    Some(p)
-                }
-                Some(Verdict::Merge(head)) => Some(merge(repo, item, &head, &ctx.holder)?),
+                None => continue,
+                Some(Verdict::Lit(why)) => hold(repo, item.id, HoldKind::Lit, why)?,
+                Some(Verdict::Stuck(why)) => hold(repo, item.id, HoldKind::MergeFailed, why)?,
+                Some(Verdict::Rebase(files, head)) => rebase(repo, item, &head, files, &entry.why)?,
+                Some(Verdict::Merge(head)) => merge(repo, item, &head, &ctx.holder)?,
             };
             match acted {
-                // A lit PR waits for you; the next one may still go.
-                Some(Progress::Worked { what }) if status == Status::Lit => done.push(what),
-                Some(Progress::Worked { what }) => {
-                    done.push(what);
-                    break;
-                }
-                Some(p @ Progress::Pause { .. }) => {
+                Progress::Worked { what } => done.push(what),
+                p @ Progress::Pause { .. } => {
                     save(repo, &state);
                     return Ok(p);
                 }
@@ -813,7 +1071,7 @@ fn rebase(repo: &Repo, item: &Item, head: &str, files: Vec<String>, why: &str) -
             reason: why.to_string(),
             files,
         },
-        format!("is next to merge but {why}"),
+        format!("is up next on its files: {why}"),
     )
 }
 

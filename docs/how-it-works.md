@@ -21,7 +21,7 @@ macOS, `xdg-open` on Linux, `start` on Windows).
 | Repair Shop | A fixer addresses failing checks and findings | the fixer |
 | Stamping Room | The approved commit gets its hallmark, a git note | the assayer |
 | Dispatch Dock | Rebases onto the latest base, then the ship command opens the PR with a What, Why and How description (or `update` updates an adopted one), posts the review as a PR comment, and the item closes | the shipper |
-| Delivery Office | Watches each PR until it merges. A conflict or new review comments send it back to development, where a headless dev run rebases it or addresses them and sends it to review. With the merger on, it merges each ready PR itself, one at a time, in dependency order. Once the PR merges or closes, the item's worktree is removed; its branch and journal stay | the delivery and delivery-watch workers, the merger, the CI watch, the sweeper |
+| Delivery Office | Watches each PR until it merges. A conflict or new review comments send it back to development, where a headless dev run rebases it or addresses them and sends it to review. With the merger on, it merges each ready PR itself, one at a time, in dependency order, and brings each PR up to date only at its turn. Once the PR merges or closes, the item's worktree is removed; its branch and journal stay | the delivery and delivery-watch workers, the merger, the CI watch, the sweeper |
 
 ## An item's states
 
@@ -138,18 +138,42 @@ that is ready:
   of its files. A release commit that only bumps the version doesn't send
   every PR back.
 
-When the next PR in line is behind on its own files, the merger reopens it
-with a rebase request, and the Delivery office rebases it, runs the gates and
-updates the PR. Only one PR per base is brought up to date at a time; fresh
-PRs keep merging meanwhile. After a merge, nothing else on that base merges until the
-merge is recorded, so each PR is judged against the base as it really is.
-`hall queue` shows the order and why each PR waits.
+A PR that is behind on its own files, or that conflicts, is brought up to
+date only at its turn ([ADR 0050](decisions/0050-the-queue-updates-prs-at-their-turn.md)):
+once every earlier PR that touches the same files has merged. Then the merger
+reopens it with a rebase request, and the Delivery office rebases it, runs
+the gates and updates the PR. Rebasing it sooner would be wasted, because
+each merge ahead of it would put it behind again. So each PR is rebased once,
+onto a base that already has everything it overlaps with:
+
+- walking the queue in order, every PR still on its way to a merge claims its
+  files, including one that waits for another PR that claims;
+- every item already reopened and being brought back claims its files
+  against the PRs newer than it. An older PR on those files still merges
+  first: the reopened one has to be rebased onto it anyway;
+- a PR that touches a claimed file waits for the PR that claims it
+  (`waits_for`, "first waits for #64 (docs/DESIGN.md)");
+- a conflicting PR is brought up to date at its turn even when its CI hasn't
+  reported, because GitHub runs no pull request CI on a conflicting PR;
+- PRs that share no files move in parallel lanes: several can be rebased at
+  once, and a fresh one merges while others are brought up to date;
+- a PR waiting on a person (held, lit, changes requested, red CI) claims
+  nothing, and neither does one that waits for it, so the PRs behind them go
+  first. A PR whose CI never reports claims nothing once the CI watch gives
+  up on it, after 24 hours.
+
+With the merger on, the watch no longer reopens a PR GitHub calls
+conflicting: the queue does, at its turn. After a merge, nothing else on that
+base merges until the merge is recorded, so each PR is judged against the
+base as it really is. `hall queue` shows the plan: the order, what each PR
+waits for, and the items on their way back (`updating`).
 
 A script decides each step, never a model. That is what lets this loop run
 with nobody watching: its check is cheap, runs often and is hard to game.
 Paths where a wrong merge is expensive stay with you: a PR that touches a
 `[merge] lit` path waits in your inbox, and `hall retry` lets the merger
-merge it.
+merge it. You are asked only once nothing ahead of it claims its files, so
+the head you approve is one that can merge.
 
 ## Parallel parts
 

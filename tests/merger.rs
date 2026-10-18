@@ -90,8 +90,16 @@ fn setup(env: &Env) {
 
 /// A hallmarked item that changes `file`, shipped as PR `n` with green CI.
 fn shipped(env: &Env, gh: &Path, n: u64, file: &str) -> (String, PathBuf, String) {
-    let (id, wt) = env.new_item(&format!("Change {file}"));
-    commit_file(&wt, file, &format!("// {file}\n"));
+    shipped_files(env, gh, n, &[file])
+}
+
+/// A hallmarked item that changes each of `files`, shipped as PR `n` with
+/// green CI.
+fn shipped_files(env: &Env, gh: &Path, n: u64, files: &[&str]) -> (String, PathBuf, String) {
+    let (id, wt) = env.new_item(&format!("Change {}", files.join(" and ")));
+    for file in files {
+        commit_file(&wt, file, &format!("// {file}\n"));
+    }
     assert_eq!(env.hall(&wt, &["ready"]).code, 0);
     let sha = git(&wt, &["rev-parse", "HEAD"]);
     approve(env, &id, &wt, 1, vec![], counts(0, 0, 0, 0));
@@ -257,6 +265,35 @@ fn a_pr_waits_for_the_one_it_depends_on() {
 }
 
 #[test]
+fn an_older_pr_depending_on_a_newer_one_sharing_a_file_does_not_deadlock() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    let (first, _, sha) = shipped(&env, &gh, 1, "a.rs");
+    pr(
+        &gh,
+        1,
+        "MERGEABLE",
+        &sha,
+        "## Why\n\nDepends on #3.",
+        json!([]),
+    );
+    let (second, _, _) = shipped(&env, &gh, 2, "a.rs");
+    let (third, _, _) = shipped(&env, &gh, 3, "a.rs");
+
+    let q = queue(&env, &gh);
+    // The walk is dependency-first, then oldest: #2, #3, then #1.
+    assert_eq!(status_of(&q, &second)["status"], "ready");
+    assert_eq!(status_of(&q, &third)["status"], "waits_for");
+    assert_eq!(status_of(&q, &first)["status"], "waits_for");
+
+    pass(&env, &gh);
+    assert_eq!(events(&env, &second, "pr_merged").len(), 1);
+    assert!(events(&env, &first, "pr_merged").is_empty());
+    assert!(events(&env, &third, "pr_merged").is_empty());
+}
+
+#[test]
 fn behind_on_its_own_files_it_is_rebased_first_otherwise_it_merges() {
     let env = Env::initialized();
     let gh = fake_gh(&env);
@@ -302,8 +339,6 @@ fn ci_must_pass_at_the_shipped_head_unless_it_is_not_required() {
     assert_eq!(status_of(&queue(&env, &gh), &id)["status"], "ci_pending");
     pass(&env, &gh);
     assert!(events(&env, &id, "pr_merged").is_empty());
-    // No GitHub call for a PR that can't merge yet.
-    assert!(!calls(&gh).contains("pr view"), "{}", calls(&gh));
 
     append(
         &env,
@@ -322,6 +357,11 @@ fn ci_must_pass_at_the_shipped_head_unless_it_is_not_required() {
     );
     let e = queue(&env, &gh);
     assert_eq!(status_of(&e, &id)["status"], "ci_red");
+    // No GitHub call for a PR whose CI failed. (One whose CI hasn't
+    // reported costs one: a conflict would keep its CI from ever running.)
+    std::fs::remove_file(gh.parent().unwrap().join("calls.log")).unwrap();
+    pass(&env, &gh);
+    assert!(!calls(&gh).contains("pr view"), "{}", calls(&gh));
 
     set_config(&env, "merge.require_ci", "false");
     let q = queue(&env, &gh);
@@ -489,39 +529,86 @@ fn a_stacked_pr_waits_for_the_pr_below_it() {
 }
 
 #[test]
-fn one_pr_at_a_time_is_brought_up_to_date_while_fresh_ones_merge() {
+fn a_pr_is_brought_up_to_date_once_at_its_turn_and_lanes_move_in_parallel() {
     let env = Env::initialized();
     let gh = fake_gh(&env);
     setup(&env);
     let (first, _, _) = shipped(&env, &gh, 1, "a.rs");
-    let (second, _, _) = shipped(&env, &gh, 2, "b.rs");
-    let (fresh, _, _) = shipped(&env, &gh, 3, "c.rs");
+    let (other_lane, _, _) = shipped(&env, &gh, 2, "b.rs");
+    let (same_file, _, _) = shipped(&env, &gh, 3, "a.rs");
+    let (fresh, _, _) = shipped(&env, &gh, 4, "c.rs");
     // Main moves on both a.rs and b.rs.
     commit_file(&env.repo, "a.rs", "// main's a.rs\n");
     commit_file(&env.repo, "b.rs", "// main's b.rs\n");
     git(&env.repo, &["push", "-q", "origin", "main"]);
 
+    // ADR 0050: the first PR on a.rs and the one on b.rs share nothing, so
+    // both go back at once; the second PR on a.rs waits for the first to
+    // merge, or that merge would make its rebase stale; the fresh one merges.
     pass(&env, &gh);
     assert_eq!(state(&env, &first), "development");
-    // The second waits for the first's rebase; the fresh one merges.
-    pass(&env, &gh);
-    assert_eq!(state(&env, &second), "closed");
-    assert!(events(&env, &second, "rebase_requested").is_empty());
+    assert_eq!(state(&env, &other_lane), "development");
+    assert_eq!(state(&env, &same_file), "closed");
+    assert!(events(&env, &same_file, "rebase_requested").is_empty());
     assert_eq!(events(&env, &fresh, "pr_merged").len(), 1);
     let q = queue(&env, &gh);
-    let e = status_of(&q, &second);
-    assert_eq!(e["status"], "queued", "{q}");
-    assert!(e["why"].as_str().unwrap().contains(&first), "{q}");
+    let e = status_of(&q, &same_file);
+    assert_eq!(e["status"], "waits_for", "{q}");
+    assert_eq!(e["waits_for"], json!([url(1)]), "{q}");
+    assert!(e["why"].as_str().unwrap().contains("#1 (a.rs)"), "{q}");
+    // The ones sent back are in the queue, on their way.
+    assert_eq!(status_of(&q, &first)["status"], "updating", "{q}");
 
-    // Once the first is dropped (or shipped again), the second goes back.
+    // Still waiting while the first is on its way back.
+    delivered(&env, &fresh, 4);
+    pass(&env, &gh);
+    assert_eq!(state(&env, &same_file), "closed");
+
+    // Once the first is gone (merged, or here dropped), its turn comes.
     assert_eq!(
         env.hall(&env.repo, &["drop", &first, "--reason", "superseded"])
             .code,
         0
     );
-    delivered(&env, &fresh, 3);
     pass(&env, &gh);
-    assert_eq!(state(&env, &second), "development");
+    assert_eq!(state(&env, &same_file), "development");
+    assert_eq!(events(&env, &same_file, "rebase_requested").len(), 1);
+}
+
+#[test]
+fn a_conflicting_pr_is_brought_up_to_date_at_its_turn() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    let (first, _, sha) = shipped(&env, &gh, 1, "a.rs");
+    let (second, _, _) = shipped(&env, &gh, 2, "a.rs");
+    pr(&gh, 1, "CONFLICTING", &sha, "", json!([]));
+
+    let q = queue(&env, &gh);
+    assert_eq!(status_of(&q, &first)["status"], "conflicting", "{q}");
+    // The ready one on the same file goes after it, not around it.
+    assert_eq!(status_of(&q, &second)["status"], "waits_for", "{q}");
+
+    pass(&env, &gh);
+    assert_eq!(state(&env, &first), "development");
+    let req = events(&env, &first, "rebase_requested");
+    assert_eq!(req[0]["actor"], "merger");
+    assert!(events(&env, &second, "pr_merged").is_empty());
+}
+
+#[test]
+fn a_pr_waiting_on_a_person_holds_up_nothing_behind_it() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    let (asked, _, sha) = shipped(&env, &gh, 1, "a.rs");
+    let (next, _, _) = shipped(&env, &gh, 2, "a.rs");
+    let review = json!([{"author": {"login": "ana"}, "state": "CHANGES_REQUESTED", "body": ""}]);
+    pr(&gh, 1, "MERGEABLE", &sha, "", review);
+
+    pass(&env, &gh);
+    assert!(events(&env, &asked, "pr_merged").is_empty());
+    assert_eq!(events(&env, &next, "pr_merged").len(), 1);
 }
 
 #[test]
@@ -785,9 +872,16 @@ fn hall_queue_json_is_pinned() {
     let (stacked, _, s5) = shipped(&env, &gh, 5, "d.rs");
     let branch = git(&first_wt, &["rev-parse", "--abbrev-ref", "HEAD"]);
     stack_on(&env, &stacked, &branch);
+    // An item of main reopened and in review, and a PR on its file.
+    let (back, back_wt, s6) = shipped(&env, &gh, 6, "e.rs");
+    let (_, _, s7) = shipped(&env, &gh, 7, "e.rs");
+    reopen_in_review(&env, &back, &back_wt, 6, &s6);
 
     let q = queue(&env, &gh);
-    insta::assert_json_snapshot!("queue_two_bases", scrub(&q, &[&s1, &s2, &s3, &s4, &s5]));
+    insta::assert_json_snapshot!(
+        "queue_two_bases",
+        scrub(&q, &[&s1, &s2, &s3, &s4, &s5, &s6, &s7])
+    );
 }
 
 #[test]
@@ -827,6 +921,25 @@ fn hall_queue_text_is_pinned() {
                 Status::WaitsFor,
                 "waits for #2",
             ),
+            e(
+                2,
+                "H-0005",
+                5,
+                "hm/H-0002-x",
+                Status::Updating,
+                "being brought up to date (review); it ships again, then merges",
+            ),
+            Entry {
+                waits_for: vec![url(5)],
+                ..e(
+                    3,
+                    "H-0006",
+                    6,
+                    "hm/H-0002-x",
+                    Status::WaitsFor,
+                    "ready; first waits for #5 (d.rs)",
+                )
+            },
         ],
     };
     insta::assert_snapshot!("queue_text", out.render());
@@ -836,4 +949,363 @@ fn hall_queue_text_is_pinned() {
         queue: vec![],
     };
     insta::assert_snapshot!("queue_text_empty", empty.render());
+}
+
+/// Item `id` (PR `n`, shipped at `sha` from `wt`) reopened and sent to
+/// review again: the loop is bringing it back.
+fn reopen_in_review(env: &Env, id: &str, wt: &Path, n: u64, sha: &str) {
+    append(
+        env,
+        id,
+        "delivery",
+        Body::Reopened {
+            pr_url: url(n),
+            pr_head: sha.into(),
+            base: "main".into(),
+            worktree: p(wt),
+        },
+    );
+    commit_file(wt, "extra.rs", "// a fix\n");
+    assert_eq!(env.hall(wt, &["ready"]).code, 0);
+    assert_ne!(state(env, id), "development");
+    assert_ne!(state(env, id), "closed");
+}
+
+fn hold(env: &Env, id: &str) {
+    append(
+        env,
+        id,
+        "test",
+        Body::Held {
+            kind: hallmark::item::HoldKind::Budget,
+            reason: "capped".into(),
+        },
+    );
+}
+
+#[test]
+fn an_older_pr_that_depends_on_a_newer_one_sharing_a_file_does_not_deadlock() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    let (older, _, sha) = shipped(&env, &gh, 1, "a.rs");
+    pr(&gh, 1, "MERGEABLE", &sha, "Depends on #2", json!([]));
+    let (newer, _, _) = shipped(&env, &gh, 2, "a.rs");
+
+    let q = queue(&env, &gh);
+    assert_eq!(status_of(&q, &older)["status"], "waits_for", "{q}");
+    assert_eq!(status_of(&q, &newer)["status"], "ready", "{q}");
+    pass(&env, &gh);
+    assert_eq!(events(&env, &newer, "pr_merged").len(), 1);
+    assert!(events(&env, &older, "pr_merged").is_empty());
+    delivered(&env, &newer, 2);
+    pass(&env, &gh);
+    assert_eq!(events(&env, &older, "pr_merged").len(), 1);
+}
+
+#[test]
+fn an_older_pr_goes_first_while_a_newer_one_is_reopened_on_its_file() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    let (older, _, _) = shipped(&env, &gh, 1, "a.rs");
+    let (newer, wt, sha) = shipped(&env, &gh, 5, "a.rs");
+    reopen_in_review(&env, &newer, &wt, 5, &sha);
+
+    let q = queue(&env, &gh);
+    assert_eq!(status_of(&q, &older)["status"], "ready", "{q}");
+    assert_eq!(status_of(&q, &newer)["status"], "updating", "{q}");
+    pass(&env, &gh);
+    assert_eq!(events(&env, &older, "pr_merged").len(), 1);
+}
+
+#[test]
+fn a_reopened_item_in_review_claims_its_files_but_a_held_one_does_not() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    let (back, wt, sha) = shipped(&env, &gh, 1, "a.rs");
+    let (overlap, _, _) = shipped(&env, &gh, 2, "a.rs");
+    let (apart, _, _) = shipped(&env, &gh, 3, "b.rs");
+    reopen_in_review(&env, &back, &wt, 1, &sha);
+
+    let q = queue(&env, &gh);
+    let e = status_of(&q, &overlap);
+    assert_eq!(e["status"], "waits_for", "{q}");
+    assert_eq!(e["waits_for"], json!([url(1)]), "{q}");
+    assert_eq!(status_of(&q, &apart)["status"], "ready", "{q}");
+    pass(&env, &gh);
+    assert!(events(&env, &overlap, "pr_merged").is_empty());
+    assert_eq!(events(&env, &apart, "pr_merged").len(), 1);
+
+    hold(&env, &back);
+    let q = queue(&env, &gh);
+    assert_eq!(status_of(&q, &back)["status"], "held", "{q}");
+    assert_eq!(status_of(&q, &overlap)["status"], "queued", "{q}");
+}
+
+#[test]
+fn a_behind_pr_waits_for_an_earlier_pending_one_on_its_file() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    let (pending, _, sha) = shipped(&env, &gh, 1, "a.rs");
+    let (behind, _, _) = shipped(&env, &gh, 2, "a.rs");
+    let (apart, _, _) = shipped(&env, &gh, 3, "b.rs");
+    commit_file(&env.repo, "a.rs", "// main's a.rs\n");
+    git(&env.repo, &["push", "-q", "origin", "main"]);
+    // Shipped again after the green run: its CI is pending.
+    append(
+        &env,
+        &pending,
+        "shipper",
+        Body::Shipped {
+            sha,
+            pr_url: Some(url(1)),
+        },
+    );
+
+    let q = queue(&env, &gh);
+    assert_eq!(status_of(&q, &pending)["status"], "ci_pending", "{q}");
+    let e = status_of(&q, &behind);
+    assert_eq!(e["status"], "waits_for", "{q}");
+    assert_eq!(e["waits_for"], json!([url(1)]), "{q}");
+    pass(&env, &gh);
+    assert!(events(&env, &behind, "rebase_requested").is_empty());
+    assert_eq!(events(&env, &apart, "pr_merged").len(), 1);
+}
+
+#[test]
+fn two_behind_prs_on_different_files_are_both_sent_back_in_one_pass() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    let (a, _, _) = shipped(&env, &gh, 1, "a.rs");
+    let (b, _, _) = shipped(&env, &gh, 2, "b.rs");
+    commit_file(&env.repo, "a.rs", "// main's a.rs\n");
+    commit_file(&env.repo, "b.rs", "// main's b.rs\n");
+    git(&env.repo, &["push", "-q", "origin", "main"]);
+    pass(&env, &gh);
+    assert_eq!(state(&env, &a), "development");
+    assert_eq!(state(&env, &b), "development");
+}
+
+#[test]
+fn prs_that_cant_move_on_their_own_claim_nothing() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    // A held PR, a CI-red one, one that isn't ours, and one waiting for a PR
+    // outside the queue: each has a later PR on the same file.
+    let (held, _, _) = shipped(&env, &gh, 1, "a.rs");
+    let (after_held, _, _) = shipped(&env, &gh, 2, "a.rs");
+    let (red, _, _) = shipped(&env, &gh, 3, "b.rs");
+    let (after_red, _, _) = shipped(&env, &gh, 4, "b.rs");
+    let (foreign, _, _) = shipped(&env, &gh, 5, "c.rs");
+    let (after_foreign, _, _) = shipped(&env, &gh, 6, "c.rs");
+    let (outside, _, sha7) = shipped(&env, &gh, 7, "d.rs");
+    let (after_outside, _, _) = shipped(&env, &gh, 8, "d.rs");
+    hold(&env, &held);
+    append(
+        &env,
+        &red,
+        "ci",
+        Body::PrChecks {
+            pr_url: url(3),
+            passed: false,
+            failing: vec![],
+            ended: None,
+            not_started: None,
+        },
+    );
+    pr(&gh, 5, "MERGEABLE", "deadbeef", "", json!([]));
+    pr(&gh, 7, "MERGEABLE", &sha7, "Depends on #99", json!([]));
+    std::fs::write(gh.parent().unwrap().join("state-99.txt"), "OPEN").unwrap();
+
+    let q = queue(&env, &gh);
+    assert_eq!(status_of(&q, &held)["status"], "held", "{q}");
+    assert_eq!(status_of(&q, &red)["status"], "ci_red", "{q}");
+    assert_eq!(status_of(&q, &foreign)["status"], "not_ours", "{q}");
+    assert_eq!(status_of(&q, &outside)["status"], "waits_for", "{q}");
+    // The first of them is ready; the rest are queued behind it, not
+    // waiting on a file.
+    assert_eq!(status_of(&q, &after_held)["status"], "ready", "{q}");
+    assert_eq!(status_of(&q, &after_red)["status"], "queued", "{q}");
+    assert_eq!(status_of(&q, &after_foreign)["status"], "queued", "{q}");
+    assert_eq!(status_of(&q, &after_outside)["status"], "queued", "{q}");
+}
+
+#[test]
+fn a_conflicting_pr_on_a_lit_path_is_brought_up_to_date_before_you_are_asked() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    set_config(&env, "merge.lit", "[\"*.yml\"]");
+    let (id, _, sha) = shipped(&env, &gh, 1, "ci.yml");
+    pr(&gh, 1, "CONFLICTING", &sha, "", json!([]));
+    let q = queue(&env, &gh);
+    assert_eq!(status_of(&q, &id)["status"], "conflicting", "{q}");
+    pass(&env, &gh);
+    assert_eq!(state(&env, &id), "development");
+    assert!(events(&env, &id, "held").is_empty());
+}
+
+/// Shipped again after its green run: its CI hasn't reported at the new
+/// head.
+fn ci_pending(env: &Env, id: &str, n: u64, sha: &str) {
+    append(
+        env,
+        id,
+        "shipper",
+        Body::Shipped {
+            sha: sha.into(),
+            pr_url: Some(url(n)),
+        },
+    );
+}
+
+#[test]
+fn a_conflicting_pr_whose_ci_never_reports_is_still_brought_up_to_date() {
+    // GitHub runs no pull_request workflows on a conflicting PR, so waiting
+    // for its CI would wait for good, and block every PR on its files.
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    let (id, _, sha) = shipped(&env, &gh, 1, "a.rs");
+    let (after, _, _) = shipped(&env, &gh, 2, "a.rs");
+    ci_pending(&env, &id, 1, &sha);
+    pr(&gh, 1, "CONFLICTING", &sha, "", json!([]));
+
+    let q = queue(&env, &gh);
+    assert_eq!(status_of(&q, &id)["status"], "conflicting", "{q}");
+    assert_eq!(status_of(&q, &after)["status"], "waits_for", "{q}");
+    pass(&env, &gh);
+    assert_eq!(events(&env, &id, "rebase_requested").len(), 1);
+    assert_eq!(state(&env, &id), "development");
+    assert!(events(&env, &after, "pr_merged").is_empty());
+}
+
+#[test]
+fn while_a_merge_waits_for_delivery_other_lanes_are_still_brought_up_to_date() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    let (merged, _, _) = shipped(&env, &gh, 1, "a.rs");
+    let (other_lane, _, _) = shipped(&env, &gh, 2, "b.rs");
+    let (same_lane, _, _) = shipped(&env, &gh, 3, "a.rs");
+    pass(&env, &gh);
+    assert_eq!(events(&env, &merged, "pr_merged").len(), 1);
+    // Main moves on both files before the watch records #1 delivered.
+    commit_file(&env.repo, "a.rs", "// main's a.rs\n");
+    commit_file(&env.repo, "b.rs", "// main's b.rs\n");
+    git(&env.repo, &["push", "-q", "origin", "main"]);
+
+    pass(&env, &gh);
+    assert_eq!(events(&env, &other_lane, "rebase_requested").len(), 1);
+    assert_eq!(state(&env, &same_lane), "closed");
+    assert!(events(&env, &same_lane, "rebase_requested").is_empty());
+    let q = queue(&env, &gh);
+    assert_eq!(status_of(&q, &merged)["status"], "merging", "{q}");
+    let e = status_of(&q, &same_lane);
+    assert_eq!(e["status"], "waits_for", "{q}");
+    assert_eq!(e["waits_for"], json!([url(1)]), "{q}");
+}
+
+#[test]
+fn a_pr_waiting_for_a_reopened_one_still_claims_its_files() {
+    // #3 doesn't jump #2: whichever merged second would be rebased twice.
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    let (back, wt, sha) = shipped(&env, &gh, 1, "a.rs");
+    let (both, _, _) = shipped_files(&env, &gh, 2, &["a.rs", "b.rs"]);
+    let (later, _, _) = shipped(&env, &gh, 3, "b.rs");
+    reopen_in_review(&env, &back, &wt, 1, &sha);
+    commit_file(&env.repo, "b.rs", "// main's b.rs\n");
+    git(&env.repo, &["push", "-q", "origin", "main"]);
+
+    let q = queue(&env, &gh);
+    let e = status_of(&q, &both);
+    assert_eq!(e["status"], "waits_for", "{q}");
+    assert_eq!(e["waits_for"], json!([url(1)]), "{q}");
+    let e = status_of(&q, &later);
+    assert_eq!(e["status"], "waits_for", "{q}");
+    assert_eq!(e["waits_for"], json!([url(2)]), "{q}");
+    pass(&env, &gh);
+    assert!(events(&env, &both, "rebase_requested").is_empty());
+    assert!(events(&env, &later, "rebase_requested").is_empty());
+}
+
+#[test]
+fn a_lit_pr_on_a_claimed_file_waits_before_you_are_asked() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    set_config(&env, "merge.lit", "[\"*.yml\"]");
+    let (pending, _, sha) = shipped(&env, &gh, 1, "a.rs");
+    let (lit, _, _) = shipped_files(&env, &gh, 2, &["a.rs", "ci.yml"]);
+    ci_pending(&env, &pending, 1, &sha);
+
+    let q = queue(&env, &gh);
+    assert_eq!(status_of(&q, &pending)["status"], "ci_pending", "{q}");
+    let e = status_of(&q, &lit);
+    assert_eq!(e["status"], "waits_for", "{q}");
+    assert_eq!(e["waits_for"], json!([url(1)]), "{q}");
+    pass(&env, &gh);
+    assert!(events(&env, &lit, "held").is_empty());
+}
+
+#[test]
+fn a_pr_that_depends_on_a_held_one_claims_nothing() {
+    // A person's hold on #1 stalls #2, which depends on it, but not #3,
+    // which only shares a file with #2.
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    let (held, _, _) = shipped(&env, &gh, 1, "a.rs");
+    let (dependent, _, sha2) = shipped(&env, &gh, 2, "b.rs");
+    let (after, _, _) = shipped(&env, &gh, 3, "b.rs");
+    pr(&gh, 2, "MERGEABLE", &sha2, "Depends on #1", json!([]));
+    hold(&env, &held);
+
+    let q = queue(&env, &gh);
+    let e = status_of(&q, &dependent);
+    assert_eq!(e["status"], "waits_for", "{q}");
+    assert_eq!(e["waits_for"], json!([url(1)]), "{q}");
+    assert_eq!(status_of(&q, &after)["status"], "ready", "{q}");
+    pass(&env, &gh);
+    assert_eq!(events(&env, &after, "pr_merged").len(), 1);
+    assert!(events(&env, &dependent, "pr_merged").is_empty());
+}
+
+#[test]
+fn a_pr_whose_ci_never_reports_stops_claiming_its_files_when_the_watch_gives_up() {
+    // CI with a `paths-ignore` that skips every file #1 changes never
+    // reports: once the CI watch gives up, #1 holds up only itself.
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    let (silent, _, sha) = shipped(&env, &gh, 1, "docs.md");
+    let (after, _, _) = shipped_files(&env, &gh, 2, &["docs.md", "b.rs"]);
+    ci_pending(&env, &silent, 1, &sha);
+    let q = queue(&env, &gh);
+    assert_eq!(status_of(&q, &after)["status"], "waits_for", "{q}");
+
+    // Shipped a day ago, after a green run on an earlier head.
+    let ago = |h| (chrono::Utc::now() - chrono::Duration::hours(h)).to_rfc3339();
+    let (shipped_at, green_at) = (ago(25), ago(26));
+    edit_journal(&env, &silent, |v| {
+        if v["event"] == "shipped" {
+            v["t"] = json!(shipped_at);
+        } else if v["event"] == "pr_checks" {
+            v["t"] = json!(green_at);
+        }
+    });
+    let q = queue(&env, &gh);
+    let e = status_of(&q, &silent);
+    assert_eq!(e["status"], "ci_pending", "{q}");
+    assert!(e["why"].as_str().unwrap().contains("gave up"), "{q}");
+    assert_eq!(status_of(&q, &after)["status"], "ready", "{q}");
+    pass(&env, &gh);
+    assert_eq!(events(&env, &after, "pr_merged").len(), 1);
 }

@@ -23,7 +23,7 @@ use crate::worker::{Progress, WorkerCtx};
 /// How often one PR's checks are read.
 const EVERY: i64 = 60;
 /// After this long without a result, the watch gives up.
-const GIVE_UP_HOURS: i64 = 24;
+pub const GIVE_UP_HOURS: i64 = 24;
 
 /// What a PR's checks say.
 #[derive(Debug, Clone, PartialEq)]

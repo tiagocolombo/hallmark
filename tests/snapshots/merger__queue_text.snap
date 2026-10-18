@@ -13,3 +13,7 @@ Merge queue (merger on, CI not required):
   into hm/H-0002-x:
      1. H-0004 #4 Change H-0004
        waits for: waits for #2
+  ↻  2. H-0005 #5 Change H-0005
+       updating: being brought up to date (review); it ships again, then merges
+     3. H-0006 #6 Change H-0006
+       waits for: ready; first waits for #5 (d.rs)

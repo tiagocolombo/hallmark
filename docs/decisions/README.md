@@ -39,7 +39,7 @@ a decision, add a new record that supersedes the old one. Don't edit the old one
 | [0031](0031-only-escalations-reach-you.md) | Only escalations reach you; the Delivery office fixes red CI; new items start from the latest base | Accepted; amended by 0047, 0048 |
 | [0032](0032-old-processes-and-the-index.md) | An older hall never rewrites a newer one's index; the terminal app restarts on update | Accepted |
 | [0033](0033-configurable-setup.md) | Every setting has a command, and `hall setup --interactive` may ask | Accepted; amends 0002 |
-| [0034](0034-delivery-watches-closely.md) | The Delivery office watches PRs closely: its own worker, a base that moved makes its PRs due, `delivered` once | Accepted |
+| [0034](0034-delivery-watches-closely.md) | The Delivery office watches PRs closely: its own worker, a base that moved makes its PRs due, `delivered` once | Accepted; amended by 0050 |
 | [0035](0035-index-fold-marks.md) | Each index row carries a fold mark; a row nobody vouches for is re-folded | Accepted; amends 0032 |
 | [0036](0036-test-first-review.md) | Test-first review: an unpinned behaviour blocks approval | Accepted |
 | [0037](0037-repo-skills.md) | Repo skills: `.hallmark/skills/<name>/SKILL.md`, read from the base branch, extends or replaces Hallmark's | Accepted |
@@ -53,5 +53,6 @@ a decision, add a new record that supersedes the old one. Don't edit the old one
 | [0043](0043-ready-waits-for-a-pending-rebase.md) | `hall ready` waits for a pending rebase: refused while the branch isn't on its base, and the request stays | Accepted; amends 0030 |
 | [0045](0045-the-gate-verifies-the-note.md) | The push gate verifies the hallmark note: it parses, names `HEAD`, and its item's journal records `hallmarked` there | Accepted; partly supersedes 0004 |
 | [0047](0047-a-ci-fix-clears-when-ci-goes-green.md) | A CI fix request clears when the PR's checks go green: the fix run reads them first, the CI watch follows held fixes, and the log is the failed job's own | Accepted; amends 0031 |
-| [0048](0048-the-merger.md) | The merger: shipped PRs merge without you, one at a time per base, in dependency order; `lit` paths wait for a person; `hall queue` | Accepted; amends 0030, 0031; amended by 0049 |
+| [0048](0048-the-merger.md) | The merger: shipped PRs merge without you, one at a time per base, in dependency order; `lit` paths wait for a person; `hall queue` | Accepted; amends 0030, 0031; amended by 0049, 0050 |
 | [0049](0049-a-rebase-keeps-its-approval.md) | A rebase keeps the approval it earned: the same change carries it with no review, a small difference gets a review of only that difference | Accepted; amends 0030, 0048 |
+| [0050](0050-the-queue-updates-prs-at-their-turn.md) | The merge queue updates each PR once, at its turn: the watch leaves conflicts to it, a PR waits for the earlier PRs that touch its files, separate files move in parallel lanes | Accepted; amends 0034, 0048 |
