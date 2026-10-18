@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.8](https://github.com/tiagocolombo/hallmark/compare/v0.2.7...v0.2.8) - 2026-10-18
+
+### Added
+
+- *(extensions)* load the fixer's extension skills by trigger (T5) ([#66](https://github.com/tiagocolombo/hallmark/pull/66))
+
 ## [0.2.7](https://github.com/tiagocolombo/hallmark/compare/v0.2.6...v0.2.7) - 2026-10-18
 
 ### Fixed
