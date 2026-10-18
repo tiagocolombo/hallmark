@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.6](https://github.com/tiagocolombo/hallmark/compare/v0.2.5...v0.2.6) - 2026-10-18
+
+### Added
+
+- A person's reasons reach the agent's next prompt ([#64](https://github.com/tiagocolombo/hallmark/pull/64))
+
 ## [0.2.5](https://github.com/tiagocolombo/hallmark/compare/v0.2.4...v0.2.5) - 2026-10-18
 
 ### Added
