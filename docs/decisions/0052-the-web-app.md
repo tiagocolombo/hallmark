@@ -79,6 +79,7 @@ opens the browser on it (`--no-open` doesn't). It runs until stopped.
   command first where it can.
 - The token never goes in a process's arguments, which other users on the
   machine can read. `hall web` opens a page written 0600 under the user
-  directory (`web-open.html`) that redirects to the tokenized address, and
+  directory (`web-open.html`; on Linux in a private, visible
+  `~/hallmark-web`, which snap browsers can read) that redirects to the tokenized address, and
   removes `HALL_WEB_TOKEN` from its own environment at start, so no child
   (the daemon, a model run) inherits it. Only a restart hands it on.

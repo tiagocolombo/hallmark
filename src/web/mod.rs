@@ -193,8 +193,13 @@ pub fn web(cwd: &Path, a: WebArgs, mode: Mode) -> Result<Response> {
 /// Writes a page only you can read that sends the browser to `url`, and
 /// returns its path.
 fn launch_page(url: &str) -> Option<String> {
-    let dir = user_dir();
+    let dir = launch_dir();
     std::fs::create_dir_all(&dir).ok()?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
+    }
     let file = dir.join("web-open.html");
     let html = format!(
         "<!doctype html><meta charset=utf-8><meta http-equiv=refresh content=\"0;url={url}\">\
@@ -215,7 +220,20 @@ fn launch_page(url: &str) -> Option<String> {
     }
     #[cfg(not(unix))]
     std::fs::write(&file, html).ok()?;
-    Some(paths::display(&file))
+    // The native path: Windows' explorer reads a `/` as a switch.
+    Some(file.to_string_lossy().into_owned())
+}
+
+/// Where the redirect page goes. On Linux a snap-packaged browser can't read
+/// hidden directories under the home, so it goes in a visible, private one.
+fn launch_dir() -> std::path::PathBuf {
+    let home = std::env::var_os("HOME").filter(|h| !h.is_empty());
+    match home {
+        Some(home) if cfg!(all(unix, not(target_os = "macos"))) => {
+            std::path::PathBuf::from(home).join("hallmark-web")
+        }
+        _ => user_dir(),
+    }
 }
 
 /// A random token, 32 hex digits.
