@@ -206,6 +206,7 @@ section { padding-block: clamp(72px, 10vw, 120px); }
 /* office */
 .split { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 56px; align-items: center; }
 .split .shot { border-radius: 14px; overflow: hidden; box-shadow: var(--shadow); border: 1px solid var(--term-line); background: var(--term-bg); }
+.split .shot.page { border-color: var(--line); background: var(--surface); }
 .checks { list-style: none; padding: 0; margin: 24px 0 0; display: grid; gap: 14px; }
 .checks li { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 12px; }
 .checks svg { width: 20px; height: 20px; color: var(--brass); margin-top: 3px; }
@@ -589,7 +590,30 @@ footer a:hover { color: var(--ink); }
       </ul>
     </div>
     <div class="shot">
-      <img src="images/tui-board.gif" width="1440" height="760" loading="lazy" alt="The hall terminal app: items move from development through checks and review to a PR while the inbox fills and empties, then the merge queue shows the order the PRs merge in.">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="images/tui-board.gif">
+        <img src="images/tui-light.gif" width="1440" height="760" loading="lazy" alt="The hall terminal app in a light theme: items move through checks, review and shipping on the board, an item's journal replays, your office answers an agent's question, then an item's findings, its diff and usage by room.">
+      </picture>
+    </div>
+  </div>
+</section>
+
+<!-- THE WEB APP -->
+<section id="web">
+  <div class="wrap split">
+    <div>
+      <p class="eyebrow">The web app</p>
+      <h2>The same building, in a browser.</h2>
+      <p class="lede" style="margin-top:18px">Run <code>hall web</code> for every repo's items in one page, on this machine only. Open items on the left, the view in the middle, the daemon's activity on the right, in a light, dark or system theme.</p>
+      <ul class="checks">
+        <li><svg aria-hidden="true"><use href="#i-check"/></svg><div><b>A live floor.</b> <span>Items move between rooms as the loop works, with their findings, rejections and cost.</span></div></li>
+        <li><svg aria-hidden="true"><use href="#i-check"/></svg><div><b>Each item in full.</b> <span>Its journal, findings, diff and the reviewer's and fixer's runs, followed live.</span></div></li>
+        <li><svg aria-hidden="true"><use href="#i-check"/></svg><div><b>Your office.</b> <span>Answer an agent's question in a click; its session resumes with your answer.</span></div></li>
+        <li><svg aria-hidden="true"><use href="#i-check"/></svg><div><b>Every button is a <code>hall</code> command.</b> <span>Usage and budgets, the merge queue, the Library and every setting, and nothing a terminal can't do.</span></div></li>
+      </ul>
+    </div>
+    <div class="shot page">
+      <img src="images/hall-web.gif" width="1440" height="860" loading="lazy" alt="hall web in a light theme: the live floor, an item that's approved and shipped while you watch, its findings and diff, an agent's question answered from your office, and usage and budgets.">
     </div>
   </div>
 </section>
