@@ -759,7 +759,9 @@ mod tests {
         assert!(!out.contains("model"), "{out}");
         assert!(!out.contains("timeout"), "{out}");
         let c = Config::parse(&out).unwrap();
-        assert_eq!(c.budget.daily, None);
+        // Unset, the daily cap is its default again.
+        assert_eq!(c.budget.daily, Config::default().budget.daily);
+        assert!(c.budget.daily.is_some());
     }
 
     #[test]
