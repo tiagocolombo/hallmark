@@ -233,6 +233,22 @@ fn page_actions_are_yours_whatever_session_started_the_server() {
 }
 
 #[test]
+fn a_setting_saved_from_the_page_is_just_its_value() {
+    let env = Env::initialized();
+    let web = start(&env);
+    // The page's Save sends `config set <key> -- <value>`.
+    let (_, r) = web.run(
+        &path(&env),
+        &["config", "set", "budget.per_item", "--", "800k"],
+    );
+    assert_eq!(r["exit"], 0, "{r}");
+    assert_eq!(r["reply"]["entries"][0]["value"], "800k");
+    let (_, r) = web.run(&path(&env), &["config", "set", "gates", "--", "cargo test"]);
+    assert_eq!(r["exit"], 0, "{r}");
+    assert_eq!(r["reply"]["entries"][0]["value"], json!(["cargo test"]));
+}
+
+#[test]
 fn a_runs_steps_come_back_as_lines_before_the_reply() {
     let env = Env::initialized();
     let (id, _) = env.new_item("Traced");

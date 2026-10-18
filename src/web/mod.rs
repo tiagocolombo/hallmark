@@ -2,7 +2,7 @@
 //!
 //! A small HTTP server on 127.0.0.1 serves one page (`assets/`, embedded in
 //! the binary) and an API that runs hall's own commands the way a person
-//! does in a terminal: each call is `hall <args> --json` in a child
+//! does in a terminal: each call is `hall --json <args>` in a child
 //! process, in one of the repos the app shows, and its reply is the
 //! command's JSON. So the CLI stays the API, and the page can do only what
 //! [`crate::cli::allowed_on_web`] lets it.
@@ -433,7 +433,7 @@ fn repo_dir(ctx: &Ctx, named: Option<&str>) -> Result<PathBuf> {
         })
 }
 
-/// `POST /api/run {"repo", "args"}`: runs `hall <args> --json` in the repo.
+/// `POST /api/run {"repo", "args"}`: runs `hall --json <args>` in the repo.
 /// The reply is the command's last line; the lines before it (`hall
 /// trace`'s steps) are in `lines`.
 fn api_run(ctx: &Ctx, body: &Value) -> Result<Value> {
@@ -449,11 +449,12 @@ fn api_run(ctx: &Ctx, body: &Value) -> Result<Value> {
     run_hall(&ctx.exe, &dir, &args)
 }
 
-/// Runs `hall <args> --json` in `dir` and reads its JSON lines.
+/// Runs `hall --json <args>` in `dir` and reads its JSON lines. `--json`
+/// goes first: after a `--` in `args` it would be one more value.
 fn run_hall(exe: &Path, dir: &Path, args: &[String]) -> Result<Value> {
     let mut c = Command::new(exe);
-    c.args(args)
-        .arg("--json")
+    c.arg("--json")
+        .args(args)
         .current_dir(dir)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
