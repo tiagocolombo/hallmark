@@ -1,7 +1,7 @@
 Output ../tui-board.gif
 Source tapes/theme.tape
 Hide
-Type `. ./demo-env.sh "${ACME:-/tmp/acme}" && (nohup "$DEMO_DIR/target/debug/hall-demo" animate "$DEMO_ROOT/code" >/dev/null 2>&1 &) && cd "$DEMO_ROOT/code/storefront" && clear`
+Type `. ./demo-env.sh "${ACME:-/tmp/acme}" && (nohup "$DEMO_DIR/../../../target/debug/examples/hall-demo" animate "$DEMO_ROOT/code" >/dev/null 2>&1 &) && cd "$DEMO_ROOT/code/storefront" && clear`
 Enter
 Sleep 500ms
 Show

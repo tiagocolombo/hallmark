@@ -6,5 +6,5 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 rm -rf "$ACME"
 mkdir -p "$ACME/home" "$ACME/hallhome" "$ACME/code"
 . "$HERE/demo-env.sh" "$ACME"
-"$HERE/target/debug/hall-demo" seed "$ACME/code"
+"$HERE/../../../target/debug/examples/hall-demo" seed "$ACME/code"
 cd "$ACME/code/storefront" && hall reindex --json >/dev/null

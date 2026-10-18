@@ -26,15 +26,15 @@ same frames.
 `tui-board.gif`, `tui-office.gif` and `tui-review.gif` are recordings of
 this checkout's `hall` against a fictional repo, made with
 [VHS](https://github.com/charmbracelet/vhs). [`tui-demo/`](tui-demo/) holds
-everything: a small crate that seeds the repo's items and journals and plays
+everything: an example (`examples/hall-demo.rs`, not a separate package) that seeds the repo's items and journals and plays
 the daemon's part while the board is recorded (`hall-demo seed`, `animate`,
 `idle`), the environment it runs in (no model or GitHub calls, a private
 `HOME`), and one tape per GIF.
 
 ```sh
-cargo build                                  # the hall being recorded
-cd docs/images/tui-demo && cargo build       # hall-demo
+cargo build --example hall-demo              # hall, and the seeder
 VHS=$(nix build --no-link --print-out-paths nixpkgs#vhs)/bin/vhs
+cd docs/images/tui-demo
 for t in board office review; do
   ./reseed.sh && "$VHS" tapes/$t.tape        # writes ../tui-$t.gif
   pkill -f "hall-demo (animate|idle)"
@@ -42,4 +42,4 @@ done
 ```
 
 `ACME` picks where the fictional repos live (default `/tmp/acme`). When a
-journal event or a view changes, update `src/main.rs` or the tapes to match.
+journal event or a view changes, update `examples/hall-demo.rs` or the tapes to match.

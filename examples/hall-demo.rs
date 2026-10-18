@@ -295,7 +295,7 @@ fn seed(root: &Path) {
     let t = ago(0, 2, 30);
     r.create(5, "Retry failed webhook deliveries", t, Some("Webhook deliveries that fail are lost. Retry them with backoff."), None);
     r.talk(5, t + Duration::minutes(2), "Retry failed webhook deliveries with exponential backoff and jitter", "Added a retry queue with backoff, capped at 6 attempts, and 14 tests.");
-    let s = r.work(5, t + Duration::minutes(50), "src/webhooks/retry.rs", include_str!("files/retry_v1.rs"), "feat: retry failed webhook deliveries");
+    let s = r.work(5, t + Duration::minutes(50), "src/webhooks/retry.rs", include_str!("hall-demo-files/retry_v1.rs"), "feat: retry failed webhook deliveries");
     r.usage(5, t + Duration::minutes(51), "workshop", "dev", "opus", 910_000, 7.4);
     r.ready(5, t + Duration::minutes(55), &s, 1);
     r.checks(5, t + Duration::minutes(58), &s, 1, true);
@@ -303,7 +303,7 @@ fn seed(root: &Path) {
         finding("F1", 1, Lens::Correctness, Severity::Major, "src/webhooks/retry.rs", 42, "Retries can deliver an event twice", "A delivery times out after the receiver got it; the retry sends it again and the receiver applies it twice.", "Send an idempotency key with each delivery and keep it across retries."),
         finding("F2", 1, Lens::Evidence, Severity::Minor, "tests/webhooks.rs", 88, "No test for the backoff cap", "Nothing shows that attempt 7 is never scheduled.", "Add a test that drives 7 failures and asserts the delivery is parked."),
     ], vec![], "Backoff is right; a timeout can still deliver twice.");
-    let s = r.fixed(5, t + Duration::minutes(100), "src/webhooks/retry.rs", include_str!("files/retry_v2.rs"), &["F1", "F2"], vec![]);
+    let s = r.fixed(5, t + Duration::minutes(100), "src/webhooks/retry.rs", include_str!("hall-demo-files/retry_v2.rs"), &["F1", "F2"], vec![]);
     r.checks(5, t + Duration::minutes(104), &s, 2, true);
 
     // H-0006: awaiting you, with a question.
