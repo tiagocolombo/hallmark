@@ -99,7 +99,7 @@ A reason or note you give (`hall retry --reason`, `hall continue --reason` when 
 
 | Command | Does |
 | --- | --- |
-| `hall inbox [<n>]` | Only escalations: questions, "ready?", escalations, holds, CI that never ran. `hall inbox --notices` lists what the loop handles on its own (stuck items, waiting sessions, red CI being fixed, proposed learnings). `hall inbox 1` explains one: why it waits, the evidence, and each action. `hall inbox 1 --dismiss` hides one, `--clear` hides them all (each comes back if it changes), `--all` shows them. |
+| `hall inbox [<n>]` | Only escalations: questions, "ready?", escalations, holds, CI that never ran, a base whose own CI failed (`base_red`). `hall inbox --notices` lists what the loop handles on its own (stuck items, waiting sessions, red CI being fixed, proposed learnings). `hall inbox 1` explains one: why it waits, the evidence, and each action. `hall inbox 1 --dismiss` hides one, `--clear` hides them all (each comes back if it changes), `--all` shows them. |
 | `hall ask <question>` | Asks you a question. `--options a,b`, `--default`, `--wait 4h`, `--item`, `--session` |
 | `hall answer <qid> <answer>` | Answers; the daemon resumes the asking session with it. |
 

@@ -607,6 +607,7 @@ changes (ADR 0030).
 | budget, run_failed, checks, ship_failed, conflict, feedback, ci_failed | a hold: a per-item cap, two failed runs in a row, `max_check_failures` failed checks in a row, a failed ship, a rebase the Delivery office couldn't finish, PR comments or failing CI its dev run didn't act on | that item, until `hall retry` (which, for a budget hold, grants the item more tokens); a `ci_failed` hold also clears when a re-run of the PR's checks passes (ADR 0047) |
 | merge_failed, lit | a hold on a shipped item: the merger's merge command failed, or the PR is ready but touches a `[merge] lit` path (ADR 0048) | that item, until `hall retry` (try again; for `lit`, merge this head) or the PR merges or closes |
 | ci_failed | an open PR's CI still fails after the Delivery office's fixes | a follow-up item |
+| base_red | a failed check on a base's tip (ADR 0051) | that base's merge queue, until its CI is green; a PR that fixes it is merged by hand |
 | ci_down | CI jobs that never started (an Actions billing limit, no runners): one entry for every PR | GitHub |
 | session waiting | an answer the loop couldn't deliver to the asking session | that session |
 | daemon stopped | a daemon that should run has no heartbeat | the loop |
@@ -715,9 +716,11 @@ judges each with a script, never a model: the shipped head with its hallmark,
 `MERGEABLE`, CI green at that head (unless `require_ci = false`), no
 standing request for changes, nothing it depends on still open (the PR it is
 stacked on; `Depends on #N`, `Blocked by #N`, `After #N`), no `lit` path, and
-fresh (the base is in it, or the base's new commits touch none of its files).
+fresh (the base is in it, or the base's new commits touch none of its files;
+with `update = "conflicts"`, `MERGEABLE` is enough, ADR 0051).
 The first ready PR merges through `[merge] command` (`pr_merged`). A PR
-behind on its own files, or `CONFLICTING`, is reopened with a rebase request
+behind on its own files (with `update = "files"`, the default), or
+`CONFLICTING`, is reopened with a rebase request
 only at its turn (ADR 0050): walking the queue, every PR still on its way to
 a merge claims its files (one waiting for another PR that claims too), and
 so does every item already reopened and being brought back, against the PRs
@@ -730,12 +733,17 @@ watch gave up on. A conflicting PR is rebased at its turn even when its CI
 hasn't reported, since GitHub runs no pull request CI on it, and a `lit` PR
 is put to you only once nothing claims its files. With the merger on, the
 delivery watch leaves conflicts to the queue. After a merge, nothing else on
-that base merges until the watch records `delivered`. A failed command holds
-the item (`merge_failed`); a `lit` path holds it for you (`lit`), and
-`hall retry` lets that head merge. `hall queue` shows the same judgement for
-every PR. Each pass also keeps its whole plan in `merger.json`, which the
-terminal app shows on `m` while the merger is on: a reader, it never calls
-GitHub (ADR 0022).
+that base merges until the watch records `delivered`. The merger stops the
+line: when a check failed on a base's tip, nothing merges into it or is
+rebased onto it until it is green again, and your office shows `base_red`
+(ADR 0051). A merge also waits for the base tip's checks to finish (a new
+tip with no runs yet counts as running for five minutes; a run waiting on a
+person doesn't; six hours is the limit), so with `files` too, PRs on
+separate files merge a full base CI run apart. A failed command holds the item (`merge_failed`); a `lit` path
+holds it for you (`lit`), and `hall retry` lets that head merge.
+`hall queue` shows the same judgement for every PR. Each pass also keeps its
+whole plan in `merger.json`, which the terminal app shows on `m` while the
+merger is on: a reader, it never calls GitHub (ADR 0022).
 
 The **sweeper** removes the worktree of each item that is done with it
 (ADR 0040): closed, not a part, and its PR merged or closed (`delivered`), or

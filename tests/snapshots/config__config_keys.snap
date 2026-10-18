@@ -62,6 +62,7 @@ expression: keys
   "repo merge.lit list",
   "repo merge.mode choice",
   "repo merge.require_ci bool",
+  "repo merge.update choice",
   "repo notify.desktop bool",
   "repo notify.digest string",
   "repo notify.phone string",

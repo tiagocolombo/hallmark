@@ -72,6 +72,7 @@ push_allow = []            # scripts the strict guard lets through, as prefixes:
 mode       = "off"          # or "auto"
 command    = "gh pr merge {pr} --squash --match-head-commit {pr_head}"
 require_ci = true           # false: merge without waiting for CI
+update     = "files"        # or "conflicts": rebase only when GitHub says it conflicts
 lit        = []             # paths a person merges, as globs
 
 [intake]
@@ -117,16 +118,44 @@ reopens conflicting PRs itself ([ADR 0050](decisions/0050-the-queue-updates-prs-
 | `merge.mode` | `off` | `auto`: the merger merges, and brings each PR up to date at its turn. `off`: you merge, and the Delivery office rebases a PR as soon as it conflicts. |
 | `merge.command` | `gh pr merge {pr} --squash --match-head-commit {pr_head}` | Merges one PR, run in the main checkout. Placeholders: `{pr}` (the PR's URL) `{pr_head}` (the hallmarked head it must still be at) `{branch}` `{base}` `{id}` `{title}`. |
 | `merge.require_ci` | `true` | Wait for the PR's CI to pass at the shipped head. `false`: merge once the PR is hallmarked, mergeable and up to date, whatever CI says. |
+| `merge.update` | `files` | When a PR is rebased before it merges. `files`: whenever the base moved on a file it touches, so CI tests exactly what lands, and PRs on shared files go one after another. `conflicts`: only when GitHub says it conflicts; a PR GitHub merges cleanly, with green CI, merges as it is, and the base's own CI catches a bad combination ([ADR 0051](decisions/0051-merge-clean-prs-and-stop-the-line.md)). |
 | `merge.lit` | `[]` | Paths a person merges, as globs relative to the repo root (`.github/`, `release-plz.toml`). A PR that touches one waits in your inbox (`lit`); `hall retry` lets the merger merge that head. |
 
 A PR is ready when its head is the commit Hallmark shipped and carries a
 hallmark, GitHub calls it mergeable, CI passed at that head (unless
 `require_ci = false`), nobody asked for changes, nothing it depends on is
 still open, it touches no `lit` path, and it is up to date: it contains its
-base, or the commits it lacks touch none of its files. A PR waits for the
-PR it is stacked on, and for any PR its description or commits name with
-`Depends on #N`, `Blocked by #N` or `After #N`. Otherwise the oldest PR goes
-first.
+base, or the commits it lacks touch none of its files (with
+`update = "conflicts"`, GitHub calling it mergeable is enough). A PR waits
+for the PR it is stacked on, and for any PR its description or commits name
+with `Depends on #N`, `Blocked by #N` or `After #N`. Otherwise the oldest PR
+goes first.
+
+**The merger stops the line.** In either mode, before it merges into a base
+or rebases a PR onto it, the merger reads the check runs on the base's tip.
+If one failed (`failure` or `timed_out`; a cancelled or running one doesn't
+count), nothing merges into that base and nothing is rebased onto it, and
+your office shows `base_red` with the checks that failed. Fix the base, or
+re-run a flaky check: the next pass after the tip is green carries on, and
+the entry leaves. A PR that fixes the base can't pass the stopped queue: merge
+it by hand with your own `[merge] command` (the entry shows it). While the
+tip's checks are still running, or haven't started (a tip with no check runs
+counts as running for five minutes, then as green, so a repo with no CI on
+the base still merges), the merger doesn't merge into the base (rebases go
+on), so each merge's CI finishes before the next lands. A job waiting on a
+person (`waiting`, such as a protected environment's approval) isn't
+running, and checks still running after six hours stop holding the line (the
+log says so once). A red base stays in your office while the checks on its
+new tip are running. When GitHub can't be read,
+the merger goes on, and `hall queue` says the guard is off for that base
+(a base already stopped at the same tip stays stopped).
+
+**Choosing `update`.** `files` keeps the base green by construction, at the
+cost of one rebase, gate run and CI run per PR on shared files. A repo where
+nearly every change touches the same docs pays that for each PR in turn.
+`conflicts` merges those PRs one CI run apart, and relies on the base's CI
+running on every push and on the stop-the-line guard: a bad combination stops
+the queue after its own CI run, instead of being prevented.
 
 **The PR's author can't approve it.** GitHub refuses an approving review
 from the PR's author, and Hallmark posts none: the hallmark is the approval.

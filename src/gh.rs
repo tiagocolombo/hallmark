@@ -309,6 +309,88 @@ pub fn pr_state(dir: &Path, pr: &str) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
+/// What the check runs on a commit say.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct TipChecks {
+    /// Runs that finished as `failure` or `timed_out`. A cancelled run (one a
+    /// newer run replaced) is not a failure.
+    pub failed: Vec<String>,
+    /// Whether a run is still queued or going.
+    pub running: bool,
+    /// How many runs GitHub lists. None yet means a new commit whose CI
+    /// hasn't started, or a repo with no CI.
+    pub total: usize,
+}
+
+/// The check runs on a commit of the repo `pr` belongs to.
+pub fn commit_failures(dir: &Path, pr: &str, sha: &str) -> Result<TipChecks> {
+    let Some((owner, name)) = owner_repo(pr) else {
+        return Err(HallError::new(
+            ErrorCode::GhUnavailable,
+            format!("{pr} is not a GitHub PR URL"),
+        ));
+    };
+    let out = Command::new(gh()?)
+        .current_dir(dir)
+        .args([
+            "api",
+            &format!("repos/{owner}/{name}/commits/{sha}/check-runs?per_page=100"),
+        ])
+        .output()?;
+    if !out.status.success() {
+        return Err(HallError::new(
+            ErrorCode::GhUnavailable,
+            format!(
+                "gh api check-runs for {sha} failed: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            ),
+        )
+        .next(["gh auth status", "hall doctor"]));
+    }
+    #[derive(Deserialize)]
+    struct Runs {
+        #[serde(default)]
+        check_runs: Vec<Run>,
+    }
+    #[derive(Deserialize)]
+    struct Run {
+        name: String,
+        #[serde(default)]
+        conclusion: Option<String>,
+        #[serde(default)]
+        status: Option<String>,
+    }
+    let runs: Runs = serde_json::from_slice(&out.stdout).map_err(|e| {
+        HallError::new(
+            ErrorCode::GhUnavailable,
+            format!("unreadable gh output: {e}"),
+        )
+    })?;
+    let total = runs.check_runs.len();
+    // A job waiting on a person (`waiting`: a protected environment's
+    // approval) isn't CI that is going to finish.
+    let running = runs.check_runs.iter().any(|r| {
+        r.conclusion.is_none()
+            && matches!(
+                r.status.as_deref(),
+                None | Some("queued" | "in_progress" | "pending" | "requested")
+            )
+    });
+    let mut failed: Vec<String> = runs
+        .check_runs
+        .into_iter()
+        .filter(|r| matches!(r.conclusion.as_deref(), Some("failure" | "timed_out")))
+        .map(|r| r.name)
+        .collect();
+    failed.sort();
+    failed.dedup();
+    Ok(TipChecks {
+        failed,
+        running,
+        total,
+    })
+}
+
 /// Where an open PR stands for merging.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct GhMerge {
