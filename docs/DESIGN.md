@@ -82,14 +82,15 @@ The docs and the terminal app describe Hallmark as a building.
 | Repair Shop | The fixer | Fixing |
 | Stamping Room | The hallmark is struck | Hallmarked |
 | Dispatch Dock | Rebases onto the latest base; the ship command opens the PR, whose description is What, Why and How; `update` updates an adopted or reopened one. Each review is posted as a PR comment (`review_comment`, ADR 0039). If that PR already merged with the hallmarked work in it, the item closes with nothing pushed | Closed |
-| Delivery Office | Watches each shipped PR until it merges; a headless dev run rebases conflicting ones, addresses new review comments (ADR 0030) and fixes red CI (ADR 0031); a CI fix whose checks pass on a re-run goes back to its PR without a run (ADR 0047). With `[merge] mode = "auto"`, the merger merges each ready PR, one at a time per base, in dependency order (ADR 0048), and brings each PR up to date only at its turn (ADR 0050). Once the PR merges or closes, the sweeper removes the item's worktree (ADR 0040) | Closed, Development (rebasing, addressing comments) |
+| Delivery Office | Watches each shipped PR until it merges; a headless dev run rebases conflicting ones, addresses new review comments (ADR 0030) and fixes red CI (ADR 0031); a rebase that leaves the approved change as it was keeps its approval with no review (ADR 0049); a CI fix whose checks pass on a re-run goes back to its PR without a run (ADR 0047). With `[merge] mode = "auto"`, the merger merges each ready PR, one at a time per base, in dependency order (ADR 0048), and brings each PR up to date only at its turn (ADR 0050). Once the PR merges or closes, the sweeper removes the item's worktree (ADR 0040) | Closed, Development (rebasing, addressing comments) |
 
 A **watchman** patrols the corridor. It flags any item with no new event for
 `stuck_after` (30 minutes by default), and a daemon that has stopped.
 
-Only four rooms use a model: the Workshop, the Assay Office review, the Repair
-Shop, and a little at the Front Desk and in the Library. Everything else is a
-script.
+Only a few rooms use a model: the Workshop, the Assay Office review, the
+Repair Shop, the Delivery Office's headless dev runs (a conflict, comments,
+red CI), and a little at the Front Desk and in the Library. Everything else,
+the merger included, is a script.
 
 ## Item states
 

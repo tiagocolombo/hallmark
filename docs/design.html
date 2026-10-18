@@ -318,7 +318,7 @@ footer { color: var(--muted); font-size: 0.9rem; border-top: 1px solid var(--lin
 <!-- ============ THE HALL ============ -->
 <section id="hall">
   <h2>Inside the Hall</h2>
-  <div class="col"><p>Picture Hallmark as a building seen from above. Requests come in at the Front Desk, get built in the Workshop and tested in the Assay Office. If the assayer finds problems, they go to the Repair Shop and back. Approved work is stamped and leaves from the Dispatch Dock for GitHub. Every handoff passes through the Post Room, which files a copy in Records. When an item closes, the Library keeps what it taught, and briefs the principal engineer before each review (the gold slips). The boxes are items and the figures are agents. Select a room to see what happens there.</p></div>
+  <div class="col"><p>Picture Hallmark as a building seen from above. Requests come in at the Front Desk, get built in the Workshop and tested in the Assay Office. If the assayer finds problems, they go to the Repair Shop and back. Approved work is stamped and leaves from the Dispatch Dock as a pull request, and waits in the Delivery Office's merge queue for its CI and its turn: with the merger on (<code>[merge] mode = "auto"</code>), it merges PRs in order, one at a time. A PR that conflicts at its turn is rebased and checked again, and keeps its approval when the change is the same; red CI goes back to development, where a Delivery office dev run fixes it. Every handoff passes through the Post Room, which files a copy in Records. When an item closes, the Library keeps what it taught, and briefs the principal engineer before each review (the gold slips). The boxes are items and the figures are agents. Select a room to see what happens there.</p></div>
   <div class="plan-wrap">
     <div class="plan-main">
       <div class="plan-bar">
@@ -662,7 +662,7 @@ lists every command.</code></pre>
 <!-- ============ USAGE ============ -->
 <section id="usage">
   <h2>Usage and budgets</h2>
-  <div class="col"><p>Every model run is measured and recorded in the journal. Each step has its own limits, and you can see totals by item, room, role, model or day. Only four places use a model: the Workshop, the Assay Office's review, the Repair Shop, and a little at the Front Desk. Everything else is a script.</p></div>
+  <div class="col"><p>Every model run is measured and recorded in the journal. Each step has its own limits, and you can see totals by item, room, role, model or day. Only a few places use a model: the Workshop, the Assay Office's review, the Repair Shop, the Delivery Office's headless dev runs (a conflict, comments, red CI), and a little at the Front Desk and in the Library. Everything else, the merger included, is a script.</p></div>
   <div class="three">
     <div>
       <div class="eyebrow">Measured</div>
@@ -932,6 +932,8 @@ $ echo $?
       <tr><td>hall history</td><td>you</td><td>Closed and dropped items. <code>--rejected</code>, <code>--lens</code>, <code>--since</code></td></tr>
       <tr><td>hall usage</td><td>you, any agent</td><td>Tokens and cost. <code>--by room|item|role|model|day</code>, <code>--since</code></td></tr>
       <tr><td>hall budget</td><td>you</td><td>Shows or sets the caps in <code>[budget]</code></td></tr>
+      <tr><td>hall queue</td><td>you, any agent</td><td>The merge queue: the order PRs merge in, and why each one waits</td></tr>
+      <tr><td>hall trace &lt;id&gt;</td><td>you, any agent</td><td>A reviewer's or fixer's run, step by step. <code>--follow</code> watches it live</td></tr>
       <tr><td>hall library search</td><td>you, any agent</td><td>Searches the repo's learnings. Built-in search, or qmd when configured</td></tr>
       <tr><td>hall library review</td><td>you</td><td>Approves or rejects proposed learnings</td></tr>
       <tr><td>hall library retire &lt;id&gt;</td><td>you, librarian</td><td>Retires a learning, keeping its history</td></tr>
@@ -945,7 +947,7 @@ $ echo $?
       <tr><td>hall verdict</td><td>assayer</td><td>Records a schema-checked verdict</td></tr>
       <tr class="grp"><td colspan="3">Machinery and setup</td></tr>
       <tr><td>hall hook &lt;event&gt;</td><td>Claude Code hooks</td><td>Journal entries, session context and the gate</td></tr>
-      <tr><td>hall daemon</td><td>you, once</td><td><code>start</code>, <code>stop</code>, <code>status</code>. Runs the checks, review, fixer, shipper and watchman</td></tr>
+      <tr><td>hall daemon</td><td>you, once</td><td><code>start</code>, <code>stop</code>, <code>status</code>. Runs the checks, review, fixer, shipper, Delivery office, merger and watchman</td></tr>
       <tr><td>hall setup claude</td><td>you, once</td><td>Installs the Claude Code plugin</td></tr>
       <tr><td>hall init</td><td>you, per repo</td><td>Writes <code>.hallmark.toml</code> from what it detects</td></tr>
       <tr><td>hall notify test</td><td>you, once</td><td>Sends a test notification to every channel you configured</td></tr>
@@ -1124,7 +1126,7 @@ $ echo $?
     <div class="risk">
       <h3>What to watch</h3>
       <ul>
-        <li><b>Same model, same blind spots.</b> Fixed lenses and checks help, but keep the final merge on GitHub with you.</li>
+        <li><b>Same model, same blind spots.</b> Fixed lenses and checks help. The merger is off until you turn it on, and paths you list in <code>[merge] lit</code> always wait for a person.</li>
         <li><b>Shared state.</b> Test runs often share caches, coverage files and ports, so each repo's assayer takes one ticket at a time. Separate repos can run in parallel.</li>
         <li><b>Usage.</b> Every round is a test run plus a long review against your plan's limits. Three rejected reviews send the item to you.</li>
         <li><b>The journal records your prompts.</b> It stays in <code>.git/hallmark/</code> on your machine and is exported only when you ask.</li>
@@ -1233,11 +1235,11 @@ rules    = ["CLAUDE.md",
       enter: ["Review approves"],
       leave: ["The shipper runs the repo's ship command → Closed"],
       logs: ["Hallmark: commit, round, reviewer, finding counts"] },
-    closed: { name: "Closed", cls: "end", who: "Nobody",
-      what: "The PR is open on GitHub, or wherever the ship command sends it. Hallmark's job ends here, and the item moves to History.",
+    closed: { name: "Closed", cls: "end", who: "The Delivery office and the merger",
+      what: "The PR is open on GitHub, or wherever the ship command sends it. The Delivery office watches it until it merges, and with the merger on, it waits in the merge queue and merges without you. The item is in History from the moment it closes.",
       enter: ["The shipper opens the PR"],
-      leave: ["None. Later PR feedback starts a new item: <code>/hallmark follow-up #191</code>"],
-      logs: ["PR link, final commit, rounds", "Time spent in each state"] },
+      leave: ["A conflict at its turn, red CI or new review comments → Development, and back through the loop", "When the PR merges or closes, its worktree is removed"],
+      logs: ["PR link, final commit, rounds", "CI results, the merge, and delivered", "Time spent in each state"] },
     dropped: { name: "Dropped", cls: "you", who: "You",
       what: "Abandoned. The worktree is removed, while the branch and the journal stay.",
       enter: ["<code>/hallmark drop</code>, from Development or Escalated"],
@@ -1472,10 +1474,11 @@ rules    = ["CLAUDE.md",
     office:   { x: 520, y: 40,  w: 180, h: 210, name: "Your Office",   sub: "awaiting you · escalated", cls: "r-you",   door: 610, wall: "b" },
     records:  { x: 700, y: 40,  w: 100, h: 210, name: "Records",       sub: "the journal",            cls: "r-neutral", door: 750, wall: "b" },
     library:  { x: 800, y: 40,  w: 100, h: 210, name: "Library",       sub: "learnings",              cls: "r-neutral", door: 850, wall: "b" },
-    assay:    { x: 20,  y: 360, w: 340, h: 260, name: "Assay Office",  sub: "checks · review",        cls: "r-machine", door: 190, wall: "t" },
-    repair:   { x: 360, y: 360, w: 200, h: 260, name: "Repair Shop",   sub: "fixing",                 cls: "r-machine", door: 460, wall: "t" },
-    stamp:    { x: 560, y: 360, w: 160, h: 260, name: "Stamping Room", sub: "hallmarked",             cls: "r-out",     door: 640, wall: "t" },
-    dispatch: { x: 720, y: 360, w: 180, h: 260, name: "Dispatch Dock", sub: "closed → GitHub",        cls: "r-out",     door: 810, wall: "t" }
+    assay:    { x: 20,  y: 360, w: 280, h: 260, name: "Assay Office",  sub: "checks · review",        cls: "r-machine", door: 160, wall: "t" },
+    repair:   { x: 300, y: 360, w: 170, h: 260, name: "Repair Shop",   sub: "fixing",                 cls: "r-machine", door: 385, wall: "t" },
+    stamp:    { x: 470, y: 360, w: 135, h: 260, name: "Stamping Room", sub: "hallmarked",             cls: "r-out",     door: 537, wall: "t" },
+    dispatch: { x: 605, y: 360, w: 135, h: 260, name: "Dispatch Dock", sub: "shipped → PR",           cls: "r-out",     door: 672, wall: "t" },
+    delivery: { x: 740, y: 360, w: 160, h: 260, name: "Delivery Office", sub: "merge queue → GitHub",   cls: "r-out",     door: 820, wall: "t" }
   };
   var INFO = {
     front: { s: "New item", who: "The intake clerk: the hallmark skill and hall new", what: "Requests come in as a typed prompt, a /hallmark command, a GitHub issue, or a Beads or Linear ticket. Each gets an item number, a branch and a bench in the Workshop.", c: ["hall new", "hall new --issue 212", "hall adopt"] },
@@ -1487,20 +1490,23 @@ rules    = ["CLAUDE.md",
     assay: { s: "Checks · Review", who: "The test bench (a script running the repo's gates) and the principal engineer", what: "The commit is frozen and tested first. Only if the gates pass does the principal engineer review it, with fresh eyes and rules taken from the base branch, and write a verdict.", c: ["hall verdict", "claude -p --agent principal-engineer"] },
     repair: { s: "Fixing", who: "Fixer agents", what: "Failing checks and open findings arrive with the item. A fixer addresses them and records which findings each commit fixes, or disputes one with a reason. Then the item goes back to the Assay Office.", c: ["hall findings", "hall fixed F1 F2"] },
     stamp: { s: "Hallmarked", who: "The press", what: "An approved commit gets its hallmark: a git note on that exact SHA. Any later commit has none, so the gate won't let it out.", c: ["git notes --ref=hallmark show"] },
-    dispatch: { s: "Closed", who: "The shipper", what: "Checks the hallmark, runs the repo's ship command, writes the review summary and its token cost into the PR and links the issue. The item leaves for GitHub and its file closes.", c: ["git push + gh pr create", "rig submit --pr (in rindahq)"] }
+    dispatch: { s: "Shipped", who: "The shipper", what: "Checks the hallmark, rebases onto the latest base, runs the repo's ship command and opens the PR, with What, Why and How. Each review goes on the PR as a comment, and the issue is linked. The item closes, and its PR moves to the Delivery Office.", c: ["git push + gh pr create", "rig submit --pr (in rindahq)"] },
+    delivery: { s: "Delivery · the merge queue", who: "The Delivery office (headless dev runs) and the merger (a script)", what: "Watches every PR until it merges. New review comments go back through review, and red CI goes back to development, where a Delivery office dev run fixes it. The merger merges each ready PR in queue order, one at a time per base. A PR that conflicts is rebased at its turn, once, and a rebase that leaves the approved change as it was keeps its approval, with no review. Nothing merges onto a red main.", c: ["hall queue", "hall status H-0042", "m in the terminal app"] }
   };
   var ST = {
     front: { room: "front", x: 110, y: 168 },
     bench: { room: "workshop", slots: [[270, 160], [360, 160], [450, 160]] },
     office: { room: "office", x: 610, y: 162 },
-    test: { room: "assay", x: 110, y: 488 },
-    review: { room: "assay", x: 270, y: 482 },
-    repair: { room: "repair", slots: [[420, 482], [500, 482]] },
-    stamp: { room: "stamp", x: 640, y: 492 },
-    dispatch: { room: "dispatch", x: 800, y: 492 }
+    test: { room: "assay", x: 95, y: 488 },
+    review: { room: "assay", x: 225, y: 482 },
+    repair: { room: "repair", slots: [[345, 482], [425, 482]] },
+    stamp: { room: "stamp", x: 537, y: 492 },
+    dispatch: { room: "dispatch", x: 672, y: 492 },
+    // The merge queue: PRs wait in line, in the order they merge.
+    deliver: { room: "delivery", queue: true }
   };
-  var NAMES = { front: "Front Desk", bench: "Workshop", office: "Your Office", test: "Assay Office", review: "Assay Office", repair: "Repair Shop", stamp: "Stamping Room", dispatch: "Dispatch Dock" };
-  var COLOR = { front: "i-new", bench: "i-you", office: "i-you", test: "i-machine", review: "i-machine", repair: "i-stop", stamp: "i-ok", dispatch: "i-ok", out: "i-ok" };
+  var NAMES = { front: "Front Desk", bench: "Workshop", office: "Your Office", test: "Assay Office", review: "Assay Office", repair: "Repair Shop", stamp: "Stamping Room", dispatch: "Dispatch Dock", deliver: "Delivery Office" };
+  var COLOR = { front: "i-new", bench: "i-you", office: "i-you", test: "i-machine", review: "i-machine", repair: "i-stop", stamp: "i-ok", dispatch: "i-ok", deliver: "i-ok", out: "i-ok" };
 
   // ---- static building ----
   var defs = el("defs", {});
@@ -1547,14 +1553,18 @@ rules    = ["CLAUDE.md",
   });
   el("rect", { x: 430, y: 255, width: 80, height: 6, "class": "shelf" });
   el("rect", { x: 440, y: 292, width: 60, height: 22, rx: 3, "class": "furn" });
-  el("rect", { x: 80, y: 456, width: 60, height: 22, rx: 3, "class": "furn" });
-  var lamp = el("circle", { cx: 130, cy: 467, r: 4, "class": "lamp-off" });
-  el("rect", { x: 240, y: 470, width: 60, height: 24, rx: 3, "class": "furn" });
-  [420, 500].forEach(function (x) { el("rect", { x: x - 28, y: 470, width: 56, height: 24, rx: 3, "class": "furn" }); });
-  el("circle", { cx: 640, cy: 492, r: 22, "class": "furn" });
-  var punch = el("rect", { x: 628, y: 452, width: 24, height: 14, rx: 2, "class": "furn-dark" });
-  el("rect", { x: 760, y: 482, width: 140, height: 22, "class": "furn" });
-  for (i = 0; i < 7; i++) el("path", { d: "M" + (770 + i * 18) + " 482 v22", "class": "swing" });
+  el("rect", { x: 65, y: 456, width: 60, height: 22, rx: 3, "class": "furn" });
+  var lamp = el("circle", { cx: 115, cy: 467, r: 4, "class": "lamp-off" });
+  el("rect", { x: 195, y: 470, width: 60, height: 24, rx: 3, "class": "furn" });
+  [345, 425].forEach(function (x) { el("rect", { x: x - 28, y: 470, width: 56, height: 24, rx: 3, "class": "furn" }); });
+  el("circle", { cx: 537, cy: 492, r: 22, "class": "furn" });
+  var punch = el("rect", { x: 525, y: 452, width: 24, height: 14, rx: 2, "class": "furn-dark" });
+  el("rect", { x: 632, y: 482, width: 80, height: 22, "class": "furn" });
+  for (i = 0; i < 4; i++) el("path", { d: "M" + (644 + i * 18) + " 482 v22", "class": "swing" });
+  // the merge queue: a rail the PRs wait along, and the merger's desk by the way out
+  el("rect", { x: 754, y: 394, width: 106, height: 4, "class": "shelf" });
+  el("rect", { x: 754, y: 394, width: 4, height: 104, "class": "shelf" });
+  el("rect", { x: 840, y: 506, width: 46, height: 20, rx: 3, "class": "furn" });
   var van = el("g", {});
   el("rect", { x: 912, y: 462, width: 76, height: 60, rx: 6, "class": "van" }, van);
   el("text", { x: 950, y: 497, "class": "van-text", "text-anchor": "middle" }, van).textContent = "GitHub";
@@ -1572,10 +1582,11 @@ rules    = ["CLAUDE.md",
     { x: 750, y: 140, r: "clerk", walk: [[720, 140], [782, 140]], sp: 10, tag: "archivist" },
     { x: 850, y: 150, r: "clerk", st: "library", tag: "librarian" },
     { x: 470, y: 283, r: "clerk", st: "post", tag: "postmaster" },
-    { x: 110, y: 530, r: "clerk", st: "test", tag: "test bench" },
-    { x: 270, y: 530, r: "principal", st: "review", tag: "principal" },
-    { x: 420, y: 530, r: "fixer", st: "repair", slot: 0 }, { x: 500, y: 530, r: "fixer", st: "repair", slot: 1 },
-    { x: 800, y: 538, r: "ship", st: "dispatch", tag: "shipper" },
+    { x: 95, y: 530, r: "clerk", st: "test", tag: "test bench" },
+    { x: 225, y: 530, r: "principal", st: "review", tag: "principal" },
+    { x: 345, y: 530, r: "fixer", st: "repair", slot: 0 }, { x: 425, y: 530, r: "fixer", st: "repair", slot: 1 },
+    { x: 672, y: 538, r: "ship", st: "dispatch", tag: "shipper" },
+    { x: 863, y: 548, r: "ship", st: "merge", tag: "merger" },
     { x: 60, y: 342, r: "watch", walk: [[60, 342], [880, 342]], sp: 36, tag: "watchman" }
   ];
   PEOPLE.forEach(function (p) {
@@ -1589,21 +1600,34 @@ rules    = ["CLAUDE.md",
   });
 
   // ---- simulation ----
+  // Every item ends in the merge queue: shipped as a PR, it waits for its CI
+  // and its turn, and the merger merges it. Some are sent back first.
+  var SHIP = [["stamp", 2], ["dispatch", 2], ["deliver", 4], ["out", 0]];
   var J = {
-    clean: [["front", 2], ["bench", 7], ["office", 3], ["test", 3], ["review", 4], ["stamp", 2], ["dispatch", 2], ["out", 0]],
-    fix: [["front", 2], ["bench", 6], ["office", 3], ["test", 3], ["review", 4], ["repair", 5], ["test", 3], ["review", 4], ["stamp", 2], ["dispatch", 2], ["out", 0]],
-    checks: [["front", 2], ["bench", 8], ["office", 2], ["test", 3], ["repair", 4], ["test", 3], ["review", 4], ["stamp", 2], ["dispatch", 2], ["out", 0]],
-    ask: [["front", 2], ["bench", 6], ["office", 2], ["test", 3], ["review", 4], ["repair", 2], ["office", 5], ["repair", 3], ["test", 3], ["review", 4], ["stamp", 2], ["dispatch", 2], ["out", 0]],
-    escalate: [["front", 2], ["bench", 6], ["office", 2], ["test", 3], ["review", 4], ["repair", 4], ["test", 3], ["review", 4], ["repair", 4], ["test", 3], ["review", 4], ["office", 6], ["bench", 6], ["office", 2], ["test", 3], ["review", 4], ["stamp", 2], ["dispatch", 2], ["out", 0]]
+    clean: [["front", 2], ["bench", 7], ["office", 3], ["test", 3], ["review", 4]].concat(SHIP),
+    fix: [["front", 2], ["bench", 6], ["office", 3], ["test", 3], ["review", 4], ["repair", 5], ["test", 3], ["review", 4]].concat(SHIP),
+    checks: [["front", 2], ["bench", 8], ["office", 2], ["test", 3], ["repair", 4], ["test", 3], ["review", 4]].concat(SHIP),
+    ask: [["front", 2], ["bench", 6], ["office", 2], ["test", 3], ["review", 4], ["repair", 2], ["office", 5], ["repair", 3], ["test", 3], ["review", 4]].concat(SHIP),
+    escalate: [["front", 2], ["bench", 6], ["office", 2], ["test", 3], ["review", 4], ["repair", 4], ["test", 3], ["review", 4], ["repair", 4], ["test", 3], ["review", 4], ["office", 6], ["bench", 6], ["office", 2], ["test", 3], ["review", 4]].concat(SHIP),
+    // At its turn it conflicts: the Delivery office rebases it, the gates run,
+    // and the same change keeps its approval with no review.
+    rebase: [["front", 2], ["bench", 6], ["office", 2], ["test", 3], ["review", 4], ["stamp", 2], ["dispatch", 2], ["deliver", 3], ["test", 2], ["review", 1]].concat(SHIP),
+    // Red CI on the PR: a Delivery office dev run fixes it, then it is reviewed and shipped again.
+    ci: [["front", 2], ["bench", 7], ["office", 2], ["test", 3], ["review", 4], ["stamp", 2], ["dispatch", 2], ["deliver", 3], ["bench", 5], ["test", 3], ["review", 3]].concat(SHIP)
   };
-  var ORDER = ["fix", "ask", "clean", "checks", "escalate", "fix", "clean", "ask"];
-  var dayN = 0, items = [], slips = [], clock = 9 * 60, nextSpawn = 0, spawnN = 0, nextId = 38, speed = 1, playing = true, pressT = 0, vanT = 0, lampT = 0;
-  var ledger = [];
-  var TOK = { front: [2, 6], bench: [160, 420], review: [90, 170], repair: [50, 130] }, roomTok = {}, totalTok = 0, MODEL_ROOMS = { front: 1, workshop: 1, assay: 1, repair: 1, library: 1 }, libT = 0, LIB = { x: 850, y: 150 };
+  var ORDER = ["fix", "rebase", "clean", "checks", "ask", "ci", "escalate", "rebase", "clean"];
+  var dayN = 0, items = [], slips = [], clock = 9 * 60, nextSpawn = 0, spawnN = 0, nextId = 38, speed = 1, playing = true, pressT = 0, vanT = 0, lampT = 0, mergeT = 0;
+  var ledger = [], line = [];
+  var TOK = { front: [2, 6], bench: [160, 420], review: [90, 170], repair: [50, 130], deliver: [6, 30] }, roomTok = {}, totalTok = 0, MODEL_ROOMS = { front: 1, workshop: 1, assay: 1, repair: 1, library: 1, delivery: 1 }, libT = 0, LIB = { x: 850, y: 150 };
   function fmtTok(k) { return k >= 1000 ? (k / 1000).toFixed(2) + "M" : Math.round(k) + "k"; }
 
   function spot(st, it) {
     var s = ST[st];
+    if (s.queue) {
+      // Its place in line: three to a row along the rail, in merge order.
+      var n = Math.max(0, line.indexOf(it));
+      return { x: 776 + (n % 3) * 30, y: 414 + Math.floor(n / 3) * 24 };
+    }
     if (s.slots) { var sl = s.slots[it.id % s.slots.length]; return { x: sl[0], y: sl[1] }; }
     var j = ((it.id * 37) % 5 - 2) * 7;
     return { x: s.x + j, y: s.y + (it.id % 2 ? 4 : -4) };
@@ -1625,6 +1649,8 @@ rules    = ["CLAUDE.md",
     renderLedger();
   }
   function say(it, from, to) {
+    if (to === "test" && from === "deliver") { it.round++; it.carry = true; return "its turn: conflicts with main, rebased"; }
+    if (to === "bench" && from === "deliver") return "CI red on PR #" + it.pr + ", Delivery office dev run fixes it";
     if (to === "office" && from === "repair") return "fixer has a question for you";
     if (to === "repair" && from === "office") return "you answered, fixer resumes its session";
     if (to === "bench" && from === "front") return "opened at a Workshop bench";
@@ -1636,13 +1662,17 @@ rules    = ["CLAUDE.md",
     if (to === "review") return "checks passed";
     if (to === "repair" && from === "test") return "checks failed, to Repair";
     if (to === "repair") { it.rejects = (it.rejects || 0) + 1; return "review: changes requested"; }
+    if (to === "stamp" && it.carry) return "rebased change is the same: approval carried, no review";
     if (to === "stamp") return "approved, hallmark struck";
     if (to === "dispatch") return "at the Dispatch Dock";
-    if (to === "out") return "PR opened, item closed";
+    if (to === "deliver" && it.shippedOnce) return "PR #" + it.pr + " updated, back in the merge queue";
+    if (to === "deliver") { it.shippedOnce = true; return "shipped: PR #" + it.pr + " opened, in the merge queue"; }
+    if (to === "out") return "merger merged PR #" + it.pr + ", item closed";
     return "moved";
   }
   function spawn() {
     var it = { id: nextId++, j: J[ORDER[spawnN++ % ORDER.length]], step: 0, x: 110, y: 2, at: null, dwell: 0, wait: 0, round: 0 };
+    it.pr = 150 + it.id;
     it.g = el("g", { "class": "it i-new" }, layerItems);
     it.title = el("title", {}, it.g);
     el("rect", { x: -9, y: -9, width: 18, height: 18, rx: 2 }, it.g);
@@ -1658,7 +1688,13 @@ rules    = ["CLAUDE.md",
     var to = it.j[it.step][0];
     var msg = say(it, from, to), tr = TOK[from];
     if (from === "review" && it.reviewed) tr = [40, 90];
+    // A carried approval runs no review: it costs nothing.
+    if (from === "review" && it.carry) { tr = null; it.carry = false; }
     if (from === "review") it.reviewed = true;
+    // Only a rebase with a conflict to resolve runs a model at the Delivery office.
+    if (from === "deliver" && to !== "test") tr = null;
+    if (from === "deliver") { line.splice(line.indexOf(it), 1); if (to === "out") mergeT = 1.6; }
+    if (to === "deliver") line.push(it);
     if (tr) {
       var amt = tr[0] + ((it.id * 53 + it.step * 31) % 100) / 100 * (tr[1] - tr[0]);
       roomTok[ST[from].room] = (roomTok[ST[from].room] || 0) + amt; totalTok += amt;
@@ -1675,7 +1711,7 @@ rules    = ["CLAUDE.md",
     clock += dt;
     nextSpawn -= dt;
     if (nextSpawn <= 0) { spawn(); nextSpawn = 7; }
-    pressT = Math.max(0, pressT - dt); vanT = Math.max(0, vanT - dt); libT = Math.max(0, libT - dt); lampT += dt;
+    pressT = Math.max(0, pressT - dt); vanT = Math.max(0, vanT - dt); libT = Math.max(0, libT - dt); mergeT = Math.max(0, mergeT - dt); lampT += dt;
     for (var i = items.length - 1; i >= 0; i--) {
       var it = items[i];
       if (it.gone) { it.fade -= dt; if (it.fade <= 0) { it.g.remove(); items.splice(i, 1); } continue; }
@@ -1692,8 +1728,16 @@ rules    = ["CLAUDE.md",
             log(it, "librarian filed " + (1 + it.id % 3) + " learnings · " + lt + "k tok");
           }
           if (!it.wps.length && !it.gone) { it.at = it.dest; it.dwell = it.j[it.step][1]; if (it.at === "stamp") pressT = 0.5;
-            if (it.at === "review") { slip(LIB, { x: 270, y: 476 }, "slip-k"); if (!it.briefed) { it.briefed = true; log(it, "briefed from the Library: " + (2 + it.id % 4) + " learnings"); } } }
+            if (it.at === "review" && !it.carry) { slip(LIB, { x: 225, y: 476 }, "slip-k"); if (!it.briefed) { it.briefed = true; log(it, "briefed from the Library: " + (2 + it.id % 4) + " learnings"); } } }
         } else { it.x += dx / d * mv; it.y += dy / d * mv; }
+      } else if (it.at === "deliver") {
+        // In the merge queue: move up as the line moves, and leave only at
+        // the head of the line, one merge at a time.
+        var q = spot("deliver", it), qx = q.x - it.x, qy = q.y - it.y, qd = Math.sqrt(qx * qx + qy * qy), qm = 60 * dt;
+        if (qd > qm) { it.x += qx / qd * qm; it.y += qy / qd * qm; } else { it.x = q.x; it.y = q.y; }
+        it.dwell -= dt;
+        var next = it.j[it.step + 1][0];
+        if (it.dwell <= 0 && line[0] === it && qd <= qm && (next !== "out" || mergeT <= 0)) depart(it);
       } else if (it.at) {
         it.dwell -= dt;
         if (it.dwell <= 0) depart(it);
@@ -1711,7 +1755,7 @@ rules    = ["CLAUDE.md",
         if (Math.abs(tx - p.x) <= mv2) { p.x = tx; p.dir *= -1; } else p.x += (tx > p.x ? 1 : -1) * mv2;
         p.ang = p.dir > 0 ? 90 : -90;
       }
-      p.working = p.st === "library" ? libT > 0 : !!p.st && items.some(function (it) {
+      p.working = p.st === "library" ? libT > 0 : p.st === "merge" ? mergeT > 0 : !!p.st && items.some(function (it) {
         if (it.gone || it.wps.length) return p.st === "post" && it.wait > 0 && it.x === POST.x;
         if (it.at !== p.st) return false;
         return p.slot === undefined || it.id % ST[p.st].slots.length === p.slot;
@@ -1739,6 +1783,7 @@ rules    = ["CLAUDE.md",
     Object.keys(ROOMS).forEach(function (k) { ROOMS[k].mt.textContent = MODEL_ROOMS[k] ? "tokens " + fmtTok(roomTok[k] || 0) : "no model"; });
     var waiting = items.filter(function (it) { return it.at === "office" && !it.wps.length && !it.gone; }).length;
     ROOMS.office.mt.textContent = waiting ? "inbox: " + waiting + " waiting for you" : "inbox empty";
+    ROOMS.delivery.mt.textContent = line.length ? "queue: " + line.length + " PR" + (line.length === 1 ? "" : "s") : "queue empty";
     bell.style.opacity = waiting ? (0.55 + 0.45 * Math.abs(Math.sin(lampT * 3))) : 0;
     bellT.textContent = waiting;
   }
@@ -1770,7 +1815,7 @@ rules    = ["CLAUDE.md",
   });
 
   // start with a populated building, so the first frame already shows work in progress
-  for (var k = 0; k < 520; k++) step(0.08);
+  for (var k = 0; k < 1500; k++) step(0.08);
   draw();
   selectRoom("post");
   var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;

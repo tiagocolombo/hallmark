@@ -470,17 +470,17 @@ footer a:hover { color: var(--ink); }
       <div class="step ship">
         <span class="k">06 · Ship</span>
         <h3>Hallmarked</h3>
-        <p>Rebased onto the latest base, stamped, and opened as a PR. Conflicts, red CI and new comments come back through the loop until it merges.</p>
+        <p>Rebased onto the latest base, stamped, and opened as a PR. Conflicts, red CI and new comments come back through the loop, and with the merger on, it waits in the merge queue for its turn and merges without you.</p>
       </div>
     </div>
 
     <figure class="figure">
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="images/inside-the-hall-dark.gif">
-        <img src="images/inside-the-hall.gif" width="1000" height="640" loading="lazy" alt="Inside the Hall: an animated floor plan of Hallmark. Items move from the Front Desk to the Workshop, the Assay Office, the Repair Shop and out through the Dispatch Dock to GitHub.">
+        <img src="images/inside-the-hall.gif" width="1000" height="640" loading="lazy" alt="Inside the Hall: an animated floor plan of Hallmark. Items move from the Front Desk to the Workshop, the Assay Office, the Repair Shop, the Stamping Room and the Dispatch Dock, then wait in the Delivery Office's merge queue. With the merger on, it merges them into GitHub.">
       </picture>
       <figcaption>
-        <span>Inside the Hall: each box is an item, each figure an agent. Every handoff passes through the Post Room and is written to the journal.</span>
+        <span>Inside the Hall: each box is an item, each figure an agent. Every handoff passes through the Post Room and is written to the journal. Shipped PRs wait in the Delivery Office's merge queue; with the merger on (<code>[merge] mode = "auto"</code>), it merges them.</span>
         <a href="design.html">Explore the interactive design →</a>
       </figcaption>
     </figure>
@@ -522,18 +522,18 @@ footer a:hover { color: var(--ink); }
       <article class="card">
         <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="2.2"/><circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="18" r="2.2"/><path d="M6 8.2v7.6M18 15.8V10a3 3 0 00-3-3h-4M13 4.5L10.5 7 13 9.5"/></svg></div>
         <h3>Watched until it merges</h3>
-        <p>Shipping isn't the end. The Delivery Office watches each PR: a conflict gets rebased, red CI goes to a fixer, and new review comments go back through review. Already have a PR open? Hand it over.</p>
-        <div class="proof">hall adopt --pr 318</div>
+        <p>Shipping isn't the end. The Delivery Office watches each PR: a conflict gets rebased, red CI goes to a fixer, and new review comments go back through review. Turn the merger on and green PRs merge in order, each brought up to date once, at its turn. A rebase that keeps the change keeps its hallmark, with no new review.</p>
+        <div class="proof">hall queue</div>
       </article>
       <article class="card">
         <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 16V11a6 6 0 0112 0v5l1.5 2h-15z"/><path d="M10 21h4"/></svg></div>
         <h3>Interrupted only when it matters</h3>
-        <p>Questions, escalations and holds land in your office, and reach you in Claude Code's status line, the terminal app, the desktop, or your phone through ntfy, Telegram or Slack. Answer, and the agent's session picks up with its context. Only that item waits.</p>
+        <p>Questions, escalations and holds land in your office, and reach you in Claude Code's status line, the terminal app, the desktop, or your phone through ntfy, Telegram or Slack. Answer, and the agent's session picks up with its context; pull an item back or retry it with a reason, and the next agent reads it. Only that item waits.</p>
       </article>
       <article class="card">
         <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19h16M7 15V9M12 15V5M17 15v-4"/></svg></div>
         <h3>Spend you decide in advance</h3>
-        <p>Every model run is measured. Caps per run, per item, per role and per day stop the loop before it runs away, and checks run before any review tokens are spent. A busy day? Grant more for today without changing the cap.</p>
+        <p>Every model run is measured. Caps per run (with a default for each role), per item, per role and per day stop the loop before it runs away. Checks run before any review tokens are spent, and gates that passed on the same tree don't run again. A busy day? Grant more for today without changing the cap.</p>
         <div class="proof">hall budget --set per_item=800k</div>
       </article>
       <article class="card">
@@ -584,11 +584,12 @@ footer a:hover { color: var(--ink); }
         <li><svg aria-hidden="true"><use href="#i-check"/></svg><div><b>Your office.</b> <span>Every entry says why it waits, shows the evidence and lists what you can do. One key to answer.</span></div></li>
         <li><svg aria-hidden="true"><use href="#i-check"/></svg><div><b>Findings with scenarios.</b> <span>Each one names its lens, file, line and the concrete way it breaks.</span></div></li>
         <li><svg aria-hidden="true"><use href="#i-check"/></svg><div><b>What each item is doing now.</b> <span>Queued behind what, which gate is running, the reviewer's run, a hold. <code>hall watch</code> follows one live.</span></div></li>
+        <li><svg aria-hidden="true"><use href="#i-check"/></svg><div><b>The merge queue.</b> <span>With the merger on, <code>m</code> shows the order PRs merge in and what each one waits for.</span></div></li>
         <li><svg aria-hidden="true"><use href="#i-check"/></svg><div><b>Usage and history.</b> <span>Tokens and cost by room, model or day, and every closed or dropped item.</span></div></li>
       </ul>
     </div>
     <div class="shot">
-      <img src="images/tui-board.gif" width="1440" height="760" loading="lazy" alt="The hall terminal app: items move from development through checks and review to a PR while the inbox fills and empties.">
+      <img src="images/tui-board.gif" width="1440" height="760" loading="lazy" alt="The hall terminal app: items move from development through checks and review to a PR while the inbox fills and empties, then the merge queue shows the order the PRs merge in.">
     </div>
   </div>
 </section>
@@ -601,7 +602,7 @@ footer a:hover { color: var(--ink); }
       <p class="eyebrow">Why "Hallmark"</p>
       <h2 id="name-h">Tested, then stamped. The old way to earn trust.</h2>
       <p>For more than seven hundred years, English silver has had to be <b>tested before it could be sold</b>. A smith brought each piece to Goldsmiths' Hall in London, where an assayer scraped a sample and tested it. Only a piece that met the standard was struck with the Hall's marks. That is where the word comes from: a <b>hall mark</b> is the mark of the Hall.</p>
-      <p>The stamp never said the smith was good. It said <b>this piece</b> had passed, and the person who made it was not the one who tested it. That is the trust coding agents are missing, so Hallmark works the same way. It is even laid out like the building: requests arrive at the Front Desk, get built in the Workshop, tested in the Assay Office, repaired in the Repair Shop, stamped, and sent from the Dispatch Dock.</p>
+      <p>The stamp never said the smith was good. It said <b>this piece</b> had passed, and the person who made it was not the one who tested it. That is the trust coding agents are missing, so Hallmark works the same way. It is even laid out like the building: requests arrive at the Front Desk, get built in the Workshop, tested in the Assay Office, repaired in the Repair Shop, stamped, sent from the Dispatch Dock, and, with the merger on, merged from the Delivery Office.</p>
       <div class="vocab">
         <span><b>item</b> one piece of work, prompt to PR</span>
         <span><b>journal</b> its full history</span>

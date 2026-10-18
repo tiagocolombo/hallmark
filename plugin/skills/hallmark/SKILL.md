@@ -187,11 +187,15 @@ After that, stop editing the item. If the human wants changes:
 hall status                     # items by state, or one item in detail
 hall log H-0042 --kind verdict  # the journal, filtered by event
 hall inbox                      # escalations: what only the human can settle
+hall queue                      # the merge queue: the order PRs merge in, and why each waits
 hall usage --by item            # tokens and cost
 ```
 
 To answer "why was it rejected?", read the item's log and report the findings
-with their severity, file and reason.
+with their severity, file and reason. To answer "why hasn't my PR merged?",
+run `hall queue` and report that PR's status and why: it may wait for CI,
+for an earlier PR on the same files, for a person (a `lit` path), or be
+being brought up to date (`updating`).
 
 ## When something waits for the human
 
@@ -239,6 +243,10 @@ option letter, `a`).
 `checks`; `escalated` after 3 rejected reviews; `hallmarked` → `closed` when
 the PR opens; `dropped` at any time. You work only in `development`. A
 parallel part goes `development` → `closed` when `hall merge` merges it into
-its parent. Later PR feedback starts a new item (`hall new --follow-up`).
+its parent. While the PR is open, the Delivery office brings a closed item
+back to `development` for a conflict, red CI or new review comments, and it
+goes through the loop again (a rebase that leaves the change as it was keeps
+its approval). With the merger on, the PR merges on its own, in queue order.
+Feedback after the PR merged starts a new item (`hall new --follow-up`).
 Once a closed item's PR merges or closes, the daemon removes its worktree
 (the branch and journal stay), so never leave work there.

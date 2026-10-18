@@ -138,8 +138,10 @@ hall update --check    # only say whether an update is available
 runs `cargo install --git … --rev <that commit> --locked --force` into the
 `bin` directory this `hall` runs from. When the commits match, it changes
 nothing and says so. Then it has the new `hall` rewrite the Claude Code plugin
-(if you installed it) and restarts a running daemon on the new binary.
-Restart Claude Code afterwards.
+(if you installed it) and restarts a running daemon on the new binary. A
+daemon in the middle of a run (a review, a fix) finishes that run on the old
+binary first: `hall update` says so, and you run `hall daemon start` once
+`hall daemon status` shows it has exited. Restart Claude Code afterwards.
 
 Main carries the versions: every merge is tagged `vX.Y.Z` on it, versioned
 by semver from conventional commits
