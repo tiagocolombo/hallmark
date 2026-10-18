@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.13](https://github.com/tiagocolombo/hallmark/compare/v0.2.12...v0.2.13) - 2026-10-18
+
+### Added
+
+- L1: default budgets and a cap on failed check rounds ([#72](https://github.com/tiagocolombo/hallmark/pull/72))
+
 ## [0.2.12](https://github.com/tiagocolombo/hallmark/compare/v0.2.11...v0.2.12) - 2026-10-18
 
 ### Added
