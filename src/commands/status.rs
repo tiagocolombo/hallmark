@@ -150,6 +150,11 @@ pub struct LogOut {
     pub events: Vec<Event>,
     /// Events in the journal before filtering.
     pub total: usize,
+    /// The event kinds shown, when filtered. A headless run (`HALL_HEADLESS`)
+    /// gets `verdict`, `fix_submitted` and `checks` unless it passes
+    /// `--kind` (`all` for every event).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub kinds: Vec<String>,
 }
 
 impl Render for LogOut {
@@ -172,19 +177,30 @@ impl Render for LogOut {
     }
 }
 
+/// What `hall log` shows a headless run by default.
+const HEADLESS_KINDS: [&str; 3] = ["verdict", "fix_submitted", "checks"];
+
 pub fn log(cwd: &Path, a: LogArgs) -> Result<Response> {
     let repo = Repo::discover(cwd)?;
     let item = repo.resolve(a.id.as_deref())?;
     let all = repo.hall.read_item(item.id)?;
-    let kinds: Vec<String> = a
+    let mut kinds: Vec<String> = a
         .kind
         .iter()
         .map(|k| match k.trim() {
             "review" | "reviews" => "verdict".to_string(),
             "check" => "checks".to_string(),
+            "fix" | "fixes" | "fixed" => "fix_submitted".to_string(),
             k => k.to_string(),
         })
         .collect();
+    if kinds.iter().any(|k| k == "all") {
+        kinds.clear();
+    } else if kinds.is_empty() && std::env::var_os("HALL_HEADLESS").is_some() {
+        // A headless run reads the review history, not every prompt and
+        // turn summary from development.
+        kinds = HEADLESS_KINDS.iter().map(|k| k.to_string()).collect();
+    }
     let mut events: Vec<Event> = all
         .iter()
         .filter(|e| kinds.is_empty() || kinds.iter().any(|k| k == e.body.name()))
@@ -197,6 +213,7 @@ pub fn log(cwd: &Path, a: LogArgs) -> Result<Response> {
         id: item.id.to_string(),
         total: all.len(),
         events,
+        kinds,
     };
     Ok(Response::new(out, next_for(&item)))
 }

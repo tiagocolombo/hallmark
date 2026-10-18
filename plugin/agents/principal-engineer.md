@@ -48,7 +48,14 @@ lenses, the severities and the evidence bar). Follow it. Then it holds:
 Use the diff as your map and the checkout as the territory. Read the code
 around each change: callers, the types it touches, the tests that claim to
 cover it. `git diff`, `git log` and `git show <base>:<path>` work in your
-checkout. `hall log <item>` shows the item's history; `hall library search
+checkout. `hall log <item> --kind verdict,fix,checks` shows the item's
+review history: earlier verdicts, the fixer's resubmissions and the gate
+results (`fix` means the `fix_submitted` events). That is also what a bare
+`hall log <item>` shows you; the development prompts and turn summaries
+are the author's words, not evidence. When the ready note says the round
+addresses PR comments or CI, or a finding depends on what the human asked,
+read more: `hall log <item> --kind feedback_requested,ci_fix_requested,question,answer`
+(or `--kind all`). `hall library search
 "<words>"` searches the repository's learnings.
 
 ## How you judge
