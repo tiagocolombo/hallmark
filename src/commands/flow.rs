@@ -241,11 +241,16 @@ pub fn ready(cwd: &Path, a: ReadyArgs) -> Result<Response> {
         }
         State::Checks | State::Review | State::Fixing => {
             if item.frozen_sha.as_deref() == Some(head.as_str()) {
+                let kept = if a.note.as_deref().is_some_and(|n| !n.trim().is_empty()) {
+                    " The --note isn't kept: it is already in review. To give one, `hall pull-back` it, then `hall ready --note`."
+                } else {
+                    ""
+                };
                 Ok((
                     vec![],
                     (
                         false,
-                        Some(format!("Already in review at {}.", short(&head))),
+                        Some(format!("Already in review at {}.{kept}", short(&head))),
                     ),
                 ))
             } else {
@@ -679,11 +684,16 @@ pub fn continue_item(cwd: &Path, a: ContinueArgs, mode: crate::output::Mode) -> 
                 }
                 return Ok(Response::raw(None));
             }
+            let kept = if a.reason.is_some() {
+                " (the --reason isn't kept in development: say it in the session)"
+            } else {
+                ""
+            };
             let mut r = reply(
                 &item,
                 false,
                 Some(format!(
-                    "{} is in development. Reopen its session: {open}",
+                    "{} is in development. Reopen its session: {open}{kept}",
                     item.id
                 )),
             );

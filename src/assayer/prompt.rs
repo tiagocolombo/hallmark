@@ -131,10 +131,6 @@ pub fn prepare(
         Body::Created { request, .. } => Some(request.clone()),
         _ => None,
     });
-    let ready_note = events.iter().rev().find_map(|e| match &e.body {
-        Body::Ready { note, .. } => Some(note.clone()),
-        _ => None,
-    });
     let commits = git::run(
         dir,
         &[
@@ -182,8 +178,28 @@ pub fn prepare(
     if let Some(s) = &item.summary {
         let _ = writeln!(p, "Author's summary: {s}");
     }
-    if let Some(Some(n)) = &ready_note {
-        let _ = writeln!(p, "Note when sent to review: {n}");
+    // The note on this round's Ready event, when someone other than the
+    // person gave it (the author's session, the Delivery office, the shipper).
+    // Only the latest Ready counts: an earlier round's note isn't this one's.
+    if let Some((actor, n)) = events.iter().rev().find_map(|e| match &e.body {
+        crate::event::Body::Ready { note, .. } => Some((e.actor.as_str(), note.as_deref())),
+        _ => None,
+    }) && actor != "you"
+        && let Some(n) = n
+        && !n.trim().is_empty()
+        && n.trim() != "nothing left to confirm"
+    {
+        if actor == "agent" {
+            let _ = writeln!(p, "Author's note when sent to review: {}", n.trim());
+        } else {
+            let _ = writeln!(p, "Note when sent to review (by {actor}): {}", n.trim());
+        }
+    }
+    // What the person said since the last run (`hall ready --note`, a
+    // retry's reason), given once (ADR 0044). After the author's own note,
+    // so nothing but the person's words sits under the heading.
+    if let Some(w) = crate::words::pending(events, "reviewer") {
+        let _ = writeln!(p, "\n{}", w.section);
     }
 
     let _ = writeln!(

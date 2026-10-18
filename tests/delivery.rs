@@ -392,6 +392,13 @@ fn a_rebase_the_run_cant_finish_is_retried_once_then_held() {
         step["what"].as_str().unwrap().contains("sent to review"),
         "{step}"
     );
+    // The office's run was given the person's words, once.
+    let call = env.fake_calls().last().unwrap().to_string();
+    assert!(
+        call.contains("What the person said") && call.contains("try again"),
+        "{call}"
+    );
+    assert_eq!(events(&env, &id, "reasons_delivered")[0]["to"], "delivery");
 }
 
 #[test]
@@ -1287,4 +1294,92 @@ fn git_ok(dir: &Path, args: &[&str]) -> Option<String> {
     out.status
         .success()
         .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+fn said_by_you(env: &Env, id: &str, reason: &str) {
+    append(
+        env,
+        id,
+        "you",
+        hallmark::event::Body::Retried {
+            reason: reason.into(),
+        },
+    );
+}
+
+fn last_prompt(env: &Env) -> String {
+    env.fake_calls().last().unwrap()["prompt"]
+        .as_str()
+        .unwrap()
+        .to_string()
+}
+
+#[test]
+fn a_pr_comment_run_gets_the_words_and_the_session_leaves_them_to_it() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    remote_with_main(&env);
+    let (id, wt, sha) = hallmarked_item(&env, "Retry webhooks");
+    pass(&env, &gh, "shipper", json!([]));
+    let comments = json!([{"author": {"login": "ana"}, "authorAssociation": "MEMBER", "body": "Cap retries at 6.", "createdAt": at(1)}]);
+    pr_with(&gh, "OPEN", "MERGEABLE", &sha, json!([]), comments);
+    pass(&env, &gh, "delivery-watch", json!([]));
+    assert_eq!(state(&env, &id), "development");
+    said_by_you(&env, &id, "keep it small please");
+
+    // The office's run is next: a session's prompt doesn't take the words.
+    let mut v: Value =
+        serde_json::from_str(&common::fixture("hooks/user_prompt_submit.json")).unwrap();
+    v["cwd"] = json!(p(&wt));
+    v["session_id"] = json!("s1");
+    v["prompt"] = json!("hello");
+    let r = env.hook("user-prompt-submit", &v);
+    let ctx = r.json["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+    assert!(!ctx.contains("What the person said"), "{ctx}");
+    assert!(events(&env, &id, "reasons_delivered").is_empty());
+
+    let fixes = json!([{
+        "role": "fixer",
+        "files": {"retry.rs": "fn retry() {\n    deliver_at_most(6);\n}\n"},
+        "run": ["git commit -qam 'Cap retries at 6 (review)'"],
+        "result": "capped at 6"
+    }]);
+    pass(&env, &gh, "delivery", fixes);
+    let prompt = last_prompt(&env);
+    assert!(
+        prompt.contains("What the person said") && prompt.contains("keep it small please"),
+        "{prompt}"
+    );
+    let d = events(&env, &id, "reasons_delivered");
+    assert_eq!(d.len(), 1);
+    assert_eq!(d[0]["to"], "delivery");
+}
+
+#[test]
+fn a_ci_fix_run_gets_the_words() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    remote_with_main(&env);
+    let (id, _, sha) = hallmarked_item(&env, "Retry webhooks");
+    pass(&env, &gh, "shipper", json!([]));
+    ci_failed(&env, &id);
+    pr(&gh, "OPEN", "MERGEABLE", &sha);
+    pass(&env, &gh, "delivery-watch", json!([]));
+    said_by_you(&env, &id, "it is the Windows path separator");
+    let fixes = json!([{
+        "role": "fixer",
+        "files": {"retry.rs": "fn retry() {\n    deliver(); // portable\n}\n"},
+        "run": ["git commit -qam 'Fix the Windows test'"],
+        "result": "fixed"
+    }]);
+    pass(&env, &gh, "delivery", fixes);
+    let prompt = last_prompt(&env);
+    assert!(
+        prompt.contains("What the person said") && prompt.contains("Windows path separator"),
+        "{prompt}"
+    );
+    assert_eq!(events(&env, &id, "reasons_delivered")[0]["to"], "delivery");
 }

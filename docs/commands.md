@@ -72,10 +72,12 @@ The extensions, and what each role gets:
 | `hall merge [<child>]` | Merges a parallel part into its parent's branch and closes it. |
 | `hall ready [<id>]` | Freezes the commit and queues the item for review. While the Delivery office has a rebase pending and the branch isn't on its base yet, it refuses (`WRONG_STATE`) and keeps the request: release a hold so the office rebases it, or rebase yourself and run it again ([ADR 0043](decisions/0043-ready-waits-for-a-pending-rebase.md)). `hall propose-ready` waits the same way. |
 | `hall propose-ready [<id>] --summary <s> [--why <w>] [--how <h>] [--ask]` | The agent says the work is done. With nothing left to confirm (no open question, a clean worktree, no open parts) it goes straight to review; `--ask` (or `auto_ready = false`) waits for your call. `--summary`, `--why` and `--how` become the PR description's What, Why and How ([ADR 0039](decisions/0039-pr-description-and-review-comments.md)). |
-| `hall pull-back [<id>]` | Returns the item to development. |
+| `hall pull-back [<id>]` | Returns the item to development. `--reason` goes to the development session's next prompt. |
 | `hall drop [<id>] --reason <r>` | Abandons the item. The branch and journal stay. `--keep-worktree` |
 | `hall retry [<id>] --reason <r> [--tokens <n>]` | Allows an escalated item one more round, or releases a held item. A budget hold also grants that item another `per_item` (or `--tokens`); the budget is unchanged. On a shipped item the merger held, it lets the merger try again (`merge_failed`), or merge a PR that touches a `[merge] lit` path at its current head (`lit`) ([ADR 0048](decisions/0048-the-merger.md)). |
 | `hall continue [<id>]` | Moves an item on from wherever it waits: releases a hold, retries an escalation, sends "ready?" to review, or reopens its Claude session. |
+
+A reason or note you give (`hall retry --reason`, `hall continue --reason` when it releases a hold, retries an escalation or sends the item to review (in development or while it moves on its own it keeps nothing: say it in the session; likewise `hall ready --note` on an item already in review, so `hall pull-back` it first), `hall pull-back --reason`, `hall ready --note`) goes into the next agent's prompt on that item, once, as your words: the reviewer's, the fixer's, a Delivery office run's, a resume run's, or the development session's ([ADR 0044](decisions/0044-your-reasons-reach-the-next-agent.md)).
 
 ## Seeing what's happening
 

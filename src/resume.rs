@@ -23,7 +23,7 @@ use chrono::{DateTime, Utc};
 use crate::error::Result;
 use crate::event::{Body, Event};
 use crate::index::{Index, QuestionRow};
-use crate::item::ItemId;
+use crate::item::{ItemId, State};
 use crate::repo::Repo;
 use crate::runner::{self, Failure, Metered, RunRequest};
 use crate::worker::{Progress, WorkerCtx};
@@ -242,6 +242,33 @@ pub fn prompt(p: &Pending) -> String {
     }
 }
 
+/// What the person said about the question's item since the last run on it
+/// (ADR 0044).
+fn words(repo: &Repo, p: &Pending) -> Option<crate::words::Words> {
+    gated_words(repo, p).and_then(|(w, _)| w)
+}
+
+/// The words, and the journal they were read from; None when the item isn't
+/// with a session, so a loop run takes the words and this run records nothing.
+fn gated_words(
+    repo: &Repo,
+    p: &Pending,
+) -> Option<(Option<crate::words::Words>, Vec<crate::event::Event>)> {
+    let id = p.q.item?;
+    let events = repo.hall.read_item(id).ok()?;
+    // Only while the item is with a session; elsewhere a loop run takes them.
+    let item = repo.hall.load_item(id).ok()?;
+    if !matches!(item.state, State::Development | State::AwaitingYou) {
+        return None;
+    }
+    // The Delivery office's run is next: it takes the words.
+    if item.rebase.is_some() || item.feedback.is_some() || item.ci_fix.is_some() {
+        return None;
+    }
+    let w = crate::words::pending(&events, "resume");
+    Some((w, events))
+}
+
 /// The resume run: in the item's worktree when it still exists, else the
 /// main checkout. Claude Code finds a session by its ID from any directory
 /// (checked 2026-10-09), and the worktree is where the item's work is.
@@ -255,7 +282,10 @@ pub fn request(repo: &Repo, p: &Pending) -> Result<RunRequest> {
     Ok(RunRequest {
         role: "resume".into(),
         room: "workshop".into(),
-        prompt: prompt(p),
+        prompt: match words(repo, p) {
+            Some(w) => w.after(prompt(p)),
+            None => prompt(p),
+        },
         timeout_secs: RESUME_TIMEOUT_SECS,
         cwd,
         resume: Some(p.session.clone()),
@@ -279,6 +309,7 @@ fn resume_one(ctx: &WorkerCtx, ix: &Index) -> Result<Option<Progress>> {
     let Some(p) = pending(repo, ix)?.into_iter().next() else {
         return Ok(None);
     };
+    let said = gated_words(repo, &p);
     let req = request(repo, &p)?;
     let what = format!(
         "{} {} → session {}",
@@ -289,6 +320,11 @@ fn resume_one(ctx: &WorkerCtx, ix: &Index) -> Result<Option<Progress>> {
     match runner::run_metered(repo, ctx.runner, p.q.item, &req)? {
         Metered::Blocked(stop) => Ok(Some(stop.progress())),
         Metered::Done(_) => {
+            if let Some(id) = p.q.item
+                && let Some((w, read)) = &said
+            {
+                crate::words::delivered(repo, id, "resume", w.as_ref(), read)?;
+            }
             record(
                 repo,
                 p.q.item,

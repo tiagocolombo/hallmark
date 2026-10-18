@@ -458,6 +458,14 @@ pub enum Body {
         /// `InboxEntry::key` of each entry.
         keys: Vec<String>,
     },
+    /// A run was given the person's reasons up to `until` (`words`, ADR
+    /// 0044), so later runs aren't.
+    ReasonsDelivered {
+        /// reviewer, fixer, delivery, resume or session.
+        to: String,
+        /// When the newest reason it was given was recorded.
+        until: DateTime<Utc>,
+    },
     /// The shipped PR's CI finished (the daemon watches it after shipping).
     PrChecks {
         pr_url: String,
@@ -530,6 +538,7 @@ impl Body {
             Body::RunFailed { .. } => "run_failed",
             Body::Paused { .. } => "paused",
             Body::Unpaused {} => "unpaused",
+            Body::ReasonsDelivered { .. } => "reasons_delivered",
             Body::BudgetGranted { .. } => "budget_granted",
             Body::Notified { .. } => "notified",
             Body::Distilled { .. } => "distilled",
@@ -734,6 +743,17 @@ impl Body {
                 None => format!("daemon paused · {}", c(reason, 50)),
             },
             Body::Unpaused {} => "daemon resumed".into(),
+            Body::ReasonsDelivered { to, .. } => {
+                let to = match to.as_str() {
+                    "delivery" => "the Delivery office",
+                    "resume" => "the resumed session",
+                    "session" => "the development session",
+                    "reviewer" => "the reviewer",
+                    "fixer" => "the fixer",
+                    other => other,
+                };
+                format!("the words given went to {to}")
+            }
             Body::BudgetGranted {
                 day,
                 tokens,

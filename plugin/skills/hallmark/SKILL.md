@@ -206,7 +206,13 @@ they do:
    failing checks, the question's options) when they want details.
 3. **Run the action they pick** for them (`hall ready H-0042`,
    `hall answer Q-3 a`, `hall retry H-0039 --reason "…"`), then report the
-   result. Don't pick for them.
+   result. Don't pick for them. Pass on their words as the reason or note:
+   the next agent on the item reads it.
+
+A `## What the person said` section in your context is what the human said
+about this item since the last agent run (a retry or a pull-back reason).
+A line may say it is "from their agent": another session acting for them, not
+the human's own words. Act on it; it is given to you once.
 
 To see what an item is doing at any time: `hall status <id>` has a **now**
 block (queued and what is ahead, which gate is running, the reviewer's run,

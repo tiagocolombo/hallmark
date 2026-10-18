@@ -286,8 +286,8 @@ Each hook runs `hall hook <event>`, never a shell script, so Windows works.
 
 | Event | What Hallmark does |
 | --- | --- |
-| `SessionStart` | Injects context: the item, its state and `next`, the inbox count, or how to start an item. |
-| `UserPromptSubmit` | Records the prompt. If the item is in the review loop, it adds a note that offers `pull-back`. |
+| `SessionStart` | Injects context: the item, its state and `next`, the inbox count, or how to start an item. While the item is in development or waiting for you, it adds what you said since the last agent run (ADR 0044). |
+| `UserPromptSubmit` | Records the prompt. If the item is in the review loop, it adds a note that offers `pull-back`. While it is in development or waiting for you, it adds what you said since the last agent run, once (ADR 0044). |
 | `PreToolUse` | Runs the edit gate and the push gate. |
 | `PostToolUse` | Records commits. It binds the session to the item when `hall new`, `hall adopt` or `hall ask` run, by reading their JSON output. |
 | `Stop` | Records the turn summary (`last_assistant_message`). It reads new transcript usage from the stored offset, deduplicated by `requestId`. |

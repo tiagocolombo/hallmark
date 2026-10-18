@@ -405,6 +405,11 @@ impl Ctx {
             text.push_str("\n\n");
             text.push_str(&x);
         }
+        // What the person said since the last run on this item, once.
+        if let Some(w) = self.said(item.as_ref()) {
+            text.push_str("\n\n");
+            text.push_str(&w);
+        }
         // The fixer works on an item in the loop on purpose.
         if headless_actor().as_deref() == Some("fixer")
             && let Some(i) = &item
@@ -441,14 +446,36 @@ impl Ctx {
 
     fn user_prompt_submit(&mut self) -> Result<Option<Value>> {
         let note = self.prompt_note()?;
+        // What the person said since the last run, as with SessionStart: a
+        // pull-back often goes back to a session that is already open.
+        let said = self.said(self.item().as_ref());
         // New inbox entries since this session last heard: Claude passes them on.
         let brief = self.waiting_brief(true);
-        Ok(match (note, brief) {
-            (None, None) => None,
-            (Some(n), None) => Some(context(HookEvent::UserPromptSubmit, n)),
-            (None, Some(b)) => Some(context(HookEvent::UserPromptSubmit, b)),
-            (Some(n), Some(b)) => Some(context(HookEvent::UserPromptSubmit, format!("{n}\n\n{b}"))),
-        })
+        let parts: Vec<String> = [note, said, brief].into_iter().flatten().collect();
+        Ok((!parts.is_empty()).then(|| context(HookEvent::UserPromptSubmit, parts.join("\n\n"))))
+    }
+
+    /// What the person said since the last run on the session's item
+    /// (`hall pull-back --reason`, `hall retry`), for a development session:
+    /// only while the item is with it, and once (ADR 0044). Recorded as
+    /// given when handed out; a journal that can't be written never breaks
+    /// the session, it only means the words may come again.
+    fn said(&self, item: Option<&Item>) -> Option<String> {
+        if headless_actor().is_some() {
+            return None;
+        }
+        let i = item?;
+        if !matches!(i.state, State::Development | State::AwaitingYou) {
+            return None;
+        }
+        // The Delivery office's run is next: it takes the words.
+        if i.rebase.is_some() || i.feedback.is_some() || i.ci_fix.is_some() {
+            return None;
+        }
+        let events = self.repo.hall.read_item(i.id).ok()?;
+        let w = crate::words::pending(&events, "session")?;
+        let _ = crate::words::delivered(&self.repo, i.id, "session", Some(&w), &events);
+        Some(w.section.trim_end().to_string())
     }
 
     /// The note about this session's item, if it needs one.
