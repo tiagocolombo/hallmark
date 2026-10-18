@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Hallmark</title>
+<link rel="icon" type="image/svg+xml" href="/icon.svg">
+<link rel="stylesheet" href="/app.css">
+<script src="/app.js" defer></script>
+</head>
+<body>
+<div class="shell">
+  <nav class="side" aria-label="Hallmark">
+    <a class="brand" href="#/floor"><img src="/icon.svg" alt="" width="32" height="32">Hallmark</a>
+    <label class="repo">
+      <span>Repository</span>
+      <select id="repo"></select>
+    </label>
+    <div class="nav" id="nav">
+      <a href="#/floor" data-view="floor">The floor</a>
+      <a href="#/office" data-view="office"><span>Your office</span><b class="badge" id="badge-inbox" hidden></b></a>
+      <a href="#/queue" data-view="queue">Merge queue</a>
+      <a href="#/records" data-view="records">Records</a>
+      <a href="#/library" data-view="library">Library</a>
+      <a href="#/usage" data-view="usage">Usage &amp; budget</a>
+      <a href="#/settings" data-view="settings">Settings</a>
+    </div>
+    <div class="daemon" id="daemon" aria-live="polite"></div>
+  </nav>
+  <main id="main" tabindex="-1"><p class="muted">Loading…</p></main>
+</div>
+<div id="toasts" aria-live="polite"></div>
+<dialog id="dialog"></dialog>
+</body>
+</html>

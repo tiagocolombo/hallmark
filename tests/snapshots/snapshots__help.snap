@@ -1504,6 +1504,29 @@ expression: v
       "name": "hud",
       "schema": "hall schema hud",
       "usage": "hall hud [OPTIONS]"
+    },
+    {
+      "about": "The web app: every repo's items, your office, the merge queue and the settings, in a browser on this machine. Runs until stopped",
+      "args": [
+        {
+          "help": "The port on 127.0.0.1 (default 4747, or a free one when that's taken)",
+          "name": "port",
+          "required": false,
+          "syntax": "--port <port>",
+          "takes_value": true
+        },
+        {
+          "default": "false",
+          "help": "Don't open the browser; only print the address",
+          "name": "no_open",
+          "required": false,
+          "syntax": "--no-open",
+          "takes_value": false
+        }
+      ],
+      "name": "web",
+      "schema": "hall schema web",
+      "usage": "hall web [OPTIONS]"
     }
   ],
   "contract": [

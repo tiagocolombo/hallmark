@@ -114,6 +114,7 @@ src/
   condense/      condensing command output for an agent's context: one
                  filter per tool family, evidence never (ADR 0046)
   tui/           the terminal app (a reader)
+  web/           `hall web`: the server and its embedded page (ADR 0052)
   commands/      one module per group of commands; meta.rs has
                  `hall help --json` and `hall schema`
 plugin/          the Claude Code plugin: skills, agents, schemas, hooks

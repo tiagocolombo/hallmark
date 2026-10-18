@@ -214,6 +214,7 @@ From the terminal:
 
 ```sh
 hall                         # the terminal app: inbox, board, journal, findings, history, usage
+hall web                     # the same and the settings, in a browser on this machine
 
 hall new "Retry failed webhook deliveries" --open   # item, branch, worktree; opens Claude there
 hall new --issue 212         # start from a GitHub issue
@@ -276,6 +277,17 @@ dropped items.
 
 <sub>The demo data is fictional.</sub>
 </details>
+
+### The web app
+
+Run `hall web` for the same building in a browser, on this machine only: the
+floor, each item's journal, findings, diff and runs (followed live), your
+office, the merge queue, the records and the Library, usage and budgets, and
+every setting, with the daemon, `doctor` and extensions. Each button runs the
+`hall` command the item offers, so the web app can do what you'd do in a
+terminal and nothing more. When a newer `hall` is out, the sidebar says so,
+and *Update and restart* installs it and brings the page back
+([ADR 0052](docs/decisions/0052-the-web-app.md)).
 
 ### Built for agents
 

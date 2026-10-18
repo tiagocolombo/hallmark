@@ -94,6 +94,7 @@ A reason or note you give (`hall retry --reason`, `hall continue --reason` when 
 | `hall usage` | Tokens and list-price cost. `--by item\|room\|role\|model\|day`, `--since`, `--item` |
 | `hall statusline` | One line for Claude Code's status line. |
 | `hall hud` | Everything the Claude Code heads-up display shows, in one call. `--session`, `--lines` |
+| `hall web` | The web app, in a browser on this machine: the floor, each item (journal, findings, diff, runs, usage) with the actions that fit it, your office, the merge queue, records, the Library, usage and budgets, settings, the daemon, `doctor`, extensions, new items, and an update button when a newer hall is out. It listens on 127.0.0.1, port 4747 or a free one when that's taken (`--port <n>` asks for one and fails when it's taken), opens the browser unless `--no-open`, and runs until stopped. The address it prints carries a token. Every call the page makes runs a hall command in the repo you picked, so it can do what you'd do in a terminal, but never an agent's or a hook's command, and nothing that needs a terminal (`watch`, `trace --follow`, `new --open`, `setup`). Off a terminal it prints the address as one JSON line (`hall schema web-line`) ([ADR 0052](decisions/0052-the-web-app.md)). |
 
 ## Your inbox
 

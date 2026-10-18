@@ -57,7 +57,17 @@ impl Env {
 
     /// [`Env::cmd`] for another copy of `hall`, such as an installed one.
     pub fn cmd_exe(&self, exe: &Path, dir: &Path) -> Command {
-        let mut c = Command::new(exe);
+        Command::from_std(self.std_cmd_exe(exe, dir))
+    }
+
+    /// [`Env::cmd`] as a std `Command`, for a `hall` the test spawns and
+    /// talks to while it runs (`hall web`).
+    pub fn std_cmd(&self, dir: &Path) -> Std {
+        self.std_cmd_exe(Path::new(env!("CARGO_BIN_EXE_hall")), dir)
+    }
+
+    fn std_cmd_exe(&self, exe: &Path, dir: &Path) -> Std {
+        let mut c = Std::new(exe);
         c.current_dir(dir)
             .env("HALL_HOME", &self.home)
             .env("HALL_ACTOR", "you")

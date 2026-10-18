@@ -275,7 +275,7 @@ fn run_here(
 }
 
 /// Opens a folder or URL with the system opener, without waiting for it.
-fn open(target: &str) -> std::io::Result<()> {
+pub fn open(target: &str) -> std::io::Result<()> {
     let mut c = if cfg!(target_os = "macos") {
         Command::new("open")
     } else if cfg!(windows) {
