@@ -1309,3 +1309,34 @@ fn a_pr_whose_ci_never_reports_stops_claiming_its_files_when_the_watch_gives_up(
     pass(&env, &gh);
     assert_eq!(events(&env, &after, "pr_merged").len(), 1);
 }
+
+#[test]
+fn each_pass_keeps_its_plan_for_the_terminal_app() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    let (first, _, _) = shipped(&env, &gh, 1, "a.rs");
+    let (second, _, _) = shipped(&env, &gh, 2, "b.rs");
+    let (at, plan) = hallmark::merger::last_plan(&hall(&env));
+    assert!(at.is_none() && plan.is_empty(), "no pass yet");
+
+    pass(&env, &gh);
+    let (at, plan) = hallmark::merger::last_plan(&hall(&env));
+    assert!(at.is_some());
+    let got: Vec<(String, &str, u32)> = plan
+        .iter()
+        .map(|e| (e.item.to_string(), e.status.as_str(), e.position))
+        .collect();
+    assert_eq!(
+        got,
+        vec![(first.clone(), "ready", 1), (second.clone(), "queued", 2)]
+    );
+
+    // The last PR left: the plan is empty, not the last one.
+    delivered(&env, &first, 1);
+    pass(&env, &gh);
+    delivered(&env, &second, 2);
+    pass(&env, &gh);
+    let (_, plan) = hallmark::merger::last_plan(&hall(&env));
+    assert!(plan.is_empty(), "{plan:?}");
+}

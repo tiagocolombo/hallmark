@@ -1,0 +1,40 @@
+---
+source: tests/tui.rs
+expression: "screen(&env, &app, W, H)"
+---
+hall · app (1 of 1 repo)   daemon ● running   ⚑ 3 waiting   rejected today 3 · review tokens 400k    merge queue · hh:mm
+┌ Merge queue · 2 PRs · planned hh:mm (–) ─────────────────────────────────────────────────────────────────────────────┐
+│      PR     item    status            why                                                                            │
+│↻  1  #190   H-0002  updating          being brought up to date (review); it ships again, then merges                 │
+│   2  #191   H-0005  waits for         behind main on files it touches (src/export.rs); first waits for #190 (src/expo│
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ https://github.com/acme/app/pull/191 ────────────────────────────────────────────────────────────────────────────────┐
+│H-0005 #191 Tenant check in export query                                                                              │
+│waits for         behind main on files it touches (src/export.rs); first waits for #190 (src/export.rs)               │
+│                                                                                                                      │
+│                                                                                                                      │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+↑↓ PR  enter journal  o PR  w worktree  t trace  esc board  ? help  q quit

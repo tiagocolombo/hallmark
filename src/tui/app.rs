@@ -71,6 +71,9 @@ pub enum View {
     /// The selected item's latest headless run, step by step, followed
     /// while it grows (ADR 0041).
     Trace,
+    /// The merge queue as the merger last planned it; only while the
+    /// merger is on (ADR 0048, 0050).
+    Queue,
 }
 
 impl View {
@@ -87,6 +90,7 @@ impl View {
             View::Inbox => "your office",
             View::Output => "output",
             View::Trace => "trace",
+            View::Queue => "merge queue",
         }
     }
 }
@@ -337,6 +341,8 @@ pub struct App {
     pub finding_sel: usize,
     pub finding_open: bool,
     pub history_sel: usize,
+    /// The selected row of the merge queue.
+    pub queue_sel: usize,
     pub repo_sel: usize,
     pub usage_by: UsageGroup,
     pub diff: Option<Diff>,
@@ -383,6 +389,7 @@ impl App {
             finding_sel: 0,
             finding_open: false,
             history_sel: 0,
+            queue_sel: 0,
             repo_sel: 0,
             usage_by: UsageGroup::Room,
             diff: None,
@@ -556,6 +563,43 @@ impl App {
             .collect()
     }
 
+    /// The active repo's merge queue, while its merger is on.
+    pub fn merge_queue(&self) -> Option<&data::MergeQueue> {
+        self.repo()?.data.merge_queue.as_ref()
+    }
+
+    /// `m`: the merge queue, with the selected item's row selected when it
+    /// is in it. Only while the merger is on.
+    fn open_queue(&mut self) {
+        let Some(q) = self.merge_queue() else {
+            self.err("The merger is off here: `hall config set merge.mode auto` turns it on.");
+            return;
+        };
+        self.queue_sel = self
+            .selected
+            .and_then(|id| q.entries.iter().position(|e| e.item == id))
+            .unwrap_or(0);
+        self.view = View::Queue;
+        self.status = None;
+        self.move_queue(0);
+    }
+
+    /// Moves the queue's selection, and selects its item, so `enter`, `o`,
+    /// `w`, `d` and `t` act on it.
+    fn move_queue(&mut self, by: isize) {
+        let Some(q) = self.merge_queue() else { return };
+        let n = q.entries.len();
+        if n == 0 {
+            return;
+        }
+        let at = self.queue_sel.saturating_add_signed(by).min(n - 1);
+        let id = q.entries[at].item;
+        self.queue_sel = at;
+        if self.repo().is_some_and(|r| r.data.item(id).is_some()) {
+            self.select(Some(id));
+        }
+    }
+
     /// The inbox of the active repo, plus the daemon if it stopped.
     pub fn inbox(&self) -> Vec<InboxEntry> {
         let mut out: Vec<InboxEntry> = self
@@ -600,6 +644,19 @@ impl App {
         }
         if i == self.active {
             self.fix_selection();
+            if self.view == View::Queue
+                && let Some(q) = self.merge_queue()
+            {
+                // Keep the highlighted row on the item being acted on.
+                if let Some(at) = self
+                    .selected
+                    .and_then(|id| q.entries.iter().position(|e| e.item == id))
+                {
+                    self.queue_sel = at;
+                } else {
+                    self.move_queue(0);
+                }
+            }
             self.reload_selection();
             if self.view == View::Inbox {
                 self.load_inbox_detail();
@@ -832,6 +889,8 @@ impl App {
                     self.view = View::Journal;
                 }
             }
+            (View::Queue, KeyCode::Up) => self.move_queue(-1),
+            (View::Queue, KeyCode::Down) => self.move_queue(1),
             (View::Live, KeyCode::Up) => self.live_scroll += 1,
             (View::Live, KeyCode::Down) => self.live_scroll = self.live_scroll.saturating_sub(1),
             (View::Live, KeyCode::PageUp) => self.live_scroll += 10,
@@ -877,6 +936,7 @@ impl App {
             }
             (_, KeyCode::Char('i')) => self.open_inbox(),
             (_, KeyCode::Char('u')) => self.view = View::Usage,
+            (_, KeyCode::Char('m')) => self.open_queue(),
             (_, KeyCode::Char('l')) => {
                 self.view = View::Live;
                 self.live_scroll = 0;

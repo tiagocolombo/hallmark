@@ -65,6 +65,19 @@ pub struct RepoData {
     /// The `now` line of each open item: what it is doing, and for how long
     /// (the same line `hall status` and the HUD show).
     pub now: BTreeMap<ItemId, (String, DateTime<Utc>)>,
+    /// The merge queue as the merger last planned it; `None` while the
+    /// merger is off (`[merge] mode`).
+    pub merge_queue: Option<MergeQueue>,
+}
+
+/// The merger's last plan (ADR 0048, 0050), read from `merger.json`: the
+/// app never calls GitHub.
+#[derive(Debug, Clone, Default)]
+pub struct MergeQueue {
+    /// When the merger last looked; `None` before its first pass.
+    pub at: Option<DateTime<Utc>>,
+    /// By base, in the order the merger takes them.
+    pub entries: Vec<crate::merger::Entry>,
 }
 
 /// The `now` lines of the open items, read from the journal.
@@ -110,6 +123,7 @@ impl RepoData {
             live: Vec::new(),
             rejected_today: 0,
             now: BTreeMap::new(),
+            merge_queue: None,
         }
     }
 
@@ -238,9 +252,14 @@ impl RepoSlot {
             |r| r.get::<_, i64>(0),
         )? as u64;
         let now_map = now_lines(hall, &self.path, &config, &items);
+        let merge_queue = (config.merge.mode == crate::config::MergeMode::Auto).then(|| {
+            let (at, entries) = crate::merger::last_plan(hall);
+            MergeQueue { at, entries }
+        });
         Ok(RepoData {
             status: RepoStatus::Ready,
             now: now_map,
+            merge_queue,
             config,
             items,
             inbox,
