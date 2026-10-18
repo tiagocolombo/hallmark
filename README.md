@@ -30,10 +30,10 @@ Only commits that earn a **hallmark** leave your machine.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/inside-the-hall-dark.gif">
-  <img alt="Inside the Hall: an animated floor plan of Hallmark. Items move from the Front Desk to the Workshop, the Assay Office, the Repair Shop, the Stamping Room and the Dispatch Dock, then wait in the Delivery Office's merge queue until the merger merges them into GitHub." src="docs/images/inside-the-hall.gif">
+  <img alt="Inside the Hall: an animated floor plan of Hallmark. Items move from the Front Desk to the Workshop, the Assay Office, the Repair Shop, the Stamping Room and the Dispatch Dock, then wait in the Delivery Office's merge queue. With the merger on (`[merge] mode = "auto"`), it merges them into GitHub." src="docs/images/inside-the-hall.gif">
 </picture>
 
-<p align="center"><sub>Inside the Hall: each box is an item, each figure an agent. Every handoff passes through the Post Room and is written to the journal. Shipped PRs wait in the Delivery Office's merge queue until the merger merges them.</sub></p>
+<p align="center"><sub>Inside the Hall: each box is an item, each figure an agent. Every handoff passes through the Post Room and is written to the journal. Shipped PRs wait in the Delivery Office's merge queue; with the merger on (`[merge] mode = "auto"`), it merges them.</sub></p>
 
 ---
 

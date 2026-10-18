@@ -318,7 +318,7 @@ footer { color: var(--muted); font-size: 0.9rem; border-top: 1px solid var(--lin
 <!-- ============ THE HALL ============ -->
 <section id="hall">
   <h2>Inside the Hall</h2>
-  <div class="col"><p>Picture Hallmark as a building seen from above. Requests come in at the Front Desk, get built in the Workshop and tested in the Assay Office. If the assayer finds problems, they go to the Repair Shop and back. Approved work is stamped and leaves from the Dispatch Dock as a pull request, and waits in the Delivery Office's merge queue for its CI and its turn: the merger merges PRs in order, one at a time. A PR that conflicts at its turn is rebased and checked again, and keeps its approval when the change is the same; red CI goes back to the Repair Shop. Every handoff passes through the Post Room, which files a copy in Records. When an item closes, the Library keeps what it taught, and briefs the principal engineer before each review (the gold slips). The boxes are items and the figures are agents. Select a room to see what happens there.</p></div>
+  <div class="col"><p>Picture Hallmark as a building seen from above. Requests come in at the Front Desk, get built in the Workshop and tested in the Assay Office. If the assayer finds problems, they go to the Repair Shop and back. Approved work is stamped and leaves from the Dispatch Dock as a pull request, and waits in the Delivery Office's merge queue for its CI and its turn: with the merger on (<code>[merge] mode = "auto"</code>), it merges PRs in order, one at a time. A PR that conflicts at its turn is rebased and checked again, and keeps its approval when the change is the same; red CI goes back to development, where a Delivery office dev run fixes it. Every handoff passes through the Post Room, which files a copy in Records. When an item closes, the Library keeps what it taught, and briefs the principal engineer before each review (the gold slips). The boxes are items and the figures are agents. Select a room to see what happens there.</p></div>
   <div class="plan-wrap">
     <div class="plan-main">
       <div class="plan-bar">
@@ -662,7 +662,7 @@ lists every command.</code></pre>
 <!-- ============ USAGE ============ -->
 <section id="usage">
   <h2>Usage and budgets</h2>
-  <div class="col"><p>Every model run is measured and recorded in the journal. Each step has its own limits, and you can see totals by item, room, role, model or day. Only four places use a model: the Workshop, the Assay Office's review, the Repair Shop, and a little at the Front Desk. Everything else is a script.</p></div>
+  <div class="col"><p>Every model run is measured and recorded in the journal. Each step has its own limits, and you can see totals by item, room, role, model or day. Only four places use a model: the Workshop, the Assay Office's review, the Repair Shop, the Delivery Office's headless dev runs (a conflict, comments, red CI), and a little at the Front Desk and in the Library. Everything else, the merger included, is a script.</p></div>
   <div class="three">
     <div>
       <div class="eyebrow">Measured</div>
@@ -1236,9 +1236,9 @@ rules    = ["CLAUDE.md",
       leave: ["The shipper runs the repo's ship command → Closed"],
       logs: ["Hallmark: commit, round, reviewer, finding counts"] },
     closed: { name: "Closed", cls: "end", who: "The Delivery office and the merger",
-      what: "The PR is open on GitHub, or wherever the ship command sends it. The Delivery office watches it until it merges, and with the merger on, it waits in the merge queue and merges without you. Once it has merged, the item moves to History.",
+      what: "The PR is open on GitHub, or wherever the ship command sends it. The Delivery office watches it until it merges, and with the merger on, it waits in the merge queue and merges without you. The item is in History from the moment it closes.",
       enter: ["The shipper opens the PR"],
-      leave: ["A conflict at its turn, red CI or new review comments → Development, and back through the loop", "Merged or closed → History"],
+      leave: ["A conflict at its turn, red CI or new review comments → Development, and back through the loop", "When the PR merges or closes, its worktree is removed"],
       logs: ["PR link, final commit, rounds", "CI results, the merge, and delivered", "Time spent in each state"] },
     dropped: { name: "Dropped", cls: "you", who: "You",
       what: "Abandoned. The worktree is removed, while the branch and the journal stay.",
@@ -1491,7 +1491,7 @@ rules    = ["CLAUDE.md",
     repair: { s: "Fixing", who: "Fixer agents", what: "Failing checks and open findings arrive with the item. A fixer addresses them and records which findings each commit fixes, or disputes one with a reason. Then the item goes back to the Assay Office.", c: ["hall findings", "hall fixed F1 F2"] },
     stamp: { s: "Hallmarked", who: "The press", what: "An approved commit gets its hallmark: a git note on that exact SHA. Any later commit has none, so the gate won't let it out.", c: ["git notes --ref=hallmark show"] },
     dispatch: { s: "Shipped", who: "The shipper", what: "Checks the hallmark, rebases onto the latest base, runs the repo's ship command and opens the PR, with What, Why and How. Each review goes on the PR as a comment, and the issue is linked. The item closes, and its PR moves to the Delivery Office.", c: ["git push + gh pr create", "rig submit --pr (in rindahq)"] },
-    delivery: { s: "Delivery · the merge queue", who: "The Delivery office and the merger, both scripts", what: "Watches every PR until it merges. New review comments go back through review, and red CI goes to a fixer. The merger merges each ready PR in queue order, one at a time per base. A PR that conflicts is rebased at its turn, once, and a rebase that leaves the approved change as it was keeps its approval, with no review. Nothing merges onto a red main.", c: ["hall queue", "hall status H-0042", "m in the terminal app"] }
+    delivery: { s: "Delivery · the merge queue", who: "The Delivery office (headless dev runs) and the merger (a script)", what: "Watches every PR until it merges. New review comments go back through review, and red CI goes back to development, where a Delivery office dev run fixes it. The merger merges each ready PR in queue order, one at a time per base. A PR that conflicts is rebased at its turn, once, and a rebase that leaves the approved change as it was keeps its approval, with no review. Nothing merges onto a red main.", c: ["hall queue", "hall status H-0042", "m in the terminal app"] }
   };
   var ST = {
     front: { room: "front", x: 110, y: 168 },
@@ -1613,7 +1613,7 @@ rules    = ["CLAUDE.md",
     // and the same change keeps its approval with no review.
     rebase: [["front", 2], ["bench", 6], ["office", 2], ["test", 3], ["review", 4], ["stamp", 2], ["dispatch", 2], ["deliver", 3], ["test", 2], ["review", 1]].concat(SHIP),
     // Red CI on the PR: a fixer takes it, and it is reviewed and shipped again.
-    ci: [["front", 2], ["bench", 7], ["office", 2], ["test", 3], ["review", 4], ["stamp", 2], ["dispatch", 2], ["deliver", 3], ["repair", 3], ["test", 3], ["review", 3]].concat(SHIP)
+    ci: [["front", 2], ["bench", 7], ["office", 2], ["test", 3], ["review", 4], ["stamp", 2], ["dispatch", 2], ["deliver", 3], ["bench", 5], ["test", 3], ["review", 3]].concat(SHIP)
   };
   var ORDER = ["fix", "rebase", "clean", "checks", "ask", "ci", "escalate", "rebase", "clean"];
   var dayN = 0, items = [], slips = [], clock = 9 * 60, nextSpawn = 0, spawnN = 0, nextId = 38, speed = 1, playing = true, pressT = 0, vanT = 0, lampT = 0, mergeT = 0;
@@ -1649,6 +1649,8 @@ rules    = ["CLAUDE.md",
     renderLedger();
   }
   function say(it, from, to) {
+    if (to === "test" && from === "deliver") { it.round++; it.carry = true; return "its turn: conflicts with main, rebased"; }
+    if (to === "bench" && from === "deliver") return "CI red on PR #" + it.pr + ", Delivery office dev run fixes it";
     if (to === "office" && from === "repair") return "fixer has a question for you";
     if (to === "repair" && from === "office") return "you answered, fixer resumes its session";
     if (to === "bench" && from === "front") return "opened at a Workshop bench";
@@ -1665,8 +1667,6 @@ rules    = ["CLAUDE.md",
     if (to === "dispatch") return "at the Dispatch Dock";
     if (to === "deliver" && it.shippedOnce) return "PR #" + it.pr + " updated, back in the merge queue";
     if (to === "deliver") { it.shippedOnce = true; return "shipped: PR #" + it.pr + " opened, in the merge queue"; }
-    if (to === "test" && from === "deliver") { it.round++; it.carry = true; return "its turn: conflicts with main, rebased"; }
-    if (to === "repair" && from === "deliver") return "CI red on PR #" + it.pr + ", to Repair";
     if (to === "out") return "merger merged PR #" + it.pr + ", item closed";
     return "moved";
   }
