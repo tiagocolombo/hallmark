@@ -204,6 +204,7 @@ fn strike(env: &Env, id: &str, wt: &Path) {
         &sha,
         1,
         None,
+        "assayer",
         hallmark::findings::Counts::default(),
     )
     .unwrap();
