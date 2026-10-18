@@ -1,5 +1,7 @@
 //! The reviewer's briefing: accepted learnings from the local store that fit
-//! this change, within `[library] briefing_limit` tokens.
+//! this change, within a token cap that follows the review's effort: 2k for
+//! `low`, 4k for `medium`, and `[library] briefing_limit` otherwise, never
+//! more than `briefing_limit`.
 //!
 //! 1. Learnings whose `scope` globs match a changed path, most matches
 //!    first.
@@ -26,6 +28,18 @@ pub fn tokens(text: &str) -> u64 {
 /// The cap from `[library] briefing_limit` ("6k").
 pub fn limit(repo: &Repo) -> u64 {
     crate::config::parse_tokens(&repo.config.library.briefing_limit).unwrap_or(6000)
+}
+
+/// The cap for a review at `effort`: a light review gets a short briefing.
+/// `low` gets 2k tokens, `medium` 4k, and anything else (none set, `high`,
+/// `xhigh`, `max`) the whole `limit`. Never more than `limit`.
+pub fn cap_for(limit: u64, effort: Option<&str>) -> u64 {
+    let scaled = match effort {
+        Some("low") => 2000,
+        Some("medium") => 4000,
+        _ => return limit,
+    };
+    scaled.min(limit)
 }
 
 fn matcher(glob: &str) -> Option<GlobMatcher> {
@@ -150,10 +164,21 @@ pub fn build(
 }
 
 /// [`super::briefing`]: reads the accepted learnings from the store, then
-/// [`build`].
-pub fn briefing(repo: &Repo, changed: &[String], diff: &str) -> Result<Briefing> {
+/// [`build`] within [`cap_for`] the review's `effort`.
+pub fn briefing(
+    repo: &Repo,
+    changed: &[String],
+    diff: &str,
+    effort: Option<&str>,
+) -> Result<Briefing> {
     let learnings = Store::of(repo).accepted();
-    build(repo, &learnings, changed, diff, limit(repo))
+    build(
+        repo,
+        &learnings,
+        changed,
+        diff,
+        cap_for(limit(repo), effort),
+    )
 }
 
 #[cfg(test)]
@@ -183,6 +208,22 @@ mod tests {
             0,
             "bad globs match nothing"
         );
+    }
+
+    #[test]
+    fn the_cap_scales_with_effort() {
+        assert_eq!(cap_for(6000, Some("low")), 2000);
+        assert_eq!(cap_for(6000, Some("medium")), 4000);
+        for e in [None, Some("high"), Some("xhigh"), Some("max"), Some("odd")] {
+            assert_eq!(cap_for(6000, e), 6000, "{e:?}");
+        }
+        // Never above `briefing_limit`.
+        assert_eq!(cap_for(3000, Some("medium")), 3000);
+        assert_eq!(cap_for(1000, Some("low")), 1000);
+        assert_eq!(cap_for(0, Some("low")), 0);
+        // A larger limit still shrinks for light reviews.
+        assert_eq!(cap_for(20_000, Some("low")), 2000);
+        assert_eq!(cap_for(20_000, None), 20_000);
     }
 
     #[test]

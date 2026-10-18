@@ -654,6 +654,62 @@ fn effort_follows_risk() {
 }
 
 #[test]
+fn the_briefing_a_review_gets_follows_its_effort() {
+    let env = Env::initialized();
+    let body = "The ledgerguard check keeps every invoice balanced. ".repeat(90);
+    let learning = |id: &str, kind: &str, scope: &str, title: &str| {
+        format!(
+            "---\nid: {id}\nkind: {kind}\nscope: [{scope}]\nlens: correctness\nsource: [H-0009/F1]\nstatus: accepted\nused: 0\n---\n# {title}\n\n{body}\n"
+        )
+    };
+    let dir = env.repo.join(".git/hallmark/library/learnings");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("L-0010-scoped.md"),
+        learning("L-0010", "map", "\"app/**\"", "ScopedMarker"),
+    )
+    .unwrap();
+    for (id, t) in [
+        ("L-0011", "HitOne"),
+        ("L-0012", "HitTwo"),
+        ("L-0013", "HitThree"),
+    ] {
+        std::fs::write(
+            dir.join(format!("{id}-hit.md")),
+            learning(id, "rule", "", t),
+        )
+        .unwrap();
+    }
+
+    let script = env.script(json!([
+        reviewer(verdict(vec![], json!([]))),
+        reviewer(verdict(vec![], json!([]))),
+    ]));
+    ready_item(&env, "Small", "app/small.rs", "fn ledgerguard() {}\n");
+    tick(&env, &script);
+    tick(&env, &script);
+    let big: String = (0..150)
+        .map(|i| format!("fn ledgerguard() {{ f{i}(); }}\n"))
+        .collect();
+    ready_item(&env, "Big", "app/big.rs", &big);
+    tick(&env, &script);
+    tick(&env, &script);
+
+    let calls = env.fake_calls();
+    assert_eq!(calls.len(), 2);
+    assert_eq!(arg_after(&calls[0], "--effort"), Some("low"));
+    let low = before_diff(calls[0]["prompt"].as_str().unwrap());
+    assert!(low.contains("ScopedMarker"), "{low}");
+    for hit in ["HitOne", "HitTwo", "HitThree"] {
+        assert!(!low.contains(hit), "low effort drops search hits: {hit}");
+    }
+    assert_ne!(arg_after(&calls[1], "--effort"), Some("low"));
+    let full = calls[1]["prompt"].as_str().unwrap();
+    assert!(full.contains("ScopedMarker"));
+    assert!(full.contains("HitOne"), "default effort keeps search hits");
+}
+
+#[test]
 fn hall_verdict_records_once() {
     let env = Env::initialized();
     let (id, _, sha) = ready_item(&env, "Retry webhooks", "retry.rs", "fn retry() {}\n");

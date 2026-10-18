@@ -38,9 +38,15 @@ pub struct Briefing {
 /// The briefing for a review of `changed` paths. Learnings come from the
 /// local store, which no branch can change, and only accepted ones are
 /// used: first those whose scope matches a changed path, then a search with
-/// terms from `diff`.
-pub fn briefing(repo: &Repo, changed: &[String], diff: &str) -> Result<Briefing> {
-    briefing::briefing(repo, changed, diff)
+/// terms from `diff`. The cap follows the review's `effort` (2k for `low`,
+/// 4k for `medium`, `briefing_limit` otherwise).
+pub fn briefing(
+    repo: &Repo,
+    changed: &[String],
+    diff: &str,
+    effort: Option<&str>,
+) -> Result<Briefing> {
+    briefing::briefing(repo, changed, diff, effort)
 }
 
 /// Distils closed and escalated items into proposed learnings.
