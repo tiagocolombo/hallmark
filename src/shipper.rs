@@ -27,6 +27,12 @@ pub const ACTOR: &str = "shipper";
 /// The ship command's time limit.
 const SHIP_TIMEOUT_SECS: u64 = 600;
 
+/// The lease held while the gates run after a rebase: longer than the
+/// slowest gate, and than the ship command.
+fn rebase_lease_ttl(config: &crate::config::Config) -> chrono::Duration {
+    chrono::Duration::seconds(SHIP_TIMEOUT_SECS.max(config.longest_gate_secs()) as i64 + 900)
+}
+
 pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
     let repo = ctx.repo;
     let ttl = chrono::Duration::seconds(SHIP_TIMEOUT_SECS as i64 + 300);
@@ -497,7 +503,8 @@ fn freshen(
                 id,
                 "shipper",
                 holder,
-                chrono::Duration::seconds(SHIP_TIMEOUT_SECS as i64 + 900),
+                // Renewed before each gate, so it outlasts the slowest.
+                rebase_lease_ttl(&repo.config),
             );
         };
         match crate::assayer::checks::gates_at(
@@ -1113,6 +1120,14 @@ fn reasons(events: &[Event]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_slow_gate_gets_a_rebase_lease_longer_than_itself() {
+        let c = crate::config::Config::parse("gates = [{ cmd = 'cargo test', timeout = '2h' }]\n")
+            .unwrap();
+        assert!(rebase_lease_ttl(&c).num_seconds() > 7200);
+        assert!(rebase_lease_ttl(&crate::config::Config::default()).num_seconds() < 7200);
+    }
     use serde_json::{Value, json};
 
     fn item(follow_up: Option<&str>) -> Item {

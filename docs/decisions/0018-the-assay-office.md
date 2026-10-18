@@ -33,7 +33,9 @@ nothing else uses the worktree meanwhile.
 - The `gates` from the main checkout's `.hallmark.toml` (ADR 0012) run in
   order through the platform shell. Every gate runs, even after one fails,
   so the fixer sees all of them in one round.
-- Each gate has the `[budget.review] timeout` (default 20m). On Unix it runs
+- Each gate has the `[budget.review] timeout` (default 20m). *(Note,
+  2026-10-15: superseded in part. Gates now have `gates_timeout` and a
+  per-gate `timeout`; see [configuration](../configuration.md).)* On Unix it runs
   in its own process group, so a timeout kills the whole tree; on Windows
   `taskkill /T` does that. A timed-out gate records exit 124.
 - Output goes to `items/<id>/checks/r<round>.log`. `CheckRun.log` is

@@ -45,6 +45,7 @@ update      = "git push --force-with-lease={branch}:{pr_head} origin {branch} &&
 review_comment = "gh pr comment {pr} --body-file {review_file}"   # every review is a PR comment; "" for none
 gates       = []
 gates_no_cache = []         # gates never served from the checks cache
+gates_timeout = "20m"       # each gate is killed after this
 fixer       = "claude -p"   # or another fix engine, run in the worktree
 claude_args = []            # extra arguments for every headless claude -p run
 dev_commands = []           # what headless dev runs may run besides the gates
@@ -294,6 +295,26 @@ such gates last to keep the others cached.
 gates          = ["cargo test", "cargo test --features live-api"]
 gates_no_cache = ["cargo test --features live-api"]
 ```
+
+### Gate timeouts
+
+Each gate is killed after `gates_timeout`, 20 minutes by default, and recorded
+as failed with exit code 124. A slow gate, such as a full test suite or
+mutation testing, gets its own limit with the table form; plain strings and
+tables mix in one list:
+
+```toml
+gates_timeout = "20m"   # every gate without its own
+gates = [
+  "cargo clippy --all-targets -- -D warnings",
+  { cmd = "cargo test", timeout = "40m" },
+]
+```
+
+`hall config set gates_timeout 30m` changes the default, and
+`hall config set gates '[{ cmd = "cargo test", timeout = "40m" }, "cargo clippy"]'`
+writes the table form. Gates used to share the reviewer's run limit,
+`[budget.review] timeout`; that now covers only the reviewer's run.
 
 ## Your tools
 

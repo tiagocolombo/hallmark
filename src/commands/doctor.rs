@@ -98,6 +98,38 @@ fn skills_check(repo: &Repo) -> Option<Check> {
     Some(check("skills", false, detail, Some(&fix)))
 }
 
+/// Gates used to run under `[budget.review] timeout`. A repo that raised it
+/// for slow gates now kills them at `gates_timeout`: say so.
+fn gate_timeout_check(config: &crate::config::Config) -> Option<Check> {
+    if config.gates.is_empty() {
+        return None;
+    }
+    // Only a limit the repo set itself can be a leftover.
+    let raw = config
+        .budget
+        .role(crate::config::Role::Reviewer)
+        .and_then(|b| b.timeout.clone())?;
+    let review = crate::config::parse_duration(&raw).filter(|s| *s > 0)? as u64;
+    let longest = config.longest_gate_secs();
+    let unlimited = config
+        .gates
+        .iter()
+        .any(|g| config.gate_timeout_secs(g) == 0);
+    if unlimited || review <= longest {
+        return None;
+    }
+    let fix = format!("hall config set gates_timeout {raw}");
+    Some(check(
+        "gates timeout",
+        false,
+        format!(
+            "gates stop after {longest}s at most, not the reviewer's {review}s \
+             ([budget.review] timeout no longer applies to them)"
+        ),
+        Some(&fix),
+    ))
+}
+
 /// The extensions turned on (ADR 0038), with their credit, and for the
 /// reviewer, whether the base branch has the setting yet. None when none is.
 fn extensions_check(repo: &Repo) -> Option<Check> {
@@ -240,7 +272,7 @@ pub fn doctor(cwd: &Path) -> Result<Response> {
                 let gates = if repo.config.gates.is_empty() {
                     "no gates configured".to_string()
                 } else {
-                    format!("gates {}", repo.config.gates.join(", "))
+                    format!("gates {}", repo.config.gate_commands().join(", "))
                 };
                 checks.push(check("repo", true, format!("{}: {gates}", repo.name), None));
                 let probe = repo.hall.root.join(".doctor");
@@ -264,6 +296,7 @@ pub fn doctor(cwd: &Path) -> Result<Response> {
                         Some("add gates to .hallmark.toml"),
                     ));
                 }
+                checks.extend(gate_timeout_check(&repo.config));
                 checks.extend(skills_check(&repo));
                 checks.extend(extensions_check(&repo));
             } else {
@@ -315,4 +348,32 @@ pub fn doctor(cwd: &Path) -> Result<Response> {
         next.push("hall update".into());
     }
     Ok(Response::new(DoctorOut { healthy, checks }, next))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+
+    #[test]
+    fn a_review_timeout_raised_for_slow_gates_is_flagged() {
+        let c = Config::parse("gates = ['make']\n[budget.review]\ntimeout = '60m'\n").unwrap();
+        let k = gate_timeout_check(&c).unwrap();
+        assert!(!k.ok);
+        assert_eq!(k.fix.as_deref(), Some("hall config set gates_timeout 60m"));
+        let c = Config::parse(
+            "gates = ['make']\ngates_timeout = '60m'\n[budget.review]\ntimeout = '60m'\n",
+        )
+        .unwrap();
+        assert!(gate_timeout_check(&c).is_none());
+        assert!(gate_timeout_check(&Config::parse("gates = ['make']\n").unwrap()).is_none());
+        let none = |t: &str| gate_timeout_check(&Config::parse(t).unwrap()).is_none();
+        assert!(none("gates = ['make']\ngates_timeout = '10m'\n"));
+        assert!(none(
+            "gates = [{ cmd = 'x', timeout = '60m' }]\n[budget.review]\ntimeout = '60m'\n"
+        ));
+        assert!(none(
+            "gates = ['make']\ngates_timeout = '0s'\n[budget.review]\ntimeout = '60m'\n"
+        ));
+    }
 }

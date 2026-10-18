@@ -168,6 +168,14 @@ embedded in the binary, so this refreshes the skills, agents and hooks to
 match, re-points the hooks and the status line if `hall` moved, and restarts
 the daemon when it runs an older `hall`. Then restart Claude Code.
 
+### Upgrade notes
+
+- **Gates have their own timeout.** They no longer run under
+  `[budget.review] timeout`: each stops at `gates_timeout` (default 20m) or its
+  own `timeout`. If you raised the review timeout for a slow gate, run
+  `hall config set gates_timeout <value>`; `hall doctor` warns when it finds
+  that. See [configuration](configuration.md).
+
 ## Windows notes
 
 - Use the PowerShell installer or the `x86_64-pc-windows-msvc` zip. `hall`
