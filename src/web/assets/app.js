@@ -62,7 +62,7 @@ async function api(path, body) {
   }
   let j;
   try { j = await r.json(); } catch (_) { j = { error: { code: 'INTERNAL', message: `HTTP ${r.status}` } }; }
-  if (r.status === 401) locked();
+  if (r.status === 401) { S.locked = true; locked(); }
   return j;
 }
 
@@ -122,8 +122,9 @@ function said(reply) {
 
 // Runs an offered command. Placeholders such as "<why>" are asked for first.
 async function run(cmd, opts = {}) {
-  let args = split(cmd).slice(1);
-  const holes = [...new Set(args.filter((a) => /<[^>]+>/.test(a)))];
+  // `opts.args` are used as they are: typed text is never a template.
+  let args = opts.args || split(cmd).slice(1);
+  const holes = opts.args ? [] : [...new Set(args.filter((a) => /<[^>]+>/.test(a)))];
   if (holes.length || opts.confirm) {
     const filled = await ask(opts.title || cmd, holes, opts.confirm);
     if (!filled) return null;
@@ -138,7 +139,7 @@ async function run(cmd, opts = {}) {
   const e = errorOf(r);
   if (e) toast(`${e.code}: ${e.message}`, true);
   else if (!opts.quiet) toast(said(r.reply));
-  if (!opts.noRefresh) { draw(); sidebar(); }
+  if (!opts.noRefresh && !(e && opts.keepOnError)) { draw(); sidebar(); }
   return r;
 }
 
@@ -498,7 +499,7 @@ async function explain(n, e, tab) {
     ${x.why ? `<p style="margin:0">${esc(x.why)}</p>` : ''}
     ${(x.evidence || []).length ? `<ul style="margin:0;padding-left:18px">${x.evidence.map((v) => `<li>${esc(v)}</li>`).join('')}</ul>` : ''}
     ${question ? `<div style="display:flex;flex-direction:column;gap:8px">${options.map((o, k) => `
-      <button type="button" class="btn opt" data-run="${esc(command(['answer', x.qid, o]))}"><span class="mono" style="color:var(--brass)">${String.fromCharCode(97 + k)}</span>${esc(o)}
+      <button type="button" class="btn opt" data-answer="${esc(o)}" data-qid="${esc(x.qid)}"><span class="mono" style="color:var(--brass)">${String.fromCharCode(97 + k)}</span>${esc(o)}
       ${x.default === o ? '<span class="small muted" style="margin-left:auto">the default</span>' : ''}</button>`).join('')}</div>
       <form data-form="answer" data-qid="${esc(x.qid)}" style="display:flex;flex-direction:column;gap:8px">
         <label class="field">${options.length ? 'Or answer in your words' : 'Your answer'}<textarea name="answer" rows="3" required></textarea></label>
@@ -562,7 +563,7 @@ async function library() {
   const results = (hits && hits.reply && hits.reply.results) || [];
   return head('Kept locally, never committed', 'Library', `<div class="row">
     <button type="button" class="btn" data-run="hall library import">Import</button>
-    <button type="button" class="btn" data-run="hall library export">Export</button></div>`) + `
+    <button type="button" class="btn" data-run="hall library export --out &lt;file&gt;">Export</button></div>`) + `
   <form data-form="libsearch" class="row"><input type="search" name="q" value="${esc(S.libq)}" placeholder="Search learnings" class="grow" aria-label="Search learnings">
     <button class="btn">Search</button></form>
   ${failure(rev, 'hall library review')}
@@ -743,7 +744,7 @@ const route = () => (location.hash.replace(/^#\/?/, '') || 'floor').split('/').m
 const repoName = () => (S.repos.find((r) => r.path === S.repo) || {}).name || 'hall';
 
 async function draw() {
-  if (!S.token) return locked();
+  if (!S.token || S.locked) return locked();
   if (!S.repo) {
     $('#main').innerHTML = head('Hallmark', 'No repositories yet') + '<p>Run <code>hall init</code> in a git repository, then reload.</p>';
     return;
@@ -836,6 +837,12 @@ function setPath(path, value) {
 
 document.addEventListener('click', async (ev) => {
   const t = ev.target;
+  const ansBtn = t.closest('[data-answer]');
+  if (ansBtn) {
+    ev.preventDefault();
+    await run('hall answer', { args: ['answer', ansBtn.dataset.qid, '--', ansBtn.dataset.answer], button: ansBtn });
+    return;
+  }
   const runBtn = t.closest('[data-run]');
   if (runBtn) {
     ev.preventDefault();
@@ -884,7 +891,7 @@ document.addEventListener('submit', async (ev) => {
   if (kind === 'libsearch') { S.libq = String(new FormData(form).get('q') || '').trim(); draw(); }
   if (kind === 'answer') {
     const text = String(new FormData(form).get('answer') || '').trim();
-    if (text) await run(command(['answer', form.dataset.qid, text]), { button: form.querySelector('button') });
+    if (text) await run('hall answer', { args: ['answer', form.dataset.qid, '--', text], button: form.querySelector('button'), keepOnError: true });
   }
 });
 

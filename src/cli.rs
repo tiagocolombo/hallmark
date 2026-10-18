@@ -1000,3 +1000,24 @@ fn dispatch(cmd: Option<Cmd>, cwd: &std::path::Path, mode: Mode) -> Result<Respo
         Some(Cmd::Web(a)) => crate::web::web(cwd, a, mode),
     }
 }
+
+#[cfg(test)]
+mod web_tests {
+    use super::allowed_on_web;
+
+    fn ok(args: &[&str]) -> bool {
+        let a: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+        allowed_on_web(&a).is_ok()
+    }
+
+    #[test]
+    fn the_web_refuses_updates_from_another_source() {
+        assert!(!ok(&["update", "--branch", "x"]));
+        assert!(!ok(&["update", "--source=x"]));
+        assert!(!ok(&["update", "--source", "x"]));
+        assert!(ok(&["update"]));
+        assert!(ok(&["update", "--check"]));
+        assert!(ok(&["adopt", "--pr", "7"]));
+        assert!(ok(&["new", "x"]));
+    }
+}

@@ -556,7 +556,17 @@ fn set_aside(exe: &Path) -> Option<PathBuf> {
     let old = exe.with_extension("exe.old");
     // A previous update's copy; still locked if that hall still runs.
     let _ = std::fs::remove_file(&old);
-    std::fs::rename(exe, &old).ok().map(|_| old)
+    if !old.exists() && std::fs::rename(exe, &old).is_ok() {
+        return Some(old);
+    }
+    // Still locked (a `hall web` from the update before runs from it): set
+    // this one aside under a name of its own.
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or_default();
+    let own = exe.with_extension(format!("exe.{nanos}.old"));
+    std::fs::rename(exe, &own).ok().map(|_| own)
 }
 
 #[cfg(not(windows))]

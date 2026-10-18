@@ -124,6 +124,9 @@ struct Ctx {
 
 pub fn web(cwd: &Path, a: WebArgs, mode: Mode) -> Result<Response> {
     let inherited = std::env::var(TOKEN_ENV).ok().filter(|t| !t.is_empty());
+    // Keep the credential out of every child: only a restart passes it on.
+    // SAFETY: set at start, before this process starts a thread.
+    unsafe { std::env::remove_var(TOKEN_ENV) };
     let token = match &inherited {
         Some(t) => t.clone(),
         None => new_token()?,
@@ -151,7 +154,11 @@ pub fn web(cwd: &Path, a: WebArgs, mode: Mode) -> Result<Response> {
         },
     );
     if !a.no_open {
-        let _ = crate::tui::open(&url);
+        // The token must not be in any process's arguments, which other
+        // users can read: open a private file that redirects to the address.
+        if let Some(page) = launch_page(&url) {
+            let _ = crate::tui::open(&page);
+        }
     }
     let server = Arc::new(server);
     for req in server.incoming_requests() {
@@ -181,6 +188,34 @@ pub fn web(cwd: &Path, a: WebArgs, mode: Mode) -> Result<Response> {
         },
         vec![format!("hall web --port {port}")],
     ))
+}
+
+/// Writes a page only you can read that sends the browser to `url`, and
+/// returns its path.
+fn launch_page(url: &str) -> Option<String> {
+    let dir = user_dir();
+    std::fs::create_dir_all(&dir).ok()?;
+    let file = dir.join("web-open.html");
+    let html = format!(
+        "<!doctype html><meta charset=utf-8><meta http-equiv=refresh content=\"0;url={url}\">\
+         <title>Hallmark</title><script>location.replace(\"{url}\")</script>\n"
+    );
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let _ = std::fs::remove_file(&file);
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&file)
+            .ok()?;
+        f.write_all(html.as_bytes()).ok()?;
+    }
+    #[cfg(not(unix))]
+    std::fs::write(&file, html).ok()?;
+    Some(paths::display(&file))
 }
 
 /// A random token, 32 hex digits.

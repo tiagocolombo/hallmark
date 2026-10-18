@@ -27,8 +27,16 @@ impl Drop for Web {
 }
 
 fn start(env: &Env) -> Web {
-    let mut child = env
-        .std_cmd(&env.repo)
+    start_with(env, &[])
+}
+
+/// Starts `hall web` with more variables in its own environment.
+fn start_with(env: &Env, vars: &[(&str, &str)]) -> Web {
+    let mut cmd = env.std_cmd(&env.repo);
+    for (k, v) in vars {
+        cmd.env(k, v);
+    }
+    let mut child = cmd
         .args(["web", "--port", "0", "--no-open"])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -198,6 +206,30 @@ fn it_runs_hall_commands_in_a_repo_as_you() {
     assert_eq!(code, 200);
     assert_eq!(r["exit"], 3);
     assert_eq!(r["reply"]["error"]["code"], "ITEM_NOT_FOUND");
+}
+
+#[test]
+fn page_actions_are_yours_whatever_session_started_the_server() {
+    let env = Env::initialized();
+    let (id, _) = env.new_item("Retry webhooks");
+    let web = start_with(
+        &env,
+        &[
+            ("CLAUDECODE", "1"),
+            ("HALL_ACTOR", "fixer"),
+            ("HALL_HEADLESS", "1"),
+        ],
+    );
+    let (_, r) = web.run(&path(&env), &["config", "set", "budget.daily", "4M"]);
+    assert_eq!(r["exit"], 0, "{r}");
+    let (_, r) = web.run(&path(&env), &["drop", &id, "--reason", "from the web"]);
+    assert_eq!(r["exit"], 0, "{r}");
+    let dropped = env
+        .journal(&id)
+        .into_iter()
+        .find(|e| e["event"] == "dropped")
+        .expect("a dropped event");
+    assert_eq!(dropped["actor"], "you");
 }
 
 #[test]
