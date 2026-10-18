@@ -145,6 +145,10 @@ struct State {
     /// them (ADR 0051). Your office shows each one.
     #[serde(default)]
     red: BTreeMap<String, Red>,
+    /// Bases whose tip checks couldn't be read last pass, so the log says so
+    /// once.
+    #[serde(default)]
+    unread: BTreeSet<String>,
 }
 
 /// A base the merger stopped merging into: its tip's CI failed.
@@ -384,23 +388,49 @@ struct Look<'a> {
     capped: bool,
     /// What each base's tip CI said this look: its sha and the checks that
     /// failed there. A base GitHub couldn't tell about isn't here.
-    tips: BTreeMap<String, (String, Vec<String>)>,
+    tips: BTreeMap<String, (String, crate::gh::TipChecks)>,
+    /// Bases whose tip checks couldn't be read this look: the guard is off
+    /// for them, unless they were already stopped at the same tip.
+    unread: BTreeSet<String>,
+    /// The bases already stopped, so an unreadable tip keeps them stopped.
+    known_red: BTreeMap<String, Red>,
 }
 
 impl<'a> Look<'a> {
     /// The checks that failed on `base`'s tip, read once per look. Empty
     /// when it is green or still running; `None` when GitHub can't say, and
     /// then nothing stops: the guard never blocks on an outage.
-    fn tip_failures(&mut self, base: &str, line: &[Item]) -> Option<Vec<String>> {
+    fn tip_failures(&mut self, base: &str, line: &[Item]) -> Option<crate::gh::TipChecks> {
         if let Some((_, f)) = self.tips.get(base) {
             return Some(f.clone());
         }
+        if self.unread.contains(base) {
+            return None;
+        }
+        let read = self.read_tip(base, line);
+        if read.is_none() {
+            self.unread.insert(base.to_string());
+        }
+        read
+    }
+
+    fn read_tip(&mut self, base: &str, line: &[Item]) -> Option<crate::gh::TipChecks> {
         let target = self.target(base)?;
         let pr = line.iter().find_map(|i| i.pr_url.clone())?;
         let sha = git::run(&self.repo.main_root, &["rev-parse", &target.git_ref]).ok()?;
-        let failed = crate::gh::commit_failures(&self.repo.main_root, &pr, &sha).ok()?;
-        self.tips.insert(base.to_string(), (sha, failed.clone()));
-        Some(failed)
+        let checks = match crate::gh::commit_failures(&self.repo.main_root, &pr, &sha) {
+            Ok(c) => c,
+            // Recorded red at this very tip: stay stopped through an outage.
+            Err(_) => {
+                let red = self.known_red.get(base).filter(|r| r.sha == sha)?;
+                crate::gh::TipChecks {
+                    failed: red.failing.clone(),
+                    running: false,
+                }
+            }
+        };
+        self.tips.insert(base.to_string(), (sha, checks.clone()));
+        Some(checks)
     }
 
     fn target(&mut self, base: &str) -> Option<Target> {
@@ -871,19 +901,46 @@ impl<'a> Look<'a> {
         }
         // Stop the line: nothing merges into, or is rebased onto, a base
         // whose own CI failed, until it is green again (ADR 0051).
-        let failed = if out.iter().any(|p| {
+        let tip = if out.iter().any(|p| {
             matches!(
                 p.verdict,
                 Some(Verdict::Merge(_) | Verdict::Rebase(..) | Verdict::Lit(_))
             )
         }) {
-            self.tip_failures(base, line).unwrap_or_default()
+            self.tip_failures(base, line)
         } else {
-            vec![]
+            None
         };
+        let unreadable = self.unread.contains(base);
+        let crate::gh::TipChecks { failed, running } = tip.unwrap_or_default();
+        if unreadable {
+            for p in &mut out {
+                if p.verdict.is_some() {
+                    p.entry.why = format!(
+                        "{}; couldn't read {base}'s checks, so the red-base guard is off",
+                        p.entry.why
+                    );
+                }
+            }
+        }
+        if failed.is_empty() && running {
+            // One merge's CI finishes before the next merge lands, so a
+            // break is seen while it is the only one (rebases go on).
+            for p in &mut out {
+                if matches!(p.verdict, Some(Verdict::Merge(_))) {
+                    p.verdict = None;
+                    p.entry.status = Status::Queued;
+                    p.entry.why = format!(
+                        "{}; {base}'s CI is still running; the merger waits for it",
+                        p.entry.why
+                    );
+                }
+            }
+        }
         if !failed.is_empty() {
             let stop = format!(
-                "{base} is red ({} failed); the merger waits for it to be green",
+                "{base} is red ({} failed); the merger waits for it to be green. A PR that \
+                 fixes it can't pass this queue: merge it by hand (gh pr merge <pr> --squash --admin)",
                 failed.join(", ")
             );
             for p in &mut out {
@@ -1054,6 +1111,8 @@ fn look<'a>(repo: &'a Repo, watched: &'a [Item], capped: bool) -> Look<'a> {
         files: BTreeMap::new(),
         capped,
         tips: BTreeMap::new(),
+        unread: BTreeSet::new(),
+        known_red: BTreeMap::new(),
     }
 }
 
@@ -1107,6 +1166,7 @@ pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
     }
     state.last = Some(now);
     let mut look = look(repo, &watched, false);
+    look.known_red = state.red.clone();
     let mut done = Vec::new();
     let mut queue = Vec::new();
     let lines = lines(&items);
@@ -1154,7 +1214,16 @@ pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
     state.queue = queue;
     // What each base's tip said: red ones wait in your office, green ones
     // leave it. A base GitHub couldn't tell about keeps what it had.
-    for (base, (sha, failing)) in std::mem::take(&mut look.tips) {
+    for base in std::mem::take(&mut look.unread) {
+        if state.unread.insert(base.clone()) {
+            repo.hall.live(&format!(
+                "merger: can't read {base}'s checks; the red-base guard is off for it"
+            ));
+        }
+    }
+    for (base, (sha, checks)) in std::mem::take(&mut look.tips) {
+        state.unread.remove(&base);
+        let failing = checks.failed;
         if failing.is_empty() {
             if state.red.remove(&base).is_some() {
                 repo.hall

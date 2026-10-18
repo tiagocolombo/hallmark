@@ -309,10 +309,18 @@ pub fn pr_state(dir: &Path, pr: &str) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
-/// The checks that failed on a commit of the repo `pr` belongs to: every
-/// check run that finished as `failure` or `timed_out`. A cancelled run
-/// (one a newer run replaced) and one still going are not failures.
-pub fn commit_failures(dir: &Path, pr: &str, sha: &str) -> Result<Vec<String>> {
+/// What the check runs on a commit say.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct TipChecks {
+    /// Runs that finished as `failure` or `timed_out`. A cancelled run (one a
+    /// newer run replaced) is not a failure.
+    pub failed: Vec<String>,
+    /// Whether a run is still queued or going.
+    pub running: bool,
+}
+
+/// The check runs on a commit of the repo `pr` belongs to.
+pub fn commit_failures(dir: &Path, pr: &str, sha: &str) -> Result<TipChecks> {
     let Some((owner, name)) = owner_repo(pr) else {
         return Err(HallError::new(
             ErrorCode::GhUnavailable,
@@ -353,6 +361,7 @@ pub fn commit_failures(dir: &Path, pr: &str, sha: &str) -> Result<Vec<String>> {
             format!("unreadable gh output: {e}"),
         )
     })?;
+    let running = runs.check_runs.iter().any(|r| r.conclusion.is_none());
     let mut failed: Vec<String> = runs
         .check_runs
         .into_iter()
@@ -361,7 +370,7 @@ pub fn commit_failures(dir: &Path, pr: &str, sha: &str) -> Result<Vec<String>> {
         .collect();
     failed.sort();
     failed.dedup();
-    Ok(failed)
+    Ok(TipChecks { failed, running })
 }
 
 /// Where an open PR stands for merging.

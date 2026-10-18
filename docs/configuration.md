@@ -137,15 +137,19 @@ If one failed (`failure` or `timed_out`; a cancelled or running one doesn't
 count), nothing merges into that base and nothing is rebased onto it, and
 your office shows `base_red` with the checks that failed. Fix the base, or
 re-run a flaky check: the next pass after the tip is green carries on, and
-the entry leaves. When GitHub can't be read, the merger goes on: the guard
-never blocks on an outage.
+the entry leaves. A PR that fixes the base can't pass the stopped queue: merge
+it by hand (`gh pr merge <pr> --squash --admin`). While the tip's checks are
+still running, the merger doesn't merge into the base (rebases go on), so
+each merge's CI finishes before the next lands. When GitHub can't be read,
+the merger goes on, and `hall queue` says the guard is off for that base
+(a base already stopped at the same tip stays stopped).
 
 **Choosing `update`.** `files` keeps the base green by construction, at the
 cost of one rebase, gate run and CI run per PR on shared files. A repo where
 nearly every change touches the same docs pays that for each PR in turn.
-`conflicts` merges those PRs within minutes of each other, and relies on the
-base's CI running on every push and on the stop-the-line guard: a bad
-combination stops the queue within one CI run, instead of being prevented.
+`conflicts` merges those PRs one CI run apart, and relies on the base's CI
+running on every push and on the stop-the-line guard: a bad combination stops
+the queue after its own CI run, instead of being prevented.
 
 **The PR's author can't approve it.** GitHub refuses an approving review
 from the PR's author, and Hallmark posts none: the hallmark is the approval.

@@ -819,7 +819,8 @@ impl Index {
                 qid: None,
                 text: format!(
                     "{base} is red at {}: {} failed. The merger stopped merging into {base} \
-                     until its CI is green again: fix it, or re-run a flaky check",
+                     until its CI is green again: fix it, or re-run a flaky check. A PR that \
+                     fixes it can't pass the queue: merge it by hand (gh pr merge <pr> --squash --admin)",
                     crate::event::short(&red.sha),
                     red.failing.join(", ")
                 ),

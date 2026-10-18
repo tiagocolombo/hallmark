@@ -51,22 +51,31 @@ rebased onto it. The PRs show `queued` (or stay `behind`, `conflicting`) with
 "main is red (… failed); the merger waits for it to be green". Your office
 gets one `base_red` entry per base, naming the tip and the checks.
 
-A cancelled run (a newer run replaced it) and a running one are not
-failures, so merging goes on while the tip's CI is still running. When
-GitHub can't be read the merger goes on: the guard must never stop the queue
-on an outage. A base that is red is read every pass, even with nothing
-ready, so the queue starts again on the first pass after the tip is green,
-and the entry leaves.
+A cancelled run (a newer run replaced it) is not a failure. A run still
+queued or going isn't one either, but the merger doesn't merge into a base
+whose tip is still running checks (rebases go on): otherwise `main`'s
+`cancel-in-progress` CI cancels each run as the next merge lands, a break is
+never seen, and every queued PR lands on it. Each merge's CI finishes before
+the next lands.
+
+When GitHub can't be read the merger goes on, because the guard must never
+stop the queue on an outage; but `hall queue` and the log say the guard is
+off, and a base already recorded red at the same tip stays stopped. A base
+that is red is read every pass, even with nothing ready, so the queue starts
+again on the first pass after the tip is green, and the entry leaves.
+
+The PR that fixes a red base can't pass the stopped queue (the base would
+have to be green first). It is merged by hand with `gh pr merge <pr> --squash
+--admin`; the `base_red` text and the queue say so.
 
 ## Consequences
 
-- With `conflicts`, PRs on shared files merge minutes apart instead of half
-  an hour apart, and most of them are never rebased, gated or reviewed again.
+- With `conflicts`, PRs on shared files merge one CI run apart instead of
+  half an hour apart, and most of them are never rebased, gated or reviewed
+  again.
 - A bad combination isn't prevented; it is caught. It lands on the base, the
-  base's CI fails, and the queue stops within one CI run. Until the base is
-  green again nothing else lands on top of it, so the break stays one commit
-  to find. Several PRs may have merged during that CI run; the entry names
-  the tip, and `git log` the PRs since the last green one.
+  base's CI fails, and the queue stops. The next merge waits for that CI, so
+  nothing lands on top of the break and it stays one commit to find.
 - With `files`, stop the line adds a guard that was missing: a red base
   stopped nothing before, and the merger rebased PRs onto it, which turned
   their CI red and sent them to the Delivery office for fixes they didn't

@@ -42,7 +42,7 @@ mode       = "auto"
 command    = "gh pr merge {pr} --squash --admin --match-head-commit {pr_head}"
 require_ci = true
 update     = "conflicts"
-lit        =[".github/", "release-plz.toml", "rig.toml", "flake.nix", "flake.lock"]
+lit        = [".github/", "release-plz.toml", "rig.toml", "flake.nix", "flake.lock"]
 
 [intake]
 split     = "auto"

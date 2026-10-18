@@ -98,7 +98,9 @@ are happy with.
      after another on shared files. `conflicts` rebases only when GitHub says
      it conflicts, and merges clean, green PRs as they are: much faster when
      most PRs share files (docs), and safe only if the base's CI runs on
-     every push. Either way the merger stops when the base's tip is red.
+     every push. Either way the merger stops when the base's tip is red (a
+     fix for it is merged by hand), and doesn't merge while the tip's checks
+     are still running.
    - `merge.lit`: paths a person merges, as globs (`.github/`, release
      settings). Such a PR waits in the inbox, and `hall retry` lets it merge.
 8. **Tools**, user scope: `tools.claude` and `tools.gh` when they aren't on

@@ -607,6 +607,7 @@ changes (ADR 0030).
 | budget, run_failed, checks, ship_failed, conflict, feedback, ci_failed | a hold: a per-item cap, two failed runs in a row, `max_check_failures` failed checks in a row, a failed ship, a rebase the Delivery office couldn't finish, PR comments or failing CI its dev run didn't act on | that item, until `hall retry` (which, for a budget hold, grants the item more tokens); a `ci_failed` hold also clears when a re-run of the PR's checks passes (ADR 0047) |
 | merge_failed, lit | a hold on a shipped item: the merger's merge command failed, or the PR is ready but touches a `[merge] lit` path (ADR 0048) | that item, until `hall retry` (try again; for `lit`, merge this head) or the PR merges or closes |
 | ci_failed | an open PR's CI still fails after the Delivery office's fixes | a follow-up item |
+| base_red | a failed check on a base's tip (ADR 0051) | that base's merge queue, until its CI is green; a PR that fixes it is merged by hand |
 | ci_down | CI jobs that never started (an Actions billing limit, no runners): one entry for every PR | GitHub |
 | session waiting | an answer the loop couldn't deliver to the asking session | that session |
 | daemon stopped | a daemon that should run has no heartbeat | the loop |

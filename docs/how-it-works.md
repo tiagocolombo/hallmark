@@ -182,9 +182,11 @@ the key is there only while the merger is on.
 
 The merger also stops the line. When a check fails on a base's tip, nothing
 merges into that base and nothing is rebased onto it until it is green
-again, and your office shows `base_red` with the checks that failed. That is
-what makes `update = "conflicts"` safe enough: a combination that breaks the
-base is caught within one CI run, and nothing lands on top of it.
+again, and your office shows `base_red` with the checks that failed. A merge
+also waits while the base's tip is still running its checks. That is what
+makes `update = "conflicts"` safe enough: each merge's CI finishes before the
+next lands, so a combination that breaks the base is caught with nothing on
+top of it. A PR that fixes a red base is merged by hand.
 
 A script decides each step, never a model. That is what lets this loop run
 with nobody watching: its check is cheap, runs often and is hard to game.
@@ -255,7 +257,8 @@ agent, an escalation after repeated rejections, "looks done?", a budget hold
 (800k tokens an item by default), checks that failed three times in a row,
 a merge the merger couldn't do (`merge_failed`), a ready PR that touches a
 `[merge] lit` path (`lit`), CI that still fails after the Delivery office's
-two fixes, or CI that never started (one `ci_down` entry). Hallmark tells you in Claude Code (a hook and
+two fixes, CI that never started (one `ci_down` entry), or a base whose own
+CI failed, which stops its merge queue (`base_red`). Hallmark tells you in Claude Code (a hook and
 the status line), in the terminal app, with a desktop notification, and on
 your phone through [ntfy](https://ntfy.sh), Telegram or Slack, plus an
 optional morning digest.
