@@ -257,7 +257,10 @@ what the agent reads, runs and says, and how the run ended. <kbd>[</kbd> and
 <kbd>m</kbd> shows the merge queue: the order PRs merge in, and what each one
 waits for. <kbd>?</kbd> lists every key.
 
-<img alt="The hall terminal app: items move from development through checks and review to a PR while the inbox fills and empties, then the merge queue shows the order the PRs merge in" src="docs/images/tui-board.gif">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/tui-board.gif">
+  <img alt="The hall terminal app: items move through checks, review and shipping on the board, an item's journal replays, your office answers an agent's question, then an item's findings, its diff and usage by room" src="docs/images/tui-light.gif">
+</picture>
 
 <details>
 <summary><b>More: your office, findings, diffs, usage and history</b></summary>
@@ -290,6 +293,10 @@ command the item offers, so the web app can do what you'd do in a terminal
 and nothing more. When a newer `hall` is out, the top bar says so, and
 *Update and restart* installs it and brings the page back
 ([ADR 0052](docs/decisions/0052-the-web-app.md)).
+
+<img alt="hall web in a light theme: the live floor, an item that's approved and shipped while you watch, its findings and diff, an agent's question answered from your office, and usage and budgets" src="docs/images/hall-web.gif">
+
+<sub>The demo data is fictional.</sub>
 
 ### Built for agents
 
