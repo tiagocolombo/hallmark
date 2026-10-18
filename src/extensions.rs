@@ -8,6 +8,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::config::Extensions;
+use crate::findings::Lens;
 
 /// A Hallmark role an extension's skills can serve.
 #[derive(
@@ -84,6 +85,39 @@ pub struct Skill {
     /// Each role that follows it, with how it fits that role. The skill is
     /// the author's text, unchanged; this is where Hallmark adapts it.
     pub uses: &'static [(Role, &'static str)],
+    /// When a headless role loads it: a role listed here gets the skill in
+    /// its prompt only on a run whose [`Context`] meets the trigger; a role
+    /// not listed gets it on every run. Development sessions see an index
+    /// of every skill either way.
+    pub when: &'static [(Role, Trigger)],
+}
+
+/// What has to be true of a headless run for a skill to load into it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Trigger {
+    /// A gate failed on the commit being fixed.
+    GateFailed,
+    /// Some open finding is under one of these lenses.
+    Lens(&'static [Lens]),
+}
+
+/// What a headless run is about, for the triggers. The default is a run
+/// with no red gate and no open finding: only untriggered skills load.
+#[derive(Debug, Clone, Default)]
+pub struct Context {
+    /// A gate failed in the latest checks run.
+    pub gate_failed: bool,
+    /// The lenses of the open findings.
+    pub lenses: Vec<Lens>,
+}
+
+impl Trigger {
+    pub fn holds(self, ctx: &Context) -> bool {
+        match self {
+            Trigger::GateFailed => ctx.gate_failed,
+            Trigger::Lens(ls) => ctx.lenses.iter().any(|l| ls.contains(l)),
+        }
+    }
 }
 
 /// Every extension `hall` knows.
@@ -117,6 +151,7 @@ const MATT_POCOCK: Extension = Extension {
                  tickets, each part names its paths. Don't quiz anyone or publish tickets: \
                  your plan is the answer.",
             )],
+            when: &[],
         },
         Skill {
             name: "tdd",
@@ -148,6 +183,12 @@ const MATT_POCOCK: Extension = Extension {
                      out of the fix.",
                 ),
             ],
+            // Only a finding about behaviour, or about what proves it,
+            // calls for a test first.
+            when: &[(
+                Role::Fixer,
+                Trigger::Lens(&[Lens::Correctness, Lens::Evidence]),
+            )],
         },
         Skill {
             name: "diagnosing-bugs",
@@ -169,6 +210,7 @@ const MATT_POCOCK: Extension = Extension {
                      you.",
                 ),
             ],
+            when: &[(Role::Fixer, Trigger::GateFailed)],
         },
         Skill {
             name: "codebase-design",
@@ -192,6 +234,7 @@ const MATT_POCOCK: Extension = Extension {
                 Role::Developer,
                 "shaping a module's interface, or deciding where a seam goes",
             )],
+            when: &[],
         },
         Skill {
             name: "code-review",
@@ -209,6 +252,8 @@ const MATT_POCOCK: Extension = Extension {
                  bar. A smell is a judgement call, never a blocker on its own. Skip its \
                  side-by-side report: your verdict is the answer.",
             )],
+            // It is the reviewer's method, so every review reads it.
+            when: &[],
         },
     ],
 };
@@ -242,6 +287,14 @@ impl Extension {
             .collect()
     }
 
+    /// The skills `role` follows that load into a run about `ctx`.
+    pub fn skills_in(&self, role: Role, ctx: &Context) -> Vec<(&'static Skill, &'static str)> {
+        self.skills_for(role)
+            .into_iter()
+            .filter(|(s, _)| s.loads(role, ctx))
+            .collect()
+    }
+
     pub fn skill(&self, name: &str) -> Option<&'static Skill> {
         self.skills
             .iter()
@@ -269,6 +322,16 @@ impl Extension {
 impl Skill {
     fn note(&self, role: Role) -> Option<&'static str> {
         self.uses.iter().find(|(r, _)| *r == role).map(|(_, n)| *n)
+    }
+
+    /// The trigger that loads it for `role`; None: every run.
+    pub fn trigger(&self, role: Role) -> Option<Trigger> {
+        self.when.iter().find(|(r, _)| *r == role).map(|(_, t)| *t)
+    }
+
+    /// Whether a headless run of `role` about `ctx` loads it.
+    pub fn loads(&self, role: Role, ctx: &Context) -> bool {
+        self.trigger(role).is_none_or(|t| t.holds(ctx))
     }
 
     /// The `description` in the skill's frontmatter.
@@ -307,11 +370,23 @@ pub fn enabled(cfg: &Extensions, role: Role) -> Vec<&'static Extension> {
         .collect()
 }
 
-/// The skills a headless role (planner, reviewer, fixer) follows, in full,
-/// as a section of its prompt. None when no extension is on for it.
+/// The skills a headless role (planner, reviewer) follows on every run, in
+/// full, as a section of its prompt. None when no extension is on for it.
 pub fn prompt(cfg: &Extensions, role: Role) -> Option<String> {
-    let exts = enabled(cfg, role);
-    if exts.is_empty() {
+    prompt_for(cfg, role, &Context::default())
+}
+
+/// The skills a headless role follows on a run about `ctx`, in full, as a
+/// section of its prompt: each skill whose trigger holds (ADR 0038,
+/// addendum). None when no extension is on for it or none of its skills
+/// loads this run.
+pub fn prompt_for(cfg: &Extensions, role: Role, ctx: &Context) -> Option<String> {
+    let loaded: Vec<_> = enabled(cfg, role)
+        .into_iter()
+        .map(|e| (e, e.skills_in(role, ctx)))
+        .filter(|(_, skills)| !skills.is_empty())
+        .collect();
+    if loaded.is_empty() {
         return None;
     }
     let mut s = format!(
@@ -325,8 +400,8 @@ pub fn prompt(cfg: &Extensions, role: Role) -> Option<String> {
          disagree, and your output format doesn't change.\n",
         role.who()
     );
-    for e in exts {
-        for (skill, note) in e.skills_for(role) {
+    for (e, skills) in loaded {
+        for (skill, note) in skills {
             s.push_str(&format!(
                 "\n### {}: `{}`\n\n{}, {}.\n\nHow it fits your role: {note}\n\n\
                  <skill extension=\"{}\" name=\"{}\">\n{}\n</skill>\n",
@@ -407,6 +482,13 @@ mod tests {
             for s in e.skills {
                 assert!(!s.description().is_empty(), "{}: a description", s.name);
                 assert!(!s.uses.is_empty(), "{}: some role follows it", s.name);
+                for (r, _) in s.when {
+                    assert!(
+                        s.note(*r).is_some(),
+                        "{}: a trigger for {r:?}, which doesn't follow it",
+                        s.name
+                    );
+                }
                 assert!(
                     s.files[0].0 == "SKILL.md"
                         && s.files[0].1.contains(&format!("name: {}", s.name)),
@@ -464,7 +546,85 @@ mod tests {
         assert_eq!(prompt(&cfg, Role::Reviewer), None);
         assert_eq!(prompt(&cfg, Role::Planner), None);
         assert_eq!(session(&cfg), None);
-        assert!(prompt(&cfg, Role::Fixer).is_some());
+        assert!(prompt_for(&cfg, Role::Fixer, &red()).is_some());
+    }
+
+    /// A round whose gates failed, with no open findings.
+    fn red() -> Context {
+        Context {
+            gate_failed: true,
+            lenses: vec![],
+        }
+    }
+
+    fn loaded(p: &Option<String>) -> Vec<&str> {
+        let p = p.as_deref().unwrap_or("");
+        [
+            "to-tickets",
+            "tdd",
+            "diagnosing-bugs",
+            "codebase-design",
+            "code-review",
+        ]
+        .into_iter()
+        .filter(|n| p.contains(&format!("name=\"{n}\">")))
+        .collect()
+    }
+
+    #[test]
+    fn the_fixer_loads_a_skill_only_when_its_trigger_holds() {
+        let cfg = on(&[Role::Fixer]);
+        let fixer = |ctx: &Context| prompt_for(&cfg, Role::Fixer, ctx);
+        // Nothing failed and nothing open that calls for either: no section.
+        assert_eq!(fixer(&Context::default()), None);
+        let style = Context {
+            gate_failed: false,
+            lenses: vec![
+                Lens::RepoRules,
+                Lens::SecurityTenancy,
+                Lens::FirstPrinciples,
+            ],
+        };
+        assert_eq!(fixer(&style), None);
+        // A red gate brings `diagnosing-bugs`, not `tdd`.
+        assert_eq!(loaded(&fixer(&red())), ["diagnosing-bugs"]);
+        // A finding about behaviour or its proof brings `tdd`.
+        for lens in [Lens::Correctness, Lens::Evidence] {
+            let ctx = Context {
+                gate_failed: false,
+                lenses: vec![Lens::RepoRules, lens],
+            };
+            assert_eq!(loaded(&fixer(&ctx)), ["tdd"], "{lens:?}");
+        }
+        let both = Context {
+            gate_failed: true,
+            lenses: vec![Lens::Evidence],
+        };
+        assert_eq!(loaded(&fixer(&both)), ["tdd", "diagnosing-bugs"]);
+    }
+
+    #[test]
+    fn the_reviewer_and_planner_load_theirs_on_every_run() {
+        let cfg = on(&Role::ALL);
+        for ctx in [Context::default(), red()] {
+            assert_eq!(
+                loaded(&prompt_for(&cfg, Role::Reviewer, &ctx)),
+                ["code-review"]
+            );
+            assert_eq!(
+                loaded(&prompt_for(&cfg, Role::Planner, &ctx)),
+                ["to-tickets"]
+            );
+        }
+        assert_eq!(loaded(&prompt(&cfg, Role::Reviewer)), ["code-review"]);
+    }
+
+    #[test]
+    fn a_session_still_lists_every_skill_whatever_the_triggers() {
+        let s = session(&on(&[Role::Developer])).unwrap();
+        for n in ["tdd", "diagnosing-bugs", "codebase-design"] {
+            assert!(s.contains(&format!("- `{n}`:")), "{s}");
+        }
     }
 
     #[test]
@@ -486,7 +646,11 @@ mod tests {
         );
         assert!(p.contains("decide, and say what you decided"));
 
-        let f = prompt(&on(&[Role::Fixer]), Role::Fixer).unwrap();
+        let both = Context {
+            gate_failed: true,
+            lenses: vec![Lens::Correctness],
+        };
+        let f = prompt_for(&on(&[Role::Fixer]), Role::Fixer, &both).unwrap();
         assert!(f.contains("name=\"tdd\"") && f.contains("name=\"diagnosing-bugs\""));
         assert!(
             f.contains("`tests.md`, which the skill links to:") && f.contains("`mocking.md`"),
