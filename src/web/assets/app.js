@@ -17,6 +17,20 @@ const S = {
   running: 0,
   lastDraw: 0,
   update: null,
+  data: null,
+  daemon: null,
+  costs: new Map(),
+  ticks: 0,
+  lastTick: 0,
+  refresh: 5,
+  theme: 'system',
+  noRail: false,
+  noFeed: false,
+  feedShown: 30,
+  floorFilter: 'all',
+  groupBy: 'room',
+  sortBy: 'status',
+  q: '',
   hist: { rejected: false, lens: '', since: '30d' },
   libq: '',
   usage: { by: 'room', since: '14d' },
@@ -245,66 +259,171 @@ const head = (eyebrow, title, right = '') => `<header class="head"><div>
 
 // ------------------------------------------------------------------ views
 
-const LANES = [
-  ['Workshop', 'var(--dev)', ['development']],
-  ['Your office', 'var(--you)', ['awaiting_you', 'escalated']],
-  ['Assay office', 'var(--principal)', ['checks', 'review']],
-  ['Repair shop', 'var(--fixer)', ['fixing']],
-  ['Dispatch & delivery', 'var(--ship)', ['hallmarked', 'closed']],
+// The rooms an item walks through, in order, with the building's colours.
+const ROOMS = [
+  ['workshop', 'Workshop', 'var(--dev)', ['development']],
+  ['office', 'Your office', 'var(--you)', ['awaiting_you', 'escalated']],
+  ['assay', 'Assay office', 'var(--principal)', ['checks', 'review']],
+  ['repair', 'Repair shop', 'var(--fixer)', ['fixing']],
+  ['dispatch', 'Dispatch & delivery', 'var(--ship)', ['hallmarked', 'closed']],
+  ['records', 'Records', 'var(--clerk)', ['dropped']],
 ];
+const roomOf = (state) => ROOMS.find((r) => r[3].includes(state)) || ROOMS[5];
+// Where an item is on its way, from 1 (development) to 7 (merged).
+const STAGES = ['development', 'checks', 'review', 'fixing', 'hallmarked', 'closed'];
+function stageOf(i) {
+  const k = { awaiting_you: 0, escalated: 3, dropped: 0 }[i.state] ?? STAGES.indexOf(i.state);
+  return Math.max(k, 0) + 1 + (i.delivered === 'merged' ? 1 : 0);
+}
+const SEVERITY = [['blocker', 'var(--stop)'], ['major', 'var(--fixer)'], ['minor', 'var(--warn)'], ['nit', 'var(--clerk)']];
+
+// What the floor shows for an item right now: [tone, glyph, words].
+function band(i) {
+  const d = S.data;
+  const loop = d.loop.get(i.id);
+  if (i.state === 'escalated') return ['stop', '⚠', 'Escalated: it needs you'];
+  if (i.state === 'awaiting_you' || d.needs.has(i.id)) return ['you', '⏸', loop ? loop.now : 'Waiting for you'];
+  if (loop) return loop.stuck ? ['you', '⚠', 'Stuck: ' + loop.now] : ['run', '▶', loop.now];
+  if (i.state === 'development') return ['dev', '✎', 'In development'];
+  if (i.state === 'hallmarked') return ['ok', '✓', 'Hallmarked: on its way to a PR'];
+  if (i.state === 'closed') return ['ok', '✓', i.delivered === 'merged' ? 'Merged' : 'Shipped: the Delivery office watches its PR'];
+  return ['', '·', label(i.state)];
+}
+
+function spark(values, w = 160, h = 26) {
+  if (values.length < 2) return '';
+  const max = Math.max(...values, 1);
+  const pts = values.map((v, k) => `${((k * w) / (values.length - 1)).toFixed(1)},${(h - 2 - (v / max) * (h - 4)).toFixed(1)}`).join(' ');
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>`;
+}
 
 async function floor() {
-  const [st, hud, inbox] = await Promise.all([
-    hall(['status']), hall(['hud', '--lines', '8']), hall(['inbox'])]);
-  if (errorOf(st)) return head(repoName(), 'The floor') + failure(st, 'hall status');
-  const items = st.reply.items || [];
-  const h = hud.reply || {};
-  const loop = new Map((h.loop_items || []).map((i) => [i.id, i]));
-  const entries = (inbox.reply && inbox.reply.entries) || [];
-  const today = h.today || {};
-  const capT = today.daily_cap;
-  const lanes = LANES.map(([name, color, states]) => {
-    const mine = items.filter((i) => states.includes(i.state));
-    return `<div class="lane"><h2><span class="swatch" style="background:${color}"></span>${esc(name)}
-      <span class="muted" style="font-weight:400">${mine.length}</span></h2>
-      ${mine.map((i) => card(i, loop.get(i.id))).join('') || '<div class="empty">Nothing here.</div>'}</div>`;
-  }).join('');
-  const live = (h.live || []).map((l) => {
-    const [t, ...rest] = l.split(' ');
-    return `<div><span style="color:var(--term-dim)">${esc(clock(t))}</span> ${esc(rest.join(' '))}</div>`;
-  }).join('');
-  return head(repoName(), 'The floor', `<a class="btn primary" href="#/new">New item</a>`) + `
-  <section class="tiles" aria-label="Summary">
-    <a class="card tile${entries.length ? ' you' : ''}" href="#/office"><span class="small muted">Waiting for you</span>
-      <span class="n">${entries.length}</span><span class="small muted">${esc(kinds(entries))}</span></a>
-    <div class="card tile"><span class="small muted">In the review loop</span><span class="n">${loop.size}</span>
-      <span class="small muted">${esc(h.daemon && h.daemon.current ? h.daemon.current : 'nothing running')}</span></div>
-    <div class="card tile"><span class="small muted">Open items</span><span class="n">${items.length}</span>
-      <span class="small muted"><a href="#/records">closed and dropped ones</a></span></div>
-    <a class="card tile" href="#/usage"><span class="small muted">Today, the loop</span>
-      <span class="n">${tok(today.loop_tokens)} <span class="small muted" style="font-weight:400">${capT ? 'of ' + tok(capT) : 'no cap'}</span></span>
-      <span class="small muted">${usd(today.loop_usd)} · everything ${usd(today.cost_usd)}</span></a>
+  await refreshShell();
+  const d = S.data;
+  if (d.error) return failure(d.error, 'hall status');
+  const [days, costs] = await Promise.all([
+    hall(['usage', '--by', 'day', '--since', '14d']), hall(['usage', '--by', 'item'])]);
+  const rows = ((days.reply && days.reply.rows) || []).slice().sort((a, b) => String(a.key).localeCompare(String(b.key)));
+  S.costs = new Map(((costs.reply && costs.reply.rows) || []).map((r) => [r.key, r.cost_usd]));
+  const items = d.items;
+  const today = d.hud.today || {};
+  const rejects = items.reduce((n, i) => n + (i.rejects || 0), 0);
+  const inDev = items.filter((i) => i.state === 'development').length;
+  const shipped = items.filter((i) => i.state === 'closed' || i.state === 'hallmarked').length;
+  const waiting = d.hud.inbox || 0;
+  return `<section class="kpis" aria-label="Summary">
+    <div class="kpi"><span class="l">Open items</span><span class="n">${items.length}</span><span class="s">${inDev} in development · ${shipped} shipped, not merged</span></div>
+    <div class="kpi"><span class="l">In the review loop</span><span class="n">${d.loop.size}</span><span class="s">${esc(d.hud.daemon && d.hud.daemon.current ? d.hud.daemon.current : 'nothing running')}</span></div>
+    <a class="kpi${waiting ? ' warn' : ''}" href="#/office"><span class="l">Waiting for you</span><span class="n">${waiting}</span><span class="s">${waiting ? 'questions, escalations, holds' : 'nothing'}</span></a>
+    <div class="kpi"><span class="l">Rejections</span><span class="n">${rejects}</span><span class="s">across open items · the 3rd escalates</span></div>
+    <a class="kpi" href="#/usage"><span class="l">Est. cost today</span><span class="n">${usd(today.cost_usd)}</span>${spark(rows.map((r) => r.cost_usd || 0))}<span class="s">the loop ${usd(today.loop_usd)} · 14 days</span></a>
+    <a class="kpi" href="#/usage"><span class="l">Tokens today</span><span class="n">${tok(today.tokens)}</span>${spark(rows.map((r) => r.tokens || 0))}<span class="s">the loop ${tok(today.loop_tokens)}${today.daily_cap ? ' of ' + tok(today.daily_cap) : ''}</span></a>
   </section>
-  <section class="board" aria-label="Board">${lanes}</section>
-  <section class="term" aria-label="Live"><div class="row" style="color:var(--term-ink);font-family:var(--body);font-weight:600">
-    <span class="grow">Live · the daemon's log</span><a href="#/settings" style="font-weight:400">Daemon</a></div>
-    ${live || '<div style="color:var(--term-dim)">Nothing yet.</div>'}</section>`;
+  <div id="floor-body">${floorBody()}</div>
+  <footer class="legend">
+    <span><i class="sq" style="--c:var(--stop)"></i>blocker</span><span><i class="sq" style="--c:var(--fixer)"></i>major</span>
+    <span><i class="sq" style="--c:var(--warn)"></i>minor</span><span><i class="sq" style="--c:var(--clerk)"></i>nit</span>
+    <span>open findings</span><span class="grow"></span><span>Square colour is the room:</span>
+    ${ROOMS.slice(0, 5).map(([, name, c]) => `<span class="chip sq-chip"><i class="sq" style="--c:${c}"></i>${esc(name)}</span>`).join('')}
+  </footer>`;
 }
 
-function kinds(entries) {
-  const n = {};
-  for (const e of entries) n[e.kind] = (n[e.kind] || 0) + 1;
-  return Object.entries(n).map(([k, v]) => `${v} ${label(k)}`).join(' · ') || 'nothing';
+const FILTERS = [['all', 'All'], ['loop', 'In the loop'], ['you', 'Waiting for you'], ['dev', 'In development'], ['shipped', 'Shipped']];
+
+function floorBody() {
+  const seg = (key, vals) => `<div class="seg" role="group">${vals.map(([v, l]) =>
+    `<button type="button" class="${S[key] === v ? 'on' : ''}" data-set="${key}" data-val="${v}" data-local>${l}</button>`).join('')}</div>`;
+  return `<div class="filters">
+      <span>Group by</span>${seg('groupBy', [['room', 'Room'], ['state', 'State'], ['none', 'None']])}
+      <span>Sort by</span><select data-bind="sortBy" data-local aria-label="Sort by">${[['status', 'Status'], ['newest', 'Newest'], ['oldest', 'Oldest'], ['round', 'Round'], ['cost', 'Cost']].map(([v, l]) =>
+        `<option value="${v}" ${S.sortBy === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+    </div>
+    <div class="filters">${seg('floorFilter', FILTERS)}
+      <input type="search" id="q" value="${esc(S.q)}" placeholder="Filter by ID, title or branch" aria-label="Filter items">
+      <span class="grow"></span><span id="shown"></span>
+    </div>
+    <div id="cards">${cardsHtml()}</div>`;
 }
 
-function card(i, loop) {
-  const now = loop ? loop.now : (i.summary || i.room);
-  const busy = loop && /running|review|fix/i.test(loop.now || '');
-  const pr = i.pr_url ? ` · PR #${esc(i.pr_url.split('/').pop())}` : '';
-  return `<a class="card item${busy ? ' running' : ''}" href="#/item/${esc(i.id)}">
-    <div class="id"><span>${esc(i.id)}</span><span>${esc(label(i.state))}${i.round ? ' · round ' + i.round : ''}${pr}</span></div>
-    <div class="t">${esc(i.title)}</div>
-    <div class="now">${esc(now || '')}</div></a>`;
+function shownItems() {
+  const d = S.data;
+  const q = S.q.toLowerCase();
+  const keep = {
+    all: () => true,
+    loop: (i) => d.loop.has(i.id),
+    you: (i) => d.needs.has(i.id) || i.state === 'awaiting_you' || i.state === 'escalated',
+    dev: (i) => i.state === 'development',
+    shipped: (i) => i.state === 'hallmarked' || i.state === 'closed',
+  }[S.floorFilter] || (() => true);
+  const rank = (i) => ROOMS.indexOf(roomOf(i.state));
+  const sorts = {
+    status: (a, b) => rank(a) - rank(b) || String(a.id).localeCompare(String(b.id)),
+    newest: (a, b) => String(b.created_at).localeCompare(String(a.created_at)),
+    oldest: (a, b) => String(a.created_at).localeCompare(String(b.created_at)),
+    round: (a, b) => (b.round || 0) - (a.round || 0),
+    cost: (a, b) => (S.costs.get(b.id) || 0) - (S.costs.get(a.id) || 0),
+  };
+  return d.items
+    .filter(keep)
+    .filter((i) => !q || [i.id, i.title, i.branch].some((s) => String(s || '').toLowerCase().includes(q)))
+    .sort(sorts[S.sortBy] || sorts.status);
+}
+
+function cardsHtml() {
+  const items = shownItems();
+  const shown = document.getElementById('shown');
+  const total = `${items.length} shown · ${S.data.items.length} open`;
+  if (shown) shown.textContent = total;
+  else setTimeout(() => { const s = document.getElementById('shown'); if (s) s.textContent = total; });
+  if (!items.length) return `<div class="empty">${S.data.items.length ? 'No item matches.' : 'No open items. Start one with New item, or `hall new` in a session.'}</div>`;
+  if (S.groupBy === 'none') return `<div class="cards">${items.map(icard).join('')}</div>`;
+  const groups = new Map();
+  for (const i of items) {
+    const k = S.groupBy === 'room' ? roomOf(i.state)[1] : label(i.state);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(i);
+  }
+  return [...groups].map(([k, list]) => {
+    const c = S.groupBy === 'room' ? roomOf(list[0].state)[2] : roomOf(list[0].state)[2];
+    return `<div class="group-h"><i class="sq" style="--c:${c}"></i><b>${esc(k)}</b><span>${list.length}</span></div>
+      <div class="cards">${list.map(icard).join('')}</div>`;
+  }).join('');
+}
+
+function icard(i) {
+  const d = S.data;
+  const loop = d.loop.get(i.id);
+  const [tone, glyph, words] = band(i);
+  const room = roomOf(i.state);
+  const stage = stageOf(i);
+  const open = (loop && loop.open) || {};
+  const squares = SEVERITY.flatMap(([k, c]) => Array.from({ length: open[k] || 0 }, () => `<i style="--c:${c}" title="${k}"></i>`));
+  const steps = Array.from({ length: 7 }, (_, k) => `<i style="--c:${k < stage ? room[2] : 'var(--line)'}"></i>`).join('');
+  const nOpen = SEVERITY.reduce((n, [k]) => n + (open[k] || 0), 0);
+  const pr = i.pr_url ? `<span>PR #${esc(i.pr_url.split('/').pop())}</span>` : '';
+  const cost = S.costs.get(i.id);
+  const rejects = i.rejects || 0;
+  const cardTone = tone === 'stop' ? ' stop' : tone === 'you' ? ' you' : '';
+  return `<a class="icard${cardTone}" href="#/item/${esc(i.id)}">
+    <div class="ic-sec">
+      <div class="ic-head"><span class="caret">▶</span><span class="id">${esc(i.id)}</span><span class="ttl">${esc(i.title)}</span>
+        <span class="chip sq-chip"><i class="sq" style="--c:${room[2]}"></i>${esc(label(i.state))}</span>
+        <span class="meter${rejects >= 3 ? ' stop' : ''}" title="${rejects} rejection${rejects === 1 ? '' : 's'}; the 3rd escalates">${[0, 1, 2].map((k) => `<i class="${k < rejects ? 'on' : ''}"></i>`).join('')}</span></div>
+      <div class="ic-meta"><span class="br">⎇ ${esc(i.branch)}</span><span class="tag">→ ${esc(i.base)}</span>${i.sha ? `<span>${esc(short(i.sha))}</span>` : ''}${pr}</div>
+    </div>
+    <div class="ic-sec ic-plan">
+      <div class="doing"><span>${esc(loop ? loop.now : i.summary || room[1])}</span><span class="mono small muted">${stage}/7</span></div>
+      <div class="squares" aria-label="Stage ${stage} of 7">${steps}</div>
+      <div class="row small muted">${nOpen ? `<span class="squares">${squares.join('')}</span><span>${SEVERITY.filter(([k]) => open[k]).map(([k]) => `${open[k]} ${k}`).join(' · ')} open</span>` : '<span>No open findings</span>'}</div>
+    </div>
+    <div class="ic-stats">
+      <div><span class="l">Round</span><span class="v">${esc(i.round || 0)}</span></div>
+      <div><span class="l">Rejects${rejects ? ` <span class="chip sq-chip ${rejects >= 3 ? 'stop' : 'warn'}" style="min-height:16px;padding:0 4px">⚠ ${rejects}×</span>` : ''}</span><span class="v">${rejects}</span></div>
+      <div><span class="l">In state</span><span class="v">${esc(ago(i.state_since).replace(' ago', ''))}</span></div>
+      <div><span class="l">Cost</span><span class="v">${cost != null ? usd(cost) : '—'}</span></div>
+    </div>
+    <div class="band ${tone}"><span>${glyph}</span><span>${esc(words)}</span></div>
+  </a>`;
 }
 
 const STEPS = [
@@ -331,7 +450,7 @@ async function item(id, tab = 'journal', arg) {
   return `<div class="small muted"><a href="#/floor">The floor</a> / <span class="mono">${esc(id)}</span></div>
   <header class="head"><div style="display:flex;flex-direction:column;gap:8px">
     <div class="row"><span class="mono muted">${esc(id)}</span>${pill(i.state)}<span class="small muted">${esc(i.room)} · since ${esc(ago(i.state_since))}</span></div>
-    <h1 style="font-size:28px">${esc(i.title)}</h1>
+    <h1 style="font-size:20px">${esc(i.title)}</h1>
     <div class="row mono small muted" style="gap:6px 18px"><span>${esc(i.branch)} → ${esc(i.base)}</span>
       ${i.sha ? `<span>${esc(short(i.sha))}</span>` : ''}<span>${esc(i.worktree)}</span>
       ${i.rejects ? `<span>${i.rejects} rejection${i.rejects > 1 ? 's' : ''}</span>` : ''}
@@ -484,7 +603,7 @@ async function office(tab = 'inbox', n) {
 
 function notice(e) {
   return `<div class="small muted">${esc(label(e.kind))} · ${esc(ago(e.since))}${e.item ? ` · <a href="#/item/${esc(e.item)}">${esc(e.item)}</a>` : ''}</div>
-    <h2 style="font-size:20px">${esc(e.text)}</h2>
+    <h2 style="font-size:15px">${esc(e.text)}</h2>
     <p class="muted" style="margin:0">The loop handles notices on its own; they never reach your office.</p>
     <div class="row">${actions(e.answer_with)}</div>`;
 }
@@ -495,7 +614,7 @@ async function explain(n, e, tab) {
   const options = x.options || [];
   const question = x.kind === 'question' && x.qid;
   return `<div class="small muted">${esc(cap(label(x.kind)))} · ${esc(ago(x.since))}${x.item ? ` · <a href="#/item/${esc(x.item)}">${esc(x.item)}</a>` : ''}</div>
-    <h2 style="font-size:22px">${esc(x.text)}</h2>
+    <h2 style="font-size:15px">${esc(x.text)}</h2>
     ${x.why ? `<p style="margin:0">${esc(x.why)}</p>` : ''}
     ${(x.evidence || []).length ? `<ul style="margin:0;padding-left:18px">${x.evidence.map((v) => `<li>${esc(v)}</li>`).join('')}</ul>` : ''}
     ${question ? `<div style="display:flex;flex-direction:column;gap:8px">${options.map((o, k) => `
@@ -737,8 +856,8 @@ async function submitNew(form) {
 // --------------------------------------------------------------- the shell
 
 const VIEWS = { floor, item, office, queue, records, library, usage, settings, new: newItem };
-// Seconds between redraws while a view is open; 0 never redraws by itself.
-const POLL = { floor: 5, item: 4, office: 8, queue: 30, records: 0, library: 0, usage: 30, settings: 0, new: 0 };
+// The views that read again on every refresh; the others wait for you.
+const LIVE = new Set(['floor', 'item', 'office', 'queue', 'usage']);
 
 const route = () => (location.hash.replace(/^#\/?/, '') || 'floor').split('/').map(decodeURIComponent);
 const repoName = () => (S.repos.find((r) => r.path === S.repo) || {}).name || 'hall';
@@ -753,39 +872,149 @@ async function draw() {
   const [view, ...rest] = route();
   const fn = VIEWS[view] || floor;
   for (const a of document.querySelectorAll('#nav a')) a.classList.toggle('on', a.dataset.view === (view === 'item' ? 'floor' : view));
+  const [title, note] = SUB[view] || SUB.floor;
+  $('#sub-title').textContent = title;
+  $('#sub-note').textContent = note;
   let html;
+  S.drawing = true;
   try { html = await fn(...rest); } catch (e) { html = `<div class="card">Something went wrong drawing this page: ${esc(e.message)}</div>`; }
+  S.drawing = false;
+  S.lastTick = Date.now();
   if (seq !== S.seq) return;
   $('#main').innerHTML = html;
   S.lastDraw = Date.now();
   S.drawn = [view, rest[0]];
 }
 
-async function sidebar() {
-  if (!S.token || !S.repo) return;
-  const [h, dm] = await Promise.all([hall(['hud', '--lines', '0']), hall(['daemon', 'status'])]);
+// ---------------------------------------------------------------- the shell
+
+// What the sub-bar says on each view.
+const SUB = {
+  floor: ['Live floor.', 'Cost is an estimate at list price from token counts, not a bill.'],
+  item: ['Item.', 'Every button runs the hall command it names, as you would in a terminal.'],
+  office: ['Your office.', 'Only what needs a person: questions, “looks done?”, escalations and holds.'],
+  queue: ['Merge queue.', 'What the merger will do, in order. Read from GitHub; this page never merges on its own.'],
+  records: ['Records.', 'Closed and dropped items, and why things were rejected.'],
+  library: ['Library.', 'Learnings from past reviews, kept on this machine, never committed.'],
+  usage: ['Usage & budget.', 'Cost is an estimate at list price from token counts, not a bill.'],
+  settings: ['Settings.', 'Each change runs hall config; comments and layout in the file are kept.'],
+  new: ['New item.', 'The Front Desk makes the item, its branch and its worktree.'],
+};
+
+// Reads what the rail, the feed and the chips show: the items, the HUD
+// (the loop, the inbox, the daemon's log) and, now and then, the daemon.
+async function refreshShell() {
+  if (!S.token || !S.repo || S.locked) return;
+  const repo = S.repo;
+  const [st, h] = await Promise.all([hall(['status']), hall(['hud', '--lines', '150'])]);
+  if (S.ticks++ % 3 === 0 || !S.daemon) {
+    const dm = await hall(['daemon', 'status']);
+    S.daemon = dm.reply || {};
+  }
+  if (repo !== S.repo) return;
   const hud = h.reply || {};
-  const d = dm.reply || {};
+  const needs = new Set((hud.needs_you || []).map((x) => (typeof x === 'string' ? x : x.item || x.id)).filter(Boolean));
+  S.data = {
+    error: errorOf(st) ? st : null,
+    items: (st.reply && st.reply.items) || [],
+    hud,
+    loop: new Map((hud.loop_items || []).map((i) => [i.id, i])),
+    needs,
+  };
+  drawShell();
+}
+const sidebar = () => refreshShell();
+
+function drawShell() {
+  if (!S.data) return;
+  rail();
+  feed();
+  chips();
+}
+
+function rail() {
+  const d = S.data;
+  const [view, id] = route();
+  const items = d.items.slice().sort((a, b) => ROOMS.indexOf(roomOf(a.state)) - ROOMS.indexOf(roomOf(b.state)) || String(a.id).localeCompare(String(b.id)));
+  const inDev = items.filter((i) => i.state === 'development').length;
+  const rows = items.map((i) => {
+    const [tone] = band(i);
+    const room = roomOf(i.state);
+    const stage = stageOf(i);
+    const dot = tone === 'run' ? 'ok' : tone === 'stop' ? 'stop' : tone === 'you' ? 'warn' : tone === 'dev' ? 'ring' : '';
+    const rj = i.rejects || 0;
+    return `<a class="rrow${view === 'item' && id === i.id ? ' on' : ''}${i.state === 'escalated' ? ' stop' : ''}" href="#/item/${esc(i.id)}" title="${esc(i.title)}">
+      <div class="rr-1"><span class="dot ${dot}"></span><span class="rr-t">${esc(i.title)}</span>
+        ${rj ? `<span class="chip sq-chip ${rj >= 3 ? 'stop' : 'warn'}">⚠ ${rj}×</span>` : ''}
+        <span class="chip sq-chip"><i class="sq" style="--c:${room[2]}"></i>${esc(label(i.state))}</span></div>
+      <div class="rr-2"><span class="mono small muted">${esc(i.id)}</span><span class="pbar${tone === 'stop' ? ' stop' : tone === 'you' ? ' warn' : ''}"><span style="width:${(100 * stage) / 7}%"></span></span>
+        <span class="mono small">${stage}/7</span>${i.round ? `<span class="mono small muted">r${i.round}</span>` : ''}</div></a>`;
+  }).join('');
+  $('#rail').innerHTML = `<div class="col-head"><b>Items</b><span class="grow"></span><span>${items.length}</span>
+      <button type="button" class="icon" data-collapse="rail" aria-label="Show or hide the items">${S.noRail ? '›' : '‹'}</button></div>
+    <a class="rrow all${view === 'floor' ? ' on' : ''}" href="#/floor"><b>All items</b>
+      <span class="small muted">${d.loop.size} in the loop · ${d.hud.inbox || 0} waiting · ${inDev} in development</span></a>
+    ${rows || '<div class="empty" style="padding:12px">No open items.</div>'}
+    <div class="feed-foot"><a href="#/records">Closed and dropped items</a></div>`;
+}
+
+// One line of the daemon's log: "2026-10-18T18:00:54Z H-0086 checks 2/3: …".
+function feedLine(l) {
+  const [t, ...rest] = l.split(' ');
+  let text = rest.join(' ');
+  const m = text.match(/\bH-\d{4,}\b/);
+  const id = m ? m[0] : null;
+  if (id) text = text.replace(id, '').replace(/^[\s:]+/, '').replace(/\s{2,}/g, ' ');
+  const role = text.match(/^(\w[\w-]*):/);
+  const who = role ? role[1] : '';
+  const c = /assayer|review|verdict|approv/i.test(text) ? 'var(--principal)'
+    : /fixer|fix run|resubmitted/i.test(text) ? 'var(--fixer)'
+      : /ship|merge|deliver|PR |pull\/|sweeper/i.test(text) ? 'var(--ship)'
+        : /checks|gate/i.test(text) ? 'var(--info)'
+          : /notif|librar|distill/i.test(who + text) ? 'var(--clerk)' : 'var(--dev)';
+  const tone = /\bfail|\bred\b|\bblocker|\bconflict/i.test(text) ? 'stop' : /\bescalat|\bheld\b|\bhold\b|\bstuck\b|\bwaiting\b/i.test(text) ? 'warn' : '';
+  return { t, id, text, c, tone };
+}
+
+function feed() {
+  const lines = (S.data.hud.live || []).slice().reverse();
+  const shown = lines.slice(0, S.feedShown).map(feedLine);
+  $('#feed').innerHTML = `<div class="col-head"><button type="button" class="icon" data-collapse="feed" aria-label="Show or hide the activity">${S.noFeed ? '‹' : '›'}</button>
+      <b>Activity · ${esc(repoName())}</b><span class="grow"></span><span>newest first</span></div>
+    ${shown.map((f) => `<div class="frow ${f.tone}"><span class="t mono">${esc(clock24(f.t))}</span><i class="sq" style="--c:${f.c}"></i>
+      <div class="x">${f.id ? `<b>${esc(f.id)}</b> ` : ''}${esc(f.text)}${f.id ? `<a class="sub" href="#/item/${esc(f.id)}">↗ Open item</a>` : ''}</div></div>`).join('')
+      || '<div class="empty" style="padding:12px">The daemon has logged nothing yet.</div>'}
+    <div class="feed-foot"><div class="row"><span class="grow">Showing ${shown.length} of ${lines.length}</span>
+      ${lines.length > shown.length ? '<button type="button" class="btn sm" data-more>Show 30 more</button>' : ''}</div>
+      <span>From the daemon's log: the latest ${lines.length} lines are read.</span></div>`;
+}
+const clock24 = (iso) => (iso && !Number.isNaN(Date.parse(iso)) ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) : '');
+
+function chips() {
+  const d = S.daemon || {};
+  const hud = S.data ? S.data.hud : {};
+  const paused = d.state && d.state.paused;
+  const chip = $('#daemon-chip');
+  chip.className = 'chip' + (!d.running ? ' stop' : paused ? ' warn' : '');
+  chip.innerHTML = `<span class="dot ${d.running ? (paused ? 'warn' : 'ok') : 'stop'}"></span>${d.running ? (paused ? 'Daemon paused' : 'Daemon running') : 'Daemon stopped'}
+    ${!d.running ? '<button type="button" class="btn sm" data-run="hall daemon start" style="min-height:20px">Start</button>'
+      : paused ? '<button type="button" class="btn sm" data-run="hall daemon resume" style="min-height:20px">Lift the pause</button>' : ''}`;
+  chip.title = paused ? paused.reason || '' : (hud.daemon && hud.daemon.current) || '';
   const badge = $('#badge-inbox');
   badge.hidden = !hud.inbox;
   badge.textContent = hud.inbox || '';
-  const paused = d.state && d.state.paused;
   const u = S.update;
-  $('#daemon').innerHTML = `<div class="row" style="font-weight:600"><span class="dot ${d.running ? (paused ? 'warn' : 'ok') : 'stop'}"></span>
-      ${d.running ? (paused ? 'Daemon paused' : 'Daemon running') : 'Daemon stopped'}</div>
-    <div class="small muted">${esc(paused ? paused.reason || '' : hud.daemon && hud.daemon.current ? hud.daemon.current : d.running ? 'idle' : 'the review loop is not running')}</div>
-    ${!d.running ? '<button type="button" class="btn sm" data-run="hall daemon start">Start it</button>' : paused ? '<button type="button" class="btn sm" data-run="hall daemon resume">Lift the pause</button>' : ''}
-    ${u && u.status === 'available' ? `<div class="update"><div><b>hall ${esc(u.latest_version || short(u.latest))} is available</b><br>
-      <span class="mono">${esc(u.installed_version || short(u.installed))} installed</span></div>
-      <button type="button" class="btn primary sm" data-update>Update and restart</button></div>`
-      : u ? `<div class="small muted mono">hall ${esc(u.installed_version || '')} · up to date</div>` : ''}`;
+  $('#update-chip').innerHTML = u && u.status === 'available'
+    ? `<span class="chip warn">hall ${esc(u.latest_version || short(u.latest))} is available
+        <button type="button" class="btn sm primary" data-update style="min-height:20px">Update and restart</button></span>`
+    : u ? `<span class="chip" title="${esc(u.hall || '')}">hall ${esc(u.installed_version || short(u.installed))}</span>` : '';
 }
 
 async function checkUpdate() {
   if (!S.token || !S.repo) return;
   const r = await hall(['update', '--check']);
   S.update = errorOf(r) ? null : r.reply;
-  sidebar();
+  chips();
 }
 
 async function update(btn) {
@@ -813,7 +1042,7 @@ async function update(btn) {
 }
 
 function locked() {
-  $('#main').innerHTML = `<div class="card locked"><h1 style="font-size:24px">Open the address hall web printed</h1>
+  $('#main').innerHTML = `<div class="card locked"><h1>Open the address hall web printed</h1>
     <p style="margin:0">This page needs the token in that address. Run <code>hall web</code> again if you lost it.</p></div>`;
 }
 
@@ -821,11 +1050,27 @@ async function loadRepos() {
   const r = await api('/api/repos');
   if (r.error) return;
   S.repos = r.repos || [];
-  let saved = null;
-  try { saved = localStorage.getItem('hall-repo'); } catch (_) { /* no storage */ }
+  const saved = load('hall-repo');
   const here = S.repos[r.here] || S.repos[0];
   S.repo = (S.repos.find((x) => x.path === saved) || here || {}).path || null;
   $('#repo').innerHTML = S.repos.map((x) => `<option value="${esc(x.path)}" ${x.path === S.repo ? 'selected' : ''}>${esc(x.name)}</option>`).join('');
+}
+
+// Per-viewer conveniences: the theme, the refresh, the columns, the repo.
+function load(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
+function save(k, v) { try { localStorage.setItem(k, v); } catch (_) { /* no storage */ } }
+
+function applyTheme(t) {
+  S.theme = t;
+  if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+  else delete document.documentElement.dataset.theme;
+  for (const b of document.querySelectorAll('[data-theme-set]')) b.classList.toggle('on', b.dataset.themeSet === t);
+  save('hall-theme', t);
+}
+
+function applyColumns() {
+  $('#body').classList.toggle('no-rail', S.noRail);
+  $('#body').classList.toggle('no-feed', S.noFeed);
 }
 
 function setPath(path, value) {
@@ -833,6 +1078,12 @@ function setPath(path, value) {
   let o = S;
   while (keys.length > 1) o = o[keys.shift()];
   o[keys[0]] = value;
+}
+
+// The floor's controls redraw from what was read, without reading again.
+function redrawFloor() {
+  const fb = $('#floor-body');
+  if (fb) fb.innerHTML = floorBody();
 }
 
 document.addEventListener('click', async (ev) => {
@@ -855,7 +1106,23 @@ document.addEventListener('click', async (ev) => {
     return;
   }
   const setBtn = t.closest('[data-set]');
-  if (setBtn) { setPath(setBtn.dataset.set, setBtn.dataset.val); draw(); return; }
+  if (setBtn) {
+    setPath(setBtn.dataset.set, setBtn.dataset.val);
+    if ('local' in setBtn.dataset) redrawFloor(); else draw();
+    return;
+  }
+  const themeBtn = t.closest('[data-theme-set]');
+  if (themeBtn) { applyTheme(themeBtn.dataset.themeSet); return; }
+  const col = t.closest('[data-collapse]');
+  if (col) {
+    const k = col.dataset.collapse === 'rail' ? 'noRail' : 'noFeed';
+    S[k] = !S[k];
+    save('hall-' + k, S[k] ? '1' : '');
+    applyColumns();
+    drawShell();
+    return;
+  }
+  if (t.closest('[data-more]')) { S.feedShown += 30; feed(); return; }
   const cfgBtn = t.closest('[data-cfg]');
   if (cfgBtn) {
     const val = document.getElementById(cfgBtn.dataset.input).value;
@@ -870,15 +1137,30 @@ document.addEventListener('click', async (ev) => {
   if (up) update(up);
 });
 
+document.addEventListener('input', (ev) => {
+  if (ev.target.id === 'q') {
+    S.q = ev.target.value;
+    const c = $('#cards');
+    if (c) c.innerHTML = cardsHtml();
+  }
+});
+
 document.addEventListener('change', async (ev) => {
   const el = ev.target;
   if (el.id === 'repo') {
     S.repo = el.value;
-    try { localStorage.setItem('hall-repo', S.repo); } catch (_) { /* no storage */ }
-    draw(); sidebar(); checkUpdate();
+    S.data = null;
+    S.feedShown = 30;
+    save('hall-repo', S.repo);
+    draw(); refreshShell(); checkUpdate();
     return;
   }
-  if (el.dataset.bind) { setPath(el.dataset.bind, el.type === 'checkbox' ? el.checked : el.value); draw(); return; }
+  if (el.id === 'refresh') { S.refresh = Number(el.value); save('hall-refresh', el.value); return; }
+  if (el.dataset.bind) {
+    setPath(el.dataset.bind, el.type === 'checkbox' ? el.checked : el.value);
+    if ('local' in el.dataset) redrawFloor(); else draw();
+    return;
+  }
   if (el.dataset.toggle) await run(el.dataset.toggle);
 });
 
@@ -901,30 +1183,44 @@ window.addEventListener('hashchange', () => {
   // A new page says it's loading; a tab of the same item keeps the item.
   if (view !== was || (view === 'item' && id !== wasId)) {
     $('#main').innerHTML = '<p class="row muted"><span class="spin"></span> Loading…</p>';
-    window.scrollTo(0, 0);
+    $('#main').scrollTo(0, 0);
   }
   draw();
+  if (S.data) rail();
 });
 
-// Redraws the open view now and then, but never under someone's hands: not
-// while a dialog is open, a command runs, or a field has focus.
+// Reads again every "Refresh every" seconds (a run that is going, every
+// two), but never redraws under someone's hands: not while a dialog is
+// open, a command runs, or a field in the page has focus.
 setInterval(() => {
+  if (!S.refresh || document.hidden || $('#dialog').open || S.running || S.drawing) return;
   const [view, , tab] = route();
-  let every = POLL[view] || 0;
-  if (view === 'item' && tab === 'runs') every = 2;
-  if (!every || document.hidden || $('#dialog').open || S.running) return;
+  const every = view === 'item' && tab === 'runs' ? Math.min(S.refresh, 2) : S.refresh;
+  if (Date.now() - S.lastTick < every * 1000) return;
+  S.lastTick = Date.now();
   const focus = document.activeElement;
-  if (focus && $('#main').contains(focus) && /^(INPUT|TEXTAREA|SELECT)$/.test(focus.tagName)) return;
-  if (Date.now() - S.lastDraw >= every * 1000) draw();
-}, 1000);
-setInterval(() => { if (!document.hidden) sidebar(); }, 15000);
+  const typing = focus && $('#main').contains(focus) && /^(INPUT|TEXTAREA|SELECT)$/.test(focus.tagName);
+  if (LIVE.has(view) && !typing) {
+    draw();
+    if (view !== 'floor') refreshShell();
+  } else {
+    refreshShell();
+  }
+}, 500);
 setInterval(checkUpdate, 60 * 60 * 1000);
 
 (async () => {
+  applyTheme(load('hall-theme') || 'system');
+  S.refresh = Number(load('hall-refresh') ?? 5);
+  if (Number.isNaN(S.refresh)) S.refresh = 5;
+  $('#refresh').value = String(S.refresh);
+  S.noRail = !!load('hall-noRail');
+  S.noFeed = !!load('hall-noFeed');
+  applyColumns();
   readToken();
   if (!S.token) return locked();
   await loadRepos();
   draw();
-  sidebar();
+  if (route()[0] !== 'floor') refreshShell();
   checkUpdate();
 })();

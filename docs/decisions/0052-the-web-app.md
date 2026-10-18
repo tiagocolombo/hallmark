@@ -26,6 +26,15 @@ opens the browser on it (`--no-open` doesn't). It runs until stopped.
 - **The page is embedded.** One HTML file, a stylesheet, a script and the
   icon, in the binary (`src/web/assets/`). No build step, no framework, no
   fonts or scripts from the network, so it works offline and on Windows.
+- **One screen, three columns.** A top bar (the repo, the daemon, the views,
+  an update), a sub-bar (what the view shows, how often it reads again, and
+  a light, dark or system theme), then the open items on the left, the view
+  in the middle and the daemon's activity on the right. Either side column
+  folds away. The floor is a strip of figures with 14-day sparklines, then a
+  card per item: where it is (stage n of 7), its open findings as squares,
+  its round, rejections, time in state and cost, and a band that says what
+  it is doing now. The theme, the refresh and the folded columns are kept
+  in the browser, per viewer.
 - **Every call is a hall command.** `POST /api/run {"repo", "args"}` runs
   `hall <args> --json` in a child process, in that repo, and returns its
   exit code, its reply (the last line) and the lines before it (`hall
@@ -54,7 +63,7 @@ opens the browser on it (`--no-open` doesn't). It runs until stopped.
   127.0.0.1, localhost or [::1] on this port is refused, so a page that
   rebinds its own name to 127.0.0.1 gets nothing either. The page itself
   and `GET /api/ping` need no token: they hold nothing secret.
-- **It updates itself.** The sidebar shows the daemon and, from `hall update
+- **It updates itself.** The top bar shows the daemon and, from `hall update
   --check` (on load and hourly), whether a newer hall is out. *Update and
   restart* runs `hall update`, which builds it, refreshes the plugin and
   restarts the daemon, then `POST /api/restart`: the server starts the new

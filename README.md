@@ -283,10 +283,12 @@ dropped items.
 Run `hall web` for the same building in a browser, on this machine only: the
 floor, each item's journal, findings, diff and runs (followed live), your
 office, the merge queue, the records and the Library, usage and budgets, and
-every setting, with the daemon, `doctor` and extensions. Each button runs the
-`hall` command the item offers, so the web app can do what you'd do in a
-terminal and nothing more. When a newer `hall` is out, the sidebar says so,
-and *Update and restart* installs it and brings the page back
+every setting, with the daemon, `doctor` and extensions. It is one screen:
+the open items on the left, the view in the middle, the daemon's activity on
+the right, in a light, dark or system theme. Each button runs the `hall`
+command the item offers, so the web app can do what you'd do in a terminal
+and nothing more. When a newer `hall` is out, the top bar says so, and
+*Update and restart* installs it and brings the page back
 ([ADR 0052](docs/decisions/0052-the-web-app.md)).
 
 ### Built for agents
