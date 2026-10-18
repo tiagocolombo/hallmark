@@ -74,8 +74,11 @@ then the oldest PR. Files are **claimed**:
    anyway, and holding the older one would make it wait for a PR that is
    brought up to date after it;
 2. then, walking the queue, by every PR still on its way to a merge on its
-   own: ready, merging, behind, conflicting, CI pending, `UNKNOWN`, queued, or
-   waiting for a PR in this queue or for a reopened item being brought back.
+   own: ready, merging, behind, conflicting, CI pending (until the CI watch
+   gives up, after 24 hours), `UNKNOWN`, queued, or waiting only for PRs that
+   claim themselves, for reopened items being brought back, or for the PR a
+   stacked one sits on. The walk is dependency-first, so a PR is judged after
+   the PRs it waits for.
 
 A PR that touches a claimed file neither merges, nor is rebased, nor is put
 to a person for a `lit` path. It shows `waits_for` the PR that claims the
@@ -95,7 +98,11 @@ different files. Merges stay one per base until the watch records
 
 A PR that is held, lit, has a standing request for changes, isn't the shipped
 head, has red CI, can't be read, or waits for a PR outside the queue claims
-nothing. The PRs behind it go first, and it is brought up to date at its own
+nothing. Neither does a PR that waits for one of those: a dependency on a
+held PR stalls only the PRs that depend on it. Nor does a PR whose CI never
+reported in the 24 hours the CI watch waits (a `paths-ignore` that skips
+every file it changes): it stays `ci_pending`, and holds up only itself. The
+PRs behind it go first, and it is brought up to date at its own
 turn later. A reopened item that is held, or that a person took back, claims
 nothing either.
 

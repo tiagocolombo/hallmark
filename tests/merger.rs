@@ -1254,3 +1254,58 @@ fn a_lit_pr_on_a_claimed_file_waits_before_you_are_asked() {
     pass(&env, &gh);
     assert!(events(&env, &lit, "held").is_empty());
 }
+
+#[test]
+fn a_pr_that_depends_on_a_held_one_claims_nothing() {
+    // A person's hold on #1 stalls #2, which depends on it, but not #3,
+    // which only shares a file with #2.
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    let (held, _, _) = shipped(&env, &gh, 1, "a.rs");
+    let (dependent, _, sha2) = shipped(&env, &gh, 2, "b.rs");
+    let (after, _, _) = shipped(&env, &gh, 3, "b.rs");
+    pr(&gh, 2, "MERGEABLE", &sha2, "Depends on #1", json!([]));
+    hold(&env, &held);
+
+    let q = queue(&env, &gh);
+    let e = status_of(&q, &dependent);
+    assert_eq!(e["status"], "waits_for", "{q}");
+    assert_eq!(e["waits_for"], json!([url(1)]), "{q}");
+    assert_eq!(status_of(&q, &after)["status"], "ready", "{q}");
+    pass(&env, &gh);
+    assert_eq!(events(&env, &after, "pr_merged").len(), 1);
+    assert!(events(&env, &dependent, "pr_merged").is_empty());
+}
+
+#[test]
+fn a_pr_whose_ci_never_reports_stops_claiming_its_files_when_the_watch_gives_up() {
+    // CI with a `paths-ignore` that skips every file #1 changes never
+    // reports: once the CI watch gives up, #1 holds up only itself.
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    let (silent, _, sha) = shipped(&env, &gh, 1, "docs.md");
+    let (after, _, _) = shipped_files(&env, &gh, 2, &["docs.md", "b.rs"]);
+    ci_pending(&env, &silent, 1, &sha);
+    let q = queue(&env, &gh);
+    assert_eq!(status_of(&q, &after)["status"], "waits_for", "{q}");
+
+    // Shipped a day ago, after a green run on an earlier head.
+    let ago = |h| (chrono::Utc::now() - chrono::Duration::hours(h)).to_rfc3339();
+    let (shipped_at, green_at) = (ago(25), ago(26));
+    edit_journal(&env, &silent, |v| {
+        if v["event"] == "shipped" {
+            v["t"] = json!(shipped_at);
+        } else if v["event"] == "pr_checks" {
+            v["t"] = json!(green_at);
+        }
+    });
+    let q = queue(&env, &gh);
+    let e = status_of(&q, &silent);
+    assert_eq!(e["status"], "ci_pending", "{q}");
+    assert!(e["why"].as_str().unwrap().contains("gave up"), "{q}");
+    assert_eq!(status_of(&q, &after)["status"], "ready", "{q}");
+    pass(&env, &gh);
+    assert_eq!(events(&env, &after, "pr_merged").len(), 1);
+}

@@ -302,6 +302,14 @@ fn last_shipped(events: &[Event]) -> Option<DateTime<Utc>> {
         .max()
 }
 
+/// Whether the CI watch gave up on the PR's last ship: checks that never
+/// report (a `paths-ignore` that skips every file it changes) leave it
+/// pending for good.
+fn ci_gave_up(events: &[Event]) -> bool {
+    last_shipped(events)
+        .is_some_and(|t| Utc::now() - t >= Duration::hours(crate::ci::GIVE_UP_HOURS))
+}
+
 /// Whether CI passed on the PR after its last ship, and if not, why.
 fn ci_status(item: &Item, events: &[Event]) -> Option<(Status, String)> {
     let shipped = last_shipped(events);
@@ -456,7 +464,19 @@ impl<'a> Look<'a> {
         let mut ci_pending = None;
         if self.repo.config.merge.require_ci {
             match ci_status(item, &events) {
-                Some((Status::CiPending, why)) => ci_pending = Some(why),
+                Some((Status::CiPending, why)) => {
+                    ci_pending = Some(match ci_gave_up(&events) {
+                        true => (
+                            format!(
+                                "CI never reported at the shipped head in {}h; \
+                                 the CI watch gave up",
+                                crate::ci::GIVE_UP_HOURS
+                            ),
+                            true,
+                        ),
+                        false => (why, false),
+                    })
+                }
                 Some((s, why)) => return none(s, why),
                 None => {}
             }
@@ -511,7 +531,12 @@ impl<'a> Look<'a> {
         // behind: GitHub's word only says when to look closer.
         let conflicting = match (pr.mergeable.as_str(), ci_pending) {
             ("CONFLICTING", _) => true,
-            (_, Some(why)) => return none(Status::CiPending, why),
+            (_, Some((why, gave_up))) => {
+                return Judged {
+                    stalled: gave_up,
+                    ..none(Status::CiPending, why)
+                };
+            }
             ("MERGEABLE", None) => false,
             _ => {
                 return none(
@@ -538,6 +563,7 @@ impl<'a> Look<'a> {
             why,
             waits: vec![],
             verdict: Some(verdict),
+            stalled: false,
         };
         if conflicting {
             let both = match fresh {
@@ -663,6 +689,18 @@ impl<'a> Look<'a> {
             .iter()
             .map(|i| i.pr_url.clone().unwrap_or_default())
             .collect();
+        // A wait moves when it is on a PR of this line that claimed (the walk
+        // is dependency-first, so it comes before the PRs waiting for it), on
+        // an item being brought back, or on an open PR of another base (the
+        // PR a stacked one sits on). A wait on a PR that waits on a person
+        // doesn't move.
+        let mut moving: BTreeSet<String> = in_flight.iter().cloned().collect();
+        moving.extend(
+            self.open
+                .values()
+                .filter_map(|o| o.pr_url.clone())
+                .filter(|u| !urls.contains(u)),
+        );
         let mut walk: Vec<(&Item, Judged)> = Vec::new();
         while !pending.is_empty() {
             let at = pending
@@ -683,6 +721,7 @@ impl<'a> Look<'a> {
                 mut why,
                 mut waits,
                 mut verdict,
+                stalled,
             } = judged;
             // An older PR GitHub hasn't finished checking goes first.
             if unknown_ahead && matches!(verdict, Some(Verdict::Merge(_))) {
@@ -741,8 +780,9 @@ impl<'a> Look<'a> {
                 }
                 merging = true;
             }
-            if self.claims(status, &waits, &in_flight) {
+            if !stalled && claims(status, &waits, &moving) {
                 let url = item.pr_url.clone().unwrap_or_default();
+                moving.insert(url.clone());
                 for f in self.files_of(item) {
                     claimed.entry(f).or_default().push(Claim {
                         url: url.clone(),
@@ -762,36 +802,30 @@ impl<'a> Look<'a> {
         }
         out
     }
+}
 
-    /// Whether a PR in this status is on its way to a merge on its own, so
-    /// the PRs behind it that touch its files wait for it. One waiting on a
-    /// person, or broken, claims nothing.
-    fn claims(&self, status: Status, waits: &[String], in_flight: &[String]) -> bool {
-        match status {
-            Status::Ready
-            | Status::Merging
-            | Status::Behind
-            | Status::Conflicting
-            | Status::CiPending
-            | Status::Unknown
-            | Status::Queued
-            | Status::Updating => true,
-            // Waiting for PRs in this queue, or reopened ones being brought
-            // back, moves; waiting for one outside it may not.
-            Status::WaitsFor => waits.iter().all(|w| {
-                in_flight.contains(w)
-                    || self
-                        .open
-                        .values()
-                        .any(|o| o.pr_url.as_deref() == Some(w.as_str()))
-            }),
-            Status::CiRed
-            | Status::Lit
-            | Status::ChangesRequested
-            | Status::Held
-            | Status::NotOurs
-            | Status::Unreadable => false,
-        }
+/// Whether a PR in this status is on its way to a merge on its own, so the
+/// PRs behind it that touch its files wait for it. One waiting on a person,
+/// or broken, claims nothing; so does one waiting for it.
+fn claims(status: Status, waits: &[String], moving: &BTreeSet<String>) -> bool {
+    match status {
+        Status::Ready
+        | Status::Merging
+        | Status::Behind
+        | Status::Conflicting
+        | Status::CiPending
+        | Status::Unknown
+        | Status::Queued
+        | Status::Updating => true,
+        // Waiting for PRs that move, moves; waiting for one outside the
+        // queue, or one waiting on a person, may not.
+        Status::WaitsFor => waits.iter().all(|w| moving.contains(w)),
+        Status::CiRed
+        | Status::Lit
+        | Status::ChangesRequested
+        | Status::Held
+        | Status::NotOurs
+        | Status::Unreadable => false,
     }
 }
 
@@ -810,6 +844,8 @@ struct Judged {
     why: String,
     waits: Vec<String>,
     verdict: Option<Verdict>,
+    /// Pending for good, so it claims nothing: CI the watch gave up on.
+    stalled: bool,
 }
 
 impl Judged {
@@ -820,6 +856,7 @@ impl Judged {
             why,
             waits: vec![],
             verdict: None,
+            stalled: false,
         }
     }
 }

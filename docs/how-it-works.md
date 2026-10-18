@@ -147,7 +147,7 @@ each merge ahead of it would put it behind again. So each PR is rebased once,
 onto a base that already has everything it overlaps with:
 
 - walking the queue in order, every PR still on its way to a merge claims its
-  files, including one that waits for another PR in the queue;
+  files, including one that waits for another PR that claims;
 - every item already reopened and being brought back claims its files
   against the PRs newer than it. An older PR on those files still merges
   first: the reopened one has to be rebased onto it anyway;
@@ -158,7 +158,9 @@ onto a base that already has everything it overlaps with:
 - PRs that share no files move in parallel lanes: several can be rebased at
   once, and a fresh one merges while others are brought up to date;
 - a PR waiting on a person (held, lit, changes requested, red CI) claims
-  nothing, so the PRs behind it go first.
+  nothing, and neither does one that waits for it, so the PRs behind them go
+  first. A PR whose CI never reports claims nothing once the CI watch gives
+  up on it, after 24 hours.
 
 With the merger on, the watch no longer reopens a PR GitHub calls
 conflicting: the queue does, at its turn. After a merge, nothing else on that
