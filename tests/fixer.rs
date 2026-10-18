@@ -622,6 +622,11 @@ fn a_repo_that_sets_no_budget_holds_an_item_at_800k() {
     std::fs::write(&path, format!("{text}\n[budget]\nper_item = \"none\"\n")).unwrap();
     let r = env.hall(&env.repo, &["retry", &id, "--reason", "no cap"]);
     assert_eq!(r.code, 0, "{}", r.stdout);
+    let released = events(&env, &id, "released");
+    assert!(
+        released.last().unwrap()["granted_tokens"].is_null(),
+        "retry saw a cap: {released:?}"
+    );
     let step = fixer_pass(&env, &script);
     assert_eq!(env.fake_calls().len(), 1, "{step}");
     assert_eq!(events(&env, &id, "held").len(), 1);

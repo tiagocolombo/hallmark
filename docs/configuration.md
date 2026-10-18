@@ -327,8 +327,10 @@ A repo that sets no budget is still capped: `per_item = "800k"` and
 `daily = "4M"` are the defaults, so a loop that goes wrong stops instead of
 spending without limit. Set a cap to `"none"` to turn it off
 (`hall budget --set per_item=none` writes that); removing the key brings the
-default back. The role tables have no caps unless you set them (to drop one,
-`hall config unset budget.review.daily`; `none` is for `daily` and `per_item`).
+default back. Role tables have no daily cap unless you set one (drop it with
+`hall config unset budget.review.daily`). Each role's per-run `max_usd` has a
+default that `"none"` lifts, so `none` works for `daily`, `per_item` and
+`max_usd`.
 The Library's distilling runs answer to the daily and room caps only: an
 item that spent its `per_item` in the loop is still distilled once it closes.
 
@@ -339,7 +341,7 @@ a repo whose `daily` is `"none"`.
 Failed checks have a cap too: after `max_check_failures` (default 3) failed
 checks in a row, the item is held for you with kind `checks`, because the
 fixer's commits aren't turning the gates green. Passing checks, `hall ready`
-and `hall retry` start the count again; `0` turns the cap off.
+and `hall retry` on a `checks` hold start the count again; `0` turns the cap off.
 
 ```toml
 [budget]
