@@ -158,6 +158,7 @@ fn proposed_item(env: &Env) -> (String, std::path::PathBuf) {
         &sha,
         1,
         None,
+        "assayer",
         counts(0, 0, 0, 0),
     )
     .unwrap();
@@ -221,6 +222,7 @@ fn without_the_authors_how_the_commits_are_listed_and_the_request_is_why() {
         &sha,
         1,
         None,
+        "assayer",
         counts(0, 0, 0, 0),
     )
     .unwrap();

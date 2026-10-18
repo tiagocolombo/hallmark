@@ -158,11 +158,35 @@ impl Render for VerdictOut {
     }
 }
 
+/// Who may record a verdict: the assayer, or you on a terminal, whose
+/// verdict is a human override. An agent may not approve its own work, and
+/// a headless run other than the assayer's may not either.
+fn verdict_actor(id: crate::item::ItemId) -> Result<String> {
+    let actor = actor();
+    let allowed = match actor.as_str() {
+        "assayer" => true,
+        "you" => !crate::repo::headless(),
+        _ => false,
+    };
+    if !allowed {
+        return Err(HallError::new(
+            ErrorCode::GateDenied,
+            format!(
+                "`hall verdict` is for the assayer and for you on a terminal, not for {actor}: \
+                 an agent doesn't approve work"
+            ),
+        )
+        .next([format!("hall status {id}")]));
+    }
+    Ok(actor)
+}
+
 /// `hall verdict [ID] --file <json|->`: records a schema-checked verdict
 /// for an item in review, exactly as the assayer's own run would.
 pub fn verdict(cwd: &Path, a: VerdictArgs) -> Result<Response> {
     let repo = Repo::discover(cwd)?;
     let item = repo.resolve(a.id.as_deref())?;
+    let actor = verdict_actor(item.id)?;
     let text = if a.file == "-" {
         let mut s = String::new();
         std::io::stdin()
@@ -194,7 +218,7 @@ pub fn verdict(cwd: &Path, a: VerdictArgs) -> Result<Response> {
             .next([format!("hall status {}", item.id)]));
         }
     };
-    let rec = crate::assayer::record_verdict(&repo, item.id, &sha, &mv, &actor(), None, None)?;
+    let rec = crate::assayer::record_verdict(&repo, item.id, &sha, &mv, &actor, None, None)?;
     let mut next = Vec::new();
     if rec.verdict == VerdictKind::Changes && !rec.escalated {
         next.push(format!("hall findings {}", item.id));

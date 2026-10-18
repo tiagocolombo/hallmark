@@ -804,6 +804,94 @@ fn verdicts_from_stdin() {
     assert_eq!(state(&env, &id), "hallmarked");
 }
 
+/// `hall verdict` as `actor`: `vars` set on top of the test environment.
+fn verdict_as(env: &Env, id: &str, file: &str, vars: &[(&str, &str)]) -> Reply {
+    let mut c = env.cmd(&env.repo);
+    for (k, v) in vars {
+        c.env(k, v);
+    }
+    common::reply(c.args(["verdict", id, "--file", file]).output().unwrap())
+}
+
+#[test]
+fn agents_may_not_record_a_verdict() {
+    let env = Env::initialized();
+    let (id, _, sha) = ready_item(&env, "Retry webhooks", "retry.rs", "fn retry() {}\n");
+    tick(&env, &env.script(json!([])));
+    let file = env.root.join("verdict.json");
+    std::fs::write(&file, verdict(vec![], json!([])).to_string()).unwrap();
+    let file = file.to_string_lossy().into_owned();
+
+    // A Claude Code session (no HALL_ACTOR) and a headless fixer run.
+    for vars in [
+        vec![("CLAUDECODE", "1")],
+        vec![("HALL_HEADLESS", "1"), ("HALL_ACTOR", "fixer")],
+        vec![("HALL_HEADLESS", "1"), ("HALL_ACTOR", "agent")],
+        vec![("HALL_HEADLESS", "1")],
+        vec![("HALL_HEADLESS", "1"), ("HALL_ACTOR", "you")],
+    ] {
+        let r = verdict_as(&env, &id, &file, &vars);
+        assert_eq!(r.code, 5, "{vars:?}: {}", r.stdout);
+        assert_eq!(r.json["error"]["code"], "GATE_DENIED");
+        assert_eq!(
+            r.json["error"]["next"],
+            json!([format!("hall status {id}")])
+        );
+    }
+    assert!(events_of(&env, &id, "verdict").is_empty());
+    assert_eq!(state(&env, &id), "review");
+
+    // The assayer records it, and the hallmark says so.
+    let r = verdict_as(&env, &id, &file, &[("HALL_ACTOR", "assayer")]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(r.json["verdict"], "approve");
+    assert_eq!(events_of(&env, &id, "verdict")[0]["actor"], "assayer");
+    let note = git(
+        &env.repo,
+        &["notes", "--ref", "refs/notes/hallmark", "show", &sha],
+    );
+    let note: Value = serde_json::from_str(&note).unwrap();
+    assert_eq!(note["actor"], "assayer");
+    let report = std::fs::read_to_string(r.json["report"].as_str().unwrap()).unwrap();
+    assert!(!report.contains("human override"), "{report}");
+    assert!(!report.contains("`hall verdict`"), "{report}");
+    let out = env.cmd(&env.repo).args(["export", &id]).output().unwrap();
+    let md = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert!(!md.contains("a human override"), "{md}");
+    assert!(!md.contains("approved by"), "{md}");
+}
+
+#[test]
+fn a_human_verdict_is_recorded_as_an_override() {
+    let env = Env::initialized();
+    let (id, _, sha) = ready_item(&env, "Retry webhooks", "retry.rs", "fn retry() {}\n");
+    tick(&env, &env.script(json!([])));
+    let file = env.root.join("verdict.json");
+    std::fs::write(&file, verdict(vec![], json!([])).to_string()).unwrap();
+    let file = file.to_string_lossy().into_owned();
+
+    // A terminal: `you`.
+    let r = verdict_as(&env, &id, &file, &[]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(state(&env, &id), "hallmarked");
+    assert_eq!(events_of(&env, &id, "verdict")[0]["actor"], "you");
+    let note = git(
+        &env.repo,
+        &["notes", "--ref", "refs/notes/hallmark", "show", &sha],
+    );
+    let note: Value = serde_json::from_str(&note).unwrap();
+    assert_eq!(note["actor"], "you");
+    let report = std::fs::read_to_string(r.json["report"].as_str().unwrap()).unwrap();
+    assert!(report.contains("human override"), "{report}");
+    let out = env.cmd(&env.repo).args(["export", &id]).output().unwrap();
+    let md = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert!(md.contains("approved by you (a human override)"), "{md}");
+
+    // Again, from an agent: still refused, even though it would be a no-op.
+    let r = verdict_as(&env, &id, &file, &[("CLAUDECODE", "1")]);
+    assert_eq!(r.code, 5, "{}", r.stdout);
+}
+
 #[test]
 fn failed_runs_retry_once_then_hold() {
     let env = Env::initialized();

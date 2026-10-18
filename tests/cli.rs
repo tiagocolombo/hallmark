@@ -406,6 +406,36 @@ fn retry_only_applies_to_escalated_items() {
 }
 
 #[test]
+fn headless_fixers_may_not_ready_retry_or_drop() {
+    let env = Env::initialized();
+    let (id, wt) = env.new_item("x");
+    for args in [
+        vec!["ready", id.as_str()],
+        vec!["retry", id.as_str(), "--reason", "one more"],
+        vec!["drop", id.as_str(), "--reason", "not needed"],
+    ] {
+        let out = env
+            .cmd(&wt)
+            .env("HALL_HEADLESS", "1")
+            .env("HALL_ACTOR", "fixer")
+            .args(&args)
+            .output()
+            .unwrap();
+        let r = common::reply(out);
+        assert_eq!((r.code, codes(&r.json)), (5, "GATE_DENIED"), "{args:?}");
+        assert_eq!(
+            r.json["error"]["next"],
+            json!([format!("hall status {id}")])
+        );
+    }
+    assert_eq!(
+        env.hall(&env.repo, &["status", &id]).json["state"],
+        "development"
+    );
+    assert!(wt.is_dir());
+}
+
+#[test]
 fn adopt_turns_a_branch_into_an_item() {
     let env = Env::initialized();
     let r = env.hall(&env.repo, &["adopt"]);

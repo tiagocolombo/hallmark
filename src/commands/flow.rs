@@ -180,6 +180,7 @@ fn children_open(item: &Item, open: &[Item], what: &str) -> HallError {
 pub fn ready(cwd: &Path, a: ReadyArgs) -> Result<Response> {
     let repo = Repo::discover(cwd)?;
     let item = repo.resolve(a.id.as_deref())?;
+    crate::repo::deny_fixer("ready", item.id)?;
     if let Some(e) = part_not_reviewed(&item) {
         return Err(e);
     }
@@ -323,6 +324,7 @@ pub fn pull_back(cwd: &Path, a: PullBackArgs) -> Result<Response> {
 pub fn drop(cwd: &Path, a: DropArgs) -> Result<Response> {
     let repo = Repo::discover(cwd)?;
     let item = repo.resolve(a.id.as_deref())?;
+    crate::repo::deny_fixer("drop", item.id)?;
     if a.reason.trim().is_empty() {
         return Err(HallError::usage("--reason can't be empty"));
     }
@@ -383,6 +385,7 @@ pub fn drop(cwd: &Path, a: DropArgs) -> Result<Response> {
 pub fn retry(cwd: &Path, a: RetryArgs) -> Result<Response> {
     let repo = Repo::discover(cwd)?;
     let item = repo.resolve(a.id.as_deref())?;
+    crate::repo::deny_fixer("retry", item.id)?;
     let actor = actor();
     let tokens = match a.tokens.as_deref() {
         Some(t) => Some(

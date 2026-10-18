@@ -178,6 +178,26 @@ pub fn actor() -> String {
     }
 }
 
+/// True inside a headless `claude -p` run started by Hallmark's runner
+/// (`HALL_HEADLESS=1`).
+pub fn headless() -> bool {
+    std::env::var_os("HALL_HEADLESS").is_some()
+}
+
+/// Refuses `hall <cmd>` for `id` inside a headless fixer run: the fixer
+/// fixes and records what it fixed; sending work to review, recording a
+/// verdict, retrying and dropping belong to the loop and to you.
+pub fn deny_fixer(cmd: &str, id: ItemId) -> Result<()> {
+    if headless() && actor() == "fixer" {
+        return Err(HallError::new(
+            ErrorCode::GateDenied,
+            format!("`hall {cmd}` doesn't run inside the fixer's run"),
+        )
+        .next([format!("hall status {id}")]));
+    }
+    Ok(())
+}
+
 /// Where per-user state lives: the repo registry and the extracted plugin.
 pub fn user_dir() -> PathBuf {
     if let Some(p) = std::env::var_os("HALL_HOME") {
