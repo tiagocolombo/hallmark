@@ -141,6 +141,31 @@ struct State {
     /// Every PR the last pass planned, by base and in queue order.
     #[serde(default)]
     queue: Vec<Entry>,
+    /// Bases whose tip has a failed check: the merger stopped merging into
+    /// them (ADR 0051). Your office shows each one.
+    #[serde(default)]
+    red: BTreeMap<String, Red>,
+}
+
+/// A base the merger stopped merging into: its tip's CI failed.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Red {
+    /// The base's tip.
+    pub sha: String,
+    /// The checks that failed there.
+    pub failing: Vec<String>,
+    /// When the merger first saw it red.
+    pub since: DateTime<Utc>,
+}
+
+/// The bases the merger stopped merging into, from `merger.json` in the
+/// hallmark dir `root`: what your office shows.
+pub fn red_bases(root: &Path) -> BTreeMap<String, Red> {
+    std::fs::read_to_string(root.join("merger.json"))
+        .ok()
+        .and_then(|s| serde_json::from_str::<State>(&s).ok())
+        .map(|s| s.red)
+        .unwrap_or_default()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -357,9 +382,27 @@ struct Look<'a> {
     files: BTreeMap<ItemId, Vec<String>>,
     /// Resolve bases with the capped fetch (the CLI), not the daemon's.
     capped: bool,
+    /// What each base's tip CI said this look: its sha and the checks that
+    /// failed there. A base GitHub couldn't tell about isn't here.
+    tips: BTreeMap<String, (String, Vec<String>)>,
 }
 
 impl<'a> Look<'a> {
+    /// The checks that failed on `base`'s tip, read once per look. Empty
+    /// when it is green or still running; `None` when GitHub can't say, and
+    /// then nothing stops: the guard never blocks on an outage.
+    fn tip_failures(&mut self, base: &str, line: &[Item]) -> Option<Vec<String>> {
+        if let Some((_, f)) = self.tips.get(base) {
+            return Some(f.clone());
+        }
+        let target = self.target(base)?;
+        let pr = line.iter().find_map(|i| i.pr_url.clone())?;
+        let sha = git::run(&self.repo.main_root, &["rev-parse", &target.git_ref]).ok()?;
+        let failed = crate::gh::commit_failures(&self.repo.main_root, &pr, &sha).ok()?;
+        self.tips.insert(base.to_string(), (sha, failed.clone()));
+        Some(failed)
+    }
+
     fn target(&mut self, base: &str) -> Option<Target> {
         self.targets
             .entry(base.to_string())
@@ -591,17 +634,29 @@ impl<'a> Look<'a> {
                 Verdict::Rebase(both, head),
             );
         }
-        if let Fresh::Behind(both) = fresh {
-            return judged(
-                Status::Behind,
-                format!(
-                    "behind {} on files it touches ({}); bringing it up to date",
-                    target.name,
-                    both.join(", ")
-                ),
-                Verdict::Rebase(both, head),
-            );
-        }
+        // With `update = "conflicts"`, a PR GitHub merges cleanly goes in as
+        // it is: the base's own CI catches a bad combination (ADR 0051).
+        let as_it_is = match fresh {
+            Fresh::Behind(both)
+                if self.repo.config.merge.update == crate::config::MergeUpdate::Files =>
+            {
+                return judged(
+                    Status::Behind,
+                    format!(
+                        "behind {} on files it touches ({}); bringing it up to date",
+                        target.name,
+                        both.join(", ")
+                    ),
+                    Verdict::Rebase(both, head),
+                );
+            }
+            Fresh::Behind(both) => Some(format!(
+                "behind {} on {}, and merges cleanly as it is",
+                target.name,
+                both.join(", ")
+            )),
+            Fresh::Yes => None,
+        };
         // A person is asked only about a head that can merge.
         let lit = crate::assayer::base::globset(&self.repo.config.merge.lit);
         let touched: Vec<String> = files.iter().filter(|f| lit.is_match(f)).cloned().collect();
@@ -614,10 +669,13 @@ impl<'a> Look<'a> {
         }
         judged(
             Status::Ready,
-            format!(
-                "ready: hallmarked at {}, mergeable, up to date",
-                short(&head)
-            ),
+            match as_it_is {
+                Some(why) => format!("ready: hallmarked at {}; {why}", short(&head)),
+                None => format!(
+                    "ready: hallmarked at {}, mergeable, up to date",
+                    short(&head)
+                ),
+            },
             Verdict::Merge(head),
         )
     }
@@ -811,6 +869,33 @@ impl<'a> Look<'a> {
                 verdict,
             });
         }
+        // Stop the line: nothing merges into, or is rebased onto, a base
+        // whose own CI failed, until it is green again (ADR 0051).
+        let failed = if out.iter().any(|p| {
+            matches!(
+                p.verdict,
+                Some(Verdict::Merge(_) | Verdict::Rebase(..) | Verdict::Lit(_))
+            )
+        }) {
+            self.tip_failures(base, line).unwrap_or_default()
+        } else {
+            vec![]
+        };
+        if !failed.is_empty() {
+            let stop = format!(
+                "{base} is red ({} failed); the merger waits for it to be green",
+                failed.join(", ")
+            );
+            for p in &mut out {
+                if let Some(Verdict::Merge(_) | Verdict::Rebase(..) | Verdict::Lit(_)) = p.verdict {
+                    p.verdict = None;
+                    if matches!(p.entry.status, Status::Ready | Status::Lit) {
+                        p.entry.status = Status::Queued;
+                    }
+                    p.entry.why = format!("{}; {stop}", p.entry.why);
+                }
+            }
+        }
         out.sort_by_key(|p| (number(&p.entry.pr_url), p.entry.item));
         for (n, p) in out.iter_mut().enumerate() {
             p.entry.position = n as u32 + 1;
@@ -968,6 +1053,7 @@ fn look<'a>(repo: &'a Repo, watched: &'a [Item], capped: bool) -> Look<'a> {
         targets: BTreeMap::new(),
         files: BTreeMap::new(),
         capped,
+        tips: BTreeMap::new(),
     }
 }
 
@@ -989,6 +1075,12 @@ pub fn queue(repo: &Repo) -> Result<Vec<Entry>> {
 pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
     let repo = ctx.repo;
     if repo.config.merge.mode != MergeMode::Auto {
+        // Turned off: nothing is stopped any more.
+        let mut state = load(repo);
+        if !state.red.is_empty() {
+            state.red.clear();
+            save(repo, &state);
+        }
         return Ok(Progress::Idle);
     }
     let now = Utc::now();
@@ -1002,11 +1094,13 @@ pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
     let items = repo.index()?.items(true)?;
     let watched = delivery::watched(&items);
     if watched.is_empty() {
-        // The last PR left: the app shows an empty queue, not the last plan.
-        if !state.queue.is_empty() || !state.items.is_empty() {
+        // The last PR left: the app shows an empty queue, not the last plan,
+        // and nothing is stopped.
+        if !state.queue.is_empty() || !state.items.is_empty() || !state.red.is_empty() {
             state.last = Some(now);
             state.queue.clear();
             state.items.clear();
+            state.red.clear();
             save(repo, &state);
         }
         return Ok(Progress::Idle);
@@ -1015,7 +1109,15 @@ pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
     let mut look = look(repo, &watched, false);
     let mut done = Vec::new();
     let mut queue = Vec::new();
-    for (base, line) in lines(&items) {
+    let lines = lines(&items);
+    // A base with nothing left in its queue stops nothing.
+    state.red.retain(|b, _| lines.contains_key(b));
+    for (base, line) in lines {
+        // A base it stopped for is read again every pass, so it starts
+        // again once the base is green, even with nothing ready.
+        if state.red.contains_key(&base) {
+            look.tip_failures(&base, &line);
+        }
         for Planned { entry, verdict } in look.plan(&base, &line, &items) {
             queue.push(entry.clone());
             state.items.insert(
@@ -1050,6 +1152,36 @@ pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
     let open: BTreeSet<String> = watched.iter().map(|i| i.id.to_string()).collect();
     state.items.retain(|k, _| open.contains(k));
     state.queue = queue;
+    // What each base's tip said: red ones wait in your office, green ones
+    // leave it. A base GitHub couldn't tell about keeps what it had.
+    for (base, (sha, failing)) in std::mem::take(&mut look.tips) {
+        if failing.is_empty() {
+            if state.red.remove(&base).is_some() {
+                repo.hall
+                    .live(&format!("merger: {base} is green again; merging resumes"));
+            }
+            continue;
+        }
+        let since = match state.red.get(&base) {
+            Some(r) if r.sha == sha => r.since,
+            _ => {
+                repo.hall.live(&format!(
+                    "merger: {base} is red at {} ({}); stopped merging into it",
+                    short(&sha),
+                    failing.join(", ")
+                ));
+                now
+            }
+        };
+        state.red.insert(
+            base,
+            Red {
+                sha,
+                failing,
+                since,
+            },
+        );
+    }
     save(repo, &state);
     Ok(if done.is_empty() {
         Progress::Idle

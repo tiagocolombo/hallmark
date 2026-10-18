@@ -143,7 +143,10 @@ that is ready:
 - it touches no `[merge] lit` path;
 - it is up to date: it contains its base, or the commits it lacks touch none
   of its files. A release commit that only bumps the version doesn't send
-  every PR back.
+  every PR back. With `[merge] update = "conflicts"`, GitHub calling it
+  mergeable is enough, and only a real conflict sends it back
+  ([ADR 0051](decisions/0051-merge-clean-prs-and-stop-the-line.md));
+- its base is not red: no check failed on the base's tip.
 
 A PR that is behind on its own files, or that conflicts, is brought up to
 date only at its turn ([ADR 0050](decisions/0050-the-queue-updates-prs-at-their-turn.md)):
@@ -176,6 +179,12 @@ base as it really is. `hall queue` shows the plan: the order, what each PR
 waits for, and the items on their way back (`updating`). In the terminal app,
 <kbd>m</kbd> shows the plan of the merger's last pass, and when it was made;
 the key is there only while the merger is on.
+
+The merger also stops the line. When a check fails on a base's tip, nothing
+merges into that base and nothing is rebased onto it until it is green
+again, and your office shows `base_red` with the checks that failed. That is
+what makes `update = "conflicts"` safe enough: a combination that breaks the
+base is caught within one CI run, and nothing lands on top of it.
 
 A script decides each step, never a model. That is what lets this loop run
 with nobody watching: its check is cheap, runs often and is hard to game.

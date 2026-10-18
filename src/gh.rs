@@ -309,6 +309,61 @@ pub fn pr_state(dir: &Path, pr: &str) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
+/// The checks that failed on a commit of the repo `pr` belongs to: every
+/// check run that finished as `failure` or `timed_out`. A cancelled run
+/// (one a newer run replaced) and one still going are not failures.
+pub fn commit_failures(dir: &Path, pr: &str, sha: &str) -> Result<Vec<String>> {
+    let Some((owner, name)) = owner_repo(pr) else {
+        return Err(HallError::new(
+            ErrorCode::GhUnavailable,
+            format!("{pr} is not a GitHub PR URL"),
+        ));
+    };
+    let out = Command::new(gh()?)
+        .current_dir(dir)
+        .args([
+            "api",
+            &format!("repos/{owner}/{name}/commits/{sha}/check-runs?per_page=100"),
+        ])
+        .output()?;
+    if !out.status.success() {
+        return Err(HallError::new(
+            ErrorCode::GhUnavailable,
+            format!(
+                "gh api check-runs for {sha} failed: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            ),
+        )
+        .next(["gh auth status", "hall doctor"]));
+    }
+    #[derive(Deserialize)]
+    struct Runs {
+        #[serde(default)]
+        check_runs: Vec<Run>,
+    }
+    #[derive(Deserialize)]
+    struct Run {
+        name: String,
+        #[serde(default)]
+        conclusion: Option<String>,
+    }
+    let runs: Runs = serde_json::from_slice(&out.stdout).map_err(|e| {
+        HallError::new(
+            ErrorCode::GhUnavailable,
+            format!("unreadable gh output: {e}"),
+        )
+    })?;
+    let mut failed: Vec<String> = runs
+        .check_runs
+        .into_iter()
+        .filter(|r| matches!(r.conclusion.as_deref(), Some("failure" | "timed_out")))
+        .map(|r| r.name)
+        .collect();
+    failed.sort();
+    failed.dedup();
+    Ok(failed)
+}
+
 /// Where an open PR stands for merging.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct GhMerge {

@@ -65,8 +65,9 @@ pub struct Index {
 pub struct InboxEntry {
     /// Escalations: question, escalated, ready, budget, run_failed,
     /// ship_failed, conflict, feedback, checks, ci_failed (after the Delivery
-    /// office's fixes), merge_failed, lit, ci_down, daemon_stopped. Notices: stuck,
-    /// session_waiting, ci_failed (merged, or being fixed), learnings.
+    /// office's fixes), merge_failed, lit, ci_down, base_red, daemon_stopped.
+    /// Notices: stuck, session_waiting, ci_failed (merged, or being fixed),
+    /// learnings.
     pub kind: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub item: Option<ItemId>,
@@ -806,6 +807,30 @@ impl Index {
                     .filter_map(|(i, _)| i.pr_url.as_deref())
                     .map(|u| format!("gh pr checks {u}"))
                     .collect(),
+                notice: false,
+            });
+        }
+        // A base whose own CI failed: the merger stopped merging into it
+        // (ADR 0051). It leaves once the base is green.
+        for (base, red) in crate::merger::red_bases(&self.root) {
+            out.push(InboxEntry {
+                kind: "base_red".into(),
+                item: None,
+                qid: None,
+                text: format!(
+                    "{base} is red at {}: {} failed. The merger stopped merging into {base} \
+                     until its CI is green again: fix it, or re-run a flaky check",
+                    crate::event::short(&red.sha),
+                    red.failing.join(", ")
+                ),
+                options: vec![],
+                default: None,
+                session: None,
+                since: red.since,
+                answer_with: vec![
+                    format!("gh run list --branch {base} --limit 5"),
+                    "hall queue".into(),
+                ],
                 notice: false,
             });
         }

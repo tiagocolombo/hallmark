@@ -548,6 +548,28 @@ impl MergeMode {
     }
 }
 
+/// When the merger brings a PR up to date before it merges (ADR 0051).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MergeUpdate {
+    /// Whenever the base moved on a file the PR touches: CI tests exactly
+    /// what lands, one PR after another on shared files.
+    #[default]
+    Files,
+    /// Only when GitHub says it conflicts: a clean PR with green CI merges
+    /// as it is, and the base's own CI catches a bad combination.
+    Conflicts,
+}
+
+impl MergeUpdate {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            MergeUpdate::Files => "files",
+            MergeUpdate::Conflicts => "conflicts",
+        }
+    }
+}
+
 /// `[merge]`: the merger (ADR 0048).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(default)]
@@ -560,6 +582,9 @@ pub struct Merge {
     /// Wait for the PR's CI to pass before merging. `false`: merge once the
     /// PR is hallmarked, mergeable and up to date, whatever CI says.
     pub require_ci: bool,
+    /// When a PR is rebased before it merges: `files` (the base moved on a
+    /// file it touches) or `conflicts` (only when GitHub says it conflicts).
+    pub update: MergeUpdate,
     /// Paths a person merges: a PR that touches one waits for you (a `lit`
     /// hold). Globs relative to the repo root.
     pub lit: Vec<String>,
@@ -571,6 +596,7 @@ impl Default for Merge {
             mode: MergeMode::Off,
             command: "gh pr merge {pr} --squash --match-head-commit {pr_head}".into(),
             require_ci: true,
+            update: MergeUpdate::Files,
             lit: Vec::new(),
         }
     }
