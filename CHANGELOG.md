@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.17](https://github.com/tiagocolombo/hallmark/compare/v0.2.16...v0.2.17) - 2026-10-18
+
+### Added
+
+- L3: gates get their own timeout ([#75](https://github.com/tiagocolombo/hallmark/pull/75))
+
 ## [0.2.16](https://github.com/tiagocolombo/hallmark/compare/v0.2.15...v0.2.16) - 2026-10-18
 
 ### Added
