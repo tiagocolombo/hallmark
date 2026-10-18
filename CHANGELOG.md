@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1](https://github.com/tiagocolombo/hallmark/compare/v0.3.0...v0.3.1) - 2026-10-18
+
+### Fixed
+
+- hall web puts --json before the args, so a saved setting is just its value ([#112](https://github.com/tiagocolombo/hallmark/pull/112))
+
 ## [0.3.0](https://github.com/tiagocolombo/hallmark/compare/v0.2.19...v0.3.0) - 2026-10-18
 
 ### Added
