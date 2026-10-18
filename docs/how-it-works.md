@@ -240,7 +240,8 @@ extension with its author, source and license.
 ## When Hallmark needs you
 
 Only escalations land in Your Office as inbox entries: a question from an
-agent, an escalation after repeated rejections, "looks done?", a budget hold,
+agent, an escalation after repeated rejections, "looks done?", a budget hold
+(800k tokens an item by default), checks that failed three times in a row,
 a merge the merger couldn't do (`merge_failed`), a ready PR that touches a
 `[merge] lit` path (`lit`), CI that still fails after the Delivery office's
 two fixes, or CI that never started (one `ci_down` entry). Hallmark tells you in Claude Code (a hook and

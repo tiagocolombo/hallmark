@@ -154,12 +154,17 @@ pub fn run<R: BufRead, W: Write>(ctx: &Context, input: R, out: W) -> Result<Plan
         w.ask(
             Scope::Repo,
             "budget.daily",
-            Some("Daily cap for the whole loop: tokens (4M) or dollars ($15); '-' for none"),
+            Some(
+                "Daily cap for the whole loop: tokens (4M) or dollars ($15), or none; \
+                 '-' for the default (4M)",
+            ),
         )?;
         w.ask(
             Scope::Repo,
             "budget.per_item",
-            Some("Cap per item (800k); '-' for none"),
+            Some(
+                "Cap per item: tokens (800k) or dollars ($5), or none; '-' for the default (800k)",
+            ),
         )?;
         w.say("\n── Extensions: skills by other authors ──")?;
         for e in crate::extensions::CATALOG {
@@ -767,8 +772,8 @@ mod tests {
                 "",                // intake model
                 "",                // librarian model
                 "lots",            // daily: refused
-                "4M",              // daily
-                "-",               // per item: none (already none)
+                "2M",              // daily
+                "-",               // per item: the default (already)
                 "y",               // Matt Pocock's skills
                 "",                // claude
                 "",                // gh
@@ -791,7 +796,7 @@ mod tests {
                 r#"capture.mode = "ask""#,
                 r#"branch = "feat/{slug}""#,
                 r#"ship = "rig submit --pr""#,
-                r#"budget.daily = "4M""#,
+                r#"budget.daily = "2M""#,
                 r#"extensions.mattpocock = ["planner", "developer", "reviewer", "fixer"]"#,
                 "notify.desktop = false",
             ]

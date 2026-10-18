@@ -11,7 +11,7 @@ use super::cache;
 use crate::config::Role;
 use crate::error::Result;
 use crate::event::{Body, CheckRun, short};
-use crate::item::{Item, State};
+use crate::item::{HoldKind, Item, State};
 use crate::journal::ev;
 use crate::worker::{Progress, WorkerCtx};
 
@@ -19,7 +19,9 @@ use crate::worker::{Progress, WorkerCtx};
 pub const TIMEOUT_EXIT: i32 = 124;
 
 /// Runs every gate (even after one fails, so the fixer sees all of them in
-/// one round), writes `checks/r<round>.log`, and records `checks`.
+/// one round), writes `checks/r<round>.log`, and records `checks`. The
+/// `max_check_failures`-th failure in a row holds the item for you (kind
+/// `checks`): fixes that never turn the gates green don't loop.
 pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
     let repo = ctx.repo;
     let Some(sha) = item.frozen_sha.clone() else {
@@ -64,15 +66,16 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
         .map(|r| format!("`{}` exit {}", r.command, r.exit_code))
         .collect();
     let n = runs.len();
-    let (_, recorded) = repo.hall.transact(item.id, |cur, _| {
+    let max = repo.config.max_check_failures;
+    let (_, (recorded, held, in_a_row)) = repo.hall.transact(item.id, |cur, _| {
         // Pulled back, dropped or resubmitted while the gates ran.
         if cur.state != State::Checks
             || cur.frozen_sha.as_deref() != Some(sha.as_str())
             || cur.round != round
         {
-            return Ok((vec![], false));
+            return Ok((vec![], (false, false, 0)));
         }
-        let e = ev(
+        let mut events = vec![ev(
             super::ROLE,
             Some(cur.id),
             Body::Checks {
@@ -81,8 +84,23 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
                 passed,
                 runs: runs.clone(),
             },
-        );
-        Ok((vec![e], true))
+        )];
+        let in_a_row = cur.check_failures + 1;
+        let held = !passed && max > 0 && in_a_row >= max;
+        if held {
+            events.push(ev(
+                super::ROLE,
+                Some(cur.id),
+                Body::Held {
+                    kind: HoldKind::Checks,
+                    reason: format!(
+                        "the checks failed {in_a_row} times in a row (max_check_failures = {max}): {}",
+                        failed.join(", ")
+                    ),
+                },
+            ));
+        }
+        Ok((events, (true, held, in_a_row)))
     })?;
     let what = if !recorded {
         format!(
@@ -96,6 +114,12 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
             item.id,
             short(&sha),
             if n == 1 { "" } else { "s" }
+        )
+    } else if held {
+        format!(
+            "{} held: the checks failed {in_a_row} times in a row: {}",
+            item.id,
+            failed.join(", ")
         )
     } else {
         format!("{} checks failed: {}", item.id, failed.join(", "))

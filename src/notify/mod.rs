@@ -194,6 +194,7 @@ fn kind_label(kind: &str) -> &str {
         "conflict" => "conflict",
         "feedback" => "PR comments",
         "stuck" => "stuck",
+        "checks" => "checks failing",
         "daemon_stopped" => "daemon stopped",
         "learnings" => "learnings",
         other => other,
@@ -203,7 +204,7 @@ fn kind_label(kind: &str) -> &str {
 fn tags(kind: &str) -> (Vec<String>, u8) {
     let (t, p) = match kind {
         "question" => ("question", 4),
-        "escalated" => ("rotating_light", 4),
+        "escalated" | "checks" => ("rotating_light", 4),
         "stuck" | "daemon_stopped" => ("warning", 4),
         "ready" => ("white_check_mark", 3),
         "budget" => ("money_with_wings", 3),

@@ -23,7 +23,8 @@ hall config get ship
 hall config set budget.daily 4M
 hall config set gates "make test" "make lint"   # a list takes several values
 hall config set claude_args -- --verbose        # `--` before values that start with -
-hall config unset budget.daily    # back to the default
+hall config unset budget.daily    # back to the default (4M)
+hall config set budget.daily none # no daily cap
 hall config set --user tools.gh /opt/homebrew/bin/gh
 ```
 
@@ -48,6 +49,7 @@ fixer       = "claude -p"   # or another fix engine, run in the worktree
 claude_args = []            # extra arguments for every headless claude -p run
 dev_commands = []           # what headless dev runs may run besides the gates
 max_rejects = 3             # rejected reviews before the item is escalated to you
+max_check_failures = 3      # failed checks in a row before the item is held for you; 0 for never
 auto_ready  = true          # propose-ready goes straight to review when nothing is left to confirm
 stuck_after = "30m"
 lenses      = "all"
@@ -75,12 +77,13 @@ lit        = []             # paths a person merges, as globs
 split     = "auto"   # or "off"
 max_parts = 4
 
-[budget]                       # runs are capped by default; daily caps only if you set them
+[budget]                       # runs are capped by default too (per-run max_usd)
+daily           = "4M"     # the whole loop, per UTC day; "none" for no cap
+per_item        = "800k"   # weighted by price (a cache read counts a tenth), or "$15"; "none" for no cap
 review_model    = "opus"
 fix_model       = "sonnet"
 intake_model    = "haiku"
 librarian_model = "haiku"
-# daily = "4M"; per_item = "800k" (weighted by price: a cache read counts a tenth) or "$15"
 # [budget.review] max_usd = 3.0 (or "none"), daily = "2M", effort = "high", timeout = "20m"
 
 [extensions]                # skill packs by other authors: `hall extensions`
@@ -319,6 +322,26 @@ day, per item, and for the whole loop per day
 the item (or the loop) waits for you. `hall budget` shows the caps and today's
 spend, `hall budget --set per_item=800k` changes one, and `hall budget --grant`
 lets the loop go past today's daily cap without changing it.
+
+A repo that sets no budget is still capped: `per_item = "800k"` and
+`daily = "4M"` are the defaults, so a loop that goes wrong stops instead of
+spending without limit. Set a cap to `"none"` to turn it off
+(`hall budget --set per_item=none` writes that); removing the key brings the
+default back. Role tables have no daily cap unless you set one (drop it with
+`hall config unset budget.review.daily`). Each role's per-run `max_usd` has a
+default that `"none"` lifts, so `none` works for `daily`, `per_item` and
+`max_usd`.
+The Library's distilling runs answer to the daily and room caps only: an
+item that spent its `per_item` in the loop is still distilled once it closes.
+
+One daemon can serve several repos. When any of them spends its daily cap, the
+daemon pauses the model workers for every repo it serves until 00:00 UTC, even
+a repo whose `daily` is `"none"`.
+
+Failed checks have a cap too: after `max_check_failures` (default 3) failed
+checks in a row, the item is held for you with kind `checks`, because the
+fixer's commits aren't turning the gates green. Passing checks, `hall ready`
+and `hall retry` on a `checks` hold start the count again; `0` turns the cap off.
 
 ```toml
 [budget]
