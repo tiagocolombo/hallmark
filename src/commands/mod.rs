@@ -9,6 +9,7 @@ pub mod doctor;
 pub mod extensions;
 pub mod fix;
 pub mod flow;
+pub mod gazette;
 pub mod hud;
 pub mod init;
 pub mod library;

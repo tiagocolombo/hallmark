@@ -221,6 +221,7 @@ a.card:hover { border-color: var(--field); }
 .cols > .wide { flex: 999 1 520px; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
 .cols > .narrow { flex: 1 1 280px; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
 .empty { color: var(--muted); font-size: 12px; padding: 8px 2px; }
+iframe.gazette { width: 100%; height: calc(100vh - 220px); min-height: 480px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
 .pill { display: inline-block; border-radius: 999px; padding: 0 8px; font-size: 11px; font-weight: 600; line-height: 18px; background: var(--raise); color: var(--ink-2); white-space: nowrap; }
 .pill.ok { background: var(--ok-soft); color: var(--ok); }
 .pill.stop { background: var(--stop-soft); color: var(--stop); }

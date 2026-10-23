@@ -965,6 +965,7 @@ impl App {
             (_, KeyCode::Char('r' | 'p' | 'g' | 'x')) => {}
             (_, KeyCode::Char('w')) => return self.open_worktree(),
             (_, KeyCode::Char('o')) => return self.open_pr(),
+            (_, KeyCode::Char('n')) => return self.open_gazette(),
             _ => {}
         }
         Effect::None
@@ -1405,6 +1406,39 @@ impl App {
                 self.err(&format!("{} has no PR yet.", item.id));
                 Effect::None
             }
+        }
+    }
+
+    /// `n`: open the item's Gazette in the browser, once it is printed.
+    fn open_gazette(&mut self) -> Effect {
+        let item = if self.view == View::History {
+            self.history().get(self.history_sel).map(|i| (*i).clone())
+        } else {
+            self.item().cloned()
+        };
+        let Some(item) = item else {
+            self.err("No item selected.");
+            return Effect::None;
+        };
+        let Some(page) = self
+            .repo()
+            .and_then(|r| r.hall())
+            .map(|h| h.item_dir(item.id).join(crate::gazette::PAGE))
+        else {
+            return Effect::None;
+        };
+        if !page.is_file() {
+            self.err(&format!(
+                "{} has no Gazette yet: the librarian prints one when the item finishes.",
+                item.id
+            ));
+            return Effect::None;
+        }
+        let path = page.to_string_lossy().into_owned();
+        self.info(&format!("Opening {}'s Gazette", item.id));
+        Effect::Open {
+            fallback: format!("Gazette: {}", self.show_path(&path)),
+            target: path,
         }
     }
 

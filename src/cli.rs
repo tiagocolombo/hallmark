@@ -125,6 +125,12 @@ pub enum Cmd {
     /// The web app: every repo's items, your office, the merge queue and
     /// the settings, in a browser on this machine. Runs until stopped.
     Web(WebArgs),
+    /// An item's Gazette: its story as a newspaper page, for a person.
+    /// Printed when the item finishes; `--open` opens it in the browser.
+    Gazette(GazetteArgs),
+    /// Attach a file or link to an item for its Gazette: a mockup, a
+    /// screenshot, a diagram.
+    Attach(AttachArgs),
 }
 
 #[derive(Debug, Args)]
@@ -683,6 +689,34 @@ pub struct WebArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct GazetteArgs {
+    /// An item ID; omit inside an item's worktree.
+    pub id: Option<String>,
+    /// Every edition printed so far, newest first.
+    #[arg(long, conflicts_with_all = ["id", "open", "html"])]
+    pub list: bool,
+    /// Open the page in the browser.
+    #[arg(long)]
+    pub open: bool,
+    /// Include the page's HTML in the reply.
+    #[arg(long)]
+    pub html: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct AttachArgs {
+    /// A file (copied into the item's journal; images show on the page) or
+    /// an https:// link.
+    pub source: String,
+    /// The item (default: the one whose worktree this is).
+    #[arg(long)]
+    pub item: Option<String>,
+    /// What it shows, in a sentence. It becomes the plate's caption.
+    #[arg(long)]
+    pub caption: Option<String>,
+}
+
+#[derive(Debug, Args)]
 pub struct NotifyArgs {
     #[command(subcommand)]
     pub action: NotifyAction,
@@ -935,6 +969,7 @@ pub fn allowed_on_web(args: &[String]) -> Result<()> {
             | Cmd::Extensions(_)
             | Cmd::Hud(_),
         ) => true,
+        Some(Cmd::Gazette(a)) => !a.open,
         Some(Cmd::New(a)) => !a.open,
         Some(Cmd::Adopt(a)) => a.pr.is_some(),
         Some(Cmd::Trace(a)) => !a.follow,
@@ -998,6 +1033,8 @@ fn dispatch(cmd: Option<Cmd>, cwd: &std::path::Path, mode: Mode) -> Result<Respo
         Some(Cmd::Extensions(a)) => extensions::extensions(cwd, a),
         Some(Cmd::Hud(a)) => hud::hud(cwd, a),
         Some(Cmd::Web(a)) => crate::web::web(cwd, a, mode),
+        Some(Cmd::Gazette(a)) => gazette::gazette(cwd, a),
+        Some(Cmd::Attach(a)) => gazette::attach(cwd, a),
     }
 }
 
@@ -1019,5 +1056,13 @@ mod web_tests {
         assert!(ok(&["update", "--check"]));
         assert!(ok(&["adopt", "--pr", "7"]));
         assert!(ok(&["new", "x"]));
+    }
+
+    #[test]
+    fn the_web_reads_the_gazette_but_attaches_nothing() {
+        assert!(ok(&["gazette", "H-0001", "--html"]));
+        assert!(ok(&["gazette", "--list"]));
+        assert!(!ok(&["gazette", "H-0001", "--open"]));
+        assert!(!ok(&["attach", "shot.png", "--item", "H-0001"]));
     }
 }

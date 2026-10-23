@@ -253,6 +253,14 @@ enum StatusReply {
     Item(Out<StatusItem>),
 }
 
+#[derive(Serialize, JsonSchema)]
+#[serde(untagged)]
+#[allow(dead_code)]
+enum GazetteReply {
+    Page(Out<super::gazette::GazetteOut>),
+    List(Out<super::gazette::GazetteList>),
+}
+
 pub const SCHEMA_NAMES: &[&str] = &[
     "init",
     "doctor",
@@ -294,6 +302,8 @@ pub const SCHEMA_NAMES: &[&str] = &[
     "hud",
     "web",
     "web-line",
+    "gazette",
+    "attach",
     "watch",
     "watch-line",
     "trace",
@@ -351,6 +361,8 @@ pub fn schema_value(name: &str) -> Option<serde_json::Value> {
         "extensions" => schema_for!(Out<super::extensions::ExtensionsOut>),
         "hud" => schema_for!(Out<HudOut>),
         "web" => schema_for!(Out<crate::web::WebOut>),
+        "gazette" => schema_for!(GazetteReply),
+        "attach" => schema_for!(Out<super::gazette::AttachOut>),
         // The line `hall web` prints once it is listening.
         "web-line" => schema_for!(crate::web::WebStart),
         // What the principal engineer returns (plugin/schemas/verdict.json).

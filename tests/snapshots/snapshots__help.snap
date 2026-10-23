@@ -1527,6 +1527,74 @@ expression: v
       "name": "web",
       "schema": "hall schema web",
       "usage": "hall web [OPTIONS]"
+    },
+    {
+      "about": "An item's Gazette: its story as a newspaper page, for a person. Printed when the item finishes; `--open` opens it in the browser",
+      "args": [
+        {
+          "help": "An item ID; omit inside an item's worktree",
+          "name": "id",
+          "required": false,
+          "syntax": "<id>",
+          "takes_value": true
+        },
+        {
+          "default": "false",
+          "help": "Every edition printed so far, newest first",
+          "name": "list",
+          "required": false,
+          "syntax": "--list",
+          "takes_value": false
+        },
+        {
+          "default": "false",
+          "help": "Open the page in the browser",
+          "name": "open",
+          "required": false,
+          "syntax": "--open",
+          "takes_value": false
+        },
+        {
+          "default": "false",
+          "help": "Include the page's HTML in the reply",
+          "name": "html",
+          "required": false,
+          "syntax": "--html",
+          "takes_value": false
+        }
+      ],
+      "name": "gazette",
+      "schema": "hall schema gazette",
+      "usage": "hall gazette [OPTIONS] [ID]"
+    },
+    {
+      "about": "Attach a file or link to an item for its Gazette: a mockup, a screenshot, a diagram",
+      "args": [
+        {
+          "help": "A file (copied into the item's journal; images show on the page) or an https:// link",
+          "name": "source",
+          "required": true,
+          "syntax": "<source>",
+          "takes_value": true
+        },
+        {
+          "help": "The item (default: the one whose worktree this is)",
+          "name": "item",
+          "required": false,
+          "syntax": "--item <item>",
+          "takes_value": true
+        },
+        {
+          "help": "What it shows, in a sentence. It becomes the plate's caption",
+          "name": "caption",
+          "required": false,
+          "syntax": "--caption <caption>",
+          "takes_value": true
+        }
+      ],
+      "name": "attach",
+      "schema": "hall schema attach",
+      "usage": "hall attach [OPTIONS] <SOURCE>"
     }
   ],
   "contract": [

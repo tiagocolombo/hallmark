@@ -51,6 +51,9 @@ pub struct Proposals {
     pub learnings: Vec<Proposal>,
     #[serde(default)]
     pub retire: Vec<String>,
+    /// The words for the item's Gazette page (ADR 0053).
+    #[serde(default)]
+    pub gazette: Option<crate::gazette::Prose>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -178,6 +181,34 @@ pub fn digest(item: &Item, events: &[Event], changed: &[String]) -> String {
         }
     }
 
+    if let Some((summary, why, how)) = events.iter().rev().find_map(|e| match &e.body {
+        Body::ProposedReady { summary, why, how } => Some((summary, why, how)),
+        _ => None,
+    }) {
+        s.push_str(&format!(
+            "\n## What the dev agent said it did\n\n{}\n",
+            clip(summary, 600)
+        ));
+        if let Some(w) = why {
+            s.push_str(&format!("Why: {}\n", clip(w, 600)));
+        }
+        if let Some(h) = how {
+            s.push_str(&format!("How: {}\n", clip(h, 600)));
+        }
+    }
+    let attached = crate::gazette::attached(events);
+    if !attached.is_empty() {
+        s.push_str("\n## Attached for the Gazette\n\n");
+        for (path, caption) in attached {
+            s.push_str(&format!(
+                "- {path}{}\n",
+                caption
+                    .map(|c| format!(": {}", clip(&c, 200)))
+                    .unwrap_or_default()
+            ));
+        }
+    }
+
     let reviews: Vec<String> = events
         .iter()
         .filter_map(|e| match &e.body {
@@ -261,7 +292,11 @@ pub fn digest(item: &Item, events: &[Event], changed: &[String]) -> String {
     let mut questions: Vec<(String, String, Option<String>)> = Vec::new();
     let mut used = Vec::new();
     for e in events {
+        // Hallmark's own workers pull back and drop too (a rebase that
+        // changed the patch); only a person's moves are decisions.
+        let person = matches!(e.actor.as_str(), "you" | "agent");
         match &e.body {
+            Body::Retried { .. } | Body::PulledBack { .. } | Body::Dropped { .. } if !person => {}
             Body::Retried { reason } => {
                 decisions.push(format!("- Allowed another round: {}", clip(reason, 300)))
             }
@@ -368,7 +403,17 @@ an update. Set `updates` to the ID of the existing learning it refines (keep tha
 learning's point, sharpen or widen it), or \"\" for a new one. Prefer updating over adding \
 a near-duplicate.\n\
 - `retire`: IDs of existing learnings this item shows are wrong or obsolete.\n\
-Return empty lists when the item taught nothing worth keeping; most items teach little.\n\n\
+Return empty lists when the item taught nothing worth keeping; most items teach little.\n\
+- `gazette`: the words for the item's Gazette, a newspaper page about it for a person who \
+didn't watch it happen: what changed and why, how the review went, what was found and \
+fixed. Write it for that person, never for an agent: plain sentences, no file paths or \
+function names unless they matter to a reader. Hallmark adds every fact itself (dates, \
+counts, costs, checks, the timeline), so don't repeat numbers you aren't sure of. \
+`rounds` has one short line per verdict round; `findings` has a plain headline and one or \
+two sentences for each finding ID below (what went wrong for a user, and what changed). \
+`diagram` is an outline of the flow the change adds or changes, 2 to 8 nodes in \
+left-to-right order with labelled edges, only when a picture helps; otherwise leave its \
+`nodes` and `edges` empty.\n\n\
 Kinds: `rule` (a finding that turned out right), `false-positive` (a finding that was \
 withdrawn or a dispute the reviewer accepted: what not to flag, and why), `map` (what a \
 module does, so reviewers stop re-exploring it), `decision` (the human's ruling on an \
@@ -466,6 +511,7 @@ pub fn distill(repo: &Repo, runner: &dyn Runner, id: ItemId) -> Result<Distill> 
         },
     );
     repo.hall.append_item(id, &e)?;
+    print_gazette(repo, id, proposals.gazette.as_ref());
     repo.hall.live(&format!(
         "{id} distilled: {} learnings ({} proposed), {} retired",
         applied.learnings.len(),
@@ -476,6 +522,30 @@ pub fn distill(repo: &Repo, runner: &dyn Runner, id: ItemId) -> Result<Distill> 
         applied,
         fresh: true,
     })
+}
+
+/// Saves the prose and prints the item's Gazette. A page that can't be
+/// printed never fails the distillation: it is logged, and `hall gazette`
+/// prints it later from the item's own words.
+fn print_gazette(repo: &Repo, id: ItemId, prose: Option<&crate::gazette::Prose>) {
+    let printed = prose
+        .map(|p| crate::gazette::save_prose(repo, id, p))
+        .unwrap_or(Ok(()))
+        .and_then(|_| crate::gazette::print(repo, id));
+    match printed {
+        Ok(p) => repo.hall.live(&format!(
+            "{id}: the Gazette is printed{}",
+            if p.prose {
+                ""
+            } else {
+                ", in the item's own words"
+            }
+        )),
+        Err(e) => repo.hall.live(&format!(
+            "{id}: the Gazette could not be printed: {}",
+            e.message
+        )),
+    }
 }
 
 fn date(t: Option<DateTime<Utc>>) -> Option<chrono::NaiveDate> {
@@ -798,6 +868,15 @@ pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
             Distill::Stopped { progress, .. } => progress,
         });
     }
+    // Pages whose item moved on since (a merge, CI): no model run.
+    let reprinted = crate::gazette::refresh_all(repo)?;
+    if !reprinted.is_empty() {
+        let ids: Vec<String> = reprinted.iter().map(ToString::to_string).collect();
+        return Ok(Progress::worked(format!(
+            "reprinted the Gazette for {}",
+            ids.join(", ")
+        )));
+    }
     let now = Utc::now();
     let path = tick_state_path(repo);
     let mut st: TickState = std::fs::read_to_string(&path)
@@ -967,6 +1046,47 @@ mod tests {
     }
 
     #[test]
+    fn only_a_persons_moves_are_decisions() {
+        let mut events = journal();
+        events.push(Event::new(
+            "shipper",
+            Some(ItemId(42)),
+            Body::PulledBack {
+                reason: Some("the patch changed in the rebase".into()),
+            },
+        ));
+        let item = crate::event::fold(ItemId(42), &events).unwrap();
+        let d = digest(&item, &events, &[]);
+        assert!(d.contains("Allowed another round"), "{d}");
+        assert!(!d.contains("the patch changed in the rebase"), "{d}");
+    }
+
+    #[test]
+    fn the_digest_has_the_dev_agents_account_and_attachments() {
+        let mut events = journal();
+        events.push(ev(Body::ProposedReady {
+            summary: "Retries check the endpoint".into(),
+            why: Some("Deleted endpoints kept retrying".into()),
+            how: None,
+        }));
+        events.push(ev(Body::Attached {
+            path: "attachments/1-flow.png".into(),
+            caption: Some("The retry flow".into()),
+        }));
+        let item = crate::event::fold(ItemId(42), &events).unwrap();
+        let d = digest(&item, &events, &[]);
+        assert!(
+            d.contains("## What the dev agent said it did\n\nRetries check the endpoint"),
+            "{d}"
+        );
+        assert!(d.contains("Why: Deleted endpoints kept retrying"), "{d}");
+        assert!(
+            d.contains("- attachments/1-flow.png: The retry flow"),
+            "{d}"
+        );
+    }
+
+    #[test]
     fn distilled_once_per_arrival() {
         let mut events = journal();
         assert!(already_distilled(&events).is_none());
@@ -1026,6 +1146,23 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(p.kind, "map");
+        // The Gazette's words: every key the schema asks for is one Prose reads.
+        let mut asked: Vec<&str> = v["properties"]["gazette"]["required"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|k| k.as_str().unwrap())
+            .collect();
+        let prose = serde_json::to_value(crate::gazette::Prose::default()).unwrap();
+        let mut read: Vec<&str> = prose
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        asked.sort();
+        read.sort();
+        assert_eq!(asked, read);
         // Live `claude -p` rejects a 2020-12 `$schema` key in --json-schema.
         assert!(v.get("$schema").is_none());
         // A `tools:` list hides StructuredOutput unless it is named.

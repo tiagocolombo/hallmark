@@ -870,6 +870,51 @@ fn drop_asks_for_a_reason() {
 }
 
 #[test]
+fn n_opens_the_gazette_of_the_item_in_view() {
+    let env = building();
+    let mut app = load(&env, &env.repo);
+
+    // H-0006 has a page; H-0001 doesn't.
+    let dir = env.repo.join(".git/hallmark/items/H-0006");
+    std::fs::write(dir.join("gazette.html"), "<html></html>").unwrap();
+
+    select(&mut app, 1);
+    assert_eq!(key(&mut app, KeyCode::Char('n')), Effect::None);
+    let s = app.status.as_ref().unwrap();
+    assert!(
+        s.error && s.text.contains("H-0001 has no Gazette yet"),
+        "{s:?}"
+    );
+
+    select(&mut app, 6);
+    match key(&mut app, KeyCode::Char('n')) {
+        Effect::Open { target, .. } => assert!(target.ends_with("gazette.html"), "{target}"),
+        e => panic!("{e:?}"),
+    }
+
+    // In History, `n` follows the highlighted row, not the board's selection.
+    select(&mut app, 1);
+    key(&mut app, KeyCode::Char('h'));
+    assert_eq!(app.view, View::History);
+    let row = app
+        .history()
+        .iter()
+        .position(|i| i.id == ItemId(6))
+        .unwrap();
+    for _ in 0..row {
+        key(&mut app, KeyCode::Down);
+    }
+    assert_eq!(app.selected, Some(ItemId(1)));
+    match key(&mut app, KeyCode::Char('n')) {
+        Effect::Open { target, .. } => {
+            assert!(target.contains("H-0006"), "{target}");
+            assert!(target.ends_with("gazette.html"), "{target}");
+        }
+        e => panic!("{e:?}"),
+    }
+}
+
+#[test]
 fn open_and_diff() {
     let env = building();
     let mut app = load(&env, &env.repo);

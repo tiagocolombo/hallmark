@@ -146,6 +146,19 @@ done, act as the change's test engineer:
 5. Never delete, skip or loosen a test to get green. If a test is wrong, fix
    it and say why in the commit message. Review every changed snapshot.
 
+**Show it.** When the change has something to see (a mockup you designed
+from, a screenshot of the new page, a diagram you drew), attach it for the
+item's Gazette, the page people read about it once it's done:
+
+```
+hall attach docs/mockup.png --caption "The control room, as designed"
+hall attach https://claude.ai/artifact/… --caption "The design"
+```
+
+Images become plates on the page; other files and links are listed. Keep
+screenshots out of the commit unless the repo wants them: `hall attach`
+copies the file into the journal.
+
 **Looks done.** Commit everything, run the gates, then send it with a
 summary that names the tests, and why and how, for the PR:
 
