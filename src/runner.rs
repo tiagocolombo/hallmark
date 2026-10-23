@@ -290,7 +290,8 @@ pub fn settings(s: &crate::config::Sandbox, windows: bool) -> serde_json::Value 
     if on {
         v["sandbox"] = serde_json::json!({
             "enabled": true,
-            "failIfUnavailable": s.mode == SandboxMode::Required,
+            // Never fall back to running commands unconfined, in `auto` too.
+            "failIfUnavailable": true,
             "autoAllowBashIfSandboxed": false,
             "allowUnsandboxedCommands": false,
             "filesystem": {
@@ -1540,7 +1541,7 @@ mod tests {
         // retries outside the sandbox.
         assert_eq!(sb["autoAllowBashIfSandboxed"], false);
         assert_eq!(sb["allowUnsandboxedCommands"], false);
-        assert_eq!(sb["failIfUnavailable"], false, "auto");
+        assert_eq!(sb["failIfUnavailable"], true, "auto");
         assert_eq!(
             sb["filesystem"]["allowWrite"],
             serde_json::json!(["~/.cargo"])

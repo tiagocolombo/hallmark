@@ -640,8 +640,8 @@ impl Default for Sandbox {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SandboxMode {
-    /// Sandboxed where Claude Code can start the sandbox; native Windows
-    /// runs without it.
+    /// Sandboxed, or the run fails where the sandbox can't start; native
+    /// Windows runs without it.
     #[default]
     Auto,
     /// Sandboxed, or the run fails.
@@ -664,6 +664,7 @@ const LOOSENING_ARGS: &[&str] = &[
     "--allowed-tools",
     "--tools",
     "--mcp-config",
+    "--plugin-dir",
 ];
 
 /// The first `claude_args` entry that would loosen a run, if any.
@@ -1466,6 +1467,28 @@ timeout = "5m"
             (&["--mcp-config", "m.json"][..], "--mcp-config"),
         ] {
             assert_eq!(loosening_arg(&args(given)), Some(found), "{given:?}");
+        }
+        for flag in [
+            "--dangerously-skip-permissions",
+            "--allow-dangerously-skip-permissions",
+            "--permission-mode",
+            "--permission-prompt-tool",
+            "--settings",
+            "--setting-sources",
+            "--add-dir",
+            "--allowedTools",
+            "--allowed-tools",
+            "--tools",
+            "--mcp-config",
+            "--plugin-dir",
+        ] {
+            let eq = format!("{flag}=x");
+            for given in [vec![flag.to_string()], vec![eq.clone()]] {
+                assert_eq!(loosening_arg(&given), Some(given[0].as_str()), "{flag}");
+                let toml = format!("claude_args = [{:?}]\n", given[0]);
+                let e = Config::parse(&toml).unwrap_err();
+                assert_eq!(e.code, ErrorCode::Usage, "{flag}");
+            }
         }
         // A flag that only shares a prefix is someone else's.
         assert_eq!(loosening_arg(&args(&["--settingsfile"])), None);

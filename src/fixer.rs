@@ -514,7 +514,7 @@ pub fn prompt(repo: &Repo, item: &Item, events: &[Event], ledger: &Ledger) -> St
                 Some(log) => {
                     let path = log_path(repo, id, log);
                     s.push_str(&format!(" · log: {}\n", crate::paths::display(&path)));
-                    if let Some(t) = tail(&path, 60, 6000) {
+                    if let Some(t) = tail(&path, 200, 20000) {
                         s.push_str(&format!("\n```text\n{t}\n```\n"));
                     }
                 }

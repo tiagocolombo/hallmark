@@ -395,8 +395,8 @@ change your machine (ADR 0053):
 
 | Mode | Commands |
 | --- | --- |
-| `auto` | Sandboxed where Claude Code can start the sandbox. Native Windows runs them without it. |
-| `required` | Sandboxed, or the run fails. |
+| `auto` | Sandboxed. Native Windows runs them without it. Where Claude Code can't start the sandbox (Linux and WSL2 need bubblewrap and socat), the run fails; set `off` to opt out. |
+| `required` | Sandboxed everywhere, native Windows included, or the run fails. |
 | `off` | Not sandboxed. `deny_read`, `remove_env` and the rest still apply. |
 
 A list you set replaces the default, so keep the defaults you still want in
@@ -406,7 +406,7 @@ A list you set replaces the default, so keep the defaults you still want in
 holds `--dangerously-skip-permissions`, `--allow-dangerously-skip-permissions`,
 `--permission-mode`, `--permission-prompt-tool`, `--settings`,
 `--setting-sources`, `--add-dir`, `--allowedTools`, `--allowed-tools`,
-`--tools` or `--mcp-config`. When the main checkout has no `.hallmark.toml`
+`--tools`, `--mcp-config` or `--plugin-dir`. When the main checkout has no `.hallmark.toml`
 and the file comes from a linked worktree, runs ignore its `claude_args` and
 `[sandbox]`.
 

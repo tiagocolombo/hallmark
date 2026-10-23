@@ -52,7 +52,9 @@ measured that too:
 - a `Read(<path>)` and `Read(<path>/**)` deny rule per `[sandbox] deny_read`
   path (an absolute path gets the `//` a rule needs);
 - unless the sandbox is off, `sandbox`:
-  - `enabled: true`, with `failIfUnavailable` only in `required` mode;
+  - `enabled: true` and `failIfUnavailable: true`, so a run where the sandbox
+    can't start (Linux or WSL2 without bubblewrap and socat) fails instead of
+    running commands unconfined; `mode = "off"` is the explicit opt-out;
   - `autoAllowBashIfSandboxed: false` and `allowUnsandboxedCommands: false`;
   - `filesystem.allowWrite` and `denyRead` from `allow_write` and
     `deny_read`;
@@ -61,7 +63,10 @@ measured that too:
 
 The settings go inline, not in a file a run could edit before the next one.
 
-**Every run also** passes `--disallowedTools WebFetch,WebSearch` and doesn't
+**Every run also** passes `--disallowedTools WebFetch,WebSearch` (not
+`--tools`: each run's `--allowedTools` already names what it may use without
+asking, and `--tools` would also hide tools the agent definitions rely on, so
+removing the two network tools is the restriction that matters) and doesn't
 inherit `remove_env` (by default `SSH_AUTH_SOCK`, the GitHub tokens and the
 AWS keys).
 
@@ -69,8 +74,8 @@ AWS keys).
 
 | Mode | What it does |
 | --- | --- |
-| `auto` (default) | The sandbox wherever Claude Code has one, leaving it out on native Windows. |
-| `required` | Asks for it everywhere and fails the run where it can't start. |
+| `auto` (default) | The sandbox wherever Claude Code has one, leaving it out on native Windows. A run fails where it can't start. |
+| `required` | Asks for it everywhere, native Windows included, and fails the run where it can't start. |
 | `off` | Leaves it out. The permissions part, the web tools and `remove_env` stay. |
 
 **Defaults.** `domains` is empty: no network for commands unless the repo
@@ -92,7 +97,8 @@ run's directory, and only there (amends ADR 0019).
   - `--settings` and `--setting-sources`;
   - `--add-dir`;
   - `--allowedTools`, `--allowed-tools` and `--tools`;
-  - `--mcp-config`.
+  - `--mcp-config` and `--plugin-dir` (their hooks and servers run outside
+    the sandbox; Hallmark's own plugin goes through the runner).
 - When the file comes from a linked worktree (the fallback ADR 0012 keeps for
   a main checkout without one), runs ignore its `claude_args` and `[sandbox]`
   and use the defaults (amends ADR 0012).
