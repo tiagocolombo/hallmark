@@ -69,6 +69,7 @@ impl Render for GazetteList {
 pub fn gazette(cwd: &Path, a: GazetteArgs) -> Result<Response> {
     let repo = Repo::discover(cwd)?;
     if a.list {
+        repo.require_init()?;
         let editions = gazette::editions(&repo)?;
         let next = editions
             .first()

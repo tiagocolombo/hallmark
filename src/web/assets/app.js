@@ -510,7 +510,12 @@ async function itemGazette(id) {
   }
   if (e) return failure(r, 'hall gazette');
   const theme = S.theme === 'light' || S.theme === 'dark' ? ` data-theme="${S.theme}"` : '';
+  // Attached files sit next to the page on disk, not under the app's URL:
+  // show each as its name and where it is, not a link that would 404.
+  const dir = String(r.reply.path || '').replace(/[\\/][^\\/]*$/, '');
   const doc = String(r.reply.html || '').replace('<html lang="en">', `<html lang="en"${theme}>`)
+    .replace(/<a href="(attachments\/[^"]*)">([^<]*)<\/a>/g,
+      (_, p, name) => `${name} <span class="mono">(${dir}/${p})</span>`)
     .replace('<head>', '<head><base target="_blank">');
   return `${r.reply.prose ? '' : '<div class="empty">In the item\'s own words: the librarian hasn\'t written it up yet.</div>'}
   <iframe class="gazette" title="The Gazette for ${esc(id)}" sandbox="allow-popups allow-popups-to-escape-sandbox" srcdoc="${esc(doc)}"></iframe>`;

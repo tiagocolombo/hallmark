@@ -134,7 +134,7 @@ pub fn build(repo: &Repo, item: &Item, events: &[Event], prose: Option<&Prose>) 
         rounds,
         cost,
         stamp: item.hallmark_sha.as_deref().map(|s| short(s).to_string()),
-        byline: byline(events),
+        byline: byline(events, prose.is_some()),
         events: events.len(),
         by_librarian: prose.is_some(),
         ..Page::default()
@@ -437,6 +437,7 @@ fn took(item: &Item, ended: DateTime<Utc>) -> Option<String> {
     }
     let to = match (item.state, item.delivered.as_deref()) {
         (State::Closed, Some("merged")) => "from request to merge",
+        (State::Closed, _) if item.pr_url.is_none() => "from request to merge",
         (State::Closed, _) => "from request to pull request",
         (State::Escalated, _) => "until it reached you",
         _ => "until it was dropped",
@@ -454,7 +455,7 @@ pub fn duration(secs: i64) -> String {
     }
 }
 
-fn byline(events: &[Event]) -> String {
+fn byline(events: &[Event], by_librarian: bool) -> String {
     let did = |role: &str| {
         events
             .iter()
@@ -483,7 +484,9 @@ fn byline(events: &[Event]) -> String {
     }) {
         parts.push("Steered by you.");
     }
-    parts.push("Written up by the librarian.");
+    if by_librarian {
+        parts.push("Written up by the librarian.");
+    }
     parts.join(" ")
 }
 

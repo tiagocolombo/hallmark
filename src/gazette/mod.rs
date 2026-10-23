@@ -198,8 +198,12 @@ pub fn refresh(repo: &Repo, item: &Item) -> Result<bool> {
 pub fn refresh_all(repo: &Repo) -> Result<Vec<ItemId>> {
     let mut done = Vec::new();
     for i in repo.index()?.items(true)? {
-        if refresh(repo, &i)? {
-            done.push(i.id);
+        match refresh(repo, &i) {
+            Ok(true) => done.push(i.id),
+            Ok(false) => {}
+            Err(e) => repo
+                .hall
+                .live(&format!("{}: the Gazette wasn't reprinted: {e}", i.id)),
         }
     }
     Ok(done)
@@ -368,19 +372,33 @@ pub fn attached(events: &[Event]) -> Vec<(String, Option<String>)> {
 }
 
 /// A file name that is safe on every OS: letters, digits, `.`, `-`, `_`.
+/// The stem and the extension are cleaned apart, so a name with no ASCII
+/// stem keeps its extension.
 fn safe_name(n: &str) -> String {
-    let s: String = n
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') {
-                c
-            } else {
-                '-'
-            }
-        })
-        .collect();
-    let s = s.trim_matches(|c| c == '.' || c == '-').to_string();
-    if s.is_empty() { "file".into() } else { s }
+    fn clean(s: &str) -> String {
+        s.chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') {
+                    c
+                } else {
+                    '-'
+                }
+            })
+            .collect::<String>()
+            .trim_start_matches(['.', '-'])
+            .to_string()
+    }
+    let (stem, ext) = match n.rsplit_once('.') {
+        Some((s, e)) if !s.is_empty() => (s, e),
+        _ => (n, ""),
+    };
+    let (stem, ext) = (clean(stem), clean(ext));
+    let stem = if stem.is_empty() { "file".into() } else { stem };
+    if ext.is_empty() {
+        stem
+    } else {
+        format!("{stem}.{ext}")
+    }
 }
 
 #[cfg(test)]
@@ -399,6 +417,8 @@ mod tests {
     fn names_are_safe_everywhere() {
         assert_eq!(safe_name("My Mockup (v2).png"), "My-Mockup--v2-.png");
         assert_eq!(safe_name("..."), "file");
+        assert_eq!(safe_name("截图.png"), "file.png");
+        assert_eq!(safe_name("Макет.PNG"), "file.PNG");
         assert_eq!(safe_name("a\\b:c.svg"), "a-b-c.svg");
     }
 

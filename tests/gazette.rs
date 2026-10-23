@@ -304,6 +304,76 @@ fn an_item_in_progress_has_no_gazette() {
 }
 
 #[test]
+fn a_page_stays_put_while_its_item_is_back_in_the_loop() {
+    let env = Env::initialized();
+    let id = closed_item(&env);
+    let r = env.hall(&env.repo, &["gazette", &id]);
+    assert_eq!(r.json["printed"], true, "{}", r.stdout);
+    let before = read(&env, &id);
+    // Back in the loop, with news in the journal.
+    append(
+        &env,
+        &id,
+        "you",
+        json!({"event": "reopened", "pr_url": "https://github.com/o/r/pull/110",
+               "pr_head": "def5678", "base": "main", "worktree": "/tmp/wt"}),
+    );
+    let r = env.hall(&env.repo, &["status", &id]);
+    assert_eq!(r.json["state"], "development", "{}", r.stdout);
+    let r = env.hall(&env.repo, &["gazette", &id]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(r.json["printed"], false);
+    assert_eq!(read(&env, &id), before);
+    let script = env.script(json!([]));
+    let r = env.hall_fake(
+        &env.repo,
+        &script,
+        &["daemon", "run", "--once", "--only", "librarian"],
+    );
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(read(&env, &id), before, "the tick doesn't reprint it");
+}
+
+#[test]
+fn attachments_are_capped_at_5_mb() {
+    let env = Env::initialized();
+    let (_, wt) = env.new_item("Big plate");
+    std::fs::write(wt.join("big.png"), vec![0u8; 5 * 1024 * 1024 + 1]).unwrap();
+    let r = env.hall(&wt, &["attach", "big.png"]);
+    assert_eq!(r.code, 2, "{}", r.stdout);
+    assert_eq!(r.json["error"]["code"], "USAGE");
+    assert!(r.stdout.contains("at most 5 MB"), "{}", r.stdout);
+}
+
+#[test]
+fn links_in_the_request_are_listed() {
+    let env = Env::initialized();
+    let r = env.hall(
+        &env.repo,
+        &[
+            "new",
+            "--title",
+            "Match the design",
+            "--no-split",
+            "Match https://claude.ai/artifact/abc123 exactly.",
+        ],
+    );
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let id = r.json["id"].as_str().unwrap().to_string();
+    append(
+        &env,
+        &id,
+        "you",
+        json!({"event": "dropped", "reason": "a test", "worktree_removed": false}),
+    );
+    let before = env.hall(&env.repo, &["gazette", &id, "--html"]);
+    assert_eq!(before.code, 0, "{}", before.stdout);
+    let html = before.json["html"].as_str().unwrap();
+    assert!(html.contains("href=\"https://claude.ai/artifact/abc123\""));
+    assert!(html.contains("linked from the request"));
+}
+
+#[test]
 fn attachments_become_plates() {
     let env = Env::initialized();
     let (id, wt) = env.new_item("hall web: a local web app");

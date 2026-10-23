@@ -1411,7 +1411,12 @@ impl App {
 
     /// `n`: open the item's Gazette in the browser, once it is printed.
     fn open_gazette(&mut self) -> Effect {
-        let Some(item) = self.item().cloned() else {
+        let item = if self.view == View::History {
+            self.history().get(self.history_sel).map(|i| (*i).clone())
+        } else {
+            self.item().cloned()
+        };
+        let Some(item) = item else {
             self.err("No item selected.");
             return Effect::None;
         };
