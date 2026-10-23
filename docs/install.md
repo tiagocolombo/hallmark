@@ -198,8 +198,10 @@ the daemon when it runs an older `hall`. Then restart Claude Code.
 - Use the PowerShell installer or the `x86_64-pc-windows-msvc` zip. `hall`
   needs no bash, Python or Node. Hooks call `hall.exe` directly.
 - `git` and `claude` must be on PATH. Git for Windows is fine.
-- The daemon runs with no console window, and so do the `git`, `gh`, `claude`
-  and gate commands it runs.
+- A daemon started by `hall daemon start` runs with no console window, and so
+  do the `git`, `gh`, `claude` and gate commands it runs. The `--at-login`
+  task is started by Task Scheduler and shows one console window for as long as
+  it runs; its children share that window and open none of their own.
 - If `hall` lives under a path with spaces, setup quotes it in the hook and
   status line commands.
 - `hall daemon start --at-login` registers the daemon with Task Scheduler.

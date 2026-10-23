@@ -202,7 +202,6 @@ mod imp {
 #[cfg(windows)]
 mod imp {
     use super::*;
-    use std::process::Command;
 
     fn schtasks(args: &[OsString]) -> std::io::Result<std::process::Output> {
         crate::process::command("schtasks").args(args).output()

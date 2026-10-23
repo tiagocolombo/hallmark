@@ -23,12 +23,24 @@ pub fn command(program: impl AsRef<OsStr>) -> Command {
     cmd
 }
 
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+/// The Windows creation flags a child needs: `CREATE_NO_WINDOW` only when
+/// this process has no console.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn creation_flags(has_console: bool) -> Option<u32> {
+    if has_console {
+        None
+    } else {
+        Some(CREATE_NO_WINDOW)
+    }
+}
+
 #[cfg(windows)]
 fn hide_console(cmd: &mut Command) {
     use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    if !has_console() {
-        cmd.creation_flags(CREATE_NO_WINDOW);
+    if let Some(flags) = creation_flags(has_console()) {
+        cmd.creation_flags(flags);
     }
 }
 
@@ -50,6 +62,12 @@ fn has_console() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn no_window_flag_only_without_a_console() {
+        assert_eq!(creation_flags(false), Some(0x0800_0000));
+        assert_eq!(creation_flags(true), None);
+    }
 
     #[test]
     fn a_command_runs_like_any_other() {

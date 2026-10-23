@@ -30,8 +30,10 @@ Status: Accepted, 2026-10-23. Amends 0017.
 
 ## Consequences
 
-- The daemon is silent on Windows, as it is elsewhere. Nothing changes in a
-  terminal, or on Unix.
+- A daemon started by `hall daemon start` is silent on Windows, as it is
+  elsewhere. The `--at-login` task is run by Task Scheduler and shows one
+  console window, which its children share. Nothing changes in a terminal, or
+  on Unix.
 - A new call site goes through `process::command`, or the tests fail.
 - `hall daemon stop` still waits for the pass in progress; a child that never
   exits still keeps the daemon alive. That is a separate matter.
