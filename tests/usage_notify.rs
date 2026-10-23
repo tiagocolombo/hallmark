@@ -688,6 +688,7 @@ fn an_answer_resumes_the_asking_session() {
     );
     assert_eq!(calls[0]["role"], "resume");
     assert_eq!(calls[0]["room"], "workshop");
+    common::assert_confined(&calls[0]);
     assert_eq!(p(Path::new(calls[0]["cwd"].as_str().unwrap())), p(&wt));
     let j = env.journal(&id);
     let delivered = events(&j, "answer_delivered");

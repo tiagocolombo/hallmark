@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::error::Result;
+use crate::error::{ErrorCode, HallError, Result};
 
 pub const FILE_NAME: &str = ".hallmark.toml";
 
@@ -58,8 +58,11 @@ pub struct Config {
     /// in the item's worktree, such as Ralph Orchestrator. Placeholders:
     /// {id} {worktree} {findings_file} (JSON from `hall findings`).
     pub fixer: String,
-    /// Extra arguments for every headless `claude -p` run.
+    /// Extra arguments for every headless `claude -p` run. Flags that would
+    /// loosen a run's permissions or sandbox are refused (ADR 0053).
     pub claude_args: Vec<String>,
+    /// What every headless `claude -p` run is confined to (ADR 0053).
+    pub sandbox: Sandbox,
     /// Rejected reviews before the item is escalated to you.
     pub max_rejects: u32,
     /// Failed checks in a row before the item is held for you (kind
@@ -124,6 +127,7 @@ impl Default for Config {
             dev_commands: Vec::new(),
             fixer: "claude -p".into(),
             claude_args: Vec::new(),
+            sandbox: Sandbox::default(),
             max_rejects: 3,
             max_check_failures: 3,
             auto_ready: true,
@@ -570,6 +574,108 @@ impl MergeUpdate {
     }
 }
 
+/// `[sandbox]`: what a headless `claude -p` run may reach (ADR 0053). Its
+/// commands run in Claude Code's sandbox; its file tools stay in the
+/// directories it runs in.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct Sandbox {
+    pub mode: SandboxMode,
+    /// Paths a run's commands may write besides its working directory, the
+    /// temp dir and the repo's git directory, such as tool caches
+    /// ("~/.cargo").
+    pub allow_write: Vec<String>,
+    /// Paths a run may never read, with its tools or its commands, in every
+    /// mode.
+    pub deny_read: Vec<String>,
+    /// Hosts a run's commands may reach ("crates.io"). Empty: none.
+    pub domains: Vec<String>,
+    /// Unix sockets a run's commands may connect to, such as the Nix daemon's.
+    pub unix_sockets: Vec<String>,
+    /// A run's commands may listen on localhost, for tests that start a server.
+    pub local_binding: bool,
+    /// Environment variables removed from every run, in every mode.
+    pub remove_env: Vec<String>,
+}
+
+impl Default for Sandbox {
+    fn default() -> Self {
+        let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect();
+        Sandbox {
+            mode: SandboxMode::Auto,
+            allow_write: Vec::new(),
+            deny_read: s(&[
+                "~/.ssh",
+                "~/.aws",
+                "~/.azure",
+                "~/.config/gcloud",
+                "~/.config/gh",
+                "~/.docker/config.json",
+                "~/.gnupg",
+                "~/.kube",
+                "~/.netrc",
+                "~/.npmrc",
+                "~/.claude.json",
+                "~/.claude/.credentials.json",
+            ]),
+            domains: Vec::new(),
+            unix_sockets: Vec::new(),
+            local_binding: true,
+            remove_env: s(&[
+                "SSH_AUTH_SOCK",
+                "GH_TOKEN",
+                "GITHUB_TOKEN",
+                "GH_ENTERPRISE_TOKEN",
+                "GITHUB_ENTERPRISE_TOKEN",
+                "AWS_ACCESS_KEY_ID",
+                "AWS_SECRET_ACCESS_KEY",
+                "AWS_SESSION_TOKEN",
+            ]),
+        }
+    }
+}
+
+/// Whether a run's commands go through Claude Code's sandbox (Seatbelt on
+/// macOS, bubblewrap on Linux and WSL2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SandboxMode {
+    /// Sandboxed, or the run fails where the sandbox can't start; native
+    /// Windows runs without it.
+    #[default]
+    Auto,
+    /// Sandboxed, or the run fails.
+    Required,
+    /// No sandbox. `deny_read` and `remove_env` still apply.
+    Off,
+}
+
+/// `claude_args` flags that would loosen a run's permissions or sandbox,
+/// or bring in code that runs outside it.
+const LOOSENING_ARGS: &[&str] = &[
+    "--dangerously-skip-permissions",
+    "--allow-dangerously-skip-permissions",
+    "--permission-mode",
+    "--permission-prompt-tool",
+    "--settings",
+    "--setting-sources",
+    "--add-dir",
+    "--allowedTools",
+    "--allowed-tools",
+    "--tools",
+    "--mcp-config",
+    "--plugin-dir",
+];
+
+/// The first `claude_args` entry that would loosen a run, if any.
+pub fn loosening_arg(args: &[String]) -> Option<&str> {
+    args.iter().map(String::as_str).find(|a| {
+        LOOSENING_ARGS
+            .iter()
+            .any(|f| a == f || a.strip_prefix(f).is_some_and(|r| r.starts_with('=')))
+    })
+}
+
 /// `[merge]`: the merger (ADR 0048).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(default)]
@@ -977,6 +1083,15 @@ impl JsonSchema for MaxUsd {
 impl Config {
     pub fn parse(text: &str) -> Result<Config> {
         let mut c: Config = toml::from_str(text)?;
+        if let Some(a) = loosening_arg(&c.claude_args) {
+            return Err(HallError::new(
+                ErrorCode::Usage,
+                format!(
+                    ".hallmark.toml: claude_args can't include {a}: it would loosen what every headless run is confined to (ADR 0053)"
+                ),
+            )
+            .next(["hall schema config"]));
+        }
         // `hall init` wrote the old default, which posted the PR body as a
         // comment; the review comment does that job now (ADR 0039).
         if c.update == OLD_UPDATE {
@@ -1323,5 +1438,106 @@ timeout = "5m"
         assert_eq!(parse_duration("4h"), Some(14_400));
         assert_eq!(parse_duration("7d"), Some(604_800));
         assert_eq!(parse_duration("4"), None);
+    }
+
+    #[test]
+    fn claude_args_cant_loosen_a_run() {
+        let args = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            loosening_arg(&args(&["--model", "opus", "--verbose"])),
+            None
+        );
+        assert_eq!(loosening_arg(&args(&[])), None);
+        for (given, found) in [
+            (
+                &["--dangerously-skip-permissions"][..],
+                "--dangerously-skip-permissions",
+            ),
+            (
+                &["--permission-mode", "bypassPermissions"][..],
+                "--permission-mode",
+            ),
+            (
+                &["--permission-mode=bypassPermissions"][..],
+                "--permission-mode=bypassPermissions",
+            ),
+            (&["--model", "x", "--settings", "{}"][..], "--settings"),
+            (&["--add-dir", "/"][..], "--add-dir"),
+            (&["--allowed-tools", "Bash"][..], "--allowed-tools"),
+            (&["--mcp-config", "m.json"][..], "--mcp-config"),
+        ] {
+            assert_eq!(loosening_arg(&args(given)), Some(found), "{given:?}");
+        }
+        for flag in [
+            "--dangerously-skip-permissions",
+            "--allow-dangerously-skip-permissions",
+            "--permission-mode",
+            "--permission-prompt-tool",
+            "--settings",
+            "--setting-sources",
+            "--add-dir",
+            "--allowedTools",
+            "--allowed-tools",
+            "--tools",
+            "--mcp-config",
+            "--plugin-dir",
+        ] {
+            let eq = format!("{flag}=x");
+            for given in [vec![flag.to_string()], vec![eq.clone()]] {
+                assert_eq!(loosening_arg(&given), Some(given[0].as_str()), "{flag}");
+                let toml = format!("claude_args = [{:?}]\n", given[0]);
+                let e = Config::parse(&toml).unwrap_err();
+                assert_eq!(e.code, ErrorCode::Usage, "{flag}");
+            }
+        }
+        // A flag that only shares a prefix is someone else's.
+        assert_eq!(loosening_arg(&args(&["--settingsfile"])), None);
+
+        let e =
+            Config::parse("claude_args = [\"--verbose\", \"--dangerously-skip-permissions\"]\n")
+                .unwrap_err();
+        assert_eq!(e.code, ErrorCode::Usage);
+        assert!(
+            e.message.contains("--dangerously-skip-permissions"),
+            "{}",
+            e.message
+        );
+        assert!(Config::parse("claude_args = [\"--verbose\"]\n").is_ok());
+    }
+
+    #[test]
+    fn the_sandbox_is_on_and_keeps_credentials_out_by_default() {
+        let s = Config::default().sandbox;
+        assert_eq!(s.mode, SandboxMode::Auto);
+        assert!(
+            s.domains.is_empty(),
+            "no network unless the repo names hosts"
+        );
+        assert!(s.allow_write.is_empty());
+        for p in ["~/.ssh", "~/.aws", "~/.config/gh", "~/.claude.json"] {
+            assert!(s.deny_read.iter().any(|d| d == p), "{p}");
+        }
+        for v in ["SSH_AUTH_SOCK", "GH_TOKEN", "GITHUB_TOKEN"] {
+            assert!(s.remove_env.iter().any(|e| e == v), "{v}");
+        }
+
+        let c = Config::parse(
+            r#"
+[sandbox]
+mode = "required"
+allow_write = ["~/.cargo"]
+domains = ["crates.io"]
+unix_sockets = ["/private/var/run/nix-daemon.socket"]
+local_binding = false
+"#,
+        )
+        .unwrap();
+        assert_eq!(c.sandbox.mode, SandboxMode::Required);
+        assert_eq!(c.sandbox.allow_write, ["~/.cargo"]);
+        assert_eq!(c.sandbox.domains, ["crates.io"]);
+        assert!(!c.sandbox.local_binding);
+        // Keys left out keep their defaults.
+        assert_eq!(c.sandbox.deny_read, s.deny_read);
+        assert!(Config::parse("[sandbox]\nmode = \"sometimes\"\n").is_err());
     }
 }

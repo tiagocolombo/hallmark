@@ -239,6 +239,58 @@ pub fn fixture(rel: &str) -> String {
     .unwrap()
 }
 
+/// The `--settings` a recorded run was given, parsed.
+pub fn run_settings(call: &Value) -> Value {
+    let args = call["args"].as_array().unwrap();
+    let i = args
+        .iter()
+        .position(|a| a == "--settings")
+        .expect("--settings");
+    serde_json::from_str(args[i + 1].as_str().unwrap()).unwrap()
+}
+
+/// A recorded run is confined (ADR 0053): file tools read only inside its
+/// directories and never credentials, its commands run in the sandbox
+/// (where there is one) without skipping the allowlist, no web tools, no
+/// bare `Edit`/`Write` rule, and no credentials in its environment.
+pub fn assert_confined(call: &Value) {
+    let s = run_settings(call);
+    assert_eq!(
+        s["permissions"]["blockReadsOutsideWorkingDirectories"], true,
+        "{s}"
+    );
+    let deny = s["permissions"]["deny"].to_string();
+    assert!(deny.contains("Read(~/.ssh/**)"), "{deny}");
+    if cfg!(windows) {
+        assert!(s.get("sandbox").is_none(), "{s}");
+    } else {
+        assert_eq!(s["sandbox"]["enabled"], true, "{s}");
+        assert_eq!(s["sandbox"]["autoAllowBashIfSandboxed"], false, "{s}");
+        assert_eq!(s["sandbox"]["allowUnsandboxedCommands"], false, "{s}");
+    }
+    let args: Vec<&str> = call["args"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a.as_str().unwrap())
+        .collect();
+    let i = args.iter().position(|a| *a == "--disallowedTools").unwrap();
+    assert_eq!(args[i + 1], "WebFetch,WebSearch");
+    assert!(args.contains(&"--strict-mcp-config"));
+    let tools = call["allowed_tools"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        !tools.iter().any(|t| t == "Edit" || t == "Write"),
+        "{tools:?}"
+    );
+    let removed = call["env_remove"].to_string();
+    for v in ["SSH_AUTH_SOCK", "GH_TOKEN", "GITHUB_TOKEN"] {
+        assert!(removed.contains(v), "{v} in {removed}");
+    }
+}
+
 pub fn p(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }

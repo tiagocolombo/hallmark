@@ -171,7 +171,7 @@ pub fn failing_checks_item(env: &Env, title: &str) -> (String, PathBuf, String) 
         .join(&id)
         .join("checks");
     std::fs::create_dir_all(&dir).unwrap();
-    let log: String = (1..=80)
+    let log: String = (1..=300)
         .map(|i| format!("test line {i}\n"))
         .collect::<String>()
         + "test retry::twice ... FAILED\n";

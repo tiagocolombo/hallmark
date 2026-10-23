@@ -197,6 +197,14 @@ fn a_dispute_alone_needs_no_commit_unless_checks_failed() {
 fn the_fixer_commits_and_records_the_fix_itself() {
     let env = Env::initialized();
     set_config(&env, "gates", "[\"cargo test\"]");
+    // The repo widens the sandbox for its toolchain.
+    let cfg = env.repo.join(".hallmark.toml");
+    let text = std::fs::read_to_string(&cfg).unwrap();
+    std::fs::write(
+        &cfg,
+        format!("{text}\n[sandbox]\nallow_write = [\"~/.cargo\"]\ndomains = [\"crates.io\"]\n"),
+    )
+    .unwrap();
     let (id, wt, _) = fixing_item(&env, "Retry webhooks");
     let script = env.script(json!([{
         "role": "fixer",
@@ -236,7 +244,6 @@ fn the_fixer_commits_and_records_the_fix_itself() {
         .map(|t| t.as_str().unwrap())
         .collect();
     for t in [
-        "Edit",
         "Bash(git commit:*)",
         "Bash(hall fixed:*)",
         "Bash(cargo test:*)",
@@ -244,6 +251,20 @@ fn the_fixer_commits_and_records_the_fix_itself() {
         assert!(tools.contains(&t), "{t} in {tools:?}");
     }
     assert!(!tools.iter().any(|t| t.contains("push")));
+    // Confined: edits only in the worktree (acceptEdits, no bare rule), its
+    // commands sandboxed with the repo's additions.
+    common::assert_confined(c);
+    if !cfg!(windows) {
+        let s = common::run_settings(c);
+        assert_eq!(
+            s["sandbox"]["filesystem"]["allowWrite"],
+            json!(["~/.cargo"])
+        );
+        assert_eq!(
+            s["sandbox"]["network"]["allowedDomains"],
+            json!(["crates.io"])
+        );
+    }
     // HALL_ACTOR marks its events; PATH starts with this `hall`'s directory.
     let env_vars = c["env"].as_array().unwrap();
     assert_eq!(env_vars[0], json!(["HALL_ACTOR", "fixer"]));

@@ -377,13 +377,13 @@ pub fn path_with_hall() -> Option<(String, String)> {
     Some(("PATH".into(), joined.to_string_lossy().into_owned()))
 }
 
-/// The tools the fixer may use: edit files, commit, read its findings,
-/// record the fix, and run the repo's gates and `dev_commands`.
+/// The tools the fixer may use: commit, read its findings, record the fix,
+/// and run the repo's gates and `dev_commands`. Edits need no rule:
+/// `acceptEdits` allows them inside the worktree only, where a bare `Edit`
+/// rule would allow any path (ADR 0053).
 pub fn tools(gates: &[String]) -> Vec<String> {
     let mut t: Vec<String> = [
         "Read",
-        "Edit",
-        "Write",
         "Grep",
         "Glob",
         "Bash(git add:*)",
@@ -514,7 +514,7 @@ pub fn prompt(repo: &Repo, item: &Item, events: &[Event], ledger: &Ledger) -> St
                 Some(log) => {
                     let path = log_path(repo, id, log);
                     s.push_str(&format!(" · log: {}\n", crate::paths::display(&path)));
-                    if let Some(t) = tail(&path, 60, 6000) {
+                    if let Some(t) = tail(&path, 200, 20000) {
                         s.push_str(&format!("\n```text\n{t}\n```\n"));
                     }
                 }

@@ -182,6 +182,16 @@ the daemon when it runs an older `hall`. Then restart Claude Code.
   own `timeout`. If you raised the review timeout for a slow gate, run
   `hall config set gates_timeout <value>`; `hall doctor` warns when it finds
   that. See [configuration](configuration.md).
+- **Headless runs are sandboxed.** `claude_args` in `.hallmark.toml` is now
+  refused (every `hall` command exits 2, and the hooks stay silent, so the
+  edit and push gates are off in that repo's sessions until you fix it) when
+  it holds `--mcp-config`, `--plugin-dir`, `--settings`, `--add-dir`,
+  `--tools`, `--allowedTools` or a permission-bypass flag. Remove them.
+  Fixer and dev runs can only write the worktree, temp and git directories,
+  and reach no network host unless it is listed. A gate that writes `~/.cargo`
+  or `~/.npm`, or downloads packages, fails with "Operation not permitted":
+  add the paths to `[sandbox] allow_write` and the hosts to `domains`. On
+  Linux and WSL2 install bubblewrap and socat, or set `[sandbox] mode = "off"`.
 
 ## Windows notes
 

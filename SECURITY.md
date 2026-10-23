@@ -28,6 +28,11 @@ most:
 - **Configured commands**: `.hallmark.toml` runs shell commands. It is read
   from the main checkout so that an item can't change its own gate. Anything
   that breaks that guarantee is in scope.
+- **Headless runs**: every `claude -p` run is confined (ADR 0053). Anything
+  that lets a run read a `[sandbox] deny_read` path, write outside its
+  worktree, temp and git directories, reach a host the repo didn't allow, or
+  loosen its confinement through `.hallmark.toml` is in scope. Gates the
+  Assay Office runs itself are not sandboxed.
 - **The journal**: it contains your prompts and stays in your git directory.
   Anything that leaks it into a commit, a pull request or a notification is in
   scope.

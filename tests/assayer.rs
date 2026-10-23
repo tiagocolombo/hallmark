@@ -279,6 +279,7 @@ fn a_review_with_blockers_requests_changes() {
     assert!(args.contains(&"--strict-mcp-config"));
     assert!(args.contains(&"Bash(git diff:*)"));
     assert!(!args.contains(&"Edit") && !args.contains(&"Write"));
+    common::assert_confined(call);
     let env_pairs = call["env"].as_array().unwrap();
     for want in [
         json!(["HALL_NO_HOOKS", "1"]),

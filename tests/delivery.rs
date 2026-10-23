@@ -400,8 +400,9 @@ fn a_conflict_at_the_dock_goes_to_the_delivery_office_and_back_to_review() {
     assert_eq!(last["actor"], "delivery");
     assert_eq!(last["sha"], head.as_str());
     assert_eq!(last["note"], "rebased onto origin/main");
-    // The run was told what to do, and can't push.
+    // The run was told what to do, can't push, and is confined.
     let calls = env.fake_calls();
+    common::assert_confined(calls.last().unwrap());
     let call = calls.last().unwrap().to_string();
     assert!(call.contains("retry.rs"), "{call}");
     assert!(!call.contains("git push"), "{call}");

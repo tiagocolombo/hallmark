@@ -660,6 +660,29 @@ fn sessions_that_accept_edits_may_edit_their_item_worktree() {
 }
 
 #[test]
+fn headless_runs_are_never_allowed_into_another_items_worktree() {
+    let env = Env::initialized();
+    let (_, mine) = env.new_item("mine");
+    let (_, other) = env.new_item("other");
+    let mut v = write(&mine, &other.join("tests/zz.rs"));
+    v["permission_mode"] = json!("acceptEdits");
+    let out = env
+        .cmd(&env.repo)
+        .env("HALL_HEADLESS", "1")
+        .env("HALL_ACTOR", "fixer")
+        .args(["hook", "pre-tool-use"])
+        .write_stdin(v.to_string())
+        .output()
+        .unwrap();
+    let r = common::reply(out);
+    assert_ne!(
+        r.json["hookSpecificOutput"]["permissionDecision"], "allow",
+        "{}",
+        r.stdout
+    );
+}
+
+#[test]
 fn docs_and_markdown_need_no_item() {
     let env = Env::initialized();
     // Documents, designs and requirements are not development work.

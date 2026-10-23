@@ -279,6 +279,7 @@ pub fn request(repo: &Repo, p: &Pending) -> Result<RunRequest> {
             .map(|i| PathBuf::from(i.worktree))
             .filter(|w| w.is_dir())
             .unwrap_or_else(|| repo.main_root.clone());
+    let confined = runner::confinement(repo);
     Ok(RunRequest {
         role: "resume".into(),
         room: "workshop".into(),
@@ -295,11 +296,8 @@ pub fn request(repo: &Repo, p: &Pending) -> Result<RunRequest> {
             // The runner records this run's usage; the Stop hook must not.
             ("HALL_HEADLESS".into(), "1".into()),
         ],
-        extra_args: {
-            let mut a = repo.config.claude_args.clone();
-            a.push("--strict-mcp-config".into());
-            a
-        },
+        extra_args: confined.args,
+        env_remove: confined.env_remove,
         ..Default::default()
     })
 }

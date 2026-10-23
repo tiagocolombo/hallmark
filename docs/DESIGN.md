@@ -544,6 +544,23 @@ intake and the librarian run with `--setting-sources user`,
 `principal-review` skill and the base branch's rules itself, because a headless
 `--agent` run doesn't preload skills.
 
+**Confinement** (ADR 0053, `[sandbox]`). Isolation keeps a run on its task;
+confinement keeps it off the host. Every headless run, the resume included,
+gets `--settings` from `runner::confinement`:
+
+- its file tools read only inside the run's directories, and never the
+  credential paths in `deny_read`;
+- its commands run in Claude Code's sandbox (macOS, Linux, WSL2). They write
+  only the run's directory, the temp dir and the worktree's git directory,
+  never its hooks or config. They reach only the repo's `domains` and
+  `unix_sockets`, can't skip `--allowedTools`, and can't retry unsandboxed.
+
+Every run also drops WebFetch, WebSearch and the credentials in `remove_env`.
+The fixer and dev runs have no bare `Edit` or `Write` rule, so `acceptEdits`
+keeps their edits in the worktree. `claude_args` that would loosen any of
+this make `.hallmark.toml` invalid. The Assay Office's own gate runs and a
+non-`claude` fixer engine are not confined.
+
 **The fixer.** `agents/fixer.md`:
 
 - runs in the item's worktree;

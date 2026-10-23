@@ -4,7 +4,8 @@ Status: Accepted, 2026-10-09. Superseded in part by
 [ADR 0041](0041-watch-runs-live.md): the runner asks for
 `--output-format stream-json --verbose` and streams each run into
 `items/<id>/runs/<stamp>-<role>.jsonl`, ending it with a `hall_run_end` line,
-instead of saving the raw result. The rest stands.
+instead of saving the raw result. The rest stands. Amended by
+[ADR 0053](0053-sandbox-every-headless-run.md): every run is confined.
 
 ## Context
 

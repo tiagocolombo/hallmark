@@ -80,6 +80,10 @@ pub struct RunRequest {
     /// Extra environment, such as `HALL_ACTOR=fixer`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub env: Vec<(String, String)>,
+    /// Environment variables the run doesn't inherit (`[sandbox]
+    /// remove_env`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub env_remove: Vec<String>,
     /// The file stdout streams into as it arrives, ending with a
     /// `hall_run_end` line (ADR 0041). [`run_metered`] sets it for runs with
     /// an item; none streams nowhere.
@@ -172,8 +176,8 @@ pub fn request(
     // librarian) also ignore the checkout's settings and CLAUDE.md, so the
     // branch under review can't steer them (ADR 0013, live check in ADR 0018).
     let read_only = matches!(role, R::Reviewer | R::Intake | R::Librarian);
-    let mut extra_args = repo.config.claude_args.clone();
-    extra_args.push("--strict-mcp-config".into());
+    let confined = confinement(repo);
+    let mut extra_args = confined.args;
     let mut env = vec![
         ("HALL_ACTOR".to_string(), actor.to_string()),
         // Hooks see this and leave usage to the runner (no double count).
@@ -211,8 +215,97 @@ pub fn request(
         plugin_dir: Some(crate::plugin::runtime_dir()?),
         extra_args,
         env,
+        env_remove: confined.env_remove,
         stream: None,
     })
+}
+
+/// What confines every run (ADR 0053): `claude_args`, then no MCP servers,
+/// the sandbox settings, and no web tools; and the environment it drops.
+pub struct Confinement {
+    pub args: Vec<String>,
+    pub env_remove: Vec<String>,
+}
+
+pub fn confinement(repo: &Repo) -> Confinement {
+    // A linked worktree's `.hallmark.toml` (read when the main checkout has
+    // none) is the agent's to edit, so it can't add arguments or widen the
+    // sandbox.
+    let trusted = repo
+        .config_path
+        .as_ref()
+        .and_then(|p| p.parent())
+        .is_none_or(|d| d == repo.main_root);
+    let (claude_args, sandbox) = if trusted {
+        (repo.config.claude_args.clone(), repo.config.sandbox.clone())
+    } else {
+        (Vec::new(), crate::config::Sandbox::default())
+    };
+    let mut args = claude_args;
+    args.push("--strict-mcp-config".into());
+    args.extend([
+        "--settings".into(),
+        settings(&sandbox, cfg!(windows)).to_string(),
+        "--disallowedTools".into(),
+        "WebFetch,WebSearch".into(),
+    ]);
+    Confinement {
+        args,
+        env_remove: sandbox.remove_env,
+    }
+}
+
+/// The `--settings` for a run. File tools read only inside the run's
+/// directories and never `deny_read`; commands run in the sandbox unless
+/// `mode = "off"` (or `auto` on native Windows, where Claude Code has none).
+/// Without `autoAllowBashIfSandboxed: false` a sandboxed command would skip
+/// `--allowedTools`; without `allowUnsandboxedCommands: false` it could
+/// retry outside the sandbox.
+pub fn settings(s: &crate::config::Sandbox, windows: bool) -> serde_json::Value {
+    use crate::config::SandboxMode;
+    let deny: Vec<String> = s
+        .deny_read
+        .iter()
+        .flat_map(|p| {
+            // A rule's absolute path starts with `//`; `/x` is the project's.
+            let p = if p.starts_with('/') {
+                format!("/{p}")
+            } else {
+                p.clone()
+            };
+            [format!("Read({p})"), format!("Read({p}/**)")]
+        })
+        .collect();
+    let mut v = serde_json::json!({
+        "permissions": {
+            "blockReadsOutsideWorkingDirectories": true,
+            "deny": deny,
+        }
+    });
+    let on = match s.mode {
+        SandboxMode::Off => false,
+        SandboxMode::Auto => !windows,
+        SandboxMode::Required => true,
+    };
+    if on {
+        v["sandbox"] = serde_json::json!({
+            "enabled": true,
+            // Never fall back to running commands unconfined, in `auto` too.
+            "failIfUnavailable": true,
+            "autoAllowBashIfSandboxed": false,
+            "allowUnsandboxedCommands": false,
+            "filesystem": {
+                "allowWrite": s.allow_write,
+                "denyRead": s.deny_read,
+            },
+            "network": {
+                "allowedDomains": s.domains,
+                "allowUnixSockets": s.unix_sockets,
+                "allowLocalBinding": s.local_binding,
+            },
+        });
+    }
+    v
 }
 
 /// Why a run produced nothing usable.
@@ -368,6 +461,9 @@ impl ClaudeRunner {
         // A headless run started from inside Claude Code must not think it
         // is nested in that session.
         cmd.env_remove("CLAUDECODE");
+        for k in &req.env_remove {
+            cmd.env_remove(k);
+        }
         for (k, v) in &req.env {
             cmd.env(k, v);
         }
@@ -1410,6 +1506,107 @@ mod tests {
         events.push(fail());
         events.push(ev(Body::PulledBack { reason: None }));
         assert_eq!(failures_in_a_row(&events, "reviewer"), 0);
+    }
+
+    // --- confinement (ADR 0053) -------------------------------------------
+
+    #[test]
+    fn the_settings_sandbox_commands_and_keep_reads_in() {
+        use crate::config::{Sandbox, SandboxMode};
+        let s = Sandbox {
+            allow_write: vec!["~/.cargo".into()],
+            deny_read: vec!["~/.ssh".into(), "/etc/secret".into()],
+            domains: vec!["crates.io".into()],
+            unix_sockets: vec!["/run/nix.sock".into()],
+            ..Sandbox::default()
+        };
+        let v = settings(&s, false);
+        assert_eq!(
+            v["permissions"]["blockReadsOutsideWorkingDirectories"],
+            true
+        );
+        // `~` paths as given; an absolute one gets the `//` a rule needs.
+        assert_eq!(
+            v["permissions"]["deny"],
+            serde_json::json!([
+                "Read(~/.ssh)",
+                "Read(~/.ssh/**)",
+                "Read(//etc/secret)",
+                "Read(//etc/secret/**)"
+            ])
+        );
+        let sb = &v["sandbox"];
+        assert_eq!(sb["enabled"], true);
+        // Without these, a sandboxed command skips --allowedTools, or
+        // retries outside the sandbox.
+        assert_eq!(sb["autoAllowBashIfSandboxed"], false);
+        assert_eq!(sb["allowUnsandboxedCommands"], false);
+        assert_eq!(sb["failIfUnavailable"], true, "auto");
+        assert_eq!(
+            sb["filesystem"]["allowWrite"],
+            serde_json::json!(["~/.cargo"])
+        );
+        assert_eq!(
+            sb["filesystem"]["denyRead"],
+            serde_json::json!(["~/.ssh", "/etc/secret"])
+        );
+        assert_eq!(
+            sb["network"]["allowedDomains"],
+            serde_json::json!(["crates.io"])
+        );
+        assert_eq!(
+            sb["network"]["allowUnixSockets"],
+            serde_json::json!(["/run/nix.sock"])
+        );
+        assert_eq!(sb["network"]["allowLocalBinding"], true);
+
+        // Native Windows has no sandbox: `auto` leaves it out there,
+        // `required` asks for it anyway, so the run fails.
+        assert!(settings(&s, true).get("sandbox").is_none());
+        let required = Sandbox {
+            mode: SandboxMode::Required,
+            ..s.clone()
+        };
+        for windows in [false, true] {
+            let sb = &settings(&required, windows)["sandbox"];
+            assert_eq!(sb["enabled"], true);
+            assert_eq!(sb["failIfUnavailable"], true);
+        }
+        // `off`: no sandbox, but reads stay in and credentials out.
+        let off = settings(
+            &Sandbox {
+                mode: SandboxMode::Off,
+                ..s.clone()
+            },
+            false,
+        );
+        assert!(off.get("sandbox").is_none());
+        assert_eq!(off["permissions"], v["permissions"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_removed_variable_never_reaches_the_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("env.txt");
+        let runner = claude(
+            dir.path(),
+            &format!(
+                "echo \"home=$HOME path=${{PATH:+set}}\" > \"{}\"",
+                out.display()
+            ),
+        );
+        runner.run(&RunRequest {
+            role: "fixer".into(),
+            cwd: dir.path().to_path_buf(),
+            timeout_secs: 60,
+            env_remove: vec!["HOME".into()],
+            ..Default::default()
+        });
+        assert_eq!(
+            std::fs::read_to_string(&out).unwrap().trim(),
+            "home= path=set"
+        );
     }
 
     // --- streaming (ADR 0041) ---------------------------------------------

@@ -124,7 +124,10 @@ Steps 5–9 are the daemon's work. Each model run in them (the review, a fix)
 is a headless `claude -p` run, and it streams into the item's `runs/`
 directory as it goes: one file per run, with what the agent read, ran and
 said, ended by a line saying how the run ended
-([ADR 0041](decisions/0041-watch-runs-live.md)).
+([ADR 0041](decisions/0041-watch-runs-live.md)). Each run is confined: it
+reads no credentials, and its commands run in Claude Code's sandbox, writing
+only its worktree and reaching only the hosts the repo allows
+([ADR 0053](decisions/0053-sandbox-every-headless-run.md)).
 
 The checks are a script, and a gate that passed on a tree isn't run again
 on the same tree: its result comes from the checks cache, marked `cached`,

@@ -587,6 +587,7 @@ fn the_librarian_distils_a_closed_item_into_the_local_store() {
     assert_eq!(c["agent"], "hallmark:librarian");
     assert_eq!(c["model"], "haiku");
     assert!(c["json_schema"].as_str().unwrap().contains("\"updates\""));
+    common::assert_confined(c);
     assert_eq!(
         c["allowed_tools"],
         json!(["Read", "Grep", "Glob", "StructuredOutput"])
@@ -737,6 +738,35 @@ fn the_librarian_updates_rather_than_duplicates() {
         changes,
         [("L-0001", "update"), ("L-0004", "new"), ("L-0006", "new")]
     );
+}
+
+#[test]
+fn a_worktrees_own_config_cant_loosen_an_agent_run() {
+    let env = Env::initialized();
+    let id = closed_item(&env, "Config in the worktree");
+    let name = env.repo.file_name().unwrap().to_string_lossy().to_string();
+    let wt = env.repo.parent().unwrap().join(format!("{name}-{id}"));
+    assert!(wt.is_dir(), "{}", wt.display());
+    std::fs::remove_file(env.repo.join(".hallmark.toml")).unwrap();
+    std::fs::write(
+        wt.join(".hallmark.toml"),
+        "claude_args = [\"--append-system-prompt\", \"x\"]\n[sandbox]\ndomains = [\"evil.example\"]\n",
+    )
+    .unwrap();
+    let script = env.script(json!([{
+        "role": "librarian",
+        "structured": {"learnings": []}
+    }]));
+    let _ = env.hall_fake(&wt, &script, &["library", "distill", &id]);
+    let calls = env.fake_calls();
+    assert_eq!(calls.len(), 1);
+    let args = calls[0]["args"].to_string();
+    assert!(!args.contains("--append-system-prompt"), "{args}");
+    assert!(!args.contains("evil.example"), "{args}");
+    if !cfg!(windows) {
+        let s = common::run_settings(&calls[0]);
+        assert_eq!(s["sandbox"]["network"]["allowedDomains"], json!([]));
+    }
 }
 
 #[test]

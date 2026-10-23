@@ -47,7 +47,7 @@ gates       = []
 gates_no_cache = []         # gates never served from the checks cache
 gates_timeout = "20m"       # each gate is killed after this
 fixer       = "claude -p"   # or another fix engine, run in the worktree
-claude_args = []            # extra arguments for every headless claude -p run
+claude_args = []            # extra arguments for every headless claude -p run, never ones that loosen it
 dev_commands = []           # what headless dev runs may run besides the gates
 max_rejects = 3             # rejected reviews before the item is escalated to you
 max_check_failures = 3      # failed checks in a row before the item is held for you; 0 for never
@@ -67,6 +67,19 @@ mode = "gate"   # gate: edits need an item · ask: Claude asks you · off
 free = ["docs/", "*.md"]   # paths that need no item
 push_guard = "strict"      # or "parse": see "The push guard" below
 push_allow = []            # scripts the strict guard lets through, as prefixes: ["make release"]
+
+[sandbox]                   # what every headless claude -p run may reach: see "The sandbox"
+mode          = "auto"      # or "required", "off"
+allow_write   = []          # paths its commands may write besides the worktree, temp and git dirs
+deny_read     = ["~/.ssh", "~/.aws", "~/.azure", "~/.config/gcloud", "~/.config/gh",
+                 "~/.docker/config.json", "~/.gnupg", "~/.kube", "~/.netrc", "~/.npmrc",
+                 "~/.claude.json", "~/.claude/.credentials.json"]
+domains       = []          # hosts its commands may reach; none by default
+unix_sockets  = []          # sockets its commands may connect to
+local_binding = true        # its commands may listen on localhost
+remove_env    = ["SSH_AUTH_SOCK", "GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN",
+                 "GITHUB_ENTERPRISE_TOKEN", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY",
+                 "AWS_SESSION_TOKEN"]
 
 [merge]                     # the merger: shipped PRs merge without you
 mode       = "off"          # or "auto"
@@ -291,6 +304,19 @@ PATH, and never preselects direnv: direnv refuses an `.envrc` that wasn't
 allowed at the path it runs in, so `direnv allow` it in the main checkout and
 in every worktree path (or use direnv's whitelist prefix) before using it.
 
+### A toolchain in the sandbox
+
+Headless runs work in the sandbox (see "The sandbox" below). A toolchain that
+writes a cache in your home directory, talks to a daemon or downloads
+packages needs that allowed. For a Nix flake and cargo on macOS:
+
+```toml
+[sandbox]
+allow_write  = ["~/.cache/nix", "~/.cargo"]
+unix_sockets = ["/private/var/run/nix-daemon.socket"]   # the resolved path, not /var/run/…
+domains      = ["crates.io", "index.crates.io", "static.crates.io"]
+```
+
 ### Cached gate results
 
 A gate that passed on a tree passes again on it, so Hallmark doesn't run it
@@ -344,6 +370,53 @@ gates = [
 `hall config set gates '[{ cmd = "cargo test", timeout = "40m" }, "cargo clippy"]'`
 writes the table form. Gates used to share the reviewer's run limit,
 `[budget.review] timeout`; that now covers only the reviewer's run.
+
+## The sandbox
+
+Every headless `claude -p` run (the reviewer, the fixer, the Delivery
+office's dev runs, the Front Desk, the librarian and resumed sessions) is
+confined, so an agent misled by what it reads can't take your credentials or
+change your machine (ADR 0053):
+
+- **Reads stay in.** Its file tools read only inside the directories it runs
+  in, and never a `deny_read` path. With the sandbox on, its commands can't
+  read them either.
+- **Commands run in Claude Code's sandbox:** Seatbelt on macOS, bubblewrap on
+  Linux and WSL2. They write only the run's working directory, the temp dir,
+  the repo's git directory (never its hooks or config) and `allow_write`.
+  They reach only `domains` and `unix_sockets`. A command still needs a rule
+  in the run's allowlist, and none may retry outside the sandbox.
+- **Edits stay in the worktree.** Dev runs accept edits inside their worktree
+  only.
+- **No web tools, no MCP servers.** WebFetch and WebSearch are off.
+- **No credentials in its environment:** `remove_env` is removed.
+
+`mode`:
+
+| Mode | Commands |
+| --- | --- |
+| `auto` | Sandboxed. Native Windows runs them without it. Where Claude Code can't start the sandbox (Linux and WSL2 need bubblewrap and socat), the run fails; set `off` to opt out. |
+| `required` | Sandboxed everywhere, native Windows included, or the run fails. |
+| `off` | Not sandboxed. `deny_read`, `remove_env` and the rest still apply. |
+
+A list you set replaces the default, so keep the defaults you still want in
+`deny_read` and `remove_env`.
+
+`claude_args` can't loosen any of this. `.hallmark.toml` is refused when it
+holds `--dangerously-skip-permissions`, `--allow-dangerously-skip-permissions`,
+`--permission-mode`, `--permission-prompt-tool`, `--settings`,
+`--setting-sources`, `--add-dir`, `--allowedTools`, `--allowed-tools`,
+`--tools`, `--mcp-config` or `--plugin-dir`. When the main checkout has no `.hallmark.toml`
+and the file comes from a linked worktree, runs ignore its `claude_args` and
+`[sandbox]`.
+
+What it doesn't cover:
+
+- The gates the Assay Office runs, and a `fixer` that isn't `claude -p`,
+  run as you, outside the sandbox.
+- Signed commits: the sandbox blocks the signing agent's socket. Add the
+  socket to `unix_sockets` and remove `SSH_AUTH_SOCK` from `remove_env`, or
+  don't sign commits in item worktrees.
 
 ## Your tools
 

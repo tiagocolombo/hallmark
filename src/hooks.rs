@@ -611,7 +611,9 @@ impl Ctx {
                 self.input.permission_mode.as_deref(),
                 Some("acceptEdits" | "bypassPermissions")
             );
-            if auto && !paths::is_within(p, &self.dir) {
+            // Never in a headless run: its edits stay in its own worktree,
+            // under Claude Code's own scope (ADR 0053).
+            if auto && headless_actor().is_none() && !paths::is_within(p, &self.dir) {
                 self.allow = Some(format!(
                     "Hallmark: {} is inside {}'s worktree, and this session accepts edits.",
                     paths::display(p),
