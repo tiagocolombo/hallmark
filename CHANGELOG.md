@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.4](https://github.com/tiagocolombo/hallmark/compare/v0.3.3...v0.3.4) - 2026-10-23
+
+### Added
+
+- The Gazette: a newspaper page for each finished item ([#120](https://github.com/tiagocolombo/hallmark/pull/120))
+
 ## [0.3.3](https://github.com/tiagocolombo/hallmark/compare/v0.3.2...v0.3.3) - 2026-10-22
 
 ### Other
