@@ -73,6 +73,8 @@ still blocks until the reviewer withdraws it.
 
 ## Never
 
+- work round the sandbox when a command is blocked ("Operation not
+  permitted", a refused connection): report what was blocked instead;
 - push, open a PR, or run the ship command;
 - run `hall ready`, `hall verdict`, `hall retry`, `hall pull-back` or `hall drop`
   (`hall` refuses all but `hall pull-back` in your run);

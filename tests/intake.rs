@@ -147,6 +147,7 @@ fn a_split_request_becomes_a_parent_and_children() {
     );
     assert!(c["json_schema"].as_str().unwrap().contains("parallel"));
     assert!(c["prompt"].as_str().unwrap().contains(REQUEST));
+    common::assert_confined(c);
     assert!(c["prompt"].as_str().unwrap().contains("api/ (1 files)"));
     assert!(
         c["env"]

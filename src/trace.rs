@@ -528,18 +528,21 @@ mod tests {
 
     #[test]
     fn a_tail_takes_whole_lines_and_learns_the_session() {
-        // The fixture's run began here; a resume command cds only into a
-        // directory that exists.
-        fs::create_dir_all("/tmp/spike").unwrap();
+        // The fixture's run began in /tmp/spike. A resume command cds only
+        // into a directory that exists, so the run moves to one this test
+        // owns: a sandboxed run may write only its own temp dir.
         let dir = tempfile::tempdir().unwrap();
+        let spike = dir.path().join("spike");
+        fs::create_dir_all(&spike).unwrap();
+        let cwd = crate::paths::display(&spike);
         let p = dir.path().join("20261012T215146-reviewer.jsonl");
-        let text = fixture();
+        let text = fixture().replace("/tmp/spike", &cwd);
         let (first, _) = text.split_at(text.find("\"type\":\"user\"").unwrap());
         fs::write(&p, first).unwrap();
         let mut tail = Tail::default();
         let a = tail.poll(&p).unwrap();
         assert_eq!(a.len(), 2, "start and the first tool call");
-        assert_eq!(tail.info.cwd.as_deref(), Some(Path::new("/tmp/spike")));
+        assert_eq!(tail.info.cwd.as_deref(), Some(Path::new(&cwd)));
         assert!(!tail.info.ended);
         assert_eq!(tail.info.resume_command(), None, "not while it runs");
 
@@ -550,8 +553,10 @@ mod tests {
         assert_eq!(b.last().map(|s| s.kind), Some(StepKind::End));
         assert!(tail.info.ended);
         assert_eq!(
-            tail.info.resume_command().as_deref(),
-            Some("cd /tmp/spike && claude --resume 91aedf44-f4cd-4efa-8e74-768d46a9dc75")
+            tail.info.resume_command(),
+            Some(format!(
+                "cd {cwd} && claude --resume 91aedf44-f4cd-4efa-8e74-768d46a9dc75"
+            ))
         );
     }
 

@@ -26,6 +26,15 @@ max_rejects = 3
 stuck_after = "45m"
 rules = ["CLAUDE.md"]
 
+# Headless runs are sandboxed (ADR 0053). The gates' Nix shell needs its
+# cache, cargo's home and the daemon's socket (by its resolved path), and a
+# new dependency comes from crates.io. Some tests' fixtures say their run
+# began in /tmp/spike, and create it. No GitHub: a run never pushes.
+[sandbox]
+allow_write  = ["~/.cache/nix", "~/.cargo", "/tmp/spike", "/private/tmp/spike"]
+unix_sockets = ["/private/var/run/nix-daemon.socket"]
+domains      = ["crates.io", "index.crates.io", "static.crates.io"]
+
 [capture]
 mode = "gate"
 # Markdown under plugin/ and the rules files steer the reviewer: not free.

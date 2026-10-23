@@ -15,16 +15,16 @@ a decision, add a new record that supersedes the old one. Don't edit the old one
 | [0007](0007-own-reviewer-not-code-review.md) | Our own reviewer, not `/code-review` | Accepted |
 | [0008](0008-state-derived-from-journal.md) | Item state is folded from the journal | Accepted |
 | [0009](0009-plugin-install-via-local-marketplace.md) | Install the plugin through a local marketplace | Accepted |
-| [0010](0010-gate-scope.md) | Where the gates apply | Accepted |
+| [0010](0010-gate-scope.md) | Where the gates apply | Accepted; its final control amended by 0048 |
 | [0011](0011-drop-any-time.md) | An item can be dropped at any time | Accepted |
-| [0012](0012-config-from-the-main-checkout.md) | `.hallmark.toml` is read from the main checkout | Accepted |
-| [0013](0013-one-runner-for-claude-p.md) | One runner for every `claude -p` run | Superseded in part by 0041 |
+| [0012](0012-config-from-the-main-checkout.md) | `.hallmark.toml` is read from the main checkout | Accepted; amended by 0053 |
+| [0013](0013-one-runner-for-claude-p.md) | One runner for every `claude -p` run | Superseded in part by 0041; amended by 0053 |
 | [0014](0014-daemon-workers-and-leases.md) | The daemon is a loop of workers, with leases | Accepted |
 | [0015](0015-verdicts-findings-and-approval.md) | Verdicts, findings, and who decides approval | Accepted; amended by 0039 |
 | [0016](0016-budgets-holds-and-pauses.md) | Budgets, holds and pauses | Accepted |
 | [0017](0017-daemon-process-and-pauses.md) | The daemon process: one instance, stop by file, pauses for everyone | Accepted |
 | [0018](0018-the-assay-office.md) | The Assay Office: checks, then an isolated review | Accepted |
-| [0019](0019-fixer-and-shipper.md) | The fixer, the shipper, and the record | Accepted |
+| [0019](0019-fixer-and-shipper.md) | The fixer, the shipper, and the record | Accepted; amended by 0039, 0053 |
 | [0020](0020-notifications-resume-and-budget-accounting.md) | Notifications, resuming on an answer, and what budgets count | Accepted |
 | [0021](0021-the-library.md) | The Library: learnings as reviewed files, read from the base | Superseded in part by 0027 |
 | [0022](0022-the-terminal-app-is-a-reader.md) | The terminal app is a reader | Accepted |
@@ -61,3 +61,4 @@ a decision, add a new record that supersedes the old one. Don't edit the old one
 | [0051](0051-merge-clean-prs-and-stop-the-line.md) | Merge clean PRs as they are (`merge.update = "conflicts"`), and stop the line: nothing merges into, or is rebased onto, a base whose tip's CI failed | Accepted; amends 0048 |
 | [0052](0052-the-web-app.md) | The web app: `hall web` serves a page on 127.0.0.1 whose every call is a hall command, behind a token and a host check; it updates and restarts itself | Accepted |
 | [0053](0053-the-gazette.md) | The Gazette: a newspaper page per finished item, for people. Code sets the facts, the librarian's run writes the words and a diagram outline, and `hall attach` adds plates | Accepted |
+| [0053](0053-sandbox-every-headless-run.md) | Sandbox every headless run: file tools read only inside the run, never credentials; commands run in Claude Code's sandbox without skipping the allowlist; no web tools; `claude_args` can't loosen it (`[sandbox]`) | Accepted; amends 0012, 0013, 0019 |

@@ -1,5 +1,8 @@
 # 0012: `.hallmark.toml` is read from the main checkout
 
+Status: Accepted. Amended by 0053: headless runs ignore a linked worktree's
+`claude_args` and `[sandbox]`.
+
 ## Context
 
 Every item works in its own worktree, and each worktree has its own copy of

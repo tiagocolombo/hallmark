@@ -776,7 +776,8 @@ fn append(repo: &Repo, id: ItemId, body: Body) -> Result<()> {
         .append_item(id, &Event::new(ACTOR, Some(id), body))
 }
 
-/// The dev run's tools: read and edit files, take one side of a conflict,
+/// The dev run's tools: read files (`acceptEdits` allows edits inside the
+/// worktree, ADR 0053), take one side of a conflict,
 /// stage, continue the rebase, commit, and run the repo's gates and
 /// `dev_commands`. Git also as `git -C <worktree>`. Never push, never abort.
 ///
@@ -799,7 +800,8 @@ pub fn tools(commands: &[String], wt: &Path) -> Vec<String> {
         "rebase --continue",
         "commit",
     ];
-    let mut t: Vec<String> = ["Read", "Edit", "Write", "Grep", "Glob"]
+    // No `Edit` or `Write` rule: `acceptEdits` keeps edits in the worktree.
+    let mut t: Vec<String> = ["Read", "Grep", "Glob"]
         .into_iter()
         .map(String::from)
         .collect();

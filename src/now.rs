@@ -795,13 +795,16 @@ mod tests {
 
     #[test]
     fn a_long_stream_is_read_from_both_ends() {
-        // The fixture's run began here; a resume command cds only into a
-        // directory that exists.
-        std::fs::create_dir_all("/tmp/spike").unwrap();
+        // The fixture's run began in /tmp/spike. A resume command cds only
+        // into a directory that exists, so the run moves to one this test
+        // owns: a sandboxed run may write only its own temp dir.
         let dir = tempfile::tempdir().unwrap();
+        let spike = dir.path().join("spike");
+        std::fs::create_dir_all(&spike).unwrap();
+        let cwd = crate::paths::display(&spike);
         let p = dir.path().join("20261012T215146-reviewer.jsonl");
         // The run's init, then a long conversation: more than both windows.
-        let text = stream();
+        let text = stream().replace("/tmp/spike", &cwd);
         let (init, rest) = text.split_once('\n').unwrap();
         let mut long = format!("{init}\n");
         while (long.len() as u64) < 3 * WINDOW {
@@ -822,8 +825,10 @@ mod tests {
         assert_eq!(info.failure.as_deref(), Some("timed out"));
         assert_eq!(steps.last().map(|s| s.kind), Some(StepKind::End));
         assert_eq!(
-            info.resume_command().as_deref(),
-            Some("cd /tmp/spike && claude --resume 91aedf44-f4cd-4efa-8e74-768d46a9dc75")
+            info.resume_command(),
+            Some(format!(
+                "cd {cwd} && claude --resume 91aedf44-f4cd-4efa-8e74-768d46a9dc75"
+            ))
         );
     }
 

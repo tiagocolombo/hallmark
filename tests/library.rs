@@ -587,6 +587,7 @@ fn the_librarian_distils_a_closed_item_into_the_local_store() {
     assert_eq!(c["agent"], "hallmark:librarian");
     assert_eq!(c["model"], "haiku");
     assert!(c["json_schema"].as_str().unwrap().contains("\"updates\""));
+    common::assert_confined(c);
     assert_eq!(
         c["allowed_tools"],
         json!(["Read", "Grep", "Glob", "StructuredOutput"])

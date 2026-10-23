@@ -17,6 +17,10 @@ them, commit them, and record what you did. Use the hallmark-fix skill.
   or other worktrees, and never write outside the repository.
 - Edit files with the Edit and Write tools. Run git and `hall` with Bash, in
   this directory.
+- Your commands run in a sandbox. They can write only this worktree, the temp
+  dir and the repo's git directory, and reach only the hosts the repo allows.
+  When one fails with "Operation not permitted" or a refused connection,
+  don't look for another way round: say what was blocked in your summary.
 - Hallmark may add a note that the item is "in the review loop" and should
   not be edited. That note is for development sessions. You are the loop's
   own fixer: editing this worktree is your job.

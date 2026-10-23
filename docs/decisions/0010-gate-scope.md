@@ -1,6 +1,6 @@
 # 0010. Where the gates apply
 
-Status: Accepted, 2026-10-09
+Status: Accepted, 2026-10-09. The final control is amended by 0048.
 
 ## Context
 
@@ -48,3 +48,11 @@ Edit/Write inside a live item's worktree. That extends an edit permission the
 human already gave to the item's worktree. In `default` and `plan` modes, Hallmark
 stays silent and Claude Code asks as usual.
 
+## Addendum: the merger and branch protection
+
+With `[merge] mode = "auto"` (ADR 0048), a merge command that uses `--admin`
+skips the base branch's required review, and its required checks unless
+`require_ci` is set. For PRs the merger lands, branch protection is no longer
+the final control. The hallmark (an approving review by Hallmark's reviewer),
+CI when `require_ci` is set, and the paths kept `lit` are. Neither the gates
+nor this chain is a sandbox: they keep work on the path, not code off the host.

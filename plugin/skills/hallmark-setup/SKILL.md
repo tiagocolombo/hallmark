@@ -103,9 +103,26 @@ are happy with.
      are still running.
    - `merge.lit`: paths a person merges, as globs (`.github/`, release
      settings). Such a PR waits in the inbox, and `hall retry` lets it merge.
-8. **Tools**, user scope: `tools.claude` and `tools.gh` when they aren't on
+8. **The sandbox** (`[sandbox]`, ADR 0053): every headless run is confined.
+   Its file tools read only inside the run's directories and never
+   `deny_read`. Its commands run in Claude Code's sandbox, with no network
+   and no writes outside the worktree, temp and git directories. If the
+   gates need more, add only that:
+   - `sandbox.allow_write`: caches the toolchain writes (`~/.cargo`,
+     `~/.cache/nix`, `~/.npm`). Literal or `~` paths; globs don't match.
+   - `sandbox.domains`: hosts it downloads from (`crates.io`,
+     `registry.npmjs.org`).
+   - `sandbox.unix_sockets`: daemons it talks to. For Nix on macOS,
+     `/private/var/run/nix-daemon.socket` (the resolved path).
+   - `sandbox.mode`: `auto` (default), `required` (fail where there's no
+     sandbox), or `off`. Ask before `off`.
+
+   `claude_args` can't hold flags that loosen a run (`--settings`,
+   `--permission-mode`, `--dangerously-skip-permissions`, …): the file is
+   refused.
+9. **Tools**, user scope: `tools.claude` and `tools.gh` when they aren't on
    the PATH the daemon gets. Use absolute paths.
-9. **Notifications**, user scope: `notify.desktop`, `notify.phone`
+10. **Notifications**, user scope: `notify.desktop`, `notify.phone`
    (`ntfy://ntfy.sh/<random topic>` or `telegram://<token>@<chat>`),
    `notify.slack` and `notify.quiet_hours` (`22:00-07:30`). Running
    `hall notify test` creates a private ntfy topic if they have none.
@@ -118,6 +135,7 @@ hall config set gates "nix develop --command cargo test" "nix develop --command 
 hall config set capture.mode ask
 hall config set budget.daily 4M
 hall config set claude_args -- --verbose          # `--` before values that start with -
+hall config set sandbox.allow_write "~/.cache/nix" "~/.cargo"
 hall config set --user tools.gh /opt/homebrew/bin/gh
 hall config set --user notify.quiet_hours 22:00-07:30
 hall config unset budget.per_item                 # back to the default (800k)
