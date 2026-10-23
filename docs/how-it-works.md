@@ -16,7 +16,7 @@ macOS, `xdg-open` on Linux, `start` on Windows).
 | Your Office | Questions, "looks done?", escalations: your inbox | you (`hall inbox`) |
 | Post Room | Every handoff passes through and is recorded | the `hall` CLI, the watchman |
 | Records | The journal: every prompt, commit, check, verdict and decision | `hall log` |
-| Library | What closed items taught, briefed to each review; kept locally, never committed | the librarian |
+| Library | What closed items taught, briefed to each review, and the Gazette, a newspaper page about each finished item for people; kept locally, never committed | the librarian |
 | Assay Office | The checks, then the principal engineer's review | the assayer |
 | Repair Shop | A fixer addresses failing checks and findings | the fixer |
 | Stamping Room | The approved commit gets its hallmark, a git note | the assayer |
@@ -106,12 +106,19 @@ From the replay in the design page:
    addresses both.
 7. **10:46** The review approves, and the commit gets its hallmark.
 8. **10:47** The shipper opens PR #191 and the item closes. The whole record
-   stays in the journal.
+   stays in the journal. The librarian distils what the review taught and
+   prints H-0042's Gazette: a newspaper page about it for people, with what
+   changed and why, each round's verdict, what was caught and fixed in plain
+   words, the mockups the agent attached (`hall attach`) and, when it helps,
+   a diagram. `hall gazette H-0042 --open`, <kbd>n</kbd> in the terminal app
+   or the item's Gazette tab in the web app opens it
+   ([ADR 0053](decisions/0053-the-gazette.md)).
 9. **11:30** PR #191 merges: you merge it, or, with `[merge] mode = "auto"`,
    the merger does once its CI is green and nothing ahead of it in the queue
    is ready ([ADR 0048](decisions/0048-the-merger.md)). The Delivery office
    records it, and the sweeper removes H-0042's worktree. The branch stays
-   ([ADR 0040](decisions/0040-sweep-finished-worktrees.md)).
+   ([ADR 0040](decisions/0040-sweep-finished-worktrees.md)). The Gazette is
+   reprinted to say it merged, with no model run.
 
 Steps 5–9 are the daemon's work. Each model run in them (the review, a fix)
 is a headless `claude -p` run, and it streams into the item's `runs/`

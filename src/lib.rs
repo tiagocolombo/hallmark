@@ -22,6 +22,7 @@ pub mod extensions;
 pub mod findings;
 pub mod fixer;
 pub mod gate;
+pub mod gazette;
 pub mod gh;
 pub mod git;
 pub mod hooks;

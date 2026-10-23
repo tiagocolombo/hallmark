@@ -226,6 +226,7 @@ hall inbox                   # what only you can settle
 hall log H-0042              # the item's journal
 hall trace H-0042 --follow   # the reviewer or fixer at work, step by step
 hall export H-0042           # the whole record as Markdown
+hall gazette H-0042 --open   # its story as a newspaper page, for people
 
 hall ready H-0042            # freeze HEAD and queue it for review
 hall pull-back H-0042 --reason "split the parser out first"   # back to development; the agent reads why
@@ -293,6 +294,18 @@ command the item offers, so the web app can do what you'd do in a terminal
 and nothing more. When a newer `hall` is out, the top bar says so, and
 *Update and restart* installs it and brings the page back
 ([ADR 0052](docs/decisions/0052-the-web-app.md)).
+
+### The Gazette
+
+Each finished item gets a Gazette: a newspaper page about it, written for
+people rather than agents. It says what changed and why, gives each review
+round's verdict and what was caught and fixed in plain words, and lists
+what shipped still open. It shows the mockups and screenshots the agent
+attached and, when it helps, a diagram of the flow. Hallmark sets every
+fact from the journal, and the librarian writes the words in the same
+cheap run that distils learnings. Open it with `hall gazette <id> --open`,
+<kbd>n</kbd> in the terminal app, or the item's Gazette tab in the web app
+([ADR 0053](docs/decisions/0053-the-gazette.md)).
 
 <img alt="hall web in a light theme: the live floor, an item that's approved and shipped while you watch, its findings and diff, an agent's question answered from your office, and usage and budgets" src="docs/images/hall-web.gif">
 

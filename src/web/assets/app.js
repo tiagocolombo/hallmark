@@ -44,7 +44,7 @@ const S = {
 const WEB = new Set(['status', 'log', 'inbox', 'ready', 'pull-back', 'drop', 'retry', 'continue',
   'answer', 'usage', 'reindex', 'config', 'findings', 'merge', 'history', 'queue', 'export',
   'budget', 'notify', 'library', 'extensions', 'hud', 'doctor', 'new', 'adopt', 'trace',
-  'daemon', 'update']);
+  'daemon', 'update', 'gazette']);
 // Readers: offered as links to the view that shows them, not as buttons.
 const READERS = new Set(['status', 'log', 'findings', 'trace', 'history', 'queue', 'usage',
   'hud', 'inbox', 'watch']);
@@ -444,9 +444,9 @@ async function item(id, tab = 'journal', arg) {
   const extra = [];
   if (!terminal) extra.push({ command: `hall drop ${id} --reason "<why>"`, does: 'drop it' });
   extra.push({ command: `hall export ${id}`, does: 'export its record' });
-  const tabs = ['journal', 'findings', 'diff', 'runs', 'usage'].map((t) =>
+  const tabs = ['journal', 'findings', 'diff', 'runs', 'usage', 'gazette'].map((t) =>
     `<a href="#/item/${esc(id)}/${t}" class="${t === tab ? 'on' : ''}">${cap(t)}</a>`).join('');
-  const body = await ({ journal, findings, diff, runs, itemUsage }[tab === 'usage' ? 'itemUsage' : tab] || journal)(id, arg, i);
+  const body = await ({ journal, findings, diff, runs, itemUsage, gazette: itemGazette }[tab === 'usage' ? 'itemUsage' : tab] || journal)(id, arg, i);
   return `<div class="small muted"><a href="#/floor">The floor</a> / <span class="mono">${esc(id)}</span></div>
   <header class="head"><div style="display:flex;flex-direction:column;gap:8px">
     <div class="row"><span class="mono muted">${esc(id)}</span>${pill(i.state)}<span class="small muted">${esc(i.room)} · since ${esc(ago(i.state_since))}</span></div>
@@ -498,6 +498,22 @@ async function journal(id) {
       <b>${esc(label(e.event))}</b><span>${esc(e.actor || '')}</span>${e.sha && text !== short(e.sha) ? `<span class="mono">${esc(short(e.sha))}</span>` : ''}</div>
       ${text ? `<div class="body">${esc(text)}</div>` : ''}</li>`;
   }).join('') || '<li>No events.</li>'}</ol>`;
+}
+
+// The item's Gazette (`hall gazette <id> --html`), framed: no scripts run in
+// it, its links open a new tab, and it takes the page's theme.
+async function itemGazette(id) {
+  const r = await hall(['gazette', id, '--html']);
+  const e = errorOf(r);
+  if (e && e.code === 'WRONG_STATE') {
+    return '<div class="empty">The librarian prints the Gazette when the item finishes: closed, escalated, or dropped.</div>';
+  }
+  if (e) return failure(r, 'hall gazette');
+  const theme = S.theme === 'light' || S.theme === 'dark' ? ` data-theme="${S.theme}"` : '';
+  const doc = String(r.reply.html || '').replace('<html lang="en">', `<html lang="en"${theme}>`)
+    .replace('<head>', '<head><base target="_blank">');
+  return `${r.reply.prose ? '' : '<div class="empty">In the item\'s own words: the librarian hasn\'t written it up yet.</div>'}
+  <iframe class="gazette" title="The Gazette for ${esc(id)}" sandbox="allow-popups allow-popups-to-escape-sandbox" srcdoc="${esc(doc)}"></iframe>`;
 }
 
 const SEV = { blocker: 'stop', major: 'stop', minor: '', nit: '' };
@@ -673,6 +689,17 @@ async function records() {
       <td class="num">${esc(x.round)}</td><td class="mono small" style="white-space:nowrap">${esc(x.duration || '')}</td>
       <td class="small">${(x.blocking || []).slice(0, 3).map((b) => `<div><span class="muted">${esc(b.lens)}</span> ${esc(b.title)}</div>`).join('')}</td></tr>`).join('')
     || '<tr><td colspan="5" class="muted">Nothing in this range.</td></tr>'}</tbody></table></div>`;
+}
+
+async function gazette() {
+  const r = await hall(['gazette', '--list']);
+  if (errorOf(r)) return head('Every finished item', 'Gazette') + failure(r, 'hall gazette --list');
+  const ed = r.reply.editions || [];
+  return head('Every finished item', 'Gazette', `<span class="muted">${ed.length} edition${ed.length === 1 ? '' : 's'}</span>`) + `
+  <div class="table"><table><thead><tr><th scope="col">Edition</th><th scope="col">State</th><th scope="col">Printed for</th></tr></thead><tbody>
+    ${ed.map((x) => `<tr><td><a class="mono" href="#/item/${esc(x.id)}/gazette">${esc(x.id)}</a> ${esc(x.title)}</td>
+      <td>${pill(x.state)}</td><td class="small muted">${esc(ago(x.since))} ago</td></tr>`).join('')
+    || '<tr><td colspan="3" class="muted">No editions yet: the librarian prints one when an item finishes.</td></tr>'}</tbody></table></div>`;
 }
 
 async function library() {
@@ -855,7 +882,7 @@ async function submitNew(form) {
 
 // --------------------------------------------------------------- the shell
 
-const VIEWS = { floor, item, office, queue, records, library, usage, settings, new: newItem };
+const VIEWS = { floor, item, office, queue, records, gazette, library, usage, settings, new: newItem };
 // The views that read again on every refresh; the others wait for you.
 const LIVE = new Set(['floor', 'item', 'office', 'queue', 'usage']);
 
@@ -895,6 +922,7 @@ const SUB = {
   office: ['Your office.', 'Only what needs a person: questions, “looks done?”, escalations and holds.'],
   queue: ['Merge queue.', 'What the merger will do, in order. Read from GitHub; this page never merges on its own.'],
   records: ['Records.', 'Closed and dropped items, and why things were rejected.'],
+  gazette: ['Gazette.', 'A newspaper page for each finished item, written up by the librarian for people.'],
   library: ['Library.', 'Learnings from past reviews, kept on this machine, never committed.'],
   usage: ['Usage & budget.', 'Cost is an estimate at list price from token counts, not a bill.'],
   settings: ['Settings.', 'Each change runs hall config; comments and layout in the file are kept.'],
@@ -1112,7 +1140,11 @@ document.addEventListener('click', async (ev) => {
     return;
   }
   const themeBtn = t.closest('[data-theme-set]');
-  if (themeBtn) { applyTheme(themeBtn.dataset.themeSet); return; }
+  if (themeBtn) {
+    applyTheme(themeBtn.dataset.themeSet);
+    if (route()[2] === 'gazette') draw();
+    return;
+  }
   const col = t.closest('[data-collapse]');
   if (col) {
     const k = col.dataset.collapse === 'rail' ? 'noRail' : 'noFeed';
@@ -1198,6 +1230,8 @@ setInterval(() => {
   const every = view === 'item' && tab === 'runs' ? Math.min(S.refresh, 2) : S.refresh;
   if (Date.now() - S.lastTick < every * 1000) return;
   S.lastTick = Date.now();
+  // A page being read isn't reprinted under the reader.
+  if (view === 'item' && tab === 'gazette') return refreshShell();
   const focus = document.activeElement;
   const typing = focus && $('#main').contains(focus) && /^(INPUT|TEXTAREA|SELECT)$/.test(focus.tagName);
   if (LIVE.has(view) && !typing) {

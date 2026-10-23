@@ -685,6 +685,18 @@ with one collection per repo.
 **Where rules belong.** CLAUDE.md is for rules that are always true; situational
 knowledge goes in the Library.
 
+**The Gazette** (ADR 0053). The librarian's run also writes the words for the
+item's Gazette, a newspaper page for people at `items/<id>/gazette.html` in
+the journal: a headline, a story, a line per round, each finding in plain
+words, and a diagram outline when the change has a flow worth drawing.
+Hallmark sets every fact itself from the journal and lays the diagram out as
+SVG. The page is one file, with no scripts and nothing from the network.
+Files and links the dev agent attaches with `hall attach` become plates. The
+page is reprinted from code, with no model run, when the item moves on (its
+PR merges, CI reports) or a new hall prints differently. `hall gazette`, the
+terminal app (<kbd>n</kbd>) and the web app's Gazette tab read it. Like the
+Library, it is never committed.
+
 ## Parallel parts (Stage 2, ADR 0024)
 
 The Front Desk's intake run (Haiku, `plugin/agents/intake.md`,

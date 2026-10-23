@@ -494,6 +494,15 @@ pub enum Body {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         not_started: Option<String>,
     },
+    /// A file or link attached to the item for its Gazette (`hall attach`):
+    /// a mockup, a screenshot, a diagram.
+    Attached {
+        /// The copy under the item's `attachments/` (`attachments/1-mockup.png`),
+        /// or a URL.
+        path: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        caption: Option<String>,
+    },
 }
 
 /// A comment or review on a shipped PR.
@@ -568,6 +577,7 @@ impl Body {
             Body::PrMerged { .. } => "pr_merged",
             Body::Delivered { .. } => "delivered",
             Body::WorktreeRemoved { .. } => "worktree_removed",
+            Body::Attached { .. } => "attached",
             Body::FeedbackRequested { .. } => "feedback_requested",
         }
     }
@@ -862,6 +872,10 @@ impl Body {
             Body::PrMerged { pr_url, sha } => format!("merged {} · {pr_url}", short(sha)),
             Body::Delivered { pr_url, outcome } => format!("PR {outcome} · {pr_url}"),
             Body::WorktreeRemoved { path } => format!("worktree removed · {path}"),
+            Body::Attached { path, caption } => match caption {
+                Some(c) => format!("attached {path}: {c}"),
+                None => format!("attached {path}"),
+            },
             Body::FeedbackRequested { comments, .. } => format!(
                 "{} new PR comment{} to address",
                 comments.len(),

@@ -56,8 +56,96 @@
       "description": "IDs of existing learnings this item shows are wrong or obsolete.",
       "type": "array",
       "items": { "type": "string" }
+    },
+    "gazette": {
+      "description": "The words for the item's Gazette: a newspaper page about it, written for a person who didn't watch it happen. Hallmark adds every date, count and cost itself.",
+      "type": "object",
+      "properties": {
+        "kicker": {
+          "description": "Two or three words over the headline: the part of the product it touches (The web app).",
+          "type": "string"
+        },
+        "headline": {
+          "description": "A plain headline of at most twelve words: what a person can do now, or what no longer goes wrong.",
+          "type": "string"
+        },
+        "deck": {
+          "description": "One sentence under the headline: the outcome, and how the review went.",
+          "type": "string"
+        },
+        "story": {
+          "description": "Three to five short paragraphs: what was asked and why, what changed for the person using it, how it works in a sentence or two, and anything the review changed.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "rounds": {
+          "description": "One short line per review round, in plain words (Not safe to ship: the key could leak).",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "round": { "type": "integer" },
+              "line": { "type": "string" }
+            },
+            "required": ["round", "line"],
+            "additionalProperties": false
+          }
+        },
+        "findings": {
+          "description": "Each finding in plain words: a headline a person understands, and one or two sentences on what went wrong for them and what changed.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "headline": { "type": "string" },
+              "text": { "type": "string" }
+            },
+            "required": ["id", "headline", "text"],
+            "additionalProperties": false
+          }
+        },
+        "diagram": {
+          "description": "An outline of the flow the change adds or changes, drawn left to right. Leave nodes and edges empty when a picture wouldn't help.",
+          "type": "object",
+          "properties": {
+            "caption": { "type": "string" },
+            "nodes": {
+              "description": "2 to 8 nodes, in left-to-right order.",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": { "type": "string" },
+                  "label": { "description": "At most 17 characters.", "type": "string" },
+                  "note": { "description": "At most 22 characters, or \"\".", "type": "string" }
+                },
+                "required": ["id", "label", "note"],
+                "additionalProperties": false
+              }
+            },
+            "edges": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "from": { "type": "string" },
+                  "to": { "type": "string" },
+                  "label": { "description": "At most 18 characters, or \"\".", "type": "string" }
+                },
+                "required": ["from", "to", "label"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": ["caption", "nodes", "edges"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["kicker", "headline", "deck", "story", "rounds", "findings", "diagram"],
+      "additionalProperties": false
     }
   },
-  "required": ["learnings", "retire"],
+  "required": ["learnings", "retire", "gazette"],
   "additionalProperties": false
 }

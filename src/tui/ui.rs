@@ -325,6 +325,7 @@ fn key_bar(f: &mut Frame, area: Rect, app: &App) {
             ("w", "worktree"),
             ("o", "PR"),
             ("h", "history"),
+            ("n", "gazette"),
             ("u", "usage"),
             ("?", "help"),
             ("q", "quit"),
@@ -353,6 +354,7 @@ fn key_bar(f: &mut Frame, area: Rect, app: &App) {
         View::History => &[
             ("↑↓", "item"),
             ("enter", "journal"),
+            ("n", "gazette"),
             ("/", "filter"),
             ("esc", "board"),
             ("?", "help"),
@@ -477,6 +479,7 @@ fn help(f: &mut Frame, area: Rect, queue: bool) {
         ("X", "your office: drop every item, one reason"),
         ("w", "open the item's worktree"),
         ("o", "open the PR"),
+        ("n", "open the item's Gazette in the browser"),
         ("b", "board"),
         ("h", "history: closed and dropped"),
         ("u", "usage (then b i m d to group)"),
