@@ -19,7 +19,7 @@
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
@@ -448,7 +448,7 @@ impl ClaudeRunner {
     fn exec(&self, req: &RunRequest, stream: Option<Stream>) -> (RunOutcome, Option<Stream>) {
         let start = Instant::now();
         let ms = |s: Instant| s.elapsed().as_millis() as u64;
-        let mut cmd = Command::new(&self.bin);
+        let mut cmd = crate::process::command(&self.bin);
         cmd.args(req.args())
             .current_dir(&req.cwd)
             .stdout(Stdio::piped())
@@ -1643,7 +1643,7 @@ mod tests {
         // fork just as it is written, and its child keeps that descriptor
         // until it execs. Run it once, doing nothing, until that has passed.
         for _ in 0..50 {
-            match Command::new(&bin).env("WARM", "1").status() {
+            match crate::process::command(&bin).env("WARM", "1").status() {
                 Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy => {
                     crate::daemon::nap(Duration::from_millis(100));
                 }
@@ -1863,7 +1863,7 @@ mod tests {
         // `wait_until`); this is the real thing, a few times over.
         use wait_timeout::ChildExt;
         for _ in 0..10 {
-            let mut child = Command::new("sleep").arg("30").spawn().unwrap();
+            let mut child = crate::process::command("sleep").arg("30").spawn().unwrap();
             let limit = Duration::from_millis(50);
             let start = Instant::now();
             let r = wait_until(start + limit, |left| child.wait_timeout(left));

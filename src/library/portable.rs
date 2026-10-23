@@ -221,7 +221,7 @@ pub fn read_dir(dir: &Path) -> Result<Vec<Entry>> {
 }
 
 fn git(dir: &Path) -> Command {
-    let mut c = Command::new("git");
+    let mut c = crate::process::command("git");
     c.arg("-C").arg(dir);
     for v in ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"] {
         c.env_remove(v);

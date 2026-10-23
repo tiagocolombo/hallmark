@@ -678,7 +678,7 @@ pub fn continue_item(cwd: &Path, a: ContinueArgs, mode: crate::output::Mode) -> 
                 crate::commands::new::shell_quote(&item.worktree)
             );
             if mode == crate::output::Mode::Text && std::path::Path::new(&item.worktree).is_dir() {
-                let status = std::process::Command::new(crate::config::Tool::Claude.command())
+                let status = crate::process::command(crate::config::Tool::Claude.command())
                     .arg("--continue")
                     .current_dir(&item.worktree)
                     .status();

@@ -8,7 +8,7 @@ use crate::error::{ErrorCode, HallError, Result};
 pub const NOTES_REF: &str = "refs/notes/hallmark";
 
 fn command(dir: &Path) -> Command {
-    let mut c = Command::new("git");
+    let mut c = crate::process::command("git");
     c.arg("-C").arg(dir);
     // Hooks may run inside another git process; never inherit its repo.
     for v in ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"] {
@@ -313,7 +313,10 @@ pub fn default_branch(dir: &Path) -> String {
 }
 
 pub fn version() -> Option<String> {
-    let out = Command::new("git").arg("--version").output().ok()?;
+    let out = crate::process::command("git")
+        .arg("--version")
+        .output()
+        .ok()?;
     out.status.success().then(|| {
         String::from_utf8_lossy(&out.stdout)
             .trim()

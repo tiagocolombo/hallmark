@@ -35,7 +35,7 @@ pub fn launch() -> Result<Child> {
         .append(true)
         .open(state::log_path())?;
     let err = log.try_clone()?;
-    let mut cmd = Command::new(exe);
+    let mut cmd = crate::process::command(exe);
     cmd.args(["daemon", "run"])
         .current_dir(state::dir())
         .stdin(Stdio::null())

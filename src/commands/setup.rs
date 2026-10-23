@@ -5,7 +5,6 @@
 //! (docs/decisions/0023).
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -199,7 +198,7 @@ fn claude(a: &SetupArgs) -> Result<Response> {
             steps.push(step(shown, "planned", None));
             continue;
         }
-        let out = Command::new(&claude).args(argv).output();
+        let out = crate::process::command(&claude).args(argv).output();
         if !required {
             let ok = out.map(|o| o.status.success()).unwrap_or(false);
             steps.push(step(shown, if ok { "done" } else { "skipped" }, None));

@@ -741,7 +741,9 @@ merger, ci, sweeper, librarian, notify. Leases
 keep one worker per item and count per phase against `[parallel]` (checks,
 review, fix, ship), not one assayer per repo. A rate limit or the daily budget
 pauses the model workers until the reset, recorded as `paused`. Stopping is a
-flag in the state file, so it works the same on every OS.
+flag in the state file, so it works the same on every OS. On Windows the
+daemon has no console, so every command it runs (`git`, `gh`, `claude`, a
+gate) is created without a console window (`process::command`, ADR 0054).
 
 The **merger** (ADR 0048) is off unless `[merge] mode = "auto"`. At most
 every 20 seconds it walks each base's open shipped PRs, oldest first, and

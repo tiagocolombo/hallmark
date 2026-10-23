@@ -4,7 +4,7 @@
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::Path;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 use std::time::{Duration, Instant};
 
 use super::cache;
@@ -361,14 +361,14 @@ pub fn run_gate(cmd: &str, dir: &Path, log: &File, timeout_secs: u64) -> Result<
 fn kill_tree(child: &mut Child) {
     let pid = child.id().to_string();
     #[cfg(unix)]
-    let _ = Command::new("sh")
+    let _ = crate::process::command("sh")
         .arg("-c")
         .arg(format!("kill -KILL -- -{pid}"))
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status();
     #[cfg(windows)]
-    let _ = Command::new("taskkill")
+    let _ = crate::process::command("taskkill")
         .args(["/T", "/F", "/PID", &pid])
         .stdout(Stdio::null())
         .stderr(Stdio::null())

@@ -22,7 +22,7 @@ a decision, add a new record that supersedes the old one. Don't edit the old one
 | [0014](0014-daemon-workers-and-leases.md) | The daemon is a loop of workers, with leases | Accepted |
 | [0015](0015-verdicts-findings-and-approval.md) | Verdicts, findings, and who decides approval | Accepted; amended by 0039 |
 | [0016](0016-budgets-holds-and-pauses.md) | Budgets, holds and pauses | Accepted |
-| [0017](0017-daemon-process-and-pauses.md) | The daemon process: one instance, stop by file, pauses for everyone | Accepted |
+| [0017](0017-daemon-process-and-pauses.md) | The daemon process: one instance, stop by file, pauses for everyone | Accepted; amended by 0054 |
 | [0018](0018-the-assay-office.md) | The Assay Office: checks, then an isolated review | Accepted |
 | [0019](0019-fixer-and-shipper.md) | The fixer, the shipper, and the record | Accepted; amended by 0039, 0053 |
 | [0020](0020-notifications-resume-and-budget-accounting.md) | Notifications, resuming on an answer, and what budgets count | Accepted |
@@ -62,3 +62,4 @@ a decision, add a new record that supersedes the old one. Don't edit the old one
 | [0052](0052-the-web-app.md) | The web app: `hall web` serves a page on 127.0.0.1 whose every call is a hall command, behind a token and a host check; it updates and restarts itself | Accepted |
 | [0053](0053-the-gazette.md) | The Gazette: a newspaper page per finished item, for people. Code sets the facts, the librarian's run writes the words and a diagram outline, and `hall attach` adds plates | Accepted |
 | [0053](0053-sandbox-every-headless-run.md) | Sandbox every headless run: file tools read only inside the run, never credentials; commands run in Claude Code's sandbox without skipping the allowlist; no web tools; `claude_args` can't loosen it (`[sandbox]`) | Accepted; amends 0012, 0013, 0019 |
+| [0054](0054-child-processes-without-a-console-window.md) | Every child process starts in `process::command`: a `hall` without a console (the daemon on Windows) runs `git`, `gh`, `claude` and the gates without a console window | Accepted; amends 0017 |

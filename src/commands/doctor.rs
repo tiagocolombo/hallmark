@@ -1,7 +1,6 @@
 //! `hall doctor`: each failed check names the command that fixes it.
 
 use std::path::Path;
-use std::process::Command;
 
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -53,7 +52,10 @@ fn check(name: &str, ok: bool, detail: impl Into<String>, fix: Option<&str>) -> 
 }
 
 fn claude_version(claude: &str) -> Option<String> {
-    let out = Command::new(claude).arg("--version").output().ok()?;
+    let out = crate::process::command(claude)
+        .arg("--version")
+        .output()
+        .ok()?;
     out.status
         .success()
         .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
@@ -226,7 +228,7 @@ pub fn doctor(cwd: &Path) -> Result<Response> {
         .join("hallmark");
     let hooks = plugin_dir.join("hooks").join("hooks.json");
     let installed = claude_ok
-        && Command::new(&claude)
+        && crate::process::command(&claude)
             .args(["plugin", "list", "--json"])
             .output()
             .map(|o| String::from_utf8_lossy(&o.stdout).contains("hallmark@hallmark"))

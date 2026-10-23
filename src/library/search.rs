@@ -15,7 +15,6 @@ use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use rusqlite::{Connection, params};
 use schemars::JsonSchema;
@@ -388,7 +387,7 @@ pub mod qmd {
     }
 
     fn run(args: &[&str]) -> std::result::Result<String, String> {
-        let out = Command::new(bin())
+        let out = crate::process::command(bin())
             .args(args)
             .output()
             .map_err(|e| format!("could not run {}: {e}", bin()))?;
