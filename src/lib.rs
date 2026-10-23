@@ -38,6 +38,7 @@ pub mod now;
 pub mod output;
 pub mod paths;
 pub mod plugin;
+pub mod process;
 pub mod repo;
 pub mod resume;
 pub mod runner;

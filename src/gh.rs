@@ -2,7 +2,6 @@
 //! only in the store), so it is searched for.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use serde::Deserialize;
 
@@ -112,7 +111,7 @@ pub struct GhIssue {
 }
 
 pub fn issue(dir: &Path, number: u64) -> Result<GhIssue> {
-    let out = Command::new(gh()?)
+    let out = crate::process::command(gh()?)
         .current_dir(dir)
         .args([
             "issue",
@@ -210,7 +209,7 @@ pub struct GhPr {
 /// `gh pr view <pr>` (a URL or number) with its reviews and comments, plus
 /// the line comments when `gh api` can read them.
 pub fn pr(dir: &Path, pr: &str) -> Result<GhPr> {
-    let out = Command::new(gh()?)
+    let out = crate::process::command(gh()?)
         .current_dir(dir)
         .args([
             "pr",
@@ -241,7 +240,7 @@ pub fn pr(dir: &Path, pr: &str) -> Result<GhPr> {
             "repos/{owner}/{name}/pulls/{}/comments?per_page=100",
             p.number
         );
-        if let Ok(o) = Command::new(gh()?)
+        if let Ok(o) = crate::process::command(gh()?)
             .current_dir(dir)
             .args(["api", &api])
             .output()
@@ -266,7 +265,7 @@ pub struct GhCheck {
 
 /// The PR's CI checks. An empty list means it has none (yet).
 pub fn pr_checks(dir: &Path, pr: &str) -> Result<Vec<GhCheck>> {
-    let out = Command::new(gh()?)
+    let out = crate::process::command(gh()?)
         .current_dir(dir)
         .args(["pr", "checks", pr, "--json", "name,bucket,link"])
         .output()?;
@@ -292,7 +291,7 @@ pub fn pr_checks(dir: &Path, pr: &str) -> Result<Vec<GhCheck>> {
 
 /// A PR's state: OPEN, CLOSED or MERGED.
 pub fn pr_state(dir: &Path, pr: &str) -> Result<String> {
-    let out = Command::new(gh()?)
+    let out = crate::process::command(gh()?)
         .current_dir(dir)
         .args(["pr", "view", pr, "--json", "state", "--jq", ".state"])
         .output()?;
@@ -330,7 +329,7 @@ pub fn commit_failures(dir: &Path, pr: &str, sha: &str) -> Result<TipChecks> {
             format!("{pr} is not a GitHub PR URL"),
         ));
     };
-    let out = Command::new(gh()?)
+    let out = crate::process::command(gh()?)
         .current_dir(dir)
         .args([
             "api",
@@ -406,7 +405,7 @@ pub struct GhMerge {
 
 /// `gh pr view <pr> --json state,mergeable,headRefOid`.
 pub fn pr_merge(dir: &Path, pr: &str) -> Result<GhMerge> {
-    let out = Command::new(gh()?)
+    let out = crate::process::command(gh()?)
         .current_dir(dir)
         .args(["pr", "view", pr, "--json", "state,mergeable,headRefOid"])
         .output()?;
@@ -447,7 +446,7 @@ pub struct GhQueue {
 
 /// `gh pr view <pr> --json state,mergeable,headRefOid,body,reviews`.
 pub fn pr_queue(dir: &Path, pr: &str) -> Result<GhQueue> {
-    let out = Command::new(gh()?)
+    let out = crate::process::command(gh()?)
         .current_dir(dir)
         .args([
             "pr",
@@ -516,7 +515,7 @@ fn job_start_inner(dir: &Path, link: &str, reason: bool) -> Option<JobStart> {
     }
     let (_, job) = run_and_job(link)?;
     let api = |path: String| {
-        Command::new(gh().ok()?)
+        crate::process::command(gh().ok()?)
             .current_dir(dir)
             .args(["api", &path])
             .output()
@@ -562,7 +561,7 @@ pub fn failed_log(dir: &Path, link: &str, max_lines: usize) -> Option<String> {
     let (run, job) = run_and_job(link)?;
     let gh = gh().ok()?;
     let read = |args: &[&str], must_succeed: bool| {
-        Command::new(&gh)
+        crate::process::command(&gh)
             .current_dir(dir)
             .args(args)
             .output()
@@ -703,7 +702,7 @@ fn owner_repo(url: &str) -> Option<(String, String)> {
 /// "logged in", "not logged in", or None when gh is missing.
 pub fn auth_status() -> Option<(PathBuf, bool)> {
     let gh = find()?;
-    let ok = Command::new(&gh)
+    let ok = crate::process::command(&gh)
         .args(["auth", "status"])
         .output()
         .map(|o| o.status.success())

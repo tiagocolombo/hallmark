@@ -275,7 +275,7 @@ fn mac_app() -> Option<std::path::PathBuf> {
     if changed {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).ok()?;
-        let _ = std::process::Command::new(
+        let _ = crate::process::command(
             "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister",
         )
         .arg("-f")

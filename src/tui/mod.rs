@@ -20,7 +20,7 @@ pub mod ui;
 use std::collections::BTreeSet;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::mpsc::{Receiver, channel};
 use std::time::{Duration, Instant};
 
@@ -99,7 +99,7 @@ impl Build {
 #[cfg(unix)]
 fn restart(exe: &Path) -> Result<Response> {
     use std::os::unix::process::CommandExt;
-    let e = std::process::Command::new(exe)
+    let e = crate::process::command(exe)
         .args(std::env::args_os().skip(1))
         .exec();
     Err(
@@ -265,11 +265,11 @@ fn run_here(
     cwd: &Path,
 ) -> std::io::Result<std::process::ExitStatus> {
     let mut c = if cfg!(windows) {
-        let mut c = Command::new("cmd");
+        let mut c = crate::process::command("cmd");
         c.arg("/C").arg(program);
         c
     } else {
-        Command::new(program)
+        crate::process::command(program)
     };
     c.args(args).current_dir(cwd).status()
 }
@@ -277,11 +277,11 @@ fn run_here(
 /// Opens a folder or URL with the system opener, without waiting for it.
 pub fn open(target: &str) -> std::io::Result<()> {
     let mut c = if cfg!(target_os = "macos") {
-        Command::new("open")
+        crate::process::command("open")
     } else if cfg!(windows) {
-        Command::new("explorer")
+        crate::process::command("explorer")
     } else {
-        Command::new("xdg-open")
+        crate::process::command("xdg-open")
     };
     let mut child = c
         .arg(target)

@@ -378,7 +378,7 @@ pub fn new(cwd: &Path, a: NewArgs, mode: Mode) -> Result<Response> {
     if a.open && mode == Mode::Text {
         resp.print(mode);
         let prompt = request.unwrap_or(title);
-        let status = Command::new(crate::config::Tool::Claude.command())
+        let status = crate::process::command(crate::config::Tool::Claude.command())
             .arg(prompt)
             .current_dir(&item.worktree)
             .status();
@@ -1249,13 +1249,13 @@ pub fn shell(cmd: &str) -> Command {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        let mut c = Command::new("cmd");
+        let mut c = crate::process::command("cmd");
         c.raw_arg(format!("/S /C \"{cmd}\""));
         c
     }
     #[cfg(not(windows))]
     {
-        let mut c = Command::new("sh");
+        let mut c = crate::process::command("sh");
         c.arg("-c").arg(cmd);
         c
     }

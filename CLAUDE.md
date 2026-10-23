@@ -99,6 +99,8 @@ src/
   gate.rs        shell parsing for the push and commit gates
   hooks.rs       `hall hook <event>` handlers
   plugin.rs      the embedded Claude Code plugin, for `hall setup claude`
+  process.rs     every child process starts here: no console window on
+                 Windows when hall has none (ADR 0054)
   runner.rs      every `claude -p` run: command shape, timeouts, failures,
                  usage; the scripted FakeRunner for tests (ADR 0013)
   findings.rs    verdicts and findings; approval is computed (ADR 0015)

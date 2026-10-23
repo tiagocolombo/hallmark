@@ -11,7 +11,7 @@
 //! [`check_in_background`] refreshes it once a day.
 
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
@@ -235,7 +235,7 @@ fn ls_remote(
     source: &str,
     patterns: &[&str],
 ) -> Result<std::process::Output> {
-    let mut c = Command::new("git");
+    let mut c = crate::process::command("git");
     c.current_dir(cwd)
         .arg("ls-remote")
         .args(flags)
@@ -399,7 +399,7 @@ pub fn check_in_background() {
     let Ok(exe) = std::env::current_exe() else {
         return;
     };
-    let mut c = Command::new(exe);
+    let mut c = crate::process::command(exe);
     c.args(["update", "--check", "--json"])
         .current_dir(crate::repo::user_dir())
         .stdin(Stdio::null())
@@ -481,7 +481,7 @@ fn install_root(exe: &Path) -> Result<PathBuf> {
 /// Builds and installs `rev`. Cargo's progress goes to stderr, so stdout
 /// stays this command's reply.
 fn cargo_install(cargo: &str, cwd: &Path, a: &UpdateArgs, rev: &str, root: &Path) -> Result<()> {
-    let mut c = Command::new(cargo);
+    let mut c = crate::process::command(cargo);
     c.current_dir(cwd)
         .args([
             "install", "--locked", "--force", "--git", &a.source, "--rev", rev,
@@ -688,7 +688,7 @@ fn restart_daemon(exe: &Path) -> Step {
 /// Runs the newly installed hall and returns its JSON reply, or the error
 /// it reported.
 fn run_new(exe: &Path, args: &[&str]) -> std::result::Result<Value, String> {
-    let out = Command::new(exe)
+    let out = crate::process::command(exe)
         .args(args)
         .arg("--json")
         .stdin(Stdio::null())

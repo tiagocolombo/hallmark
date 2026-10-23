@@ -16,7 +16,7 @@
 
 use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -286,7 +286,7 @@ fn print_start(mode: Mode, start: &WebStart) {
 /// Starts the new hall in this one's place, on the same port and token:
 /// on Unix it replaces this process, elsewhere this one waits for it.
 fn restart(ctx: &Ctx, mode: Mode) -> Result<()> {
-    let mut c = Command::new(&ctx.exe);
+    let mut c = crate::process::command(&ctx.exe);
     c.args(["web", "--port", &ctx.port.to_string(), "--no-open"])
         .current_dir(&ctx.cwd)
         .env(TOKEN_ENV, &ctx.token);
@@ -452,7 +452,7 @@ fn api_run(ctx: &Ctx, body: &Value) -> Result<Value> {
 /// Runs `hall --json <args>` in `dir` and reads its JSON lines. `--json`
 /// goes first: after a `--` in `args` it would be one more value.
 fn run_hall(exe: &Path, dir: &Path, args: &[String]) -> Result<Value> {
-    let mut c = Command::new(exe);
+    let mut c = crate::process::command(exe);
     c.arg("--json")
         .args(args)
         .current_dir(dir)

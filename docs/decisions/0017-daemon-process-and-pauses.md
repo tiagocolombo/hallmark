@@ -1,6 +1,7 @@
 # 0017. The daemon process: one instance, stop by file, pauses for everyone
 
-Status: Accepted, 2026-10-09
+Status: Accepted, 2026-10-09. Amended by 0054: every command the daemon
+runs is created without a console window on Windows.
 
 ## Context
 
