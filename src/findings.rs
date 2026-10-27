@@ -579,6 +579,7 @@ mod tests {
             ],
             prior: vec![],
             learnings: vec![],
+            needs_person: None,
         };
         let j = l.judge(1, &v, 10);
         assert!(j.approves(), "{:?}", j.counts);
@@ -643,6 +644,7 @@ mod tests {
             ],
             prior: vec![],
             learnings: vec![],
+            needs_person: None,
         };
         let j = l.judge(1, &v, 2);
         let titles: Vec<&str> = j.findings.iter().map(|f| f.title.as_str()).collect();

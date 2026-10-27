@@ -359,6 +359,7 @@ mod tests {
             hold: None,
             stuck_since: None,
             reviewed_sha: None,
+            needs_person: None,
             findings: Default::default(),
         }
     }
