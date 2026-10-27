@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.13](https://github.com/tiagocolombo/hallmark/compare/v0.3.12...v0.3.13) - 2026-10-27
+
+### Added
+
+- A reverted PR is a signal: recorded on the item, notified, and distilled by the librarian ([#139](https://github.com/tiagocolombo/hallmark/pull/139))
+
 ## [0.3.12](https://github.com/tiagocolombo/hallmark/compare/v0.3.11...v0.3.12) - 2026-10-27
 
 ### Added
