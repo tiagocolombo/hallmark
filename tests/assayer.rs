@@ -877,6 +877,51 @@ fn a_rate_limit_on_the_security_pass_pauses_without_a_verdict() {
 }
 
 #[test]
+fn an_unlimited_review_timeout_still_limits_the_verifier() {
+    let env = Env::initialized();
+    configure(&env, &[("verify", "\"sonnet\"")]);
+    configure_table(&env, "\n[budget.review]\ntimeout = \"0s\"\n");
+    let (id, _, _) = ready_item(&env, "Retry webhooks", "retry.rs", "fn retry() {}\n");
+    let script = env.script(json!([
+        reviewer(verdict(
+            vec![finding("blocker", "retry.rs", "Two workers retry")],
+            json!([])
+        )),
+        verifier(json!([{"index": 1, "real": true, "reason": "retry.rs:3"}])),
+    ]));
+    tick(&env, &script);
+    tick(&env, &script);
+    let calls = env.fake_calls();
+    assert_eq!(calls.len(), 2);
+    assert_eq!(calls[0]["timeout_secs"], 0, "{}", calls[0]);
+    assert_eq!(calls[1]["role"], "verifier");
+    assert_eq!(calls[1]["timeout_secs"], 600, "{}", calls[1]);
+    assert_eq!(events_of(&env, &id, "verified").len(), 1);
+}
+
+#[test]
+fn a_review_pulled_back_while_the_verifier_ran_is_discarded() {
+    let env = Env::initialized();
+    configure(&env, &[("verify", "\"sonnet\"")]);
+    let (id, _, _) = ready_item(&env, "Retry webhooks", "retry.rs", "fn retry() {}\n");
+    let mut v = verifier(json!([{"index": 1, "real": true, "reason": "retry.rs:3"}]));
+    v["run"] = json!([format!("{{hall}} pull-back {id}")]);
+    let script = env.script(json!([
+        reviewer(verdict(
+            vec![finding("blocker", "retry.rs", "Two workers retry")],
+            json!([])
+        )),
+        v,
+    ]));
+    tick(&env, &script);
+    let r = tick(&env, &script);
+    assert!(what(&r).contains("discarded: the item moved on"), "{}", r.stdout);
+    assert_eq!(env.fake_calls().len(), 2);
+    assert!(events_of(&env, &id, "verdict").is_empty());
+    assert!(events_of(&env, &id, "verified").is_empty());
+}
+
+#[test]
 fn a_verifier_that_refutes_every_blocker_approves_and_the_verdict_stands_when_it_cant_rule() {
     // The success path: the only blocker is refuted, so the item is
     // hallmarked, and the dropped finding is on record.

@@ -211,4 +211,14 @@ mod lease_tests {
         assert!(lease_ttl_for(&c).num_seconds() > 7200);
         assert!(lease_ttl_for(&crate::config::Config::default()).num_seconds() < 7200);
     }
+
+    #[test]
+    fn the_verifier_adds_its_time_to_the_lease() {
+        let off = lease_ttl_for(&crate::config::Config::default());
+        let on = crate::config::Config::parse("verify = 'sonnet'\n").unwrap();
+        assert_eq!(
+            lease_ttl_for(&on).num_seconds() - off.num_seconds(),
+            verify::TIMEOUT_SECS as i64
+        );
+    }
 }
