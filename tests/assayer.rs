@@ -893,7 +893,10 @@ fn a_verifier_that_refutes_every_blocker_approves_and_the_verdict_stands_when_it
     tick(&env, &script);
     tick(&env, &script);
     assert_eq!(state(&env, &id), "hallmarked");
-    assert_eq!(events_of(&env, &id, "verified")[0]["dropped"][0]["title"], "Two workers");
+    assert_eq!(
+        events_of(&env, &id, "verified")[0]["dropped"][0]["title"],
+        "Two workers"
+    );
 
     // An answer that doesn't fit the schema: the verdict stands.
     let env = Env::initialized();
@@ -922,12 +925,11 @@ fn a_verifier_that_refutes_every_blocker_approves_and_the_verdict_stands_when_it
     configure(&env, &[("verify", "\"sonnet\"")]);
     let path = env.repo.join(".hallmark.toml");
     let text = std::fs::read_to_string(&path).unwrap();
-    assert!(text.contains("\n[budget]\n"), "{text}");
-    std::fs::write(
-        &path,
-        text.replacen("\n[budget]\n", "\n[budget]\nper_item = \"1k\"\n", 1),
-    )
-    .unwrap();
+    let at = text.find("\n[budget]").expect("a [budget] table");
+    let eol = at + 1 + text[at + 1..].find('\n').unwrap() + 1;
+    let mut text = text;
+    text.insert_str(eol, "per_item = \"1k\"\n");
+    std::fs::write(&path, text).unwrap();
     git(&env.repo, &["commit", "-q", "-am", "cap the item"]);
     let (id, _, _) = ready_item(&env, "Retry webhooks", "retry.rs", "fn retry() {}\n");
     let script = env.script(json!([
