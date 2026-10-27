@@ -20,7 +20,7 @@ macOS, `xdg-open` on Linux, `start` on Windows).
 | Assay Office | The checks, then the principal engineer's review | the assayer |
 | Repair Shop | A fixer addresses failing checks and findings | the fixer |
 | Stamping Room | The approved commit gets its hallmark, a git note | the assayer |
-| Dispatch Dock | Rebases onto the latest base, then the ship command opens the PR with a What, Why and How description (or `update` updates an adopted one), posts the review as a PR comment, and the item closes | the shipper |
+| Dispatch Dock | Rebases onto the latest base, then the ship command opens the PR with a What, Why, How, Testing and How to revert description (ADR 0057) (or `update` updates an adopted one), posts the review as a PR comment, and the item closes | the shipper |
 | Delivery Office | Watches each PR until it merges. A conflict or new review comments send it back to development, where a headless dev run rebases it or addresses them and sends it to review; a rebase that leaves the approved change as it was keeps its approval, with no review. With the merger on, it merges each ready PR itself, one at a time, in dependency order, and brings each PR up to date only at its turn. Once the PR merges or closes, the item's worktree is removed; its branch and journal stay | the delivery and delivery-watch workers, the merger, the CI watch, the sweeper |
 
 ## An item's states

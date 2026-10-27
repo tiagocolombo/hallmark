@@ -70,7 +70,7 @@ are happy with.
    - `worktree`, with placeholders `{repo} {id} {branch} {slug} {base}`;
    - `branch`, with `{id} {slug}`;
    - `ship`, with `{branch} {id} {base} {title} {body_file} {review_file} {issue}`
-     (`{body_file}` is the What, Why and How description);
+     (`{body_file}` is the What, Why, How, Testing and How to revert description);
    - `update`, with those of `ship`, plus `{pr}` and `{pr_head}`;
    - `review_comment`, which posts each review as a PR comment, with `{pr}
      {review_file} {branch} {id} {base}`; empty for none.

@@ -177,6 +177,7 @@ fn ship(repo: &Repo, item: &Item, ctx_holder: &str) -> Result<Progress> {
         item,
         &events,
         &commit_subjects(&wt, &base, &head),
+        &base,
         !repo.config.review_comment.trim().is_empty(),
     );
     let body_file = body_path(repo, id);
@@ -754,7 +755,13 @@ pub const REVIEW_MARK: &str = "<!-- hallmark:review -->";
 ///
 /// `review_posted` is whether a review comment will be posted; when it isn't,
 /// the footer says the review stays local.
-pub fn pr_body(item: &Item, events: &[Event], commits: &[String], review_posted: bool) -> String {
+pub fn pr_body(
+    item: &Item,
+    events: &[Event],
+    commits: &[String],
+    base: &str,
+    review_posted: bool,
+) -> String {
     let proposed = events.iter().rev().find_map(|e| match &e.body {
         Body::ProposedReady {
             why,
@@ -837,13 +844,16 @@ pub fn pr_body(item: &Item, events: &[Event], commits: &[String], review_posted:
     let _ = writeln!(s, "\n## How to revert\n");
     match revert.filter(|r| !r.trim().is_empty()) {
         Some(r) => {
-            let _ = writeln!(s, "{}", r.trim());
+            let _ = writeln!(
+                s,
+                "{}\n\nThen `git revert` the commit this PR lands as on `{base}`.",
+                r.trim()
+            );
         }
         None => {
             let _ = writeln!(
                 s,
-                "`git revert` the commit this PR lands as on `{}`; the author listed no other steps.",
-                item.base
+                "`git revert` the commit this PR lands as on `{base}`; the author listed no other steps."
             );
         }
     }
@@ -1376,7 +1386,7 @@ mod tests {
             "request": "Follow-up to PR #12\nReview feedback:\n- @me: Hallmark review",
             "follow_up": "https://github.com/acme/app/pull/12"}))];
         let u = "https://github.com/acme/app/pull/12";
-        let b = pr_body(&item(Some(u)), &events, &[], true);
+        let b = pr_body(&item(Some(u)), &events, &[], "main", true);
         assert!(b.contains(&format!("## Why\n\nFollow-up to {u}.\n")), "{b}");
         assert!(
             !b.contains("Review feedback") && !b.contains("Hallmark review"),
@@ -1386,14 +1396,23 @@ mod tests {
 
     #[test]
     fn the_footer_says_when_no_review_is_posted() {
-        let b = pr_body(&item(None), &[], &[], false);
+        let b = pr_body(&item(None), &[], &[], "main", false);
         assert!(
             b.contains("the review stays local (`hall export H-0042`)"),
             "{b}"
         );
         assert!(!b.contains("in the comments"), "{b}");
-        let b = pr_body(&item(None), &[], &[], true);
+        let b = pr_body(&item(None), &[], &[], "main", true);
         assert!(b.contains("the review is in the comments"), "{b}");
+    }
+
+    #[test]
+    fn how_to_revert_names_the_base_the_pr_targets() {
+        let mut it = item(None);
+        it.base = "hm/H-0050-retry".into();
+        let b = pr_body(&it, &[], &[], "main", true);
+        assert!(b.contains("on `main`"), "{b}");
+        assert!(!b.contains("hm/H-0050-retry"), "{b}");
     }
 
     #[test]

@@ -340,8 +340,8 @@ pub struct ProposeReadyArgs {
     #[arg(long)]
     pub how: Option<String>,
     /// How it was tested beyond the gates (what you ran or tried by hand),
-    /// for the PR description's Testing. Without it, the gates that passed
-    /// are listed.
+    /// for the PR description's Testing. The gates that passed are always
+    /// listed after it.
     #[arg(long)]
     pub tested: Option<String>,
     /// How to undo it once merged, when more than a git revert is needed

@@ -486,7 +486,7 @@ expression: v
           "takes_value": true
         },
         {
-          "help": "How it was tested beyond the gates (what you ran or tried by hand), for the PR description's Testing. Without it, the gates that passed are listed",
+          "help": "How it was tested beyond the gates (what you ran or tried by hand), for the PR description's Testing. The gates that passed are always listed after it",
           "name": "tested",
           "required": false,
           "syntax": "--tested <tested>",

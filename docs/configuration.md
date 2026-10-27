@@ -255,7 +255,7 @@ and follow it at once.
 | --- | --- |
 | `worktree` | `{repo}` `{id}` `{branch}` `{slug}` `{base}` |
 | `branch` | `{id}` `{slug}` |
-| `ship` | `{branch}` `{id}` `{base}` `{title}` `{body_file}` (the PR description: What, Why and How) `{review_file}` (the review) `{issue}` |
+| `ship` | `{branch}` `{id}` `{base}` `{title}` `{body_file}` (the PR description: What, Why, How, Testing and How to revert) `{review_file}` (the review) `{issue}` |
 | `update` | those of `ship`, plus `{pr}` (the PR's URL) and `{pr_head}` (the commit the PR's head was at when the item took it over or last shipped; or the branch's head on `origin` when this item hallmarked that commit, as after an update that pushed and then failed, ADR 0042) |
 | `review_comment` | `{pr}` (the PR's URL) `{review_file}` `{branch}` `{id}` `{base}` |
 | `merge.command` | `{pr}` (the PR's URL) `{pr_head}` (the hallmarked head) `{branch}` `{base}` `{id}` `{title}` |
