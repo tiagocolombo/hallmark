@@ -275,6 +275,7 @@ mod tests {
             findings,
             prior: vec![],
             learnings: vec![],
+            needs_person: None,
         }
     }
 
