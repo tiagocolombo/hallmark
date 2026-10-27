@@ -561,7 +561,7 @@ mod tests {
             prior: vec![],
             learnings: vec![],
         };
-        let j = l.judge(1, &v);
+        let j = l.judge(1, &v, 10);
         assert!(j.approves(), "{:?}", j.counts);
         assert_eq!(j.counts.blocker, 0);
         assert_eq!(j.counts.minor, 1);

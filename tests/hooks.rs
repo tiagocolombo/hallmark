@@ -535,6 +535,59 @@ fn an_escalated_item_tells_the_session_the_reviewers_diagnosis() {
 }
 
 #[test]
+fn an_escalated_item_leaves_its_pre_existing_blocker_out_of_why_it_waits() {
+    let env = Env::initialized();
+    let cfg = env.repo.join(".hallmark.toml");
+    let text = std::fs::read_to_string(&cfg).unwrap();
+    std::fs::write(&cfg, text.replace("max_rejects = 3", "max_rejects = 1")).unwrap();
+    git(&env.repo, &["commit", "-q", "-am", "one reject"]);
+    let (id, wt) = env.new_item("x");
+    commit_file(&wt, "a.txt", "1");
+    assert_eq!(env.hall(&wt, &["ready"]).code, 0);
+    let script = env.script(json!([{
+        "role": "reviewer",
+        "structured": {
+            "summary": "two blockers",
+            "findings": [
+                {"lens": "correctness", "severity": "blocker", "file": "a.txt", "line": 1,
+                 "title": "OLDBLOCKER", "scenario": "it was always broken", "fix": "fix it",
+                 "pre_existing": true},
+                {"lens": "correctness", "severity": "blocker", "file": "a.txt", "line": 2,
+                 "title": "NEWBLOCKER", "scenario": "it breaks", "fix": "fix it"}
+            ],
+            "prior": [],
+            "learnings": []
+        },
+        "model": "claude-opus-4-1"
+    }]));
+    for _ in 0..2 {
+        let r = env.hall_fake(
+            &env.repo,
+            &script,
+            &["daemon", "run", "--once", "--only", "assayer"],
+        );
+        assert_eq!(r.code, 0, "{}", r.stdout);
+    }
+    let st = env.hall(&env.repo, &["status", &id]);
+    assert_eq!(st.json["item"]["state"], "escalated", "{}", st.stdout);
+    let detail = st.json["now"]["detail"].to_string();
+    assert!(detail.contains("NEWBLOCKER"), "{detail}");
+    assert!(!detail.contains("OLDBLOCKER"), "{detail}");
+
+    // The export names the open pre-existing blocker in the ride-along line.
+    let r = env.hall(&env.repo, &["export", &id]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let md = r.json["markdown"].as_str().unwrap();
+    let line = md
+        .lines()
+        .find(|l| l.contains("ride along into the PR"))
+        .unwrap_or_else(|| panic!("no ride-along line in\n{md}"));
+    assert!(line.contains("(pre-existing)"), "{line}");
+    assert!(line.contains("F1 (pre-existing)"), "{line}");
+    assert!(!line.contains("F2"), "{line}");
+}
+
+#[test]
 fn commits_and_questions_are_recorded_after_the_tool_runs() {
     let env = Env::initialized();
     let (id, wt) = env.new_item("x");
