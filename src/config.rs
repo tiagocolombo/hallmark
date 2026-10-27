@@ -811,7 +811,7 @@ impl Route {
                 &self.escalated
             }
             "ready" => &self.ready,
-            "budget" | "run_failed" | "ship_failed" | "held" => &self.budget,
+            "budget" | "run_failed" | "ship_failed" | "held" | "paused" => &self.budget,
             "session_waiting" => &self.session_waiting,
             "learnings" => &self.learnings,
             _ => &self.ready,

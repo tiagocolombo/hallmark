@@ -541,3 +541,56 @@ fn resume_lifts_a_pause_before_its_time() {
     assert_eq!(again.json["changed"], false);
     assert_eq!(again.json["note"], "not paused");
 }
+
+/// A pause (Claude's usage or session limit, the daily budget) is in the
+/// inbox with the way to retry now, until it ends or `hall daemon resume`.
+#[test]
+fn a_pause_is_in_the_inbox_until_resumed() {
+    let env = Env::initialized();
+    let now = Utc::now();
+    write_state(
+        &env,
+        json!({
+            "pid": std::process::id(), "started_at": now.to_rfc3339(),
+            "heartbeat": now.to_rfc3339(), "wanted": true,
+            "paused": {
+                "reason": "rate limited",
+                "until": (now + chrono::Duration::hours(1)).to_rfc3339(),
+                "since": now.to_rfc3339(),
+            },
+        }),
+    );
+    let r = env.hall(&env.repo, &["inbox"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let entries = r.json["entries"].as_array().unwrap();
+    let paused = entries
+        .iter()
+        .find(|e| e["kind"] == "paused")
+        .unwrap_or_else(|| panic!("{}", r.stdout));
+    assert!(
+        paused["text"]
+            .as_str()
+            .unwrap()
+            .starts_with("The loop is paused: rate limited, until "),
+        "{paused}"
+    );
+    assert_eq!(paused["answer_with"][0], "hall daemon resume");
+    let n = entries.iter().position(|e| e["kind"] == "paused").unwrap() + 1;
+    let r = env.hall(&env.repo, &["inbox", &n.to_string()]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(r.json["actions"][0]["command"], "hall daemon resume");
+    assert!(r.json["why"].as_str().unwrap().contains("session limit"));
+
+    let r = env.hall(&env.repo, &["daemon", "resume"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let r = env.hall(&env.repo, &["inbox"]);
+    assert!(
+        !r.json["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["kind"] == "paused"),
+        "{}",
+        r.stdout
+    );
+}

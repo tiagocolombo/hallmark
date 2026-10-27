@@ -471,6 +471,16 @@ One daemon can serve several repos. When any of them spends its daily cap, the
 daemon pauses the model workers for every repo it serves until 00:00 UTC, even
 a repo whose `daily` is `"none"`.
 
+Claude's own limits pause the loop the same way, at any point of it (a
+review, a fix, the Front Desk, the librarian, a resumed session). A run that
+ends with "You've hit your usage limit", "You've hit your session limit ·
+resets 11:10pm" or the like isn't the item's fault: nothing is held against
+it, the model workers pause until the time Claude names (read in this
+machine's time zone; 30 minutes when it names none), and the loop retries by
+itself. The pause is in your inbox as `paused` and is notified like a budget
+stop; `hall daemon resume` retries at once, after you top up or the limit
+resets early.
+
 Failed checks have a cap too: after `max_check_failures` (default 3) failed
 checks in a row, the item is held for you with kind `checks`, because the
 fixer's commits aren't turning the gates green. Passing checks, `hall ready`

@@ -878,6 +878,33 @@ impl Index {
                 notice: false,
             });
         }
+        // A pause (Claude's usage or session limit, the daily budget): the
+        // loop resumes by itself, and `hall daemon resume` retries now.
+        if let Some(st) = crate::daemon::state::load()
+            && let Some(p) = st.pause_at(now)
+        {
+            let until = p
+                .until
+                .map(|u| {
+                    format!(
+                        ", until {}",
+                        u.with_timezone(&chrono::Local).format("%H:%M")
+                    )
+                })
+                .unwrap_or_default();
+            out.push(InboxEntry {
+                kind: "paused".into(),
+                item: None,
+                qid: None,
+                text: format!("The loop is paused: {}{until}", p.reason),
+                options: vec![],
+                default: None,
+                session: None,
+                since: p.since,
+                answer_with: vec!["hall daemon resume".into(), "hall daemon status".into()],
+                notice: false,
+            });
+        }
         // Knowledge items left by ADR 0021 never wait for you: only what
         // blocks development lands here.
         let knowledge: Vec<ItemId> = all

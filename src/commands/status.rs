@@ -593,6 +593,23 @@ pub fn explain(repo: &Repo, ix: &Index, entry: InboxEntry, number: usize) -> Res
                 act("hall daemon status", "see what it last did"),
             ],
         ),
+        "paused" => (
+            "A run hit Claude's usage or session limit, or the daily budget, so the daemon \
+             paused its model workers until the reset. Nothing is held against any item: the \
+             loop goes on by itself when the pause ends."
+                .into(),
+            vec![entry.text.clone()],
+            vec![
+                act(
+                    "hall daemon resume",
+                    "retry now: lift the pause before its time, once you topped up or the limit reset early",
+                ),
+                act(
+                    "hall daemon status",
+                    "see the pause and what the daemon last did",
+                ),
+            ],
+        ),
         kind => {
             let why = match kind {
                 "ready" => {

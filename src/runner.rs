@@ -761,8 +761,11 @@ fn said(raw: &str) -> String {
 }
 
 /// Claude's plan limit, as worded in its results: "Claude AI usage limit
-/// reached|1760000000", "You've hit your limit · resets 3pm", "rate limit".
-/// Returns the reset time when one is given as a Unix timestamp.
+/// reached|1760000000", "You've hit your limit · resets 3pm", "You've hit
+/// your session limit · resets 11:10pm (America/Toronto)", "rate limit".
+/// Returns the reset time when one is given: a Unix timestamp after `|`,
+/// or a clock time after "resets", read in this machine's time zone (Claude
+/// prints the account's zone, normally the same one).
 pub fn rate_limit(text: &str) -> Option<Option<DateTime<Utc>>> {
     let t = text.to_ascii_lowercase();
     let hit = [
@@ -770,18 +773,56 @@ pub fn rate_limit(text: &str) -> Option<Option<DateTime<Utc>>> {
         "rate limit",
         "rate_limit",
         "hit your limit",
+        "session limit",
+        "weekly limit",
         "limit reached",
     ]
     .iter()
-    .any(|p| t.contains(p));
+    .any(|p| t.contains(p))
+        || (t.contains("limit") && t.contains("resets"));
     if !hit {
         return None;
     }
-    let until = text.split('|').nth(1).and_then(|s| {
+    let stamp = text.split('|').nth(1).and_then(|s| {
         let digits: String = s.trim().chars().take_while(char::is_ascii_digit).collect();
         DateTime::from_timestamp(digits.parse().ok()?, 0)
     });
-    Some(until)
+    Some(stamp.or_else(|| resets_at(&t, chrono::Local::now())))
+}
+
+/// "resets 11:10pm", "resets 3pm" or "resets 23:10" (lower-cased): the next
+/// such time in `now`'s zone, plus a minute of slack. None when the text
+/// gives no time.
+fn resets_at(lower: &str, now: DateTime<chrono::Local>) -> Option<DateTime<Utc>> {
+    use chrono::{NaiveTime, TimeZone};
+    let rest = lower.split("resets").nth(1)?.trim_start();
+    let word: String = rest
+        .chars()
+        .take_while(|c| c.is_ascii_alphanumeric() || *c == ':')
+        .collect();
+    let (clock, pm) = match word.strip_suffix("am") {
+        Some(c) => (c, Some(false)),
+        None => match word.strip_suffix("pm") {
+            Some(c) => (c, Some(true)),
+            None => (word.as_str(), None),
+        },
+    };
+    let (h, m) = match clock.split_once(':') {
+        Some((h, m)) => (h.parse::<u32>().ok()?, m.parse::<u32>().ok()?),
+        None => (clock.parse::<u32>().ok()?, 0),
+    };
+    let h = match pm {
+        Some(true) if h < 12 => h + 12,
+        Some(false) if h == 12 => 0,
+        _ => h,
+    };
+    let time = NaiveTime::from_hms_opt(h, m, 0)?;
+    let mut at = now.date_naive().and_time(time);
+    if at <= now.naive_local() {
+        at += chrono::Duration::days(1);
+    }
+    let at = now.timezone().from_local_datetime(&at).earliest()?;
+    Some(at.with_timezone(&Utc) + chrono::Duration::minutes(1))
 }
 
 // --- the fake runner, for tests ---------------------------------------------
@@ -1334,6 +1375,64 @@ mod tests {
         ));
     }
 
+    /// H-0094's review (live, 2026-10-27): the run ended with the session
+    /// limit, and was read as "model unavailable" because its own result
+    /// line mentions `modelUsage`. It is a rate limit, with its reset time.
+    #[test]
+    fn a_session_limit_is_a_rate_limit_with_its_reset_time() {
+        let line = r#"{"type":"result","subtype":"success","is_error":true,"terminal_reason":"api_error","result":"You've hit your session limit · resets 11:10pm (America/Toronto)","modelUsage":{},"num_turns":1,"total_cost_usd":0}"#;
+        let r: PrintResult = serde_json::from_str(line).unwrap();
+        let Some(Failure::RateLimited { until: Some(until) }) = classify(Some(&r), line, "", true)
+        else {
+            panic!("not a rate limit: {:?}", classify(Some(&r), line, "", true));
+        };
+        assert!(until > Utc::now());
+        assert!(until <= Utc::now() + chrono::Duration::days(1));
+        // The same, mid-run and with tokens spent: still a rate limit.
+        let spent = line.replace(
+            r#""modelUsage":{}"#,
+            r#""modelUsage":{"m":{"costUSD":3.5}}"#,
+        );
+        let r: PrintResult = serde_json::from_str(&spent).unwrap();
+        assert!(matches!(
+            classify(Some(&r), &spent, "", true),
+            Some(Failure::RateLimited { .. })
+        ));
+        assert!(rate_limit("You've hit your weekly limit · resets Oct 30").is_some());
+        assert_eq!(rate_limit("the limit of this function is three"), None);
+    }
+
+    #[test]
+    fn a_reset_time_is_the_next_such_clock_time_here() {
+        use chrono::TimeZone;
+        let local = |h: u32, m: u32| {
+            chrono::Local
+                .with_ymd_and_hms(2026, 10, 27, h, m, 0)
+                .single()
+                .unwrap()
+        };
+        let now = local(0, 28);
+        let at = |s: &str| resets_at(s, now).unwrap();
+        let slack = chrono::Duration::minutes(1);
+        assert_eq!(
+            at("hit your session limit · resets 11:10pm (america/toronto)"),
+            local(23, 10) + slack
+        );
+        assert_eq!(at("resets 3pm"), local(15, 0) + slack);
+        assert_eq!(
+            at("resets 12am"),
+            local(0, 0) + chrono::Duration::days(1) + slack
+        );
+        assert_eq!(at("resets 23:10"), local(23, 10) + slack);
+        // A time already past today is tomorrow's.
+        assert_eq!(
+            resets_at("resets 3pm", local(16, 0)).unwrap(),
+            local(15, 0) + chrono::Duration::days(1) + slack
+        );
+        assert_eq!(resets_at("resets soon", now), None);
+        assert_eq!(resets_at("no reset here", now), None);
+    }
+
     #[test]
     fn a_streamed_run_is_no_rate_limit() {
         // Every stream has `{"type":"rate_limit_event",…,"status":"allowed"}`
@@ -1384,7 +1483,7 @@ mod tests {
         let r = PrintResult::parse(&text).unwrap();
         assert!(matches!(
             classify(Some(&r), &text, "You've hit your limit · resets 3pm", false),
-            Some(Failure::RateLimited { until: None })
+            Some(Failure::RateLimited { until: Some(_) })
         ));
     }
 
