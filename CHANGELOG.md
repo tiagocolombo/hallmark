@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.14](https://github.com/tiagocolombo/hallmark/compare/v0.3.13...v0.3.14) - 2026-10-27
+
+### Added
+
+- Findings can be marked pre-existing: reported, never blocking, not the author's to fix ([#141](https://github.com/tiagocolombo/hallmark/pull/141))
+
 ## [0.3.13](https://github.com/tiagocolombo/hallmark/compare/v0.3.12...v0.3.13) - 2026-10-27
 
 ### Added
