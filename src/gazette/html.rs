@@ -819,7 +819,10 @@ mod tests {
         });
         let mut h = String::new();
         lower(&mut h, &p);
-        assert!(h.contains("there before the change and never blocked it"), "{h}");
+        assert!(
+            h.contains("there before the change and never blocked it"),
+            "{h}"
+        );
         assert!(!h.contains("small enough"), "{h}");
         assert!(!h.contains("still open when the item stopped"), "{h}");
         assert!(h.contains("Pre-existing"), "{h}");
