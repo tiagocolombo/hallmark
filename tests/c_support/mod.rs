@@ -283,8 +283,9 @@ pub fn hallmarked_item_asking(
         vec![],
         counts(0, 0, 1, 0),
     );
-    if let Body::Verdict { needs_person: np, .. } = &mut v {
-        *np = needs_person.map(String::from);
+    let asked = needs_person.map(String::from);
+    if let Body::Verdict { needs_person, .. } = &mut v {
+        *needs_person = asked;
     }
     append(env, &id, "assayer", v);
     let repo = Repo::discover(&env.repo).unwrap();
