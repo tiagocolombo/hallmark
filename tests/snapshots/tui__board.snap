@@ -6,7 +6,7 @@ hall · app (1 of 3 repos)   daemon ● running   ⚑ 3 waiting   rejected today
 ┌ Your office ─⚑ 3 waiting ────────────────────────────────────────────────────────────────────────────────────────────┐
 │ready?     H-0002  Export tenant usage looks done: CSV export with 14 tests                                   –       │
 │question   H-0002  Billed usage or raw events?  [a] billed  [b] raw                                           –       │
-│escalated  H-0007  Migrate billing tables: rejected 1 times                                                   –       │
+│escalated  H-0007  Migrate billing tables: rejected 1 times. The reviewer: Retries look right; one duplicate- –       │
 └────────────────────────────────────────────────────────────────────────────────────────────── i read in full and act ┘
 ┌ Board ───────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │DEVELOPMENT (2)         AWAITING YOU (2)        REVIEW LOOP (1)        DELIVERY (1)            CLOSED TODAY (1)       │

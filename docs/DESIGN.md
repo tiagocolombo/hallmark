@@ -536,6 +536,10 @@ concrete scenario that breaks.
   A difference of up to 100 lines gets a rebase review, which reads only that
   difference, at the effort its size calls for. A larger one gets a full
   review.
+- On the last round before escalation (`rejects + 1 >= max_rejects`) the
+  prompt says a rejection now goes to a person, and asks for a summary that
+  is a diagnosis: whether the approach is wrong and what to do instead
+  (ADR 0060). The bar doesn't change.
 
 **Failures.** A run without `structured_output` counts as failed.
 
@@ -627,7 +631,7 @@ changes (ADR 0030).
 | Kind | Comes from | What waits |
 | --- | --- | --- |
 | question | `hall ask` without an answer | that item |
-| escalated | the item is `escalated` | that item |
+| escalated | the item is `escalated`; the entry carries the escalating verdict's summary | that item |
 | ready? | the item is `awaiting_you` | nothing |
 | budget, run_failed, checks, ship_failed, conflict, feedback, ci_failed | a hold: a per-item cap, two failed runs in a row, `max_check_failures` failed checks in a row, a failed ship, a rebase the Delivery office couldn't finish, PR comments or failing CI its dev run didn't act on | that item, until `hall retry` (which, for a budget hold, grants the item more tokens); a `ci_failed` hold also clears when a re-run of the PR's checks passes (ADR 0047) |
 | merge_failed, lit | a hold on a shipped item: the merger's merge command failed, or the PR is ready but touches a `[merge] lit` path (ADR 0048) | that item, until `hall retry` (try again; for `lit`, merge this head) or the PR merges or closes |

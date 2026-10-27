@@ -571,7 +571,15 @@ impl Index {
                 ),
                 State::Escalated => (
                     "escalated",
-                    format!("{}: rejected {} times", item.title, item.rejects),
+                    match &item.escalation {
+                        Some(d) => format!(
+                            "{}: rejected {} times. The reviewer: {}",
+                            item.title,
+                            item.rejects,
+                            d.trim()
+                        ),
+                        None => format!("{}: rejected {} times", item.title, item.rejects),
+                    },
                     vec![
                         format!("hall log {} --kind verdict", item.id),
                         format!("hall retry {} --reason \"<why>\"", item.id),

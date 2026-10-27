@@ -491,6 +491,50 @@ fn prompts_follow_the_session_into_its_item() {
 }
 
 #[test]
+fn an_escalated_item_tells_the_session_the_reviewers_diagnosis() {
+    let env = Env::initialized();
+    let cfg = env.repo.join(".hallmark.toml");
+    let text = std::fs::read_to_string(&cfg).unwrap();
+    std::fs::write(&cfg, text.replace("max_rejects = 3", "max_rejects = 1")).unwrap();
+    git(&env.repo, &["commit", "-q", "-am", "one reject"]);
+    let (id, wt) = env.new_item("x");
+    commit_file(&wt, "a.txt", "1");
+    assert_eq!(env.hall(&wt, &["ready"]).code, 0);
+    let script = env.script(json!([{
+        "role": "reviewer",
+        "structured": {
+            "summary": "DIAGNOSIS_MARKER: split this change in two.",
+            "findings": [{
+                "lens": "correctness", "severity": "blocker", "file": "a.txt", "line": 1,
+                "title": "Broken", "scenario": "it breaks", "fix": "fix it"
+            }],
+            "prior": [],
+            "learnings": []
+        },
+        "model": "claude-opus-4-1"
+    }]));
+    for _ in 0..2 {
+        let r = env.hall_fake(
+            &env.repo,
+            &script,
+            &["daemon", "run", "--once", "--only", "assayer"],
+        );
+        assert_eq!(r.code, 0, "{}", r.stdout);
+    }
+    let st = env.hall(&env.repo, &["findings", &id]);
+    assert_eq!(st.json["item"]["state"], "escalated", "{}", st.stdout);
+    let v = input("user_prompt_submit", &wt, "s-esc");
+    let r = env.hook("user-prompt-submit", &v);
+    let ctx = r.json["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap();
+    assert!(
+        ctx.contains("The reviewer: DIAGNOSIS_MARKER: split this change in two."),
+        "{ctx}"
+    );
+}
+
+#[test]
 fn commits_and_questions_are_recorded_after_the_tool_runs() {
     let env = Env::initialized();
     let (id, wt) = env.new_item("x");

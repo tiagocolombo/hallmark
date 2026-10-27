@@ -504,8 +504,14 @@ impl Ctx {
                 i.id, i.id, i.id
             ),
             State::Escalated => format!(
-                "Hallmark: {} was escalated after {} rejected reviews. See `hall log {} --kind verdict`.",
-                i.id, i.rejects, i.id
+                "Hallmark: {} was escalated after {} rejected reviews.{} See `hall log {} --kind verdict`.",
+                i.id,
+                i.rejects,
+                i.escalation
+                    .as_deref()
+                    .map(|d| format!(" The reviewer: {}", d.trim()))
+                    .unwrap_or_default(),
+                i.id
             ),
             State::Hallmarked => format!(
                 "Hallmark: {} is approved and hallmarked; it ships as is. New edits need `hall pull-back {}`.",

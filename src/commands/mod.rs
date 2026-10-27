@@ -74,6 +74,10 @@ pub struct ItemView {
     /// How the shipped PR ended: merged or closed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub delivered: Option<String>,
+    /// The reviewer's diagnosis from the verdict that escalated the item
+    /// (ADR 0060).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub escalation: Option<String>,
     pub created_at: DateTime<Utc>,
     pub state_since: DateTime<Utc>,
 }
@@ -100,6 +104,7 @@ impl From<&Item> for ItemView {
             feedback: i.feedback.clone(),
             ci_fix: i.ci_fix.clone(),
             delivered: i.delivered.clone(),
+            escalation: i.escalation.clone(),
             created_at: i.created_at,
             state_since: i.state_since,
         }

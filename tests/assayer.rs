@@ -511,9 +511,19 @@ fn the_third_rejection_escalates() {
             vec![finding("major", "retry.rs", "Two")],
             json!([])
         )),
+        reviewer(json!({
+            "summary": "The approach is wrong: claim deliveries in the queue instead.",
+            "findings": [finding("blocker", "retry.rs", "Three")],
+            "prior": [],
+            "learnings": []
+        })),
         reviewer(verdict(
-            vec![finding("blocker", "retry.rs", "Three")],
-            json!([])
+            vec![],
+            json!([
+                {"id": "F1", "status": "fixed", "note": "ok"},
+                {"id": "F2", "status": "fixed", "note": "ok"},
+                {"id": "F3", "status": "fixed", "note": "ok"}
+            ])
         )),
     ]));
     for round in 1..=3 {
@@ -523,6 +533,20 @@ fn the_third_rejection_escalates() {
         assert_eq!(v.len(), round);
         let last = v.last().unwrap();
         assert_eq!(last["findings"][0]["id"], format!("F{round}"));
+        // Only the round whose rejection would escalate is told so (ADR 0060).
+        let calls = env.fake_calls();
+        let prompt = calls.last().unwrap()["prompt"].as_str().unwrap();
+        assert_eq!(
+            prompt.contains("## The last round before escalation"),
+            round == 3,
+            "round {round}:\n{prompt}"
+        );
+        if round == 3 {
+            assert!(
+                prompt.contains("rejected 2 times and `max_rejects` is 3"),
+                "{prompt}"
+            );
+        }
         if round < 3 {
             assert_eq!(last["escalated"], false);
             assert_eq!(state(&env, &id), "fixing");
@@ -534,6 +558,19 @@ fn the_third_rejection_escalates() {
             assert_eq!(state(&env, &id), "escalated");
         }
     }
+    // The person's inbox carries the reviewer's diagnosis.
+    let inbox = env.hall(&env.repo, &["inbox"]);
+    let entry = &inbox.json["entries"][0];
+    assert_eq!(entry["kind"], "escalated");
+    assert_eq!(
+        entry["text"],
+        "Retry webhooks: rejected 3 times. The reviewer: The approach is wrong: claim deliveries in the queue instead."
+    );
+    let status = env.hall(&env.repo, &["status", &id]);
+    assert_eq!(
+        status.json["escalation"],
+        "The approach is wrong: claim deliveries in the queue instead."
+    );
     let report = std::fs::read_to_string(
         env.repo
             .join(".git/hallmark/items")
@@ -543,6 +580,38 @@ fn the_third_rejection_escalates() {
     .unwrap();
     assert!(report.contains("escalated"), "{report}");
     assert!(report.contains("still open (no ruling)"), "{report}");
+
+    // A later approving verdict clears the diagnosis.
+    let r = env.hall(&env.repo, &["retry", &id, "--reason", "one more round"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let sha = commit_file(&wt, "fix3.rs", "x\n");
+    resubmit(&env, &id, &sha, &["F1", "F2", "F3"]);
+    tick(&env, &script);
+    tick(&env, &script);
+    assert_eq!(state(&env, &id), "hallmarked");
+    let status = env.hall(&env.repo, &["status", &id]);
+    assert!(status.json["escalation"].is_null(), "{}", status.stdout);
+}
+
+#[test]
+fn with_one_reject_allowed_the_first_round_is_the_last() {
+    let env = Env::initialized();
+    configure(&env, &[("max_rejects", "1")]);
+    let (id, _wt, _) = ready_item(&env, "Retry webhooks", "retry.rs", "fn retry() {}\n");
+    let script = env.script(json!([reviewer(verdict(
+        vec![finding("blocker", "retry.rs", "One")],
+        json!([])
+    ))]));
+    tick(&env, &script);
+    tick(&env, &script);
+    let calls = env.fake_calls();
+    let prompt = calls[0]["prompt"].as_str().unwrap();
+    assert!(
+        prompt.contains("## The last round before escalation")
+            && prompt.contains("not rejected yet and `max_rejects` is 1"),
+        "{prompt}"
+    );
+    assert_eq!(state(&env, &id), "escalated");
 }
 
 #[test]
