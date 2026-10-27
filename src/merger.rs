@@ -339,9 +339,7 @@ pub fn approvals(reviews: &[GhComment], head: &str) -> Vec<String> {
     }
     latest
         .into_iter()
-        .filter(|(_, (s, r))| {
-            *s == "APPROVED" && r.commit.as_ref().is_some_and(|c| c.oid == head)
-        })
+        .filter(|(_, (s, r))| *s == "APPROVED" && r.commit.as_ref().is_some_and(|c| c.oid == head))
         .map(|(who, _)| who)
         .collect()
 }

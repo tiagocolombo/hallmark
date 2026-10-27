@@ -1131,9 +1131,7 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
                         .hold
                         .as_ref()
                         .is_some_and(|h| h.reason.starts_with(crate::merger::TIER_WAIT));
-                if !by_merger_tier
-                    && item.hold.as_ref().is_some_and(|h| h.kind == HoldKind::Lit)
-                {
+                if !by_merger_tier && item.hold.as_ref().is_some_and(|h| h.kind == HoldKind::Lit) {
                     item.merge_approved = item.pr_head.clone();
                 }
                 // A retried merge that never landed tries again.
