@@ -679,7 +679,7 @@ impl<R: BufRead, W: Write> Wizard<'_, R, W> {
         scope: Scope,
         key: &str,
         value: &Option<toml_edit::Value>,
-    ) -> Result<(), String> {
+    ) -> std::result::Result<(), String> {
         let mut text = match scope {
             Scope::Repo => self.ctx.repo_text.clone(),
             Scope::User => self.ctx.user_text.clone(),
@@ -1134,12 +1134,7 @@ mod tests {
     #[test]
     fn a_refused_answer_is_asked_again() {
         let ctx = ctx();
-        let (changes, out) = ask_one(
-            &ctx,
-            Scope::Repo,
-            "claude_args",
-            "--mcp-config\n\n\n",
-        );
+        let (changes, out) = ask_one(&ctx, Scope::Repo, "claude_args", "--mcp-config\n\n\n");
         assert!(out.matches("claude_args").count() >= 2, "{out}");
         assert!(
             changes.iter().all(|c| !c.shown().contains("mcp-config")),
@@ -1216,7 +1211,10 @@ mod tests {
         assert_eq!(plan.phone, Phone::Keep);
         // After a skip, `hall init` asks nothing: point to a command that does.
         let (_, out) = run_with(&ctx, Ask::INIT, &["2"]);
-        assert!(out.contains("`hall setup --interactive` asks again"), "{out}");
+        assert!(
+            out.contains("`hall setup --interactive` asks again"),
+            "{out}"
+        );
         assert!(!out.contains("`hall init` asks again"), "{out}");
     }
 
