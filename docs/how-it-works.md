@@ -150,7 +150,10 @@ that is ready:
 - nothing it depends on is still open: the PR it is stacked on, and any PR
   its description or commits name with `Depends on #N`, `Blocked by #N` or
   `After #N`;
-- it touches no `[merge] lit` path;
+- it touches no `[merge] lit` path, and it has the approvals from people
+  its tier asks for (`[merge] one_approval`, `two_approvals`, or the
+  reviewer's `needs_person`; your `hall retry` counts as one,
+  [ADR 0063](decisions/0063-risk-tiers.md));
 - it is up to date: it contains its base, or the commits it lacks touch none
   of its files. A release commit that only bumps the version doesn't send
   every PR back. With `[merge] update = "conflicts"`, GitHub calling it
@@ -202,8 +205,12 @@ A script decides each step, never a model. That is what lets this loop run
 with nobody watching: its check is cheap, runs often and is hard to game.
 Paths where a wrong merge is expensive stay with you: a PR that touches a
 `[merge] lit` path waits in your inbox, and `hall retry` lets the merger
-merge it. You are asked only once nothing ahead of it claims its files, so
-the head you approve is one that can merge.
+merge it. Paths under `one_approval` or `two_approvals` need that many
+people to approve the PR on GitHub (your `hall retry` counts as one), and
+the reviewer can ask for a person on any change; the change sets the tier,
+never its author, and the tier is the PR's `## Risk`. You are asked only
+once nothing ahead of it claims its files, so the head you approve is one
+that can merge.
 
 ## Parallel parts
 

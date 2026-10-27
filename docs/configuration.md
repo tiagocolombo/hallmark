@@ -100,6 +100,8 @@ command    = "gh pr merge {pr} --squash --match-head-commit {pr_head}"
 require_ci = true           # false: merge without waiting for CI
 update     = "files"        # or "conflicts": rebase only when GitHub says it conflicts
 lit        = []             # paths a person merges, as globs
+one_approval  = []          # paths that need one person's approval on the PR (ADR 0063)
+two_approvals = []          # paths that need two
 
 [intake]
 split     = "auto"   # or "off"
@@ -146,11 +148,20 @@ reopens conflicting PRs itself ([ADR 0050](decisions/0050-the-queue-updates-prs-
 | `merge.require_ci` | `true` | Wait for the PR's CI to pass at the shipped head. `false`: merge once the PR is hallmarked, mergeable and up to date, whatever CI says. |
 | `merge.update` | `files` | When a PR is rebased before it merges. `files`: whenever the base moved on a file it touches, so CI tests exactly what lands, and PRs on shared files go one after another. `conflicts`: only when GitHub says it conflicts; a PR GitHub merges cleanly, with green CI, merges as it is, and the base's own CI catches a bad combination ([ADR 0051](decisions/0051-merge-clean-prs-and-stop-the-line.md)). |
 | `merge.lit` | `[]` | Paths a person merges, as globs relative to the repo root (`.github/`, `release-plz.toml`). A PR that touches one waits in your inbox (`lit`); `hall retry` lets the merger merge that head. |
+| `merge.one_approval` | `[]` | Paths that need one person's approval before the merger merges a PR that touches them ([ADR 0063](decisions/0063-risk-tiers.md)): an approving review on GitHub by someone who isn't a bot, or your `hall retry` on the hold. Until then the PR waits in your inbox like a `lit` one, saying how many approvals it has. |
+| `merge.two_approvals` | `[]` | Paths that need two people's approvals (`src/billing/**`, an installer). Your `hall retry` counts as one. |
+
+The change sets its tier, not its author. Besides the paths, the reviewer
+can ask for a person on any change (`needs_person` in its verdict, with a
+reason: billing, auth, a release workflow, data that can't be got back, a
+pattern others will copy); that counts as one approval needed. The tier
+and the reason are the PR description's `## Risk`.
 
 A PR is ready when its head is the commit Hallmark shipped and carries a
 hallmark, GitHub calls it mergeable, CI passed at that head (unless
 `require_ci = false`), nobody asked for changes, nothing it depends on is
-still open, it touches no `lit` path, and it is up to date: it contains its
+still open, it touches no `lit` path, it has the approvals its tier asks
+for, and it is up to date: it contains its
 base, or the commits it lacks touch none of its files (with
 `update = "conflicts"`, GitHub calling it mergeable is enough). A PR waits
 for the PR it is stacked on, and for any PR its description or commits name

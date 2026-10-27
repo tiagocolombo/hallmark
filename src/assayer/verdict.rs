@@ -145,6 +145,7 @@ pub fn record_verdict(
                 learnings: mv.learnings.clone(),
                 base: base_sha.clone(),
                 since,
+                needs_person: mv.needs_person.clone().filter(|r| !r.trim().is_empty()),
             },
         );
         Ok((

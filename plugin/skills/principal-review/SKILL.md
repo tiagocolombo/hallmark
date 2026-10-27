@@ -235,9 +235,17 @@ didn't use.
     }
   ],
   "prior": [{ "id": "F1", "status": "fixed" }],
-  "learnings": [{ "id": "L-0017", "held": true }]
+  "learnings": [{ "id": "L-0017", "held": true }],
+  "needs_person": "It changes what the auto-updater downloads; a bad release reaches every install before anyone can revert."
 }
 ```
+
+`needs_person` is not a finding and never blocks approval. Set it, with one
+sentence of reason, when a person should approve the merge whatever the
+checks say: billing, auth, a release or CI workflow, data that can't be got
+back, or a pattern others will copy. The repository's `[merge]` tiers cover
+the usual paths; you cover the change the paths don't name. Leave it out for
+an ordinary change.
 
 In a headless review, return it through the structured output. `hall verdict`
 is not for agents: inside Claude Code it is refused (`GATE_DENIED`), so an

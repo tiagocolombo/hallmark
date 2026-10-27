@@ -46,7 +46,10 @@ dark: each is judged by a script or the reviewer's rubric, which is cheap,
 frequent and hard to game. A person stays in three places: deciding what to
 build, any escalation, and merging. Merging goes dark only when you turn on
 the merger (`[merge] mode = "auto"`, ADR 0048), and `[merge] lit` keeps chosen
-paths, such as CI workflows or release settings, lit.
+paths, such as CI workflows or release settings, lit. Risk tiers (ADR 0063)
+sit between: a PR that touches `[merge] one_approval` or `two_approvals`
+paths, or that the reviewer marked `needs_person`, merges only once that
+many people have approved it, and the tier is the PR's `## Risk`.
 
 The product is one Rust binary, `hall` (crate `hallmark`), for macOS, Linux and
 Windows:
@@ -436,6 +439,8 @@ mode       = "off"              # or "auto"
 command    = "gh pr merge {pr} --squash --match-head-commit {pr_head}"
 require_ci = true
 lit        = []                 # paths a person merges
+one_approval  = []              # paths that need one person's approval (ADR 0063)
+two_approvals = []              # paths that need two
 
 [intake]
 split     = "auto"              # the Front Desk splits requests when it can; or "off"

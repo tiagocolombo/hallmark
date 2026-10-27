@@ -1002,6 +1002,45 @@ fn a_verifier_that_refutes_every_blocker_approves_and_the_verdict_stands_when_it
 }
 
 #[test]
+fn the_reviewer_can_ask_for_a_person_without_blocking_approval() {
+    let env = Env::initialized();
+    let (id, _, _) = ready_item(&env, "Updater", "updater.rs", "fn fetch() {}\n");
+    let mut v = verdict(vec![], json!([]));
+    v["needs_person"] = json!("it changes what the auto-updater downloads");
+    let script = env.script(json!([reviewer(v)]));
+    tick(&env, &script);
+    tick(&env, &script);
+    assert_eq!(
+        state(&env, &id),
+        "hallmarked",
+        "needs_person is not a finding"
+    );
+    let verdicts = events_of(&env, &id, "verdict");
+    assert_eq!(
+        verdicts[0]["needs_person"],
+        "it changes what the auto-updater downloads"
+    );
+    let status = env.hall(&env.repo, &["status", &id]);
+    assert_eq!(
+        status.json["needs_person"],
+        "it changes what the auto-updater downloads"
+    );
+    // An empty reason is no request.
+    let env = Env::initialized();
+    let (id, _, _) = ready_item(&env, "Plain", "a.rs", "fn a() {}\n");
+    let mut v = verdict(vec![], json!([]));
+    v["needs_person"] = json!("  ");
+    let script = env.script(json!([reviewer(v)]));
+    tick(&env, &script);
+    tick(&env, &script);
+    assert!(
+        events_of(&env, &id, "verdict")[0]
+            .get("needs_person")
+            .is_none()
+    );
+}
+
+#[test]
 fn a_real_reviewer_result_is_recorded() {
     // tests/fixtures/claude/print_principal_engineer.json is the result of
     // the live check (ADR 0018): Haiku as the principal engineer, through

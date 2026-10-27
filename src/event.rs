@@ -249,6 +249,10 @@ pub enum Body {
         /// Incremental review: the last reviewed commit.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         since: Option<String>,
+        /// The reviewer asked for a person's approval before the merge, and
+        /// why (ADR 0063).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        needs_person: Option<String>,
     },
     /// The security pass (ADR 0064) that ran, or couldn't, before this
     /// round's verdict was recorded: the paths that asked for it, the
@@ -1043,6 +1047,7 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
         merged: None,
         merge_approved: None,
         reverted: None,
+        needs_person: None,
         own_worktree: own_worktree.unwrap_or(!*adopted),
         swept: false,
     };
@@ -1094,6 +1099,7 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
                 sha,
                 escalated,
                 summary,
+                needs_person,
                 ..
             } => {
                 if *verdict == VerdictKind::Changes {
@@ -1104,6 +1110,9 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
                 // person reads; an approval or a non-escalating one clears
                 // what an earlier escalation left.
                 item.escalation = if *escalated { summary.clone() } else { None };
+                // The latest review's word on whether a person must approve
+                // the merge (ADR 0063).
+                item.needs_person = needs_person.clone();
             }
             Body::Hallmarked { sha, .. } => item.hallmark_sha = Some(sha.clone()),
             Body::Held { kind, reason } => {
@@ -1377,6 +1386,7 @@ mod tests {
                 learnings: vec![],
                 base: None,
                 since: None,
+                needs_person: None,
             }),
             ev(Body::FixSubmitted {
                 sha: "bbb".into(),
@@ -1495,6 +1505,7 @@ mod tests {
                 learnings: vec![],
                 base: None,
                 since: None,
+                needs_person: None,
             }),
             ev(Body::Hallmarked {
                 sha: sha.into(),

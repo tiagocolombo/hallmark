@@ -178,6 +178,11 @@ fn ship(repo: &Repo, item: &Item, ctx_holder: &str) -> Result<Progress> {
         &events,
         &commit_subjects(&wt, &base, &head),
         &base,
+        &risk_line(
+            &repo.config.merge,
+            &changed_files(&wt, &base, &head),
+            item.needs_person.as_deref(),
+        ),
         !repo.config.review_comment.trim().is_empty(),
     );
     let body_file = body_path(repo, id);
@@ -718,6 +723,75 @@ fn base_ref(wt: &Path, base: &str) -> String {
 }
 
 /// The subjects of the commits the PR ships, oldest first, merges left out.
+/// The files the PR changes against its base.
+fn changed_files(wt: &Path, base: &str, head: &str) -> Vec<String> {
+    git::run(
+        wt,
+        &[
+            "diff",
+            "--name-only",
+            "--no-renames",
+            &format!("{}...{head}", base_ref(wt, base)),
+        ],
+    )
+    .unwrap_or_default()
+    .lines()
+    .map(str::trim)
+    .filter(|l| !l.is_empty())
+    .map(String::from)
+    .collect()
+}
+
+/// The PR description's Risk (ADR 0063): who has to approve the merge and
+/// why, from the paths it touches and the reviewer's word.
+pub fn risk_line(
+    merge: &crate::config::Merge,
+    files: &[String],
+    needs_person: Option<&str>,
+) -> String {
+    let lit = crate::assayer::base::globset(&merge.lit);
+    let lit_paths: Vec<&String> = files.iter().filter(|f| lit.is_match(f)).collect();
+    let (needed, tiered) = merge.approvals_needed(files);
+    let mut parts = Vec::new();
+    if !lit_paths.is_empty() {
+        parts.push(format!(
+            "A person merges it: touches {} (`[merge] lit`).",
+            lit_paths
+                .iter()
+                .map(|p| format!("`{p}`"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    if needed > 0 {
+        parts.push(format!(
+            "Needs {} approval{} from people before it merges: touches {} (`[merge] {}`).",
+            needed,
+            if needed == 1 { "" } else { "s" },
+            tiered
+                .iter()
+                .map(|p| format!("`{p}`"))
+                .collect::<Vec<_>>()
+                .join(", "),
+            if needed == 1 {
+                "one_approval"
+            } else {
+                "two_approvals"
+            }
+        ));
+    }
+    if let Some(r) = needs_person.map(str::trim).filter(|r| !r.is_empty()) {
+        parts.push(format!("The reviewer asked for a person's approval: {r}"));
+    }
+    if parts.is_empty() {
+        "Low: touches no path that needs a person, and the reviewer asked for none; it merges \
+         on its hallmark once CI is green."
+            .into()
+    } else {
+        parts.join(" ")
+    }
+}
+
 fn commit_subjects(wt: &Path, base: &str, head: &str) -> Vec<String> {
     git::run(
         wt,
@@ -760,6 +834,7 @@ pub fn pr_body(
     events: &[Event],
     commits: &[String],
     base: &str,
+    risk: &str,
     review_posted: bool,
 ) -> String {
     let proposed = events.iter().rev().find_map(|e| match &e.body {
@@ -857,6 +932,7 @@ pub fn pr_body(
             );
         }
     }
+    let _ = writeln!(s, "\n## Risk\n\n{}", risk.trim());
     if let Some(i) = &item.issue {
         let _ = writeln!(s, "\nCloses #{}", i.number);
     }
@@ -1478,7 +1554,7 @@ mod tests {
             "request": "Follow-up to PR #12\nReview feedback:\n- @me: Hallmark review",
             "follow_up": "https://github.com/acme/app/pull/12"}))];
         let u = "https://github.com/acme/app/pull/12";
-        let b = pr_body(&item(Some(u)), &events, &[], "main", true);
+        let b = pr_body(&item(Some(u)), &events, &[], "main", "Low.", true);
         assert!(b.contains(&format!("## Why\n\nFollow-up to {u}.\n")), "{b}");
         assert!(
             !b.contains("Review feedback") && !b.contains("Hallmark review"),
@@ -1487,14 +1563,50 @@ mod tests {
     }
 
     #[test]
+    fn the_risk_line_names_the_tier_its_paths_and_the_reviewers_reason() {
+        let mut m = crate::config::Merge {
+            lit: vec![".github/".into()],
+            one_approval: vec!["billing/".into()],
+            two_approvals: vec!["installer/".into()],
+            ..Default::default()
+        };
+        let f = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert!(risk_line(&m, &f(&["src/a.rs"]), None).starts_with("Low: touches no path"));
+        assert_eq!(
+            risk_line(&m, &f(&["billing/charge.rs", "src/a.rs"]), None),
+            "Needs 1 approval from people before it merges: touches `billing/charge.rs` (`[merge] one_approval`)."
+        );
+        // The highest tier wins; lit is said on its own.
+        assert_eq!(
+            risk_line(
+                &m,
+                &f(&["billing/charge.rs", "installer/setup.sh", ".github/ci.yml"]),
+                None
+            ),
+            "A person merges it: touches `.github/ci.yml` (`[merge] lit`). Needs 2 approvals from people before it merges: touches `installer/setup.sh` (`[merge] two_approvals`)."
+        );
+        assert_eq!(
+            risk_line(&m, &f(&["src/a.rs"]), Some(" it changes the updater ")),
+            "The reviewer asked for a person's approval: it changes the updater"
+        );
+        m.one_approval.clear();
+        assert!(risk_line(&m, &f(&["billing/charge.rs"]), Some("")).starts_with("Low:"));
+        assert_eq!(
+            m.approvals_needed(&f(&["installer/x", "billing/y"])),
+            (2, f(&["installer/x"]))
+        );
+        assert_eq!(m.approvals_needed(&f(&["src/a.rs"])), (0, vec![]));
+    }
+
+    #[test]
     fn the_footer_says_when_no_review_is_posted() {
-        let b = pr_body(&item(None), &[], &[], "main", false);
+        let b = pr_body(&item(None), &[], &[], "main", "Low.", false);
         assert!(
             b.contains("the review stays local (`hall export H-0042`)"),
             "{b}"
         );
         assert!(!b.contains("in the comments"), "{b}");
-        let b = pr_body(&item(None), &[], &[], "main", true);
+        let b = pr_body(&item(None), &[], &[], "main", "Low.", true);
         assert!(b.contains("the review is in the comments"), "{b}");
     }
 
@@ -1502,7 +1614,7 @@ mod tests {
     fn how_to_revert_names_the_base_the_pr_targets() {
         let mut it = item(None);
         it.base = "hm/H-0050-retry".into();
-        let b = pr_body(&it, &[], &[], "main", true);
+        let b = pr_body(&it, &[], &[], "main", "Low.", true);
         assert!(b.contains("on `main`"), "{b}");
         assert!(!b.contains("hm/H-0050-retry"), "{b}");
     }

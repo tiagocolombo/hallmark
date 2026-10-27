@@ -312,6 +312,34 @@ pub fn changes_requested(reviews: &[GhComment]) -> Option<String> {
         .map(|(who, _)| who)
 }
 
+/// How a hold's reason starts when a PR waits for people's approvals
+/// (ADR 0063), so the merger judges it again on every pass.
+pub const TIER_WAIT: &str = "ready to merge, needs ";
+
+/// The people (not bots) whose latest review approves the PR, in login
+/// order (ADR 0063).
+pub fn approvals(reviews: &[GhComment]) -> Vec<String> {
+    let mut latest: BTreeMap<String, &str> = BTreeMap::new();
+    for r in reviews {
+        let who = r
+            .author
+            .as_ref()
+            .map(|a| a.login.clone())
+            .unwrap_or_default();
+        if who.is_empty() || who.ends_with("[bot]") || who == "github-actions" {
+            continue;
+        }
+        if let Some(s @ ("APPROVED" | "CHANGES_REQUESTED" | "DISMISSED")) = r.state.as_deref() {
+            latest.insert(who, s);
+        }
+    }
+    latest
+        .into_iter()
+        .filter(|(_, s)| *s == "APPROVED")
+        .map(|(who, _)| who)
+        .collect()
+}
+
 /// How a PR's head relates to its base.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Fresh {
@@ -544,14 +572,19 @@ impl<'a> Look<'a> {
         let url = item.pr_url.clone().unwrap_or_default();
         let none = Judged::wait;
         if let Some(h) = &item.hold {
-            return none(
-                if h.kind == HoldKind::Lit {
-                    Status::Lit
-                } else {
-                    Status::Held
-                },
-                format!("held ({}): {}", h.kind.as_str(), h.reason),
-            );
+            // A PR waiting for people's approvals (ADR 0063) is judged
+            // again every pass: an approval on GitHub lifts the wait.
+            let tier_wait = h.kind == HoldKind::Lit && h.reason.starts_with(TIER_WAIT);
+            if !tier_wait {
+                return none(
+                    if h.kind == HoldKind::Lit {
+                        Status::Lit
+                    } else {
+                        Status::Held
+                    },
+                    format!("held ({}): {}", h.kind.as_str(), h.reason),
+                );
+            }
         }
         if let Some(sha) = &item.merged {
             let waiting = format!("merged at {}; waiting for GitHub to say so", short(sha));
@@ -744,6 +777,53 @@ impl<'a> Look<'a> {
                 touched.join(", ")
             );
             return judged(Status::Lit, why.clone(), Verdict::Lit(why));
+        }
+        // Risk tiers (ADR 0063): the paths it touches, or the reviewer, can
+        // ask for people's approvals. Your `hall retry` on the hold counts
+        // as one; approving reviews on GitHub by people count too.
+        let (from_paths, tiered) = self.repo.config.merge.approvals_needed(&files);
+        let required = from_paths.max(u32::from(item.needs_person.is_some()));
+        if required > 0 {
+            let mut who = approvals(&pr.reviews);
+            if item.merge_approved.as_deref() == Some(head.as_str()) {
+                who.push("you".into());
+            }
+            if (who.len() as u32) < required {
+                let mut why = format!(
+                    "{TIER_WAIT}{required} approval{} from people (has {}{})",
+                    if required == 1 { "" } else { "s" },
+                    who.len(),
+                    if who.is_empty() {
+                        String::new()
+                    } else {
+                        format!(": {}", who.join(", "))
+                    }
+                );
+                if !tiered.is_empty() {
+                    why.push_str(&format!(": touches {}", tiered.join(", ")));
+                }
+                if let Some(r) = &item.needs_person {
+                    why.push_str(&format!("; the reviewer asked for a person: {}", r.trim()));
+                }
+                if item.hold.is_some() {
+                    return none(Status::Lit, format!("held (lit): {why}"));
+                }
+                return judged(Status::Lit, why.clone(), Verdict::Lit(why));
+            }
+            if item.hold.is_some() {
+                // The approvals arrived while it waited: the wait is over.
+                let _ = self.repo.hall.append_item(
+                    item.id,
+                    &Event::new(
+                        ACTOR,
+                        Some(item.id),
+                        Body::Released {
+                            reason: Some(format!("approved by {}", who.join(", "))),
+                            granted_tokens: None,
+                        },
+                    ),
+                );
+            }
         }
         judged(
             Status::Ready,

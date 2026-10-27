@@ -193,6 +193,11 @@ pub struct ModelVerdict {
     /// The briefing's learnings that informed this review.
     #[serde(default)]
     pub learnings: Vec<LearningUse>,
+    /// Why a person should approve this change before it merges, even if
+    /// no configured path asks for one (ADR 0063). None when the change is
+    /// ordinary.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub needs_person: Option<String>,
 }
 
 impl ModelVerdict {
@@ -503,6 +508,7 @@ impl Ledger {
             learnings: vec![],
             base: None,
             since: None,
+            needs_person: None,
         });
         let counts = after.open_counts();
         Judged {
@@ -618,6 +624,7 @@ mod tests {
             learnings: vec![],
             base: None,
             since: None,
+            needs_person: None,
         });
     }
 
@@ -661,6 +668,7 @@ mod tests {
             findings: vec![mf(Severity::Blocker, "race"), mf(Severity::Minor, "naming")],
             prior: vec![],
             learnings: vec![],
+            needs_person: None,
         };
         let j1 = l.judge(1, &v1, 3);
         assert!(!j1.approves());
@@ -697,6 +705,7 @@ mod tests {
                 },
             ],
             learnings: vec![],
+            needs_person: None,
         };
         let j2 = l.judge(2, &v2, 3);
         assert_eq!(j2.prior.len(), 1, "unknown IDs are ignored");
@@ -723,6 +732,7 @@ mod tests {
                 note: None,
             }],
             learnings: vec![],
+            needs_person: None,
         };
         let j3 = l.judge(3, &v3, 3);
         assert!(j3.approves());

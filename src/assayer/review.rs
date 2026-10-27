@@ -236,6 +236,7 @@ fn carry(repo: &Repo, item: &Item, events: &[Event], sha: &str) -> Result<Option
         findings: vec![],
         prior: vec![],
         learnings: vec![],
+        needs_person: None,
     };
     let rec = super::record_verdict(
         repo,

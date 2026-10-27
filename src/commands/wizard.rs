@@ -246,6 +246,11 @@ const REPO_SECTIONS: &[(&str, &[(&str, &str)])] = &[
             ("merge.require_ci", ""),
             ("merge.update", ""),
             ("merge.lit", ""),
+            (
+                "merge.one_approval",
+                "Paths that need one person's approval on the PR",
+            ),
+            ("merge.two_approvals", "Paths that need two"),
         ],
     ),
     (
@@ -1325,7 +1330,7 @@ mod tests {
             "",  // push_guard
             "",  // push_allow
         ]);
-        answers.extend([""; 5]); // merging
+        answers.extend([""; 7]); // merging
         answers.extend([""; 2]); // the Front Desk
         answers.extend([
             "",     // review model

@@ -76,6 +76,7 @@ fn verdict(
         learnings: vec![],
         base: None,
         since: None,
+        needs_person: None,
     }
 }
 

@@ -103,7 +103,10 @@ read more: `hall log <item> --kind feedback_requested,ci_fix_requested,question,
 
 Return the verdict only through the structured output (the verdict schema):
 `summary` (two or three sentences: what the change does and whether it is
-safe to ship), `findings` (new problems only), `prior` and `learnings`.
+safe to ship), `findings` (new problems only), `prior`, `learnings`, and
+`needs_person` only when a person should approve the merge whatever the
+checks say (billing, auth, a release or CI workflow, data that can't be
+got back, a pattern others will copy), with one sentence of reason.
 Paths are repository-relative; lines are 1-based (0 for a whole file). Write
 nothing else: no preamble, no Markdown report. Hallmark numbers the findings,
 writes the report and decides.

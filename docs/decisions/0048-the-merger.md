@@ -1,6 +1,8 @@
 # 0048. The merger: shipped PRs merge without you, in dependency order
 
-Status: Accepted, 2026-10-17. Amends 0030 and 0031.
+Status: Accepted, 2026-10-17. Amends 0030 and 0031. Amended by 0063: risk tiers
+(`one_approval`, `two_approvals`, the reviewer's `needs_person`) make a PR wait
+for people's approvals the way `lit` waits for you.
 
 ## Context
 

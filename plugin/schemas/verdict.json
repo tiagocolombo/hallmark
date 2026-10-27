@@ -61,6 +61,10 @@
       }
     }
   },
+  "needs_person": {
+      "type": "string",
+      "description": "Set only when a person should approve this change before it merges whatever the automated checks say: it changes what the system does in a way a reviewer can't fully judge (billing, auth, a release or CI workflow, data people can't get back, a pattern others will copy). One sentence saying why. Leave it out for an ordinary change; it is not a severity and never blocks the review."
+    },
   "required": ["summary", "findings", "prior", "learnings"],
   "additionalProperties": false,
   "examples": [

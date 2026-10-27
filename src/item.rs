@@ -286,6 +286,10 @@ pub struct Item {
     /// The merged PR was reverted on its base (ADR 0061).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reverted: Option<Reverted>,
+    /// The latest review asked for a person's approval before the merge,
+    /// and why (ADR 0063).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub needs_person: Option<String>,
     /// False when the worktree is a checkout the user made and adopted; the
     /// sweeper leaves it alone.
     #[serde(default = "own_default")]
