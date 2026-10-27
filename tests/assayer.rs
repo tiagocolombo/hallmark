@@ -915,7 +915,11 @@ fn a_review_pulled_back_while_the_verifier_ran_is_discarded() {
     ]));
     tick(&env, &script);
     let r = tick(&env, &script);
-    assert!(what(&r).contains("discarded: the item moved on"), "{}", r.stdout);
+    assert!(
+        what(&r).contains("discarded: the item moved on"),
+        "{}",
+        r.stdout
+    );
     assert_eq!(env.fake_calls().len(), 2);
     assert!(events_of(&env, &id, "verdict").is_empty());
     assert!(events_of(&env, &id, "verified").is_empty());
