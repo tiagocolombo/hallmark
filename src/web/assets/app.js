@@ -530,7 +530,8 @@ async function findings(id) {
   const checks = r.reply.failing_checks || [];
   return `${checks.map((c) => `<div class="card" style="border-color:var(--stop)"><b>Failing check: ${esc(c.gate || c.name || '')}</b>
       <pre class="mono small" style="margin:0;white-space:pre-wrap">${esc(c.summary || c.log || JSON.stringify(c))}</pre></div>`).join('')}
-    ${f.map((x) => `<div class="card"><div class="row small"><span class="pill ${SEV[x.severity] || ''}">${esc(x.severity)}</span>
+    ${f.map((x) => `<div class="card"><div class="row small"><span class="pill ${x.pre_existing ? '' : SEV[x.severity] || ''}">${esc(x.severity)}</span>
+      ${x.pre_existing ? '<span class="pill" title="Not introduced by this change; never blocks approval">pre-existing</span>' : ''}
       <span class="muted">${esc(x.lens)} · ${esc(x.id)} · round ${esc(x.round)}</span>
       <span class="mono muted">${esc(x.file)}${x.line ? ':' + esc(x.line) : ''}</span>
       <span class="grow"></span><span class="pill ${x.status === 'fixed' ? 'ok' : x.status === 'open' ? 'stop' : 'you'}">${esc(x.status)}</span></div>

@@ -322,20 +322,7 @@ pub fn prepare(
              is right, or the finding was wrong). Never repeat them as new findings.\n"
         );
         for t in &open {
-            let f = &t.finding;
-            let _ = writeln!(
-                p,
-                "- **{}** {} · {} · `{}:{}` (round {}): {}\n  Scenario: {}\n  Suggested fix: {}",
-                f.id,
-                f.severity.as_str(),
-                f.lens.as_str(),
-                f.file,
-                f.line,
-                f.round,
-                f.title,
-                one_line(&f.scenario),
-                one_line(&f.fix)
-            );
+            let _ = writeln!(p, "{}", open_finding_line(t));
             if let Some(c) = &t.claimed_by {
                 let _ = writeln!(p, "  The fixer claims commit {} fixes it.", short(c));
             }
@@ -654,6 +641,28 @@ fn indent(text: &str) -> String {
         .join("\n")
 }
 
+/// One open finding in the round-2 prompt; a pre-existing one carries its mark.
+fn open_finding_line(t: &crate::findings::Tracked) -> String {
+    let f = &t.finding;
+    format!(
+        "- **{}** {}{} · {} · `{}:{}` (round {}): {}\n  Scenario: {}\n  Suggested fix: {}",
+        f.id,
+        f.severity.as_str(),
+        if f.pre_existing {
+            " (pre-existing: not introduced by this change, never blocks approval)"
+        } else {
+            ""
+        },
+        f.lens.as_str(),
+        f.file,
+        f.line,
+        f.round,
+        f.title,
+        one_line(&f.scenario),
+        one_line(&f.fix)
+    )
+}
+
 fn one_line(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
@@ -661,6 +670,35 @@ fn one_line(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_pre_existing_open_finding_carries_its_mark_in_the_round_two_prompt() {
+        use crate::findings::{Finding, Lens, Severity, Status, Tracked};
+        let tracked = |id: &str, pre_existing: bool| Tracked {
+            finding: Finding {
+                id: id.into(),
+                round: 1,
+                lens: Lens::Correctness,
+                severity: Severity::Blocker,
+                file: "src/a.rs".into(),
+                line: 3,
+                title: "t".into(),
+                scenario: "s".into(),
+                fix: "f".into(),
+                pre_existing,
+            },
+            status: Status::Open,
+            claimed_by: None,
+            dispute: None,
+            settled_round: None,
+            note: None,
+        };
+        let old = open_finding_line(&tracked("F1", true));
+        let new = open_finding_line(&tracked("F2", false));
+        assert!(old.contains("pre-existing"), "{old}");
+        assert!(old.contains("never blocks approval"), "{old}");
+        assert!(!new.contains("pre-existing"), "{new}");
+    }
 
     #[test]
     fn effort_follows_risk() {

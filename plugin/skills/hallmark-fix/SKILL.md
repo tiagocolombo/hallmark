@@ -28,8 +28,10 @@ only the next review settles findings.
    Reproduce the failure by running the gate to see all of its output, fix it,
    and run the gate again.
 
-3. **Fix the findings, most severe first** (blocker, major, minor, nit). For
-   each one:
+3. **Fix the findings, most severe first** (blocker, major, minor, nit). A
+   finding marked pre-existing (`pre_existing: true`; the prompt lists them
+   last) was there before this change and never blocks: fix it when that is
+   cheap and safe, else leave it and say so. For each one:
    - read the file around the line and the scenario that breaks;
    - for a correctness or evidence finding, first write a test that
      reproduces the scenario and watch it fail;

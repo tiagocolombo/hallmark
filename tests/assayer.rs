@@ -675,6 +675,92 @@ fn rules_come_from_the_base_branch() {
 }
 
 #[test]
+fn round_two_prompt_marks_a_pre_existing_finding_and_only_that_one() {
+    let env = Env::initialized();
+    let (id, wt, _) = ready_item(&env, "Retry webhooks", "retry.rs", "fn retry() {}\n");
+    let mut old = finding("blocker", "retry.rs", "Old race in the lock");
+    old["pre_existing"] = json!(true);
+    let script = env.script(json!([
+        reviewer(verdict(
+            vec![old, finding("major", "retry.rs", "Double delivery")],
+            json!([])
+        )),
+        reviewer(verdict(vec![], json!([]))),
+    ]));
+    tick(&env, &script);
+    tick(&env, &script);
+    assert_eq!(state(&env, &id), "fixing");
+    let fix = commit_file(&wt, "lock.rs", "FIX\n");
+    resubmit(&env, &id, &fix, &["F2"]);
+    tick(&env, &script);
+    tick(&env, &script);
+    let calls = env.fake_calls();
+    let prompt = calls[1]["prompt"].as_str().unwrap();
+    let line = |tag: &str| {
+        prompt
+            .lines()
+            .find(|l| l.starts_with(tag))
+            .unwrap_or_else(|| panic!("{tag} missing: {prompt}"))
+            .to_string()
+    };
+    assert!(line("- **F1**").contains("pre-existing"), "{prompt}");
+    assert!(!line("- **F2**").contains("pre-existing"), "{prompt}");
+}
+
+#[test]
+fn a_pre_existing_blocker_is_recorded_but_never_blocks() {
+    let env = Env::initialized();
+    let mut old = finding("blocker", "retry.rs", "Old race in the lock");
+    old["pre_existing"] = json!(true);
+    let script = env.script(json!([reviewer(verdict(
+        vec![old, finding("minor", "retry.rs", "Name the constant")],
+        json!([])
+    ))]));
+    let (id, _, _) = ready_item(&env, "Retry", "retry.rs", "fn retry() {}\n");
+    tick(&env, &script);
+    tick(&env, &script);
+    // Approved: the blocker was there before the change.
+    assert_eq!(state(&env, &id), "hallmarked");
+    let verdicts = events_of(&env, &id, "verdict");
+    assert_eq!(verdicts[0]["verdict"], "approve");
+    assert_eq!(verdicts[0]["findings"][0]["pre_existing"], true);
+    assert!(verdicts[0]["findings"][1].get("pre_existing").is_none());
+    assert_eq!(
+        verdicts[0]["counts"],
+        json!({"blocker": 0, "major": 0, "minor": 1, "nit": 0})
+    );
+    // It is tracked, shown and marked everywhere.
+    let r = env.hall(&env.repo, &["findings", &id]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let f = r.json["findings"].as_array().unwrap();
+    assert_eq!(f.len(), 2);
+    assert_eq!(f[0]["id"], "F1");
+    assert_eq!(f[0]["pre_existing"], true);
+    assert_eq!(f[0]["status"], "open");
+    assert_eq!(r.json["open"]["blocker"], 0);
+    let report = std::fs::read_to_string(
+        env.repo
+            .join(".git/hallmark/items")
+            .join(&id)
+            .join("reviews/r1.md"),
+    )
+    .unwrap();
+    assert!(
+        report.contains("#### F1 · Old race in the lock (pre-existing: not introduced by this change; never blocks)"),
+        "{report}"
+    );
+    assert!(report.contains("**Approved**"), "{report}");
+    // The index knows too, after a rebuild: a pre-existing blocker is not
+    // a reason the item was rejected.
+    assert_eq!(env.hall(&env.repo, &["reindex"]).code, 0);
+    let r = env.hall(&env.repo, &["history", "--all"]);
+    let row = &r.json["items"][0];
+    assert_eq!(row["id"], id.as_str());
+    assert_eq!(row["blocking"], json!([]));
+    assert_eq!(row["rejected"], 0);
+}
+
+#[test]
 fn effort_follows_risk() {
     let env = Env::initialized();
     std::fs::write(
@@ -1577,6 +1663,25 @@ fn a_rebase_that_leaves_the_approved_change_as_it_was_keeps_its_approval() {
     );
     let note: Value = serde_json::from_str(&note).unwrap();
     assert_eq!(note["rebased_from"], approved.as_str());
+}
+
+#[test]
+fn a_rebase_keeps_the_approval_of_an_item_with_a_pre_existing_major_open() {
+    let env = Env::initialized();
+    let mut old = finding("major", "retry.rs", "Old race in the lock");
+    old["pre_existing"] = json!(true);
+    // One review only: the second must never run.
+    let script = env.script(json!([reviewer(verdict(vec![old], json!([])))]));
+    let (id, _, approved, head) = approved_then_rewritten(&env, &script, |_| {});
+    assert_ne!(approved, head);
+
+    tick(&env, &script);
+    let r = tick(&env, &script);
+    assert!(what(&r).contains("approval carried"), "{}", r.stdout);
+    assert_eq!(state(&env, &id), "hallmarked");
+    assert_eq!(env.fake_calls().len(), 1, "no review ran");
+    let v = events_of(&env, &id, "verdict");
+    assert_eq!(v[1]["reviewer"], "carried");
 }
 
 #[test]

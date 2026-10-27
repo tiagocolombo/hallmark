@@ -434,10 +434,11 @@ pub fn failing_checks(events: &[Event]) -> Vec<CheckRun> {
         .collect()
 }
 
-/// Open findings, most severe first, then in the order raised.
+/// Open findings, most severe first, then in the order raised; the
+/// pre-existing ones last, whatever their severity (ADR 0059).
 pub fn sorted_open(ledger: &Ledger) -> Vec<&Tracked> {
     let mut open = ledger.open();
-    open.sort_by_key(|t| t.finding.severity);
+    open.sort_by_key(|t| (t.finding.pre_existing, t.finding.severity));
     open
 }
 
@@ -522,6 +523,13 @@ pub fn prompt(repo: &Repo, item: &Item, events: &[Event], ledger: &Ledger) -> St
             }
         }
     }
+    s.push_str(&open_findings_section(ledger));
+    prompt_end(repo, item, ledger, !failing.is_empty(), s)
+}
+
+/// The prompt's open findings, most severe first, pre-existing ones marked.
+fn open_findings_section(ledger: &Ledger) -> String {
+    let mut s = String::new();
     let open = sorted_open(ledger);
     if open.is_empty() {
         s.push_str("\n## Open findings\n\nNone.\n");
@@ -530,9 +538,14 @@ pub fn prompt(repo: &Repo, item: &Item, events: &[Event], ledger: &Ledger) -> St
         for t in open {
             let f = &t.finding;
             s.push_str(&format!(
-                "\n### {} · {} · {} · {}:{}\n\n{}\n\n- Scenario: {}\n- Suggested fix: {}\n",
+                "\n### {} · {}{} · {} · {}:{}\n\n{}\n\n- Scenario: {}\n- Suggested fix: {}\n",
                 f.id,
                 f.severity.as_str(),
+                if f.pre_existing {
+                    " (pre-existing)"
+                } else {
+                    ""
+                },
                 f.lens.as_str(),
                 f.file,
                 f.line,
@@ -540,6 +553,13 @@ pub fn prompt(repo: &Repo, item: &Item, events: &[Event], ledger: &Ledger) -> St
                 f.scenario.trim(),
                 f.fix.trim()
             ));
+            if f.pre_existing {
+                s.push_str(
+                    "- Pre-existing: this change didn't introduce it, and it never blocks \
+                     approval. Fix it only when that is cheap and safe; otherwise leave it, \
+                     and say so in your summary.\n",
+                );
+            }
             if let Some(d) = &t.dispute {
                 s.push_str(&format!("- You disputed it before: \"{}\"\n", d.trim()));
             }
@@ -554,6 +574,18 @@ pub fn prompt(repo: &Repo, item: &Item, events: &[Event], ledger: &Ledger) -> St
             }
         }
     }
+    s
+}
+
+/// The rest of the prompt: the repo's skill, extensions, and the closing steps.
+fn prompt_end(
+    repo: &Repo,
+    item: &Item,
+    ledger: &Ledger,
+    gate_failed: bool,
+    mut s: String,
+) -> String {
+    let id = item.id;
     // The repo's own hallmark-fix skill (ADR 0037), from the base: the
     // branch being fixed can't change how it is fixed.
     if let Ok(base) = crate::assayer::base::Base::resolve(repo, &item.base)
@@ -566,7 +598,7 @@ pub fn prompt(repo: &Repo, item: &Item, events: &[Event], ledger: &Ledger) -> St
     // checkout's config like every other setting (ADR 0012), each skill
     // only when this round calls for it: a red gate, an open finding's lens.
     let round = crate::extensions::Context {
-        gate_failed: !failing.is_empty(),
+        gate_failed,
         lenses: ledger.open().iter().map(|t| t.finding.lens).collect(),
     };
     if let Some(x) = crate::extensions::prompt_for(
@@ -766,6 +798,7 @@ mod tests {
                 title: "t".into(),
                 scenario: "s".into(),
                 fix: "f".into(),
+                pre_existing: false,
             },
             status: Status::Open,
             claimed_by: None,
@@ -786,6 +819,45 @@ mod tests {
             .map(|t| t.finding.id.as_str())
             .collect();
         assert_eq!(ids, ["F2", "F4", "F3", "F1"]);
+    }
+
+    #[test]
+    fn a_pre_existing_blocker_sorts_after_a_normal_minor_and_is_marked() {
+        let f = |id: &str, sev, pre| Tracked {
+            finding: Finding {
+                id: id.into(),
+                round: 1,
+                lens: Lens::Correctness,
+                severity: sev,
+                file: "a.rs".into(),
+                line: 1,
+                title: "t".into(),
+                scenario: "s".into(),
+                fix: "f".into(),
+                pre_existing: pre,
+            },
+            status: Status::Open,
+            claimed_by: None,
+            dispute: None,
+            settled_round: None,
+            note: None,
+        };
+        let l = Ledger {
+            findings: vec![
+                f("F1", Severity::Blocker, true),
+                f("F2", Severity::Minor, false),
+            ],
+        };
+        let ids: Vec<&str> = sorted_open(&l)
+            .iter()
+            .map(|t| t.finding.id.as_str())
+            .collect();
+        assert_eq!(ids, ["F2", "F1"]);
+        let text = open_findings_section(&l);
+        assert!(text.contains("### F1 · blocker (pre-existing)"), "{text}");
+        assert!(!text.contains("### F2 · minor (pre-existing)"), "{text}");
+        assert!(text.contains("Fix it only when that is cheap and safe"));
+        assert_eq!(text.matches("Pre-existing: this change").count(), 1);
     }
 
     #[test]

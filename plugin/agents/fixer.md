@@ -39,6 +39,10 @@ them, commit them, and record what you did. Use the hallmark-fix skill.
 3. Blockers and majors must be fixed or disputed; the item can't be approved
    while one is open. Minors and nits are worth fixing when it is cheap and
    safe; otherwise leave them, and they ride along into the PR.
+4. A finding marked **pre-existing** was there before this change and never
+   blocks, whatever its severity. Fix it only when that is cheap and safe;
+   otherwise leave it and say so in your summary. Never dispute one for
+   being old: that is already what the mark says.
 
 Stay inside the scope of the findings. Don't refactor, rename or reformat
 code the review didn't ask about. Never weaken, skip or delete a test,

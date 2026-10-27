@@ -280,9 +280,14 @@ pub fn digest(item: &Item, events: &[Event], changed: &[String]) -> String {
                 f.file.clone()
             };
             s.push_str(&format!(
-                "- {} · {} · {} · `{place}` (round {}): {}\n",
+                "- {} · {}{} · {} · `{place}` (round {}): {}\n",
                 f.id,
                 f.severity.as_str(),
+                if f.pre_existing {
+                    " (pre-existing: not the change's to fix)"
+                } else {
+                    ""
+                },
                 f.lens.as_str(),
                 f.round,
                 clip(&f.title, 160)
@@ -953,6 +958,7 @@ mod tests {
             title: title.into(),
             scenario: "A deleted endpoint keeps its deliveries.".into(),
             fix: "Check first.".into(),
+            pre_existing: false,
         };
         let verdict = |round, findings, prior, escalated, learnings| Body::Verdict {
             sha: "abc".into(),

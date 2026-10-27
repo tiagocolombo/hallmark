@@ -446,6 +446,7 @@ fn lower(h: &mut String, p: &Page) {
         let worst = p
             .corrections
             .iter()
+            .filter(|c| !c.pre_existing)
             .map(|c| c.severity)
             .min_by_key(|s| match s {
                 Severity::Blocker => 0,
@@ -456,6 +457,9 @@ fn lower(h: &mut String, p: &Page) {
         let note = match worst {
             Some(Severity::Blocker | Severity::Major) => {
                 "These were still open when the item stopped. Each one is a candidate for a follow-up item."
+            }
+            _ if p.corrections.iter().any(|c| c.pre_existing) => {
+                "Some were there before the change and never blocked it. Each one is a candidate for a follow-up item."
             }
             _ => {
                 "These were small enough that the item could ship with them open. Each one is a candidate for a follow-up item."
@@ -471,7 +475,9 @@ fn lower(h: &mut String, p: &Page) {
                 "<li>{} <span class=\"mono\">{}</span>{}</li>",
                 prose(&c.text),
                 esc(&c.id),
-                if matches!(c.severity, Severity::Blocker | Severity::Major) {
+                if c.pre_existing {
+                    " <span class=\"sev\">Pre-existing</span>".to_string()
+                } else if matches!(c.severity, Severity::Blocker | Severity::Major) {
                     format!(" <span class=\"sev M\">{}</span>", sev_word(c.severity))
                 } else {
                     String::new()
@@ -799,6 +805,27 @@ mod tests {
         assert_eq!(svg.matches("class=\"edge back\"").count(), 1);
         assert!(svg.contains("a→b"));
         assert!(!svg.contains("zz"));
+    }
+
+    #[test]
+    fn an_open_pre_existing_blocker_is_not_called_small() {
+        use crate::gazette::page::Correction;
+        let mut p = Page::default();
+        p.corrections.push(Correction {
+            text: "An old race.".into(),
+            id: "F1".into(),
+            severity: Severity::Blocker,
+            pre_existing: true,
+        });
+        let mut h = String::new();
+        lower(&mut h, &p);
+        assert!(
+            h.contains("there before the change and never blocked it"),
+            "{h}"
+        );
+        assert!(!h.contains("small enough"), "{h}");
+        assert!(!h.contains("still open when the item stopped"), "{h}");
+        assert!(h.contains("Pre-existing"), "{h}");
     }
 
     #[test]

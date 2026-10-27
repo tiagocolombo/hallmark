@@ -56,6 +56,7 @@ pub fn finding(id: &str, round: u32, sev: Severity, lens: Lens, title: &str) -> 
         title: title.into(),
         scenario: format!("{title}: two workers retry at once and deliver twice"),
         fix: "take a row lock before retrying".into(),
+        pre_existing: false,
     }
 }
 

@@ -126,7 +126,7 @@ A reason or note you give (`hall retry --reason`, `hall continue --reason` when 
 | Command | Does |
 | --- | --- |
 | `hall next --role assayer\|fixer\|shipper` | Claims work with a lease. |
-| `hall findings [<id>]` | Open findings and failing checks (the fixer). |
+| `hall findings [<id>]` | Open findings and failing checks (the fixer). A finding with `pre_existing: true` was there before the change: it is listed, never blocks, and the fixer may leave it ([ADR 0059](decisions/0059-pre-existing-findings.md)). `--all` includes the settled ones. |
 | `hall fixed <ids>` | Records what a commit fixes, or `--dispute <id> --reason` (the fixer). |
 | `hall verdict --file <json>` | Records a schema-checked verdict. Only the assayer (`HALL_ACTOR=assayer`) and you on a terminal may run it; an agent (a Claude Code session, or any headless run but the assayer's) gets exit 5, `GATE_DENIED`, which keeps an honest agent from approving its own item (a guardrail, not a guarantee: the actor comes from the environment). Your verdict is recorded with `actor: "you"` and shown as a human override in the report, the hallmark's note and the PR's review comment. |
 | `hall reindex` | Rebuilds the SQLite index from the journals. |

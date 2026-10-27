@@ -45,6 +45,7 @@ fn finding(id: &str, round: u32, lens: Lens, severity: Severity, title: &str) ->
         title: title.into(),
         scenario: format!("{title}: a retry after a timeout sends the delivery twice"),
         fix: "Key deliveries by event ID and skip ones already sent.".into(),
+        pre_existing: false,
     }
 }
 
@@ -1276,6 +1277,49 @@ fn actions_that_need_the_terminal_hand_it_over() {
     assert_eq!(app.run_command("hall daemon run --once"), Effect::None);
     let st = app.status.clone().unwrap();
     assert!(st.error && st.text.contains("USAGE"), "{}", st.text);
+}
+
+#[test]
+fn a_pre_existing_finding_is_marked_in_the_findings_and_never_a_reason() {
+    let env = Env::initialized();
+    let hall = hall_of(&env);
+    let (_, wt) = env.new_item("Retry webhooks");
+    let mut old = finding("F1", 1, Lens::Correctness, Severity::Blocker, "Old race");
+    old.pre_existing = true;
+    let new = finding("F2", 1, Lens::Correctness, Severity::Blocker, "New race");
+    add(
+        &hall,
+        1,
+        "assayer",
+        verdict(
+            "abc1234",
+            1,
+            VerdictKind::Changes,
+            false,
+            vec![old, new],
+            vec![],
+        ),
+    );
+    let mut app = load(&env, &env.repo);
+    select(&mut app, 1);
+    key(&mut app, KeyCode::Enter);
+    key(&mut app, KeyCode::Char('f'));
+    assert_eq!(app.view, View::Findings);
+    key(&mut app, KeyCode::Enter);
+    let s = render(&app, 140, 40);
+    // The mark fits its column: the whole word, then the star.
+    assert!(s.contains("blocker* "), "{s}");
+    assert!(s.contains("never blocks approval"), "{s}");
+    // History lists only closed and dropped items: drop this one, then it
+    // shows the normal blocker as a reason and never the pre-existing one.
+    let r = env.hall(&wt, &["drop", "--reason", "superseded"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let mut app = load(&env, &env.repo);
+    key(&mut app, KeyCode::Char('h'));
+    assert_eq!(app.view, View::History);
+    let s = render(&app, 140, 40);
+    assert!(s.contains("✗ F2"), "{s}");
+    assert!(!s.contains("✗ F1"), "{s}");
 }
 
 #[test]

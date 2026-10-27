@@ -355,9 +355,14 @@ pub fn render(r: &Report) -> String {
             for f in fs {
                 let _ = writeln!(
                     s,
-                    "\n#### {} · {}\n\n`{}:{}` · {}\n\n**Scenario.** {}\n\n**Fix.** {}",
+                    "\n#### {} · {}{}\n\n`{}:{}` · {}\n\n**Scenario.** {}\n\n**Fix.** {}",
                     f.id,
                     f.title.trim(),
+                    if f.pre_existing {
+                        " (pre-existing: not introduced by this change; never blocks)"
+                    } else {
+                        ""
+                    },
                     f.file,
                     f.line,
                     f.lens.label(),
@@ -382,9 +387,14 @@ pub fn render(r: &Report) -> String {
             };
             let _ = write!(
                 s,
-                "- **{}** {} · `{}:{}` · {}: **{status}**",
+                "- **{}** {}{} · `{}:{}` · {}: **{status}**",
                 f.id,
                 f.severity.as_str(),
+                if f.pre_existing {
+                    " (pre-existing)"
+                } else {
+                    ""
+                },
                 f.file,
                 f.line,
                 f.title.trim()

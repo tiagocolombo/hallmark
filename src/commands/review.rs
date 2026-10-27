@@ -42,13 +42,18 @@ impl Render for FindingsOut {
         for t in &self.findings {
             let f = &t.finding;
             s.push_str(&format!(
-                "  {:4} {:7} {:16} {}:{}  {}{}\n",
+                "  {:4} {:7} {:16} {}:{}  {}{}{}\n",
                 f.id,
                 f.severity.as_str(),
                 f.lens.as_str(),
                 f.file,
                 f.line,
                 clip(&f.title, 60),
+                if f.pre_existing {
+                    " (pre-existing)"
+                } else {
+                    ""
+                },
                 match t.status {
                     Status::Open => String::new(),
                     Status::Fixed => " (fixed)".into(),

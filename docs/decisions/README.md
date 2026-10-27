@@ -20,7 +20,7 @@ a decision, add a new record that supersedes the old one. Don't edit the old one
 | [0012](0012-config-from-the-main-checkout.md) | `.hallmark.toml` is read from the main checkout | Accepted; amended by 0053 |
 | [0013](0013-one-runner-for-claude-p.md) | One runner for every `claude -p` run | Superseded in part by 0041; amended by 0053 |
 | [0014](0014-daemon-workers-and-leases.md) | The daemon is a loop of workers, with leases | Accepted |
-| [0015](0015-verdicts-findings-and-approval.md) | Verdicts, findings, and who decides approval | Accepted; amended by 0039 |
+| [0015](0015-verdicts-findings-and-approval.md) | Verdicts, findings, and who decides approval | Accepted; amended by 0039, 0059 |
 | [0016](0016-budgets-holds-and-pauses.md) | Budgets, holds and pauses | Accepted |
 | [0017](0017-daemon-process-and-pauses.md) | The daemon process: one instance, stop by file, pauses for everyone | Accepted; amended by 0054 |
 | [0018](0018-the-assay-office.md) | The Assay Office: checks, then an isolated review | Accepted |
@@ -68,5 +68,6 @@ a decision, add a new record that supersedes the old one. Don't edit the old one
 | [0056](0056-stats-for-the-loop.md) | Stats for the loop: `hall stats` folds the journals into reviews to approval, what became of each finding, the reviewer's noise by lens and how disputes went, so a change to the reviewer can be judged | Accepted |
 | [0057](0057-testing-and-how-to-revert-in-the-pr.md) | The PR description also says how the change was tested (`--tested`, then the gates that passed) and how to revert it (`--revert`, then always a `git revert` line) | Accepted; amends 0039 |
 | [0058](0058-review-notes-skip-paths-and-a-nit-cap.md) | The review notes say what failure looks like and which paths to skip (left out of the diff and the counts), and `max_nits` caps the nits a verdict records, enforced by the ledger | Accepted; amends 0018 |
+| [0059](0059-pre-existing-findings.md) | A finding can be marked pre-existing: the base already had the defect and the change doesn't make it worse. It is recorded and shown, never counts toward approval, and the fixer may leave it | Accepted; amends 0015 |
 | [0060](0060-the-last-round-asks-for-a-diagnosis.md) | On the last round before escalation the reviewer is told so and asked to make its summary a diagnosis (is the approach wrong, what instead); the escalation's inbox entry and notification carry it | Accepted; amends 0018 |
 | [0061](0061-a-revert-is-a-signal.md) | A revert is a signal: the `reverts` worker watches each base for 30 days after a merge, records `reverted` on the item, puts it in the inbox, counts it in `hall stats`, and the librarian distils the item again asking which layer should have caught it | Accepted; amends 0021, 0031, 0056 |

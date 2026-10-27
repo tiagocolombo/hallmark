@@ -1131,8 +1131,22 @@ fn finding_status(t: &Tracked) -> (String, Color) {
     }
 }
 
-fn sev_color(s: crate::findings::Severity) -> Color {
-    if s.blocks() { STOP } else { DIM }
+/// A pre-existing finding never blocks, whatever its severity (ADR 0059).
+fn sev_color(f: &crate::findings::Finding) -> Color {
+    if f.severity.blocks() && !f.pre_existing {
+        STOP
+    } else {
+        DIM
+    }
+}
+
+fn sev_label(f: &crate::findings::Finding) -> String {
+    if f.pre_existing {
+        // The column is 8 cells wide: "blocker" and a mark.
+        format!("{}*", f.severity.as_str())
+    } else {
+        f.severity.as_str().to_string()
+    }
 }
 
 /// The board's findings: open ones first, so the pane's few rows show what
@@ -1156,10 +1170,7 @@ fn findings_pane(f: &mut Frame, area: Rect, app: &App) {
                     let (st, c) = finding_status(t);
                     Row::new(vec![
                         Span::raw(t.finding.id.clone()),
-                        Span::styled(
-                            t.finding.severity.as_str(),
-                            fg(sev_color(t.finding.severity)),
-                        ),
+                        Span::styled(sev_label(&t.finding), fg(sev_color(&t.finding))),
                         Span::styled(t.finding.lens.as_str(), fg(DIM)),
                         Span::raw(t.finding.title.clone()),
                         Span::styled(where_(t), fg(DIM)),
@@ -1180,7 +1191,7 @@ fn findings_pane(f: &mut Frame, area: Rect, app: &App) {
         rows,
         [
             Constraint::Length(4),
-            Constraint::Length(7),
+            Constraint::Length(8),
             Constraint::Length(16),
             Constraint::Min(20),
             Constraint::Length(22),
@@ -1244,10 +1255,7 @@ fn findings_view(f: &mut Frame, area: Rect, app: &App) {
             };
             Row::new(vec![
                 Span::raw(t.finding.id.clone()),
-                Span::styled(
-                    t.finding.severity.as_str(),
-                    fg(sev_color(t.finding.severity)),
-                ),
+                Span::styled(sev_label(&t.finding), fg(sev_color(&t.finding))),
                 Span::styled(t.finding.lens.as_str(), fg(DIM)),
                 Span::styled(where_(t), fg(DIM)),
                 Span::raw(t.finding.title.clone()),
@@ -1275,7 +1283,7 @@ fn findings_view(f: &mut Frame, area: Rect, app: &App) {
         rows,
         [
             Constraint::Length(4),
-            Constraint::Length(7),
+            Constraint::Length(8),
             Constraint::Length(16),
             Constraint::Length(20),
             Constraint::Min(16),
@@ -1305,6 +1313,12 @@ fn findings_view(f: &mut Frame, area: Rect, app: &App) {
                 Span::raw(t.finding.fix.clone()),
             ]),
         ];
+        if t.finding.pre_existing {
+            lines.push(Line::from(vec![
+                Span::styled("pre-exist ", bold().fg(DIM)),
+                Span::raw("* not introduced by this change; never blocks approval"),
+            ]));
+        }
         if let Some(d) = &t.dispute {
             lines.push(Line::from(vec![
                 Span::styled("disputed  ", bold().fg(BRASS)),
@@ -1338,7 +1352,11 @@ fn history(f: &mut Frame, area: Rect, app: &App) {
                 .data
                 .findings
                 .iter()
-                .filter(|x| x.item == it.id && (x.severity == "blocker" || x.severity == "major"))
+                .filter(|x| {
+                    x.item == it.id
+                        && (x.severity == "blocker" || x.severity == "major")
+                        && !x.pre_existing
+                })
                 .take(3)
                 .map(|x| {
                     Line::from(Span::styled(

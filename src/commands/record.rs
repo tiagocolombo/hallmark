@@ -155,9 +155,10 @@ fn row(i: &Item, findings: &[&crate::index::FindingRow]) -> HistoryRow {
         i.updated_at
     };
     let secs = (ended_at - i.created_at).num_seconds().max(0);
+    // A pre-existing finding never rejected the item (ADR 0059).
     let mut blocking: Vec<Reason> = findings
         .iter()
-        .filter(|f| f.severity == "blocker" || f.severity == "major")
+        .filter(|f| (f.severity == "blocker" || f.severity == "major") && !f.pre_existing)
         .map(|f| Reason {
             id: f.id.clone(),
             round: f.round,
@@ -542,7 +543,11 @@ pub fn render_export(repo: &Repo, item: &Item, events: &[Event]) -> String {
                 "| {} | {} | {} | {} | `{}:{}` | {} | {} |",
                 f.id,
                 f.round,
-                f.severity.as_str(),
+                if f.pre_existing {
+                    format!("{} (pre-existing)", f.severity.as_str())
+                } else {
+                    f.severity.as_str().to_string()
+                },
                 f.lens.as_str(),
                 cell(&f.file),
                 f.line,
@@ -553,13 +558,25 @@ pub fn render_export(repo: &Repo, item: &Item, events: &[Event]) -> String {
         let open_minor: Vec<_> = ledger
             .open()
             .into_iter()
-            .filter(|t| matches!(t.finding.severity, Severity::Minor | Severity::Nit))
+            .filter(|t| {
+                t.finding.pre_existing
+                    || matches!(t.finding.severity, Severity::Minor | Severity::Nit)
+            })
             .collect();
         if !open_minor.is_empty() && item.state != State::Dropped {
-            let ids: Vec<&str> = open_minor.iter().map(|t| t.finding.id.as_str()).collect();
+            let ids: Vec<String> = open_minor
+                .iter()
+                .map(|t| {
+                    if t.finding.pre_existing {
+                        format!("{} (pre-existing)", t.finding.id)
+                    } else {
+                        t.finding.id.clone()
+                    }
+                })
+                .collect();
             let _ = writeln!(
                 s,
-                "\nOpen minors and nits ride along into the PR: {}.",
+                "\nOpen minors, nits and pre-existing findings ride along into the PR: {}.",
                 ids.join(", ")
             );
         }

@@ -409,6 +409,7 @@ fn finding(
         title: title.into(),
         scenario: scenario.into(),
         fix: fix.into(),
+        pre_existing: false,
     }
 }
 

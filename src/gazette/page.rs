@@ -94,6 +94,8 @@ pub struct Correction {
     pub text: String,
     pub id: String,
     pub severity: Severity,
+    /// The change didn't introduce it: it never counts as serious.
+    pub pre_existing: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -273,7 +275,12 @@ pub fn build(repo: &Repo, item: &Item, events: &[Event], prose: Option<&Prose>) 
                 } else {
                     format!("{headline}.")
                 };
-                page.corrections.push(Correction { text, id, severity });
+                page.corrections.push(Correction {
+                    text,
+                    id,
+                    severity,
+                    pre_existing: t.finding.pre_existing,
+                });
                 continue;
             }
         };
