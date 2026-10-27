@@ -92,6 +92,7 @@ fn every_schema_is_served() {
         "watch",
         "watch-line",
         "stats",
+        "eval",
     ] {
         let r = env.hall(&env.root, &["schema", name]);
         assert_eq!(r.code, 0, "{name}");

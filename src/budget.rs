@@ -721,6 +721,7 @@ mod tests {
     #[test]
     fn roles_map_to_config_tables() {
         assert_eq!(role_of("reviewer"), Some(Role::Reviewer));
+        assert_eq!(role_of("eval"), Some(Role::Reviewer));
         assert_eq!(role_of("fix"), Some(Role::Fixer));
         assert_eq!(role_of("resume"), None);
         assert_eq!(table_key(Role::Reviewer), "review");

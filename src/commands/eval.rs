@@ -20,7 +20,6 @@ use serde::Serialize;
 
 use crate::assayer::{self, review};
 use crate::cli::EvalArgs;
-use crate::config::Role;
 use crate::error::{ErrorCode, HallError, Result};
 use crate::event::{Body, Event, VerdictKind, short};
 use crate::findings::{ModelVerdict, Severity};
@@ -55,6 +54,10 @@ pub struct EvalCase {
     pub reverted_by: String,
     /// Files the revert touched; a finding there is a catch.
     pub revert_files: Vec<String>,
+    /// The revert's files couldn't be read (the commit isn't local), so any
+    /// blocking finding counts as a catch.
+    #[serde(skip_serializing_if = "is_false")]
+    pub revert_files_unknown: bool,
     /// The verdict recorded at the time.
     pub then: Scored,
     /// Today's reviewer on the same commit (absent on a dry run or when
@@ -64,6 +67,10 @@ pub struct EvalCase {
     /// Why there is no `now`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub skipped: Option<String>,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 /// One verdict against the revert.
@@ -210,6 +217,32 @@ pub fn eval(cwd: &Path, a: EvalArgs) -> Result<Response> {
         }
         v
     };
+    let has_review = |i: &Item| -> Result<bool> {
+        Ok(repo
+            .hall
+            .read_item(i.id)?
+            .iter()
+            .any(|e| matches!(e.body, Body::Verdict { .. })))
+    };
+    if a.ids.is_empty() {
+        let mut v = Vec::new();
+        for i in picked {
+            if has_review(&i)? {
+                v.push(i);
+            }
+        }
+        picked = v;
+    } else {
+        for i in &picked {
+            if !has_review(i)? {
+                return Err(HallError::new(
+                    ErrorCode::WrongState,
+                    format!("{}: it has no review to replay", i.id),
+                )
+                .next([format!("hall log {}", i.id)]));
+            }
+        }
+    }
     picked.truncate(a.limit.unwrap_or(DEFAULT_LIMIT));
 
     let runner_ = runner::from_env();
@@ -276,6 +309,7 @@ fn case(repo: &Repo, item: &Item, events: &[Event]) -> Option<EvalCase> {
         pr_url: item.pr_url.clone(),
         sha,
         reverted_by: r.revert_sha.clone(),
+        revert_files_unknown: revert_files.is_empty(),
         revert_files,
         then,
         now: None,
@@ -283,8 +317,8 @@ fn case(repo: &Repo, item: &Item, events: &[Event]) -> Option<EvalCase> {
     })
 }
 
-/// Files the revert commit touched, when it is known locally; else what
-/// the change itself touched.
+/// Files the revert commit touched, when it is known locally; empty when
+/// it isn't (the case says so in `revert_files_unknown`).
 fn revert_files(repo: &Repo, revert_sha: &str) -> Vec<String> {
     crate::git::run(
         &repo.main_root,
@@ -344,6 +378,9 @@ fn replay(repo: &Repo, runner_: &dyn Runner, item: &Item, events: &[Event], case
     // findings, and only the events up to that review.
     let mut then = item.clone();
     then.reviewed_sha = None;
+    // Not approved yet: a hallmark of a later fix would make this a rebase
+    // review of the fixes only.
+    then.hallmark_sha = None;
     then.rejects = 0;
     then.round = 1;
     then.frozen_sha = Some(case.sha.clone());
@@ -359,8 +396,21 @@ fn replay(repo: &Repo, runner_: &dyn Runner, item: &Item, events: &[Event], case
             assayer::remove_review_checkout(self.0, self.1);
         }
     }
+    // A merge-commit merge leaves the commit in the base: there is no
+    // diff left to review.
+    if crate::git::ok(
+        &repo.main_root,
+        &["merge-base", "--is-ancestor", &case.sha, &item.base],
+    ) {
+        case.skipped = Some(format!(
+            "{} is already in {}: the merge kept it, so there is no diff to replay",
+            short(&case.sha),
+            item.base
+        ));
+        return;
+    }
     let _cleanup = Cleanup(repo, item.id);
-    let (mut req, _) = match review::request(repo, &then, &before, &case.sha) {
+    let (mut req, _) = match review::request_for(repo, &then, &before, &case.sha, true) {
         Ok(r) => r,
         Err(e) => {
             case.skipped = Some(format!("couldn't build the review: {}", e.message));
@@ -368,7 +418,6 @@ fn replay(repo: &Repo, runner_: &dyn Runner, item: &Item, events: &[Event], case
         }
     };
     req.role = ROLE.into();
-    let _ = repo.config.budget.effort(Role::Reviewer);
     let outcome = match runner::run_metered(repo, runner_, None, &req) {
         Ok(Metered::Done(o)) => o,
         Ok(Metered::Blocked(stop)) => {

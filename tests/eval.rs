@@ -16,6 +16,14 @@ const URL: &str = "https://github.com/acme/app/pull/7";
 /// and the revert commit.
 fn reverted_item(env: &Env) -> (String, String, String) {
     let (id, _, sha) = hallmarked_item(env, "Retry webhooks");
+    let revert = revert_it(env, &id, &sha, "retry.rs", 0);
+    (id, sha, revert)
+}
+
+/// Ships `id` at `sha`, merges it and reverts it on main, `age_days` ago.
+/// Touches `file` on main.
+fn revert_it(env: &Env, id: &str, sha: &str, file: &str, age_days: i64) -> String {
+    let (id, sha) = (id.to_string(), sha.to_string());
     append(
         env,
         &id,
@@ -34,12 +42,12 @@ fn reverted_item(env: &Env) -> (String, String, String) {
             outcome: "merged".into(),
         },
     );
-    let landed = commit_file(&env.repo, "retry.rs", "fn retry() {}\n");
-    let revert = commit_file(&env.repo, "retry.rs", "");
-    append(
-        env,
-        &id,
+    let landed = commit_file(&env.repo, file, "fn retry() {}\n");
+    let revert = commit_file(&env.repo, file, "");
+    let item: hallmark::item::ItemId = id.parse().unwrap();
+    let mut ev = hallmark::event::Event::new(
         "reverts",
+        Some(item),
         Body::Reverted {
             pr_url: URL.into(),
             base: "main".into(),
@@ -48,8 +56,10 @@ fn reverted_item(env: &Env) -> (String, String, String) {
             subject: "Revert \"Retry webhooks (#7)\"".into(),
         },
     );
+    ev.t -= chrono::Duration::days(age_days);
+    hall(env).append_item(item, &ev).unwrap();
     assert_eq!(env.hall(&env.repo, &["reindex"]).code, 0);
-    (id, sha, revert)
+    revert
 }
 
 fn eval_step(findings: serde_json::Value) -> serde_json::Value {
@@ -179,4 +189,133 @@ fn a_failed_replay_is_said_and_an_unreverted_item_is_refused() {
     assert_eq!(r.json["error"]["code"], "WRONG_STATE");
     let r = env.hall(&env.repo, &["eval", "--since", "soon"]);
     assert_eq!(r.code, 2);
+}
+
+#[test]
+fn the_limit_the_window_and_the_order_pick_the_newest_reverts() {
+    let env = Env::initialized();
+    let mut ids = Vec::new();
+    for (n, age) in [(1, 40), (2, 20), (3, 0)] {
+        let (id, _, sha) = hallmarked_item(&env, &format!("Item {n}"));
+        revert_it(&env, &id, &sha, &format!("f{n}.rs"), age);
+        ids.push(id);
+    }
+    let items = |args: &[&str]| -> Vec<String> {
+        let mut a = vec!["eval", "--dry-run"];
+        a.extend_from_slice(args);
+        let r = env.hall(&env.repo, &a);
+        assert_eq!(r.code, 0, "{}", r.stdout);
+        r.json["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["item"].as_str().unwrap().to_string())
+            .collect()
+    };
+    let newest_first = vec![ids[2].clone(), ids[1].clone(), ids[0].clone()];
+    assert_eq!(items(&[]), newest_first);
+    assert_eq!(items(&["--limit", "2"]), newest_first[..2]);
+    assert_eq!(items(&["--since", "5d"]), newest_first[..1]);
+    assert_eq!(items(&["--since", "30d"]), newest_first[..2]);
+}
+
+#[test]
+fn a_fix_round_does_not_turn_the_replay_into_a_rebase_review() {
+    let env = Env::initialized();
+    let (id, wt, a) = fixing_item(&env, "Retry webhooks");
+    // The fixer's commit is the one that was approved and hallmarked.
+    let b = commit_file(
+        &wt,
+        "retry.rs",
+        "fn retry() {\n    lock();\n    deliver();\n}\n",
+    );
+    let repo = hallmark::repo::Repo::discover(&env.repo).unwrap();
+    hallmark::stamp::strike(
+        &repo,
+        id.parse().unwrap(),
+        &b,
+        2,
+        Some("claude-opus-5-5".into()),
+        "assayer",
+        counts(0, 0, 0, 0),
+    )
+    .unwrap();
+    revert_it(&env, &id, &b, "retry.rs", 0);
+
+    let script = env.script(json!([eval_step(json!([]))]));
+    let r = env.hall_fake(&env.repo, &script, &["eval"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let c = &r.json["cases"][0];
+    assert_eq!(c["sha"], a.as_str());
+    assert_eq!(c["then"]["rejected"], true);
+    let calls = env.fake_calls();
+    let prompt = calls[0]["prompt"].as_str().unwrap();
+    assert!(!prompt.contains("What the rebase changed"), "{prompt}");
+    assert!(!prompt.contains("was approved at"), "{prompt}");
+    assert!(prompt.contains(&format!("commit {a}")), "{prompt}");
+    assert!(prompt.contains("+    deliver();"), "{prompt}");
+}
+
+#[test]
+fn a_learning_from_the_reverted_item_does_not_brief_its_replay() {
+    let env = Env::initialized();
+    let (id, _, _) = reverted_item(&env);
+    let dir = env.repo.join(".git/hallmark/library/learnings");
+    std::fs::create_dir_all(&dir).unwrap();
+    let learning = |n: u32, source: &str, title: &str| {
+        let text = format!(
+            "---\nid: L-000{n}\nkind: rule\nscope: [\"retry.rs\"]\nlens: correctness\nsource: [{source}]\nstatus: accepted\nused: 0\n---\n# {title}\n\nbody {n}\n"
+        );
+        std::fs::write(dir.join(format!("L-000{n}-x.md")), text).unwrap();
+    };
+    learning(1, &format!("\"{id}/F1\""), "Learned from the revert");
+    learning(2, "\"H-0900/F1\"", "Learned elsewhere");
+    let script = env.script(json!([eval_step(json!([]))]));
+    let r = env.hall_fake(&env.repo, &script, &["eval"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let calls = env.fake_calls();
+    let prompt = calls[0]["prompt"].as_str().unwrap();
+    assert!(prompt.contains("Learned elsewhere"), "{prompt}");
+    assert!(!prompt.contains("Learned from the revert"), "{prompt}");
+}
+
+#[test]
+fn replies_keep_their_shape() {
+    let env = Env::initialized();
+    let (id, _, _) = reverted_item(&env);
+    let has = |v: &serde_json::Value, keys: &[&str]| {
+        for k in keys {
+            assert!(v.get(*k).is_some(), "missing {k} in {v}");
+        }
+    };
+    let dry = env.hall(&env.repo, &["eval", "--dry-run"]);
+    has(&dry.json, &["cases", "dry_run", "next", "totals"]);
+    has(
+        &dry.json["cases"][0],
+        &["item", "title", "sha", "reverted_by", "revert_files", "then"],
+    );
+    has(
+        &dry.json["cases"][0]["then"],
+        &["rejected", "caught", "findings", "blocking", "titles"],
+    );
+    has(
+        &dry.json["totals"],
+        &[
+            "cases",
+            "ran",
+            "then_caught",
+            "now_caught",
+            "now_rejected",
+            "cost_usd",
+        ],
+    );
+    let script = env.script(json!([eval_step(json!([{
+        "lens": "correctness", "severity": "blocker", "file": "retry.rs", "line": 1,
+        "title": "Two workers", "scenario": "s", "fix": "f"
+    }]))]));
+    let r = env.hall_fake(&env.repo, &script, &["eval", &id]);
+    has(
+        &r.json["cases"][0]["now"],
+        &["rejected", "caught", "findings", "blocking", "titles"],
+    );
 }

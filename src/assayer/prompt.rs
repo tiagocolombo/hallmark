@@ -77,11 +77,14 @@ pub fn prepare(
     sha: &str,
     default_effort: Option<&str>,
 ) -> Result<Review> {
-    prepare_with(repo, item, events, sha, default_effort, None, None)
+    prepare_with(repo, item, events, sha, default_effort, None, None, false)
 }
 
 /// [`prepare`], as a second pass when `pass` is given, and with the base
 /// pinned to `pin` (the commit an earlier run of the round read) when given.
+/// `replay` leaves out the learnings sourced from `item` itself (`hall eval`:
+/// the outcome being scored must not brief the review).
+#[allow(clippy::too_many_arguments)]
 pub fn prepare_with(
     repo: &Repo,
     item: &Item,
@@ -90,6 +93,7 @@ pub fn prepare_with(
     default_effort: Option<&str>,
     pass: Option<&Pass>,
     pin: Option<&str>,
+    replay: bool,
 ) -> Result<Review> {
     let dir = &repo.main_root;
     let base = match pin {
@@ -199,8 +203,15 @@ pub fn prepare_with(
         None => base.lenses(),
     };
     let rules = base::rules(repo, &base);
-    let briefing =
-        crate::library::briefing(repo, &all_changed, &diff, effort.as_deref()).unwrap_or_default();
+    let source = item.id.to_string();
+    let briefing = crate::library::briefing_without(
+        repo,
+        &all_changed,
+        &diff,
+        effort.as_deref(),
+        replay.then_some(source.as_str()),
+    )
+    .unwrap_or_default();
 
     // --- the prompt ---------------------------------------------------------
     let created = events.iter().find_map(|e| match &e.body {

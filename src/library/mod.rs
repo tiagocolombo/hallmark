@@ -49,6 +49,17 @@ pub fn briefing(
     briefing::briefing(repo, changed, diff, effort)
 }
 
+/// [`briefing`] without the learnings sourced from the item `source`.
+pub fn briefing_without(
+    repo: &Repo,
+    changed: &[String],
+    diff: &str,
+    effort: Option<&str>,
+    source: Option<&str>,
+) -> Result<Briefing> {
+    briefing::briefing_without(repo, changed, diff, effort, source)
+}
+
 /// Distils closed and escalated items into proposed learnings.
 pub fn librarian_tick(ctx: &WorkerCtx) -> Result<Progress> {
     librarian::tick(ctx)
