@@ -571,7 +571,11 @@ fn a_pr_waiting_for_approvals_that_falls_behind_is_rebased_not_stranded() {
     let rel = events(&env, &id, "released");
     assert_eq!(rel[0]["actor"], "merger");
     let status = env.hall(&env.repo, &["status", &id]);
-    assert!(status.json.get("hold").is_none_or(|h| h.is_null()), "{}", status.stdout);
+    assert!(
+        status.json.get("hold").is_none_or(|h| h.is_null()),
+        "{}",
+        status.stdout
+    );
 }
 
 #[test]
@@ -582,7 +586,14 @@ fn queueing_never_writes_to_a_journal_of_a_pr_that_waits_for_approvals() {
     set_config(&env, "merge.two_approvals", "[\"setup.sh\"]");
     let (id, _, sha) = shipped(&env, &gh, 1, "setup.sh");
     pass(&env, &gh);
-    pr(&gh, 1, "MERGEABLE", &sha, "", approved_by(&["ana", "bob"], &sha));
+    pr(
+        &gh,
+        1,
+        "MERGEABLE",
+        &sha,
+        "",
+        approved_by(&["ana", "bob"], &sha),
+    );
     let before = events(&env, &id, "released").len();
     let q = queue(&env, &gh);
     assert_eq!(status_of(&q, &id)["status"], "ready");
