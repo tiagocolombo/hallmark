@@ -99,6 +99,7 @@ pub fn init(cwd: &Path, a: InitArgs, mode: Mode) -> Result<Response> {
     let mut created = Vec::new();
     let mut unchanged = Vec::new();
     let mut settings = Vec::new();
+    let mut refused = Vec::new();
 
     let config_path = root.join(config::FILE_NAME);
     let (base, gates, capture) = if config_path.is_file() {
@@ -114,7 +115,7 @@ pub fn init(cwd: &Path, a: InitArgs, mode: Mode) -> Result<Response> {
         let capture = a.capture.unwrap_or_default();
         // The wizard asks before anything is written, so cancelling it
         // leaves the repo as it was.
-        let plan = if a.defaults || !wizard::can_ask(mode) {
+        let plan = if !wizard::asks(false, a.defaults, true, wizard::can_ask(mode)) {
             None
         } else {
             let mut ctx = wizard::context(cwd);
@@ -132,18 +133,12 @@ pub fn init(cwd: &Path, a: InitArgs, mode: Mode) -> Result<Response> {
                 std::io::stderr(),
             )?)
         };
-        fs::write(&config_path, config::render_initial(&base, &gates, capture))?;
         created.push(config::FILE_NAME.to_string());
-        // The answers go through the same code as `hall config set`, so
-        // the file keeps its comments.
-        for c in plan.iter().flat_map(|p| &p.changes) {
-            if c.scope == Scope::Repo {
-                super::config::write(Scope::Repo, &config_path, &c.key, c.value.clone())?;
-                settings.push(c.shown());
-            }
-        }
-        let c = Config::parse(&fs::read_to_string(&config_path)?)?;
-        (c.base.clone(), c.gate_commands(), c.capture.mode)
+        let (b, g, c, done, failed) =
+            write_initial(&config_path, &base, &gates, capture, plan.as_ref())?;
+        settings = done;
+        refused = failed;
+        (b, g, c)
     };
 
     let review = root.join(".hallmark").join("review.md");
@@ -194,8 +189,56 @@ pub fn init(cwd: &Path, a: InitArgs, mode: Mode) -> Result<Response> {
             created.join(" ")
         ));
     }
+    for r in &refused {
+        next.push(format!("hall config set {r}"));
+    }
     next.extend(["hall doctor".to_string(), "hall new \"<request>\"".into()]);
     Ok(Response::new(out, next))
+}
+
+/// What [`write_initial`] did: the base, gates and capture mode the file now
+/// has, the answers applied (`key = value`), and the answers refused
+/// (`key <value>  # why`).
+type Initial = (String, Vec<String>, CaptureMode, Vec<String>, Vec<String>);
+
+/// Writes the initial `.hallmark.toml`, then applies the confirmed answers
+/// through the code `hall config set` uses, so the file keeps its comments.
+/// An answer that doesn't apply is reported, and the others still go in.
+fn write_initial(
+    path: &Path,
+    base: &str,
+    gates: &[String],
+    capture: CaptureMode,
+    plan: Option<&wizard::Plan>,
+) -> Result<Initial> {
+    fs::write(path, config::render_initial(base, gates, capture))?;
+    let mut done = Vec::new();
+    let mut refused = Vec::new();
+    for c in plan.iter().flat_map(|p| &p.changes) {
+        if c.scope != Scope::Repo {
+            continue;
+        }
+        match super::config::write(Scope::Repo, path, &c.key, c.value.clone()) {
+            Ok(_) => done.push(c.shown()),
+            Err(e) => {
+                let v = c.value.as_ref().map(|v| v.to_string()).unwrap_or_default();
+                refused.push(format!(
+                    "{} {}  # not applied: {}",
+                    c.key,
+                    v.trim(),
+                    e.message
+                ));
+            }
+        }
+    }
+    let c = Config::parse(&fs::read_to_string(path)?)?;
+    Ok((
+        c.base.clone(),
+        c.gate_commands(),
+        c.capture.mode,
+        done,
+        refused,
+    ))
 }
 
 /// Adds or refreshes the Hallmark section between its markers.
@@ -266,5 +309,56 @@ mod tests {
             upsert_section(""),
             format!("{MARK_START}\n{CLAUDE_SECTION}\n{MARK_END}\n")
         );
+    }
+
+    fn change(key: &str, v: toml_edit::Value) -> wizard::Change {
+        wizard::Change {
+            scope: Scope::Repo,
+            key: key.into(),
+            value: Some(v),
+        }
+    }
+
+    #[test]
+    fn the_confirmed_answers_are_written_and_a_refused_one_stops_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(config::FILE_NAME);
+        let plan = wizard::Plan {
+            changes: vec![
+                change("base", "trunk".into()),
+                change("claude_args", {
+                    let mut a = toml_edit::Array::new();
+                    a.push("--mcp-config");
+                    a.push(".mcp.json");
+                    toml_edit::Value::Array(a)
+                }),
+                change("capture.mode", "ask".into()),
+                change("gates", {
+                    let mut a = toml_edit::Array::new();
+                    a.push("nix develop --command make test");
+                    toml_edit::Value::Array(a)
+                }),
+            ],
+            daemon: true,
+            phone: wizard::Phone::Keep,
+            skipped: false,
+        };
+        let (base, gates, capture, done, refused) = write_initial(
+            &path,
+            "main",
+            &["make test".to_string()],
+            CaptureMode::default(),
+            Some(&plan),
+        )
+        .unwrap();
+        assert_eq!(base, "trunk");
+        assert_eq!(gates, vec!["nix develop --command make test"]);
+        assert_eq!(capture.as_str(), "ask");
+        assert_eq!(done.len(), 3, "{done:?}");
+        assert_eq!(refused.len(), 1, "{refused:?}");
+        assert!(refused[0].starts_with("claude_args "), "{refused:?}");
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(text.contains('#'), "comments are kept:\n{text}");
+        assert!(!text.contains("mcp-config"), "{text}");
     }
 }

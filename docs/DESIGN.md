@@ -314,7 +314,10 @@ Agents are the primary users of `hall`, so the command line is an API.
 - **Output.**
   - JSON when stdout isn't a TTY; `--json` forces it.
   - Readable text only on a TTY.
-- **Never prompts.**
+- **Never prompts**, except the setup wizard on a terminal.
+  - `hall init` and the first `hall setup` ask first; `hall setup
+    --interactive` asks again. `--defaults`, or no terminal, never asks
+    ([ADR 0055](decisions/0055-the-setup-wizard-asks-first.md)).
   - Destructive actions need explicit flags, such as `drop --reason`.
 - **Idempotent.**
   - Repeating a command returns the current result.

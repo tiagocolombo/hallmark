@@ -68,6 +68,23 @@ pub struct Context {
     pub in_repo: bool,
     /// The shell the repo's toolchain comes from, if one was detected.
     pub wrapper: Option<(&'static str, &'static str)>,
+    /// The text each answer is applied to: `.hallmark.toml` (or what
+    /// `hall init` will write) and the user config. An answer that doesn't
+    /// apply to it is refused when it is given.
+    pub repo_text: String,
+    pub user_text: String,
+}
+
+/// Whether the wizard asks. `--interactive` always does; otherwise only the
+/// first time, on a terminal, and never with `--defaults` (ADR 0055).
+pub fn asks(interactive: bool, defaults: bool, first: bool, can_ask: bool) -> bool {
+    interactive || (first && !defaults && can_ask)
+}
+
+/// The first run: there is no user config yet, or the repo has no
+/// `.hallmark.toml`.
+pub fn first_run(user_config_exists: bool, repo_has_toml: Option<bool>) -> bool {
+    !user_config_exists || repo_has_toml == Some(false)
 }
 
 /// The current settings for a run in `cwd`. Before `hall init` has written
@@ -75,9 +92,21 @@ pub struct Context {
 pub fn context(cwd: &Path) -> Context {
     let mut entries = super::config::snapshot(cwd);
     let repo = crate::repo::Repo::discover(cwd).ok();
+    let user_text = std::fs::read_to_string(crate::config::UserConfig::path()).unwrap_or_default();
+    let mut repo_text = String::new();
+    if let Some(r) = &repo
+        && let Ok(t) = std::fs::read_to_string(r.toplevel.join(crate::config::FILE_NAME))
+    {
+        repo_text = t;
+    }
     if let Some(r) = &repo
         && !r.main_root.join(crate::config::FILE_NAME).is_file()
     {
+        repo_text = crate::config::render_initial(
+            &crate::git::default_branch(&r.main_root),
+            &detect::gates(&r.toplevel),
+            Default::default(),
+        );
         for e in entries.iter_mut().filter(|e| e.scope == Scope::Repo) {
             match e.key.as_str() {
                 "base" => e.value = crate::git::default_branch(&r.main_root).into(),
@@ -90,6 +119,8 @@ pub fn context(cwd: &Path) -> Context {
         entries,
         in_repo: repo.is_some(),
         wrapper: repo.and_then(|r| detect::env_wrapper(&r.toplevel)),
+        repo_text,
+        user_text,
     }
 }
 
@@ -102,6 +133,9 @@ pub struct Ask {
     pub user: bool,
     /// The command that runs this wizard again, for `next`.
     pub again: &'static str,
+    /// The command that asks after a skip. Not `again` for `hall init`:
+    /// the skip wrote `.hallmark.toml`, so `hall init` asks nothing.
+    pub later: &'static str,
 }
 
 impl Ask {
@@ -110,12 +144,14 @@ impl Ask {
         repo: true,
         user: true,
         again: "hall setup --interactive",
+        later: "hall setup --interactive",
     };
     /// `hall init`: this repository only.
     pub const INIT: Ask = Ask {
         repo: true,
         user: false,
         again: "hall init",
+        later: "hall setup --interactive",
     };
 }
 
@@ -337,7 +373,7 @@ pub fn run<R: BufRead, W: Write>(ctx: &Context, ask: Ask, input: R, out: W) -> R
             format!(
                 "Skip for now: the defaults, in a basic config file. `{}` asks again, \
                  and `hall config` sets any key.",
-                ask.again
+                ask.later
             ),
         ],
         0,
@@ -572,12 +608,20 @@ impl<R: BufRead, W: Write> Wizard<'_, R, W> {
     }
 
     fn yes(&mut self, q: &str, default: bool) -> Result<bool> {
+        Ok(self.yes_with(q, default, None)?.unwrap_or(default))
+    }
+
+    /// Yes or no. With `help`, '?' prints it and '-' returns `None`: back
+    /// to the default.
+    fn yes_with(&mut self, q: &str, default: bool, help: Option<&str>) -> Result<Option<bool>> {
         loop {
             let a = self.line(&format!("{q} [{}] ", if default { "Y/n" } else { "y/N" }))?;
             match a.to_ascii_lowercase().as_str() {
-                "" => return Ok(default),
-                "y" | "yes" => return Ok(true),
-                "n" | "no" => return Ok(false),
+                "" => return Ok(Some(default)),
+                "y" | "yes" => return Ok(Some(true)),
+                "n" | "no" => return Ok(Some(false)),
+                "?" if help.is_some() => self.say(&format!("  {}", help.unwrap_or_default()))?,
+                "-" if help.is_some() => return Ok(None),
                 _ => self.say("Answer y or n.")?,
             }
         }
@@ -585,6 +629,19 @@ impl<R: BufRead, W: Write> Wizard<'_, R, W> {
 
     /// A numbered menu; returns the chosen index.
     fn choose(&mut self, q: &str, options: &[String], default: usize) -> Result<usize> {
+        Ok(self
+            .choose_with(q, options, default, None)?
+            .unwrap_or(default))
+    }
+
+    /// A numbered menu. With `help`, '?' prints it and '-' returns `None`.
+    fn choose_with(
+        &mut self,
+        q: &str,
+        options: &[String],
+        default: usize,
+        help: Option<&str>,
+    ) -> Result<Option<usize>> {
         self.say(q)?;
         for (i, o) in options.iter().enumerate() {
             self.say(&format!("  {}) {o}", i + 1))?;
@@ -592,18 +649,45 @@ impl<R: BufRead, W: Write> Wizard<'_, R, W> {
         loop {
             let a = self.line(&format!("Choose 1-{} [{}]: ", options.len(), default + 1))?;
             if a.is_empty() {
-                return Ok(default);
+                return Ok(Some(default));
+            }
+            if let Some(h) = help {
+                if a == "?" {
+                    self.say(&format!("  {h}"))?;
+                    continue;
+                }
+                if a == "-" {
+                    return Ok(None);
+                }
             }
             if let Ok(n) = a.parse::<usize>()
                 && (1..=options.len()).contains(&n)
             {
-                return Ok(n - 1);
+                return Ok(Some(n - 1));
             }
             if let Some(i) = options.iter().position(|o| o == &a) {
-                return Ok(i);
+                return Ok(Some(i));
             }
             self.say(&format!("Type a number from 1 to {}.", options.len()))?;
         }
+    }
+
+    /// Whether `value` applies to the scope's file on top of the answers
+    /// already given.
+    fn check(
+        &self,
+        scope: Scope,
+        key: &str,
+        value: &Option<toml_edit::Value>,
+    ) -> Result<(), String> {
+        let mut text = match scope {
+            Scope::Repo => self.ctx.repo_text.clone(),
+            Scope::User => self.ctx.user_text.clone(),
+        };
+        for c in self.changes.iter().filter(|c| c.scope == scope) {
+            text = settings::edit(scope, &text, &c.key, c.value.clone())?;
+        }
+        settings::edit(scope, &text, key, value.clone()).map(|_| ())
     }
 
     fn entry(&self, scope: Scope, key: &str) -> Option<&Entry> {
@@ -695,18 +779,27 @@ impl<R: BufRead, W: Write> Wizard<'_, R, W> {
             .map(String::from)
             .or_else(|| k.help.as_deref().map(first_sentence))
             .unwrap_or_else(|| key.to_string());
+        let help = k.help.clone().unwrap_or_else(|| "No description.".into());
         loop {
             // None: keep. Some(None): back to the default. Some(Some(v)): set.
             let answer: Option<Option<Vec<String>>> = match k.kind {
                 Kind::Bool => {
-                    let b =
-                        self.yes(&format!("{label} ({key})?"), cur.as_bool().unwrap_or(false))?;
-                    Some(Some(vec![b.to_string()]))
+                    let b = self.yes_with(
+                        &format!("{label} ({key})?"),
+                        cur.as_bool().unwrap_or(false),
+                        Some(help.as_str()),
+                    )?;
+                    Some(b.map(|b| vec![b.to_string()]))
                 }
                 Kind::Choice => {
                     let d = k.values.iter().position(|v| *v == plain(&cur)).unwrap_or(0);
-                    let i = self.choose(&format!("{label} ({key})"), &k.values, d)?;
-                    Some(Some(vec![k.values[i].clone()]))
+                    let i = self.choose_with(
+                        &format!("{label} ({key})"),
+                        &k.values,
+                        d,
+                        Some(help.as_str()),
+                    )?;
+                    Some(i.map(|i| vec![k.values[i].clone()]))
                 }
                 Kind::List => self.list(&label, key, &cur)?,
                 _ => {
@@ -720,7 +813,6 @@ impl<R: BufRead, W: Write> Wizard<'_, R, W> {
                         "" => None,
                         "-" => Some(None),
                         "?" => {
-                            let help = k.help.clone().unwrap_or_else(|| "No description.".into());
                             self.say(&format!("  {help}"))?;
                             continue;
                         }
@@ -734,7 +826,10 @@ impl<R: BufRead, W: Write> Wizard<'_, R, W> {
                     self.record(scope, key, None);
                     return Ok(());
                 }
-                Some(Some(items)) => match settings::parse(&k, &items) {
+                Some(Some(items)) => match settings::parse(&k, &items).and_then(|v| {
+                    self.check(scope, key, &Some(v.clone()))?;
+                    Ok(v)
+                }) {
                     Ok(v) => {
                         self.record(scope, key, Some(v));
                         return Ok(());
@@ -989,7 +1084,92 @@ mod tests {
             entries,
             in_repo: true,
             wrapper: Some(detect::WRAPPERS[0]),
+            repo_text: crate::config::render_initial(
+                "main",
+                &["cargo test".to_string()],
+                Default::default(),
+            ),
+            user_text: String::new(),
         }
+    }
+
+    /// When the wizard asks: `--defaults` never; the first run on a terminal
+    /// yes; a set-up machine no; `--interactive` always; no terminal no.
+    #[test]
+    fn asks_table() {
+        // (interactive, defaults, first, can_ask) -> asks
+        let table = [
+            (false, true, true, true, false),
+            (false, false, true, true, true),
+            (false, false, false, true, false),
+            (true, false, false, true, true),
+            (false, false, true, false, false),
+            (false, true, false, false, false),
+        ];
+        for (i, d, f, c, want) in table {
+            assert_eq!(asks(i, d, f, c), want, "{i} {d} {f} {c}");
+        }
+        assert!(first_run(false, Some(true)));
+        assert!(first_run(true, Some(false)));
+        assert!(first_run(false, None));
+        assert!(!first_run(true, Some(true)));
+        assert!(!first_run(true, None));
+    }
+
+    fn ask_one(ctx: &Context, scope: Scope, key: &str, input: &str) -> (Vec<Change>, String) {
+        let mut out = Vec::new();
+        let mut w = Wizard {
+            ctx,
+            ask: Ask::INIT,
+            input: std::io::Cursor::new(input.to_string()),
+            out: &mut out,
+            changes: Vec::new(),
+            asked: HashSet::new(),
+        };
+        w.ask(scope, key, None).unwrap();
+        let changes = w.changes;
+        (changes, String::from_utf8(out).unwrap())
+    }
+
+    #[test]
+    fn a_refused_answer_is_asked_again() {
+        let ctx = ctx();
+        let (changes, out) = ask_one(
+            &ctx,
+            Scope::Repo,
+            "claude_args",
+            "--mcp-config\n\n\n",
+        );
+        assert!(out.matches("claude_args").count() >= 2, "{out}");
+        assert!(
+            changes.iter().all(|c| !c.shown().contains("mcp-config")),
+            "{changes:?}"
+        );
+    }
+
+    #[test]
+    fn help_and_reset_work_on_yes_no_and_choices() {
+        let ctx = ctx();
+        let (_, out) = ask_one(&ctx, Scope::Repo, "merge.require_ci", "?\n\n");
+        assert!(!out.contains("Answer y or n."), "{out}");
+        let (_, out) = ask_one(&ctx, Scope::Repo, "capture.push_guard", "?\n\n");
+        assert!(!out.contains("Type a number"), "{out}");
+        let on = ctx
+            .entries
+            .iter()
+            .find(|e| e.key == "merge.require_ci")
+            .and_then(|e| e.value.as_bool())
+            .unwrap_or(false);
+        let (changes, _) = ask_one(
+            &ctx,
+            Scope::Repo,
+            "merge.require_ci",
+            if on { "n\n" } else { "y\n" },
+        );
+        assert_eq!(changes.len(), 1);
+        // '-' goes back to the default without an error.
+        let (_, out) = ask_one(&ctx, Scope::Repo, "merge.require_ci", "-\n");
+        assert!(!out.contains("Answer y or n."), "{out}");
     }
 
     fn run_with(ctx: &Context, ask: Ask, answers: &[&str]) -> (Result<Plan>, String) {
@@ -1034,9 +1214,10 @@ mod tests {
         assert!(plan.changes.is_empty());
         assert!(plan.daemon);
         assert_eq!(plan.phone, Phone::Keep);
-        // `hall init` names itself as the way back.
+        // After a skip, `hall init` asks nothing: point to a command that does.
         let (_, out) = run_with(&ctx, Ask::INIT, &["2"]);
-        assert!(out.contains("`hall init` asks again"), "{out}");
+        assert!(out.contains("`hall setup --interactive` asks again"), "{out}");
+        assert!(!out.contains("`hall init` asks again"), "{out}");
     }
 
     /// Every key of both files is offered, in a section, so nothing lands

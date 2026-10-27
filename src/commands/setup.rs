@@ -601,9 +601,12 @@ fn all(cwd: &Path, a: &SetupArgs, mode: Mode) -> Result<Response> {
     use super::wizard::{self, Ask, Phone};
     use crate::cli::{DaemonAction, DaemonArgs, InitArgs, NotifyAction, NotifyArgs};
     let user_file = crate::config::UserConfig::path();
-    let first = !user_file.is_file()
-        || crate::repo::Repo::discover(cwd)
-            .is_ok_and(|r| !r.main_root.join(crate::config::FILE_NAME).is_file());
+    let first = wizard::first_run(
+        user_file.is_file(),
+        crate::repo::Repo::discover(cwd)
+            .ok()
+            .map(|r| r.main_root.join(crate::config::FILE_NAME).is_file()),
+    );
     let can_ask = wizard::can_ask(mode);
     if a.interactive && !can_ask {
         return Err(HallError::usage(
@@ -617,7 +620,7 @@ fn all(cwd: &Path, a: &SetupArgs, mode: Mode) -> Result<Response> {
     }
     let ask_step = "ask about every setting";
     let mut steps = Vec::new();
-    let plan = if a.interactive || (first && !a.defaults && can_ask) {
+    let plan = if wizard::asks(a.interactive, a.defaults, first, can_ask) {
         let ctx = wizard::context(cwd);
         let plan = wizard::run(&ctx, Ask::SETUP, std::io::stdin().lock(), std::io::stderr())?;
         steps.push(if plan.skipped {
