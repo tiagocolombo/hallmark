@@ -599,16 +599,26 @@ pub fn explain(repo: &Repo, ix: &Index, entry: InboxEntry, number: usize) -> Res
              loop goes on by itself when the pause ends."
                 .into(),
             vec![entry.text.clone()],
-            vec![
-                act(
+            {
+                let mut acts = Vec::new();
+                // A spent daily cap pauses again at once on resume: the
+                // grant is the action that works (ADR 0028).
+                if crate::budget::daily_note(repo).is_some() {
+                    acts.push(act(
+                        "hall budget --grant",
+                        "let the loop go on today: the daily cap stays as it is",
+                    ));
+                }
+                acts.push(act(
                     "hall daemon resume",
                     "retry now: lift the pause before its time, once you topped up or the limit reset early",
-                ),
-                act(
+                ));
+                acts.push(act(
                     "hall daemon status",
                     "see the pause and what the daemon last did",
-                ),
-            ],
+                ));
+                acts
+            },
         ),
         kind => {
             let why = match kind {
