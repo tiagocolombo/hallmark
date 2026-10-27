@@ -41,8 +41,8 @@ review) both cost a round before they were found wrong.
 
 - With the verifier on, a false blocker or major costs one cheap run
   instead of a fix, a gate run and a review.
-- Only blocking findings are checked: minors and nits don't cause rounds,
-  and the fixer may already leave them.
+- Only blocking findings are checked: minors, nits and pre-existing findings
+  (ADR 0059) don't cause rounds, and the fixer may already leave them.
 - The verifier can be wrong the other way and drop a real finding. The
   report keeps it, with the verifier's reason, so a person can see what
   was dropped; a reverted change (ADR 0061) whose dropped finding named

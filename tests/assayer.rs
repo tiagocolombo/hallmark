@@ -1335,6 +1335,29 @@ fn round_two_prompt_marks_a_pre_existing_finding_and_only_that_one() {
 }
 
 #[test]
+fn the_verifier_never_checks_a_pre_existing_blocker() {
+    let env = Env::initialized();
+    configure(&env, &[("verify", "\"sonnet\"")]);
+    let mut old = finding("blocker", "retry.rs", "Old race in the lock");
+    old["pre_existing"] = json!(true);
+    let script = env.script(json!([
+        reviewer(verdict(vec![old], json!([]))),
+        verifier(json!([{"index": 1, "real": false, "reason": "untouched"}]))
+    ]));
+    let (id, _, _) = ready_item(&env, "Retry", "retry.rs", "fn retry() {}\n");
+    tick(&env, &script);
+    tick(&env, &script);
+    assert_eq!(env.fake_calls().len(), 1, "no verifier call");
+    assert_eq!(state(&env, &id), "hallmarked");
+    assert!(events_of(&env, &id, "verified").is_empty());
+    let r = env.hall(&env.repo, &["findings", &id]);
+    let f = r.json["findings"].as_array().unwrap();
+    assert_eq!(f.len(), 1);
+    assert_eq!(f[0]["id"], "F1");
+    assert_eq!(f[0]["pre_existing"], true);
+}
+
+#[test]
 fn a_pre_existing_blocker_is_recorded_but_never_blocks() {
     let env = Env::initialized();
     let mut old = finding("blocker", "retry.rs", "Old race in the lock");

@@ -74,6 +74,12 @@ pub struct Verification {
     pub skipped: Option<String>,
 }
 
+/// The findings the verifier checks: the ones that would send the item back.
+/// A pre-existing finding never blocks (ADR 0059), so it is not checked.
+fn checked_kind(f: &ModelFinding) -> bool {
+    f.severity.blocks() && !f.pre_existing
+}
+
 /// Runs the verifier on `mv`'s blocking findings and returns the verdict
 /// with the refuted ones removed, plus the record of what happened.
 /// `wt` is the review checkout; `base_sha` the base the rules came from.
@@ -96,7 +102,7 @@ pub fn verify(
             },
         ));
     }
-    let blocking: Vec<&ModelFinding> = mv.findings.iter().filter(|f| f.severity.blocks()).collect();
+    let blocking: Vec<&ModelFinding> = mv.findings.iter().filter(|f| checked_kind(f)).collect();
     if blocking.is_empty() {
         return Ok((
             mv,
@@ -209,7 +215,7 @@ pub fn apply(mv: ModelVerdict, rulings: &Rulings) -> (ModelVerdict, Vec<DroppedF
     let mut dropped = Vec::new();
     let mut kept = Vec::new();
     for f in mv.findings {
-        if !f.severity.blocks() {
+        if !checked_kind(&f) {
             kept.push(f);
             continue;
         }
@@ -370,6 +376,25 @@ mod tests {
         );
         assert_eq!(kept.findings.len(), 1);
         assert!(dropped.is_empty());
+    }
+
+    #[test]
+    fn a_pre_existing_blocking_finding_is_neither_numbered_nor_dropped() {
+        let mut old = mf(Severity::Major, "old");
+        old.pre_existing = true;
+        let v = mv(vec![old, mf(Severity::Major, "new")]);
+        let rulings = Rulings {
+            rulings: vec![Ruling {
+                index: 1,
+                real: false,
+                reason: "not real".into(),
+            }],
+        };
+        let (kept, dropped) = apply(v, &rulings);
+        let titles: Vec<&str> = kept.findings.iter().map(|f| f.title.as_str()).collect();
+        assert_eq!(titles, ["old"]);
+        assert_eq!(dropped.len(), 1);
+        assert_eq!(dropped[0].title, "new");
     }
 
     #[test]
