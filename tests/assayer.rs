@@ -444,7 +444,10 @@ fn a_change_on_a_security_review_path_gets_a_second_security_only_pass() {
             .contains("Security pass")
     );
     // The pass is told what the reviewer already reported.
-    assert!(prompt.contains("already reported these this round"), "{prompt}");
+    assert!(
+        prompt.contains("already reported these this round"),
+        "{prompt}"
+    );
     assert!(prompt.contains("- `auth.rs:1` Retries forever"), "{prompt}");
 
     // One verdict for the round: the reviewer's finding, then the pass's;
@@ -651,7 +654,11 @@ fn an_item_pulled_back_during_the_security_pass_is_discarded() {
     let script = env.script(json!([reviewer(verdict(vec![], json!([]))), pass]));
     tick(&env, &script);
     let r = tick(&env, &script);
-    assert!(what(&r).contains("discarded: the item moved on"), "{}", r.stdout);
+    assert!(
+        what(&r).contains("discarded: the item moved on"),
+        "{}",
+        r.stdout
+    );
     assert!(events_of(&env, &id, "verdict").is_empty());
     assert!(events_of(&env, &id, "security_pass").is_empty());
 }
