@@ -249,6 +249,10 @@ pub enum Body {
         /// Incremental review: the last reviewed commit.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         since: Option<String>,
+        /// The reviewer asked for a person's approval before the merge, and
+        /// why (ADR 0063).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        needs_person: Option<String>,
     },
     /// The security pass (ADR 0064) that ran, or couldn't, before this
     /// round's verdict was recorded: the paths that asked for it, the
@@ -1043,6 +1047,7 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
         merged: None,
         merge_approved: None,
         reverted: None,
+        needs_person: None,
         own_worktree: own_worktree.unwrap_or(!*adopted),
         swept: false,
     };
@@ -1094,6 +1099,7 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
                 sha,
                 escalated,
                 summary,
+                needs_person,
                 ..
             } => {
                 if *verdict == VerdictKind::Changes {
@@ -1104,6 +1110,9 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
                 // person reads; an approval or a non-escalating one clears
                 // what an earlier escalation left.
                 item.escalation = if *escalated { summary.clone() } else { None };
+                // The latest review's word on whether a person must approve
+                // the merge (ADR 0063).
+                item.needs_person = needs_person.clone();
             }
             Body::Hallmarked { sha, .. } => item.hallmark_sha = Some(sha.clone()),
             Body::Held { kind, reason } => {
@@ -1115,7 +1124,14 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
             }
             Body::Released { .. } => {
                 // Releasing a lit hold is your approval to merge that head.
-                if item.hold.as_ref().is_some_and(|h| h.kind == HoldKind::Lit) {
+                // The merger lifting a wait for approvals is not a person's
+                // approval (ADR 0063).
+                let by_merger_tier = e.actor == crate::merger::ACTOR
+                    && item
+                        .hold
+                        .as_ref()
+                        .is_some_and(|h| h.reason.starts_with(crate::merger::TIER_WAIT));
+                if !by_merger_tier && item.hold.as_ref().is_some_and(|h| h.kind == HoldKind::Lit) {
                     item.merge_approved = item.pr_head.clone();
                 }
                 // A retried merge that never landed tries again.
@@ -1297,6 +1313,48 @@ mod tests {
     }
 
     #[test]
+    fn the_mergers_release_of_a_tier_wait_is_not_your_approval() {
+        let mut c = created();
+        if let Body::Created { pr_head, .. } = &mut c.body {
+            *pr_head = Some("abc".into());
+        }
+        let held = |reason: String| {
+            ev(Body::Held {
+                kind: HoldKind::Lit,
+                reason,
+            })
+        };
+        let released = |actor: &str| {
+            Event::new(
+                actor,
+                Some(ItemId(1)),
+                Body::Released {
+                    reason: None,
+                    granted_tokens: None,
+                },
+            )
+        };
+        let wait = format!(
+            "{}2 approvals from people (has 1)",
+            crate::merger::TIER_WAIT
+        );
+        let by_merger = fold(
+            ItemId(1),
+            &[
+                c.clone(),
+                held(wait.clone()),
+                released(crate::merger::ACTOR),
+            ],
+        )
+        .unwrap();
+        assert!(by_merger.hold.is_none());
+        assert_eq!(by_merger.merge_approved, None);
+        // Your release of the same wait is your approval.
+        let by_you = fold(ItemId(1), &[c, held(wait), released("you")]).unwrap();
+        assert_eq!(by_you.merge_approved.as_deref(), Some("abc"));
+    }
+
+    #[test]
     fn a_legacy_adopted_created_event_is_not_the_sweepers() {
         let line = r#"{"v":1,"t":"2026-01-01T00:00:00Z","actor":"you","item":"H-0001","event":"created","title":"T","branch":"b","worktree":"/home/me/app","base":"main","adopted":true}"#;
         let e: Event = serde_json::from_str(line).unwrap();
@@ -1377,6 +1435,7 @@ mod tests {
                 learnings: vec![],
                 base: None,
                 since: None,
+                needs_person: None,
             }),
             ev(Body::FixSubmitted {
                 sha: "bbb".into(),
@@ -1495,6 +1554,7 @@ mod tests {
                 learnings: vec![],
                 base: None,
                 since: None,
+                needs_person: None,
             }),
             ev(Body::Hallmarked {
                 sha: sha.into(),

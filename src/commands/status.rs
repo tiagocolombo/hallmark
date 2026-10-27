@@ -679,9 +679,11 @@ pub fn explain(repo: &Repo, ix: &Index, entry: InboxEntry, number: usize) -> Res
                      try again, or merge it yourself."
                 }
                 "lit" => {
-                    "Its PR is ready to merge, but it touches a `[merge] lit` path, so a person \
-                     merges it. Merge it yourself, or `hall retry` to let the merger merge this \
-                     head."
+                    "Its PR is ready to merge, but a person has to: it touches a `[merge] lit` \
+                     path, or it waits for people's approvals by risk tier (`one_approval`, \
+                     `two_approvals`, or the reviewer's request), which the merger lifts when \
+                     they arrive. Merge it yourself, or `hall retry` to let the merger merge \
+                     this head (on a tier wait, your retry counts as one approval)."
                 }
                 "feedback" => {
                     "Its PR has new comments, and the Delivery office's dev run didn't change \

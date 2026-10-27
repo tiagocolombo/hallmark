@@ -456,6 +456,234 @@ fn a_lit_path_waits_for_a_person_and_retry_lets_it_merge() {
     assert_eq!(events(&env, &lit, "pr_merged").len(), 1);
 }
 
+/// Members' approving reviews of the commit `oid`.
+fn approved_by(who: &[&str], oid: &str) -> Value {
+    json!(
+        who.iter()
+            .map(|w| json!({
+                "author": {"login": w},
+                "state": "APPROVED",
+                "authorAssociation": "MEMBER",
+                "commit": {"oid": oid}
+            }))
+            .collect::<Vec<_>>()
+    )
+}
+
+#[test]
+fn a_tiered_path_waits_for_peoples_approvals_and_counts_yours_as_one() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    set_config(&env, "merge.one_approval", "[\"charge.rs\"]");
+    set_config(&env, "merge.two_approvals", "[\"setup.sh\"]");
+    let (one, _, sha1) = shipped(&env, &gh, 1, "charge.rs");
+    let (two, _, sha2) = shipped(&env, &gh, 2, "setup.sh");
+    let (plain, _, _) = shipped(&env, &gh, 3, "b.rs");
+
+    let step = pass(&env, &gh);
+    assert_eq!(events(&env, &plain, "pr_merged").len(), 1, "{step}");
+    for id in [&one, &two] {
+        assert!(events(&env, id, "pr_merged").is_empty());
+        assert_eq!(events(&env, id, "held")[0]["kind"], "lit");
+    }
+    let r1 = events(&env, &one, "held")[0]["reason"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        r1.contains("needs 1 approval from people (has 0): touches charge.rs"),
+        "{r1}"
+    );
+    let r2 = events(&env, &two, "held")[0]["reason"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        r2.contains("needs 2 approvals from people (has 0): touches setup.sh"),
+        "{r2}"
+    );
+    // A bot's approval counts for nothing; your retry counts as one.
+    delivered(&env, &plain, 3);
+    pr(
+        &gh,
+        1,
+        "MERGEABLE",
+        &sha1,
+        "",
+        json!([{"author": {"login": "lint[bot]"}, "state": "APPROVED"}]),
+    );
+    pass(&env, &gh);
+    assert!(events(&env, &one, "pr_merged").is_empty());
+    let r = env.hall(
+        &env.repo,
+        &["retry", &one, "--reason", "looked at the charge path"],
+    );
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    pass(&env, &gh);
+    assert_eq!(
+        events(&env, &one, "pr_merged").len(),
+        1,
+        "your retry is the one approval"
+    );
+    delivered(&env, &one, 1);
+
+    // Two approvals: one person on GitHub plus yours.
+    pr(&gh, 2, "MERGEABLE", &sha2, "", approved_by(&["ana"], &sha2));
+    pass(&env, &gh);
+    assert!(events(&env, &two, "pr_merged").is_empty());
+    // The queue says what it still needs; the hold's reason is from when
+    // it was first asked.
+    let q = queue(&env, &gh);
+    let row = status_of(&q, &two);
+    assert_eq!(row["status"], "lit");
+    assert!(
+        row["why"]
+            .as_str()
+            .unwrap()
+            .contains("needs 2 approvals from people (has 1: ana)"),
+        "{row}"
+    );
+    let r = env.hall(&env.repo, &["retry", &two, "--reason", "read it"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    pass(&env, &gh);
+    assert_eq!(events(&env, &two, "pr_merged").len(), 1);
+}
+
+#[test]
+fn a_pr_waiting_for_approvals_that_falls_behind_is_rebased_not_stranded() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    set_config(&env, "merge.one_approval", "[\"charge.rs\"]");
+    let (id, _, _) = shipped_files(&env, &gh, 1, &["charge.rs", "lib.rs"]);
+    pass(&env, &gh);
+    assert_eq!(events(&env, &id, "held")[0]["kind"], "lit");
+    // Main changes lib.rs, which the waiting PR also touches.
+    commit_file(&env.repo, "lib.rs", "// main's lib.rs\n");
+    git(&env.repo, &["push", "-q", "origin", "main"]);
+    let step = pass(&env, &gh);
+    assert!(
+        step["what"].as_str().unwrap().contains("reopened"),
+        "{step}"
+    );
+    assert_eq!(state(&env, &id), "development");
+    let rel = events(&env, &id, "released");
+    assert_eq!(rel[0]["actor"], "merger");
+    let status = env.hall(&env.repo, &["status", &id]);
+    assert!(
+        status.json.get("hold").is_none_or(|h| h.is_null()),
+        "{}",
+        status.stdout
+    );
+}
+
+#[test]
+fn queueing_never_writes_to_a_journal_of_a_pr_that_waits_for_approvals() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    set_config(&env, "merge.two_approvals", "[\"setup.sh\"]");
+    let (id, _, sha) = shipped(&env, &gh, 1, "setup.sh");
+    pass(&env, &gh);
+    pr(
+        &gh,
+        1,
+        "MERGEABLE",
+        &sha,
+        "",
+        approved_by(&["ana", "bob"], &sha),
+    );
+    let before = events(&env, &id, "released").len();
+    let q = queue(&env, &gh);
+    assert_eq!(status_of(&q, &id)["status"], "ready");
+    assert_eq!(events(&env, &id, "released").len(), before);
+}
+
+#[test]
+fn the_reviewer_can_ask_for_a_person_on_any_change() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    // The approving review asked for a person (ADR 0063), before the ship.
+    let (id, wt) = env.new_item("Change updater.rs");
+    commit_file(&wt, "updater.rs", "// updater\n");
+    assert_eq!(env.hall(&wt, &["ready"]).code, 0);
+    let sha = git(&wt, &["rev-parse", "HEAD"]);
+    append(&env, &id, "assayer", checks(&sha, 1, true, vec![]));
+    let repo = hallmark::repo::Repo::discover(&env.repo).unwrap();
+    let mv = hallmark::findings::ModelVerdict {
+        summary: "Fine, but a person should look.".into(),
+        findings: vec![],
+        prior: vec![],
+        learnings: vec![],
+        needs_person: Some("it changes what the auto-updater downloads".into()),
+    };
+    hallmark::assayer::record_verdict(
+        &repo,
+        id.parse().unwrap(),
+        &sha,
+        &mv,
+        "assayer",
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    let branch = git(&wt, &["rev-parse", "--abbrev-ref", "HEAD"]);
+    git(&wt, &["push", "-q", "origin", &branch]);
+    append(
+        &env,
+        &id,
+        "shipper",
+        Body::Shipped {
+            sha: sha.clone(),
+            pr_url: Some(url(1)),
+        },
+    );
+    green(&env, &id, 1);
+    pr(&gh, 1, "MERGEABLE", &sha, "", json!([]));
+    let status = env.hall(&env.repo, &["status", &id]);
+    assert_eq!(
+        status.json["needs_person"],
+        "it changes what the auto-updater downloads"
+    );
+
+    pass(&env, &gh);
+    assert!(events(&env, &id, "pr_merged").is_empty());
+    let reason = events(&env, &id, "held")[0]["reason"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        reason.contains("needs 1 approval from people (has 0); the reviewer asked for a person: it changes what the auto-updater downloads"),
+        "{reason}"
+    );
+    // An approval of an earlier head, and one from a stranger, don't count.
+    let stale = approved_by(&["ana"], "0000000000000000000000000000000000000000");
+    let mut stranger = approved_by(&["eve"], &sha);
+    stranger[0]["authorAssociation"] = json!("NONE");
+    let mut both = stale.as_array().unwrap().clone();
+    both.extend(stranger.as_array().unwrap().clone());
+    pr(&gh, 1, "MERGEABLE", &sha, "", json!(both));
+    pass(&env, &gh);
+    assert!(events(&env, &id, "pr_merged").is_empty());
+    // A member's approval of this head lifts the wait; `hall queue` only
+    // reads, and the merger's release is not your approval.
+    pr(
+        &gh,
+        1,
+        "MERGEABLE",
+        &sha,
+        "",
+        approved_by(&["ana", "lint[bot]"], &sha),
+    );
+    queue(&env, &gh);
+    assert!(events(&env, &id, "released").is_empty());
+    pass(&env, &gh);
+    assert_eq!(events(&env, &id, "pr_merged").len(), 1);
+}
+
 #[test]
 fn a_failed_merge_is_held_for_you_and_retry_tries_again() {
     let env = Env::initialized();

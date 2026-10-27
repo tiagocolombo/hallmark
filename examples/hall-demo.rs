@@ -304,6 +304,7 @@ impl Repo {
                 learnings: vec![],
                 base: None,
                 since: None,
+                needs_person: None,
             },
         );
     }

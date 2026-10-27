@@ -1002,6 +1002,45 @@ fn a_verifier_that_refutes_every_blocker_approves_and_the_verdict_stands_when_it
 }
 
 #[test]
+fn the_reviewer_can_ask_for_a_person_without_blocking_approval() {
+    let env = Env::initialized();
+    let (id, _, _) = ready_item(&env, "Updater", "updater.rs", "fn fetch() {}\n");
+    let mut v = verdict(vec![], json!([]));
+    v["needs_person"] = json!("it changes what the auto-updater downloads");
+    let script = env.script(json!([reviewer(v)]));
+    tick(&env, &script);
+    tick(&env, &script);
+    assert_eq!(
+        state(&env, &id),
+        "hallmarked",
+        "needs_person is not a finding"
+    );
+    let verdicts = events_of(&env, &id, "verdict");
+    assert_eq!(
+        verdicts[0]["needs_person"],
+        "it changes what the auto-updater downloads"
+    );
+    let status = env.hall(&env.repo, &["status", &id]);
+    assert_eq!(
+        status.json["needs_person"],
+        "it changes what the auto-updater downloads"
+    );
+    // An empty reason is no request.
+    let env = Env::initialized();
+    let (id, _, _) = ready_item(&env, "Plain", "a.rs", "fn a() {}\n");
+    let mut v = verdict(vec![], json!([]));
+    v["needs_person"] = json!("  ");
+    let script = env.script(json!([reviewer(v)]));
+    tick(&env, &script);
+    tick(&env, &script);
+    assert!(
+        events_of(&env, &id, "verdict")[0]
+            .get("needs_person")
+            .is_none()
+    );
+}
+
+#[test]
 fn a_real_reviewer_result_is_recorded() {
     // tests/fixtures/claude/print_principal_engineer.json is the result of
     // the live check (ADR 0018): Haiku as the principal engineer, through
@@ -2292,7 +2331,9 @@ fn approved_then_rewritten(
 fn a_rebase_that_leaves_the_approved_change_as_it_was_keeps_its_approval() {
     let env = Env::initialized();
     // One review only: the second must never run.
-    let script = env.script(json!([reviewer(verdict(vec![], json!([])))]));
+    let mut first = verdict(vec![], json!([]));
+    first["needs_person"] = json!("it changes what the auto-updater downloads");
+    let script = env.script(json!([reviewer(first)]));
     let (id, _, approved, head) = approved_then_rewritten(&env, &script, |_| {});
     assert_ne!(approved, head);
 
@@ -2305,6 +2346,10 @@ fn a_rebase_that_leaves_the_approved_change_as_it_was_keeps_its_approval() {
     assert_eq!(v[1]["verdict"], "approve");
     assert_eq!(v[1]["reviewer"], "carried");
     assert_eq!(v[1]["sha"], head.as_str());
+    assert_eq!(
+        v[1]["needs_person"], "it changes what the auto-updater downloads",
+        "the carried approval keeps the request for a person"
+    );
     let rebased = events_of(&env, &id, "rebased");
     assert_eq!(rebased[0]["carried"], true);
     assert_eq!(rebased[0]["from"], approved.as_str());
@@ -2338,8 +2383,10 @@ fn a_rebase_keeps_the_approval_of_an_item_with_a_pre_existing_major_open() {
 #[test]
 fn a_rebase_that_changed_the_approved_change_is_reviewed_only_where_it_did() {
     let env = Env::initialized();
+    let mut first = verdict(vec![], json!([]));
+    first["needs_person"] = json!("it changes what the auto-updater downloads");
     let script = env.script(json!([
-        reviewer(verdict(vec![], json!([]))),
+        reviewer(first),
         reviewer(verdict(vec![], json!([]))),
     ]));
     configure_table(&env, "\n[budget.review]\neffort = \"high\"\n");
@@ -2362,6 +2409,11 @@ fn a_rebase_that_changed_the_approved_change_is_reviewed_only_where_it_did() {
         "{prompt}"
     );
     assert!(prompt.contains("RESOLVED_MARKER"), "{prompt}");
+    assert!(
+        prompt.contains("## A person was asked to approve")
+            && prompt.contains("it changes what the auto-updater downloads"),
+        "{prompt}"
+    );
     assert!(
         !prompt.contains("UNCHANGED_MARKER"),
         "the unchanged file isn't reviewed again"

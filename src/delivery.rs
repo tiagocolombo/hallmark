@@ -1475,10 +1475,7 @@ pub fn new_comments(events: &[Event], pr: &crate::gh::GhPr) -> (Vec<PrComment>, 
             let bot = author.ends_with("[bot]") || author == "github-actions";
             // Only people with write-side standing on the repo: a stranger's
             // comment must not start a run that edits and executes code.
-            let assoc = c.author_association.clone().unwrap_or_default();
-            let trusted = ["OWNER", "MEMBER", "COLLABORATOR"]
-                .iter()
-                .any(|a| assoc.eq_ignore_ascii_case(a));
+            let trusted = c.trusted();
             let fresh = at > since && !body.is_empty() && !bot && trusted && !is_ours(body);
             fresh.then(|| PrComment {
                 author,
@@ -1524,22 +1521,38 @@ pub(crate) fn reopen_by(
         if it.state != State::Closed {
             return Ok((vec![], false));
         }
-        Ok((
-            vec![
-                Event::new(
-                    actor,
-                    Some(id),
-                    Body::Reopened {
-                        pr_url: url.to_string(),
-                        pr_head: head.to_string(),
-                        base: base.clone(),
-                        worktree: it.worktree.clone(),
-                    },
-                ),
-                Event::new(actor, Some(id), request.clone()),
-            ],
-            true,
-        ))
+        let mut events = vec![];
+        // A PR that waited for approvals and fell behind is rebased by the
+        // Delivery office. The reopen itself clears the hold (every accepted
+        // move does); this event only records why the wait ended, by the
+        // merger (not as your approval, the fold knows), before it asks
+        // again at the new head (ADR 0063).
+        if actor == crate::merger::ACTOR
+            && it.hold.as_ref().is_some_and(|h| {
+                h.kind == HoldKind::Lit && h.reason.starts_with(crate::merger::TIER_WAIT)
+            })
+        {
+            events.push(Event::new(
+                actor,
+                Some(id),
+                Body::Released {
+                    reason: Some("it fell behind its base: asked again at the new head".into()),
+                    granted_tokens: None,
+                },
+            ));
+        }
+        events.push(Event::new(
+            actor,
+            Some(id),
+            Body::Reopened {
+                pr_url: url.to_string(),
+                pr_head: head.to_string(),
+                base: base.clone(),
+                worktree: it.worktree.clone(),
+            },
+        ));
+        events.push(Event::new(actor, Some(id), request.clone()));
+        Ok((events, true))
     })?;
     if !reopened {
         return Ok(Progress::Idle);

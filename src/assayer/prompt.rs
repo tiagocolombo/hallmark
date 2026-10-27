@@ -357,6 +357,21 @@ pub fn prepare_with(
         );
     }
 
+    if let Some(r) = item
+        .needs_person
+        .as_deref()
+        .filter(|r| !r.trim().is_empty())
+    {
+        let _ = writeln!(
+            p,
+            "\n## A person was asked to approve\n\n\
+             An earlier round set `needs_person`: {}\n\
+             Set `needs_person` again to keep the request; leave it out only if this change no \
+             longer needs a person's approval.",
+            one_line(r)
+        );
+    }
+
     if !open.is_empty() {
         let _ = writeln!(
             p,

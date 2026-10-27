@@ -61,7 +61,8 @@ fn ships_to_a_local_remote() {
             "## What\n\nRetry webhooks\n\n## Why\n\nRetry webhooks\n\n## How\n\n\
              - change retry.rs\n\n## Testing\n\nThis repository has no gates \
              configured.\n\n## How to revert\n\n`git revert` the commit this PR \
-             lands as on `main`; the author listed no other steps.\n\n---\n\nReviewed and \
+             lands as on `main`; the author listed no other steps.\n\n## Risk\n\nA person \
+             merges it: `[merge] mode` is off.\n\n---\n\nReviewed and \
              hallmarked as {id}: the review is in the comments.\n"
         )
     );
@@ -752,6 +753,52 @@ fn findings_from_both_rounds_are_tracked_for_history() {
     assert_eq!(
         row["reasons"],
         json!(["F4 blocker security_tenancy: Reads another tenant's webhook"])
+    );
+}
+
+#[test]
+fn the_description_says_the_risk_tier_of_the_paths_it_touches() {
+    let env = Env::initialized();
+    bare_remote(&env);
+    set_config(&env, "ship", &toml("git push -q -u origin {branch}"));
+    set_config(&env, "merge.mode", &toml("auto"));
+    set_config(&env, "merge.one_approval", "[\"retry.rs\"]");
+    let (id, _, _) = hallmarked_item(&env, "Retry webhooks");
+    assert_eq!(ship_pass(&env)["progress"], "worked");
+    let body = std::fs::read_to_string(item_file(&env, &id, "pr-body.md")).unwrap();
+    assert!(
+        body.contains(
+            "## Risk\n\nNeeds 1 approval from people before it merges: touches `retry.rs` (`[merge] one_approval`).\n"
+        ),
+        "{body}"
+    );
+    // The comment posted on every ship and update says it, too.
+    let comment = std::fs::read_to_string(item_file(&env, &id, "review.md")).unwrap();
+    assert!(
+        comment.contains("**Risk**: Needs 1 approval from people"),
+        "{comment}"
+    );
+}
+
+#[test]
+fn the_reviewers_reason_for_a_person_is_in_the_risk() {
+    let env = Env::initialized();
+    bare_remote(&env);
+    set_config(&env, "ship", &toml("git push -q -u origin {branch}"));
+    // The reviewer's word rides on the approving verdict, before the hallmark.
+    let (id, _, _) = hallmarked_item_asking(
+        &env,
+        "Retry webhooks",
+        None,
+        Some("it changes what the updater downloads"),
+    );
+    assert_eq!(ship_pass(&env)["progress"], "worked");
+    let body = std::fs::read_to_string(item_file(&env, &id, "pr-body.md")).unwrap();
+    assert!(
+        body.contains(
+            "The reviewer asked for a person's approval: it changes what the updater downloads"
+        ),
+        "{body}"
     );
 }
 

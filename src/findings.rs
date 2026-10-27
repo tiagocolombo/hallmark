@@ -193,6 +193,11 @@ pub struct ModelVerdict {
     /// The briefing's learnings that informed this review.
     #[serde(default)]
     pub learnings: Vec<LearningUse>,
+    /// Why a person should approve this change before it merges, even if
+    /// no configured path asks for one (ADR 0063). None when the change is
+    /// ordinary.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub needs_person: Option<String>,
 }
 
 impl ModelVerdict {
@@ -503,6 +508,7 @@ impl Ledger {
             learnings: vec![],
             base: None,
             since: None,
+            needs_person: None,
         });
         let counts = after.open_counts();
         Judged {
@@ -573,6 +579,7 @@ mod tests {
             ],
             prior: vec![],
             learnings: vec![],
+            needs_person: None,
         };
         let j = l.judge(1, &v, 10);
         assert!(j.approves(), "{:?}", j.counts);
@@ -618,6 +625,7 @@ mod tests {
             learnings: vec![],
             base: None,
             since: None,
+            needs_person: None,
         });
     }
 
@@ -636,6 +644,7 @@ mod tests {
             ],
             prior: vec![],
             learnings: vec![],
+            needs_person: None,
         };
         let j = l.judge(1, &v, 2);
         let titles: Vec<&str> = j.findings.iter().map(|f| f.title.as_str()).collect();
@@ -661,6 +670,7 @@ mod tests {
             findings: vec![mf(Severity::Blocker, "race"), mf(Severity::Minor, "naming")],
             prior: vec![],
             learnings: vec![],
+            needs_person: None,
         };
         let j1 = l.judge(1, &v1, 3);
         assert!(!j1.approves());
@@ -697,6 +707,7 @@ mod tests {
                 },
             ],
             learnings: vec![],
+            needs_person: None,
         };
         let j2 = l.judge(2, &v2, 3);
         assert_eq!(j2.prior.len(), 1, "unknown IDs are ignored");
@@ -723,6 +734,7 @@ mod tests {
                 note: None,
             }],
             learnings: vec![],
+            needs_person: None,
         };
         let j3 = l.judge(3, &v3, 3);
         assert!(j3.approves());
@@ -815,6 +827,24 @@ mod tests {
         );
         assert_eq!(f["properties"]["pre_existing"]["type"], "boolean");
         assert!(!req.contains(&"pre_existing"));
+        // The schema offers exactly the fields the type accepts.
+        let mut props: Vec<String> = schema["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect();
+        props.sort();
+        let generated = serde_json::to_value(schemars::schema_for!(ModelVerdict)).unwrap();
+        let mut want: Vec<String> = generated["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect();
+        want.sort();
+        assert_eq!(props, want);
+        assert!(schema["examples"][0]["needs_person"].is_string());
         // The example in the schema's description round-trips.
         let example = &schema["examples"][0];
         ModelVerdict::parse(example).unwrap();

@@ -974,6 +974,7 @@ mod tests {
             learnings,
             base: None,
             since: None,
+            needs_person: None,
         };
         vec![
             ev(Body::Created {

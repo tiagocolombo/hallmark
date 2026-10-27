@@ -24,7 +24,7 @@ pub struct Config {
     pub branch: String,
     /// Ships a hallmarked commit. Placeholders: {branch} {id} {base}
     /// {title} {body_file} (the PR description the shipper writes: What,
-    /// Why, How, Testing and How to revert) {review_file} (the review, which `review_comment` posts)
+    /// Why, How, Testing, How to revert and Risk) {review_file} (the review, which `review_comment` posts)
     /// {issue}.
     pub ship: String,
     /// Updates the open PR of an item that already has one (an adopted PR,
@@ -36,7 +36,7 @@ pub struct Config {
     /// then failed; ADR 0042).
     pub update: String,
     /// Posts the review on the PR as a comment, after `ship` opens it and
-    /// after every `update`: the description keeps only What, Why, How, Testing and How to revert.
+    /// after every `update`: the description keeps only What, Why, How, Testing, How to revert and Risk.
     /// Runs when the PR's URL is known. Placeholders: {pr} (the PR's URL)
     /// {review_file} {branch} {id} {base}. Empty: no comment.
     pub review_comment: String,
@@ -708,6 +708,13 @@ pub struct Merge {
     /// Paths a person merges: a PR that touches one waits for you (a `lit`
     /// hold). Globs relative to the repo root.
     pub lit: Vec<String>,
+    /// Paths that need one person's approval on the PR before the merger
+    /// merges it (ADR 0063): an approving review on GitHub by an owner,
+    /// member or collaborator, of the PR's current head, or your `hall
+    /// retry` on the hold (which counts as one). Globs.
+    pub one_approval: Vec<String>,
+    /// Paths that need two people's approvals. Globs.
+    pub two_approvals: Vec<String>,
 }
 
 impl Default for Merge {
@@ -718,7 +725,25 @@ impl Default for Merge {
             require_ci: true,
             update: MergeUpdate::Files,
             lit: Vec::new(),
+            one_approval: Vec::new(),
+            two_approvals: Vec::new(),
         }
+    }
+}
+
+impl Merge {
+    /// How many people must approve a PR that touches `files` (ADR 0063):
+    /// the highest tier any file falls under, and the paths that set it.
+    /// `lit` paths aren't tiers: they always wait for you.
+    pub fn approvals_needed(&self, files: &[String]) -> (u32, Vec<String>) {
+        for (n, globs) in [(2, &self.two_approvals), (1, &self.one_approval)] {
+            let set = crate::assayer::base::globset(globs);
+            let touched: Vec<String> = files.iter().filter(|f| set.is_match(f)).cloned().collect();
+            if !touched.is_empty() {
+                return (n, touched);
+            }
+        }
+        (0, Vec::new())
     }
 }
 

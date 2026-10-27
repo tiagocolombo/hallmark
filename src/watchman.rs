@@ -120,6 +120,7 @@ mod tests {
             merged: None,
             merge_approved: None,
             reverted: None,
+            needs_person: None,
             own_worktree: true,
             swept: false,
             hold: None,

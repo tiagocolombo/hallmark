@@ -46,7 +46,10 @@ dark: each is judged by a script or the reviewer's rubric, which is cheap,
 frequent and hard to game. A person stays in three places: deciding what to
 build, any escalation, and merging. Merging goes dark only when you turn on
 the merger (`[merge] mode = "auto"`, ADR 0048), and `[merge] lit` keeps chosen
-paths, such as CI workflows or release settings, lit.
+paths, such as CI workflows or release settings, lit. Risk tiers (ADR 0063)
+sit between: a PR that touches `[merge] one_approval` or `two_approvals`
+paths, or that the reviewer marked `needs_person`, merges only once that
+many people have approved it, and the tier is the PR's `## Risk`.
 
 The product is one Rust binary, `hall` (crate `hallmark`), for macOS, Linux and
 Windows:
@@ -83,7 +86,7 @@ The docs and the terminal app describe Hallmark as a building.
 | Assay Office | The test bench (checks) and the principal engineer (review) | Checks, Review |
 | Repair Shop | The fixer | Fixing |
 | Stamping Room | The hallmark is struck | Hallmarked |
-| Dispatch Dock | Rebases onto the latest base; the ship command opens the PR, whose description is What, Why, How, Testing and How to revert (ADR 0057); `update` updates an adopted or reopened one. Each review is posted as a PR comment (`review_comment`, ADR 0039). If that PR already merged with the hallmarked work in it, the item closes with nothing pushed | Closed |
+| Dispatch Dock | Rebases onto the latest base; the ship command opens the PR, whose description is What, Why, How, Testing, How to revert (ADR 0057) and Risk (ADR 0063); `update` updates an adopted or reopened one. Each review is posted as a PR comment (`review_comment`, ADR 0039). If that PR already merged with the hallmarked work in it, the item closes with nothing pushed | Closed |
 | Delivery Office | Watches each shipped PR until it merges; a headless dev run rebases conflicting ones, addresses new review comments (ADR 0030) and fixes red CI (ADR 0031); a rebase that leaves the approved change as it was keeps its approval with no review (ADR 0049); a CI fix whose checks pass on a re-run goes back to its PR without a run (ADR 0047). With `[merge] mode = "auto"`, the merger merges each ready PR, one at a time per base, in dependency order (ADR 0048), and brings each PR up to date only at its turn (ADR 0050). Once the PR merges or closes, the sweeper removes the item's worktree (ADR 0040). For 30 days after, the `reverts` worker watches the base for a revert of the merged PR: one is recorded on the item, put in your inbox, counted by `hall stats` and distilled again by the librarian as a miss (ADR 0061) | Closed, Development (rebasing, addressing comments) |
 
 A **watchman** patrols the corridor. It flags any item with no new event for
@@ -436,6 +439,8 @@ mode       = "off"              # or "auto"
 command    = "gh pr merge {pr} --squash --match-head-commit {pr_head}"
 require_ci = true
 lit        = []                 # paths a person merges
+one_approval  = []              # paths that need one person's approval (ADR 0063)
+two_approvals = []              # paths that need two
 
 [intake]
 split     = "auto"              # the Front Desk splits requests when it can; or "off"
@@ -655,7 +660,7 @@ changes (ADR 0030).
 | escalated | the item is `escalated`; the entry carries the escalating verdict's summary | that item |
 | ready? | the item is `awaiting_you` | nothing |
 | budget, run_failed, checks, ship_failed, conflict, feedback, ci_failed | a hold: a per-item cap, two failed runs in a row, `max_check_failures` failed checks in a row, a failed ship, a rebase the Delivery office couldn't finish, PR comments or failing CI its dev run didn't act on | that item, until `hall retry` (which, for a budget hold, grants the item more tokens); a `ci_failed` hold also clears when a re-run of the PR's checks passes (ADR 0047) |
-| merge_failed, lit | a hold on a shipped item: the merger's merge command failed, or the PR is ready but touches a `[merge] lit` path (ADR 0048) | that item, until `hall retry` (try again; for `lit`, merge this head) or the PR merges or closes |
+| merge_failed, lit | a hold on a shipped item: the merger's merge command failed, or the PR is ready but touches a `[merge] lit` path (ADR 0048) | that item, until `hall retry` (try again; for `lit`, merge this head, or count as one person's approval when the hold waits for approvals by tier, which the merger lifts once enough arrive, ADR 0063) or the PR merges or closes |
 | paused | the daemon paused its model workers: a run hit Claude's usage or session limit, or the loop spent its daily budget (ADR 0016) | every model run, until the reset (the time Claude names, read in this machine's zone; 30 minutes when it names none) or `hall daemon resume`; no item is held |
 | ci_failed | an open PR's CI still fails after the Delivery office's fixes | a follow-up item |
 | reverted | a merged PR was reverted on its base within 30 days (ADR 0061); the librarian distils it again, asking which layer should have caught it | a follow-up item, or `hall inbox --dismiss` |
@@ -783,7 +788,10 @@ every 20 seconds it walks each base's open shipped PRs, oldest first, and
 judges each with a script, never a model: the shipped head with its hallmark,
 `MERGEABLE`, CI green at that head (unless `require_ci = false`), no
 standing request for changes, nothing it depends on still open (the PR it is
-stacked on; `Depends on #N`, `Blocked by #N`, `After #N`), no `lit` path, and
+stacked on; `Depends on #N`, `Blocked by #N`, `After #N`), no `lit` path, the people's approvals its risk tier asks for
+(`one_approval` and `two_approvals` paths, or the reviewer's `needs_person`;
+`hall retry` counts as one, members' approving reviews of this head the rest;
+ADR 0063), and
 fresh (the base is in it, or the base's new commits touch none of its files;
 with `update = "conflicts"`, `MERGEABLE` is enough, ADR 0051).
 The first ready PR merges through `[merge] command` (`pr_merged`). A PR

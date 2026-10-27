@@ -279,13 +279,18 @@ pub struct Item {
     /// `delivered`. Cleared when the item reopens.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub merged: Option<String>,
-    /// The PR head you let the merger merge although it touches a `lit`
-    /// path (`hall retry` on its `lit` hold). Cleared when the item reopens.
+    /// The PR head your `hall retry` approved: the go-ahead on a `lit`
+    /// path, or one of the approvals a risk tier needs (ADR 0063). Cleared
+    /// when the item reopens.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub merge_approved: Option<String>,
     /// The merged PR was reverted on its base (ADR 0061).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reverted: Option<Reverted>,
+    /// The latest review asked for a person's approval before the merge,
+    /// and why (ADR 0063).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub needs_person: Option<String>,
     /// False when the worktree is a checkout the user made and adopted; the
     /// sweeper leaves it alone.
     #[serde(default = "own_default")]
@@ -385,8 +390,11 @@ pub enum HoldKind {
     CiFailed,
     /// The merge command failed (ADR 0048).
     MergeFailed,
-    /// The PR is ready to merge but touches a `[merge] lit` path, so a
-    /// person merges it, or lets the merger with `hall retry`.
+    /// The PR is ready to merge but waits for a person: it touches a
+    /// `[merge] lit` path (a person merges it, or lets the merger with
+    /// `hall retry`), or it needs people's approvals by risk tier (ADR
+    /// 0063), which the merger lifts once they arrive; `hall retry` counts
+    /// as one.
     Lit,
     /// The checks failed `max_check_failures` times in a row: the fixes
     /// aren't turning the gates green.

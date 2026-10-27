@@ -100,6 +100,8 @@ command    = "gh pr merge {pr} --squash --match-head-commit {pr_head}"
 require_ci = true           # false: merge without waiting for CI
 update     = "files"        # or "conflicts": rebase only when GitHub says it conflicts
 lit        = []             # paths a person merges, as globs
+one_approval  = []          # paths that need one person's approval on the PR (ADR 0063)
+two_approvals = []          # paths that need two
 
 [intake]
 split     = "auto"   # or "off"
@@ -146,11 +148,20 @@ reopens conflicting PRs itself ([ADR 0050](decisions/0050-the-queue-updates-prs-
 | `merge.require_ci` | `true` | Wait for the PR's CI to pass at the shipped head. `false`: merge once the PR is hallmarked, mergeable and up to date, whatever CI says. |
 | `merge.update` | `files` | When a PR is rebased before it merges. `files`: whenever the base moved on a file it touches, so CI tests exactly what lands, and PRs on shared files go one after another. `conflicts`: only when GitHub says it conflicts; a PR GitHub merges cleanly, with green CI, merges as it is, and the base's own CI catches a bad combination ([ADR 0051](decisions/0051-merge-clean-prs-and-stop-the-line.md)). |
 | `merge.lit` | `[]` | Paths a person merges, as globs relative to the repo root (`.github/`, `release-plz.toml`). A PR that touches one waits in your inbox (`lit`); `hall retry` lets the merger merge that head. |
+| `merge.one_approval` | `[]` | Paths that need one person's approval before the merger merges a PR that touches them ([ADR 0063](decisions/0063-risk-tiers.md)): an approving review on GitHub by an owner, member or collaborator, of the PR's current head (an earlier head's, or a stranger's, doesn't count), or your `hall retry` on the hold, which counts as one. Until then the PR waits in your inbox like a `lit` one, saying how many approvals it has. |
+| `merge.two_approvals` | `[]` | Paths that need two people's approvals (`src/billing/**`, an installer). Your `hall retry` counts as one. |
+
+The change sets its tier, not its author. Besides the paths, the reviewer
+can ask for a person on any change (`needs_person` in its verdict, with a
+reason: billing, auth, a release workflow, data that can't be got back, a
+pattern others will copy); that counts as one approval needed. The tier
+and the reason are the PR description's `## Risk`.
 
 A PR is ready when its head is the commit Hallmark shipped and carries a
 hallmark, GitHub calls it mergeable, CI passed at that head (unless
 `require_ci = false`), nobody asked for changes, nothing it depends on is
-still open, it touches no `lit` path, and it is up to date: it contains its
+still open, it touches no `lit` path, it has the approvals its tier asks
+for, and it is up to date: it contains its
 base, or the commits it lacks touch none of its files (with
 `update = "conflicts"`, GitHub calling it mergeable is enough). A PR waits
 for the PR it is stacked on, and for any PR its description or commits name
@@ -278,7 +289,7 @@ and follow it at once.
 | --- | --- |
 | `worktree` | `{repo}` `{id}` `{branch}` `{slug}` `{base}` |
 | `branch` | `{id}` `{slug}` |
-| `ship` | `{branch}` `{id}` `{base}` `{title}` `{body_file}` (the PR description: What, Why, How, Testing and How to revert) `{review_file}` (the review) `{issue}` |
+| `ship` | `{branch}` `{id}` `{base}` `{title}` `{body_file}` (the PR description: What, Why, How, Testing, How to revert and Risk) `{review_file}` (the review) `{issue}` |
 | `update` | those of `ship`, plus `{pr}` (the PR's URL) and `{pr_head}` (the commit the PR's head was at when the item took it over or last shipped; or the branch's head on `origin` when this item hallmarked that commit, as after an update that pushed and then failed, ADR 0042) |
 | `review_comment` | `{pr}` (the PR's URL) `{review_file}` `{branch}` `{id}` `{base}` |
 | `merge.command` | `{pr}` (the PR's URL) `{pr_head}` (the hallmarked head) `{branch}` `{base}` `{id}` `{title}` |
@@ -313,9 +324,10 @@ capped.
 
 ## PR descriptions and review comments
 
-The PR the shipper opens has a description with five sections, `## What`,
-`## Why`, `## How`, `## Testing` and `## How to revert`, and nothing of the
-review ([ADR 0039](decisions/0039-pr-description-and-review-comments.md),
+The PR the shipper opens has a description with six sections, `## What`,
+`## Why`, `## How`, `## Testing`, `## How to revert` and `## Risk` (who must
+approve the merge and why, [ADR 0063](decisions/0063-risk-tiers.md)),
+and nothing of the review ([ADR 0039](decisions/0039-pr-description-and-review-comments.md),
 [ADR 0057](decisions/0057-testing-and-how-to-revert-in-the-pr.md)). The
 author gives them with `hall propose-ready --summary … --why … --how …
 --tested … --revert …`; without `--why` the request is used, without
@@ -326,7 +338,7 @@ always a line to `git revert` the commit the PR lands as on the base.
 Each review is a PR comment: `review_comment` posts `{review_file}` once the
 PR is open, and again after every `update` (PR comments addressed, CI fixed,
 a rebase), saying why the PR came back. The description isn't touched on an
-update. `review_comment = ""` posts nothing; the review stays in
+update, so the comment ends with the current `**Risk**` line. `review_comment = ""` posts nothing; the review stays in
 `<git-common-dir>/hallmark/items/<id>/review.md`. On another host, use its
 command, such as `glab mr note {pr} --message "$(cat {review_file})"`.
 
