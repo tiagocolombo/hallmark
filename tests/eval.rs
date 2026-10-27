@@ -292,7 +292,14 @@ fn replies_keep_their_shape() {
     has(&dry.json, &["cases", "dry_run", "next", "totals"]);
     has(
         &dry.json["cases"][0],
-        &["item", "title", "sha", "reverted_by", "revert_files", "then"],
+        &[
+            "item",
+            "title",
+            "sha",
+            "reverted_by",
+            "revert_files",
+            "then",
+        ],
     );
     has(
         &dry.json["cases"][0]["then"],
