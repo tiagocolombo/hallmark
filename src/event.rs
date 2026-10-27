@@ -964,6 +964,7 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
         hold: None,
         stuck_since: None,
         reviewed_sha: None,
+        escalation: None,
         findings: Counts::default(),
         ci: None,
         rebase: None,
@@ -1020,11 +1021,21 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
                 item.frozen_sha = Some(sha.clone());
                 item.round += 1;
             }
-            Body::Verdict { verdict, sha, .. } => {
+            Body::Verdict {
+                verdict,
+                sha,
+                escalated,
+                summary,
+                ..
+            } => {
                 if *verdict == VerdictKind::Changes {
                     item.rejects += 1;
                 }
                 item.reviewed_sha = Some(sha.clone());
+                // The escalating verdict's summary is the diagnosis the
+                // person reads; an approval or a non-escalating one clears
+                // what an earlier escalation left.
+                item.escalation = if *escalated { summary.clone() } else { None };
             }
             Body::Hallmarked { sha, .. } => item.hallmark_sha = Some(sha.clone()),
             Body::Held { kind, reason } => {

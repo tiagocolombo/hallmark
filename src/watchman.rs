@@ -123,6 +123,7 @@ mod tests {
             hold: None,
             stuck_since: None,
             reviewed_sha: None,
+            escalation: None,
             findings: Default::default(),
         }
     }

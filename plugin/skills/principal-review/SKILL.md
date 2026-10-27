@@ -152,6 +152,13 @@ stays open after your rulings. Rate each finding by its consequences and let
 the rule decide. After the repository's `max_rejects` rejected reviews, the
 item escalates to a person.
 
+When the prompt says this is the last round before escalation, a rejection
+goes to that person, not back to the fixer. Review as usual, then write the
+`summary` as their diagnosis: is the approach wrong, and what would you do
+instead (a different design, a smaller scope, a split), or are the remaining
+findings ordinary and worth one more round? The findings restated are not a
+diagnosis. Hallmark puts that summary in the person's inbox.
+
 ## Incremental rounds
 
 From round 2 the prompt shows only the diff since the last review and lists

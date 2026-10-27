@@ -238,6 +238,10 @@ pub struct Item {
     /// The commit the last verdict reviewed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reviewed_sha: Option<String>,
+    /// The reviewer's summary of the verdict that escalated the item: its
+    /// diagnosis, for the person deciding (ADR 0060).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub escalation: Option<String>,
     /// Open findings by severity.
     #[serde(default)]
     pub findings: crate::findings::Counts,

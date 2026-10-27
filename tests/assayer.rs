@@ -523,6 +523,20 @@ fn the_third_rejection_escalates() {
         assert_eq!(v.len(), round);
         let last = v.last().unwrap();
         assert_eq!(last["findings"][0]["id"], format!("F{round}"));
+        // Only the round whose rejection would escalate is told so (ADR 0060).
+        let calls = env.fake_calls();
+        let prompt = calls.last().unwrap()["prompt"].as_str().unwrap();
+        assert_eq!(
+            prompt.contains("## The last round before escalation"),
+            round == 3,
+            "round {round}:\n{prompt}"
+        );
+        if round == 3 {
+            assert!(
+                prompt.contains("rejected 2 times and `max_rejects` is 3"),
+                "{prompt}"
+            );
+        }
         if round < 3 {
             assert_eq!(last["escalated"], false);
             assert_eq!(state(&env, &id), "fixing");
@@ -534,6 +548,19 @@ fn the_third_rejection_escalates() {
             assert_eq!(state(&env, &id), "escalated");
         }
     }
+    // The person's inbox carries the reviewer's diagnosis.
+    let inbox = env.hall(&env.repo, &["inbox"]);
+    let entry = &inbox.json["entries"][0];
+    assert_eq!(entry["kind"], "escalated");
+    assert_eq!(
+        entry["text"],
+        "Retry webhooks: rejected 3 times. The reviewer: Adds retries to webhook delivery."
+    );
+    let status = env.hall(&env.repo, &["status", &id]);
+    assert_eq!(
+        status.json["escalation"],
+        "Adds retries to webhook delivery."
+    );
     let report = std::fs::read_to_string(
         env.repo
             .join(".git/hallmark/items")

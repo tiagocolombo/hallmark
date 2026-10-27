@@ -6,7 +6,7 @@ hall · app (1 of 1 repo)   daemon ● running   ⚑ 4 waiting   ryour office ·
 ┌ Your office ─⚑ 4 waiting ────────────────────────────────────────────────────┐
 │1.  ready?     H-0002  Export tenant usage looks done: CSV export wit –       │
 │2.  question   H-0002  Billed usage or raw events?  [a] billed  [b] r –       │
-│3.  escalated  H-0007  Migrate billing tables: rejected 1 times       –       │
+│3.  escalated  H-0007  Migrate billing tables: rejected 1 times. The  –       │
 │4.  ready?     H-0008  Long summary looks done: CSV and JSON export o –       │
 └──────────────────────────────────────────────────────────────────────────────┘
 ┌ 4. ready? · H-0008 · Long summary ──────────────────────────────── waiting – ┐
