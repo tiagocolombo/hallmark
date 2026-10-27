@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.11](https://github.com/tiagocolombo/hallmark/compare/v0.3.10...v0.3.11) - 2026-10-27
+
+### Added
+
+- On the last round before escalation the reviewer says whether the approach is wrong ([#135](https://github.com/tiagocolombo/hallmark/pull/135))
+
 ## [0.3.10](https://github.com/tiagocolombo/hallmark/compare/v0.3.9...v0.3.10) - 2026-10-27
 
 ### Added
