@@ -6,6 +6,7 @@ pub mod budget;
 pub mod config;
 pub mod daemon;
 pub mod doctor;
+pub mod eval;
 pub mod extensions;
 pub mod fix;
 pub mod flow;

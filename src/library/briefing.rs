@@ -171,7 +171,28 @@ pub fn briefing(
     diff: &str,
     effort: Option<&str>,
 ) -> Result<Briefing> {
-    let learnings = Store::of(repo).accepted();
+    briefing_without(repo, changed, diff, effort, None)
+}
+
+/// [`briefing`] without the learnings distilled from `source` (an item ID):
+/// a replay of that item's review must not be told what its outcome taught.
+pub fn briefing_without(
+    repo: &Repo,
+    changed: &[String],
+    diff: &str,
+    effort: Option<&str>,
+    source: Option<&str>,
+) -> Result<Briefing> {
+    let mut learnings = Store::of(repo).accepted();
+    if let Some(src) = source {
+        learnings.retain(|l| {
+            !l.learning.source.iter().any(|s| {
+                s == src
+                    || s.strip_prefix(src)
+                        .is_some_and(|rest| rest.starts_with('/'))
+            })
+        });
+    }
     build(
         repo,
         &learnings,

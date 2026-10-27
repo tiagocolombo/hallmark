@@ -1,0 +1,39 @@
+---
+source: tests/eval.rs
+expression: dry.json
+---
+{
+  "cases": [
+    {
+      "item": "H-0001",
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "revert_files": [
+        "retry.rs"
+      ],
+      "reverted_by": "[sha]",
+      "sha": "[sha]",
+      "then": {
+        "blocking": 0,
+        "caught": false,
+        "findings": 1,
+        "model": "claude-opus-5-5",
+        "rejected": false,
+        "titles": []
+      },
+      "title": "Retry webhooks"
+    }
+  ],
+  "dry_run": true,
+  "next": [
+    "hall stats --since 90d",
+    "hall eval --dry-run"
+  ],
+  "totals": {
+    "cases": 1,
+    "cost_usd": 0.0,
+    "now_caught": 0,
+    "now_rejected": 0,
+    "ran": 0,
+    "then_caught": 0
+  }
+}

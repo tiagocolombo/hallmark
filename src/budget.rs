@@ -79,6 +79,8 @@ pub fn today() -> String {
 pub fn role_of(role: &str) -> Option<Role> {
     match role {
         "reviewer" | "review" | "security" | "verifier" | "verify" => Some(Role::Reviewer),
+        // The reviewer eval replays the reviewer: the same budget.
+        "eval" => Some(Role::Reviewer),
         "fixer" | "fix" => Some(Role::Fixer),
         "intake" => Some(Role::Intake),
         "librarian" => Some(Role::Librarian),
@@ -719,6 +721,7 @@ mod tests {
     #[test]
     fn roles_map_to_config_tables() {
         assert_eq!(role_of("reviewer"), Some(Role::Reviewer));
+        assert_eq!(role_of("eval"), Some(Role::Reviewer));
         assert_eq!(role_of("fix"), Some(Role::Fixer));
         assert_eq!(role_of("resume"), None);
         assert_eq!(table_key(Role::Reviewer), "review");

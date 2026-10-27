@@ -1,6 +1,6 @@
 # 0056. Stats for the loop: reviews to approval, finding outcomes, noise
 
-Status: Accepted, 2026-10-27.
+Status: Accepted, 2026-10-27. Amended by 0065: `hall eval` replays the reviewer on reverted items.
 
 ## Context
 

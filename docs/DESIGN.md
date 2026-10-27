@@ -398,6 +398,7 @@ $ echo $?
 | `hall verdict --file <json>` | assayer, you | Records a schema-checked verdict. Refused to agents (`GATE_DENIED`); yours is a human override, named as one in the report, the note and the PR comment. |
 | `hall history [--rejected] [--lens] [--since]` | you | Closed and dropped items, and why things were rejected. |
 | `hall stats [--since] [--all]` | you | How the loop is doing: reviews to approval, what became of each finding, the reviewer's noise by lens, disputes (ADR 0056). |
+| `hall eval [<id>…] [--since] [--limit] [--dry-run]` | you | The reviewer eval: today's reviewer replayed on the reverted changes, scored against the revert then and now; spends usage, never run by the daemon (ADR 0065). |
 | `hall export [<id>]` | you, shipper | The whole record as Markdown, with what each model run did, step by step. |
 | `hall budget [--set k=v] [--grant [<tokens>]]` | you | The caps and today's spend. `--grant` lets the loop go past the daily cap for today (default: another `daily`) and lifts the budget pause; the cap is unchanged. |
 | `hall notify test` | you | A test notification on every channel. |

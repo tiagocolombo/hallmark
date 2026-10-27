@@ -288,8 +288,29 @@ pub fn request(
     events: &[Event],
     sha: &str,
 ) -> Result<(RunRequest, String)> {
+    request_for(repo, item, events, sha, false)
+}
+
+/// [`request`]; `replay` is `hall eval`'s: no learning sourced from the
+/// item itself goes into the briefing.
+pub fn request_for(
+    repo: &Repo,
+    item: &Item,
+    events: &[Event],
+    sha: &str,
+    replay: bool,
+) -> Result<(RunRequest, String)> {
     let default_effort = repo.config.budget.effort(Role::Reviewer);
-    let review = super::prompt::prepare(repo, item, events, sha, default_effort.as_deref())?;
+    let review = super::prompt::prepare_with(
+        repo,
+        item,
+        events,
+        sha,
+        default_effort.as_deref(),
+        None,
+        None,
+        replay,
+    )?;
     let wt = super::checkout_review(repo, item.id, sha)?.path;
     let mut req = runner::request(
         repo,
