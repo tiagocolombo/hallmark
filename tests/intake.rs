@@ -265,12 +265,44 @@ fn intake_fails_open() {
     let failed = events(&failed, "run_failed");
     assert_eq!(failed.len(), 1);
     assert_eq!(failed[0]["role"], "intake");
+    // An ordinary failure doesn't pause the loop.
+    assert!(daemon_state(&env)["paused"].is_null());
 
     // A schema run without structured output fails open too.
     let script = env.script(json!([{"role": "intake", "result": "I think so"}]));
     let r = env.hall_fake(&env.repo, &script, &["new", "another request"]);
     assert_eq!(r.code, 0);
     assert_eq!(r.json["plan"]["parallel"], false);
+}
+
+fn daemon_state(env: &Env) -> Value {
+    match std::fs::read_to_string(env.home.join("daemon").join("state.json")) {
+        Ok(s) => serde_json::from_str(&s).unwrap(),
+        Err(_) => json!({}),
+    }
+}
+
+#[test]
+fn a_rate_limited_front_desk_pauses_the_loop_and_keeps_one_item() {
+    let env = Env::initialized();
+    let script = env.script(json!([{"role": "intake", "fail": "rate_limit"}]));
+    let r = env.hall_fake(&env.repo, &script, &["new", REQUEST]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(r.json["id"], "H-0001");
+    assert_eq!(r.json["plan"]["parallel"], false);
+    let reason = r.json["plan"]["reason"].as_str().unwrap();
+    assert!(reason.starts_with("the Front Desk run failed"), "{reason}");
+    assert!(reason.contains("to split it, `hall drop`"), "{reason}");
+    let st = daemon_state(&env);
+    let paused = &st["paused"];
+    assert!(
+        paused["reason"].as_str().unwrap().contains("Front Desk"),
+        "{st}"
+    );
+    assert!(paused["until"].is_string(), "{st}");
+    let journal = env.repo_journal();
+    assert_eq!(events(&journal, "paused").len(), 1);
+    assert!(events(&journal, "run_failed").is_empty());
 }
 
 #[test]

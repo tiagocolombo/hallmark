@@ -106,7 +106,7 @@ A reason or note you give (`hall retry --reason`, `hall continue --reason` when 
 
 | Command | Does |
 | --- | --- |
-| `hall inbox [<n>]` | Only escalations: questions, "ready?", escalations, holds, CI that never ran, a base whose own CI failed (`base_red`). `hall inbox --notices` lists what the loop handles on its own (stuck items, waiting sessions, red CI being fixed, proposed learnings). `hall inbox 1` explains one: why it waits, the evidence, and each action. `hall inbox 1 --dismiss` hides one, `--clear` hides them all (each comes back if it changes), `--all` shows them. |
+| `hall inbox [<n>]` | Only escalations: questions, "ready?", escalations, holds, CI that never ran, a base whose own CI failed (`base_red`), a paused loop (`paused`: Claude's usage or session limit, or the daily budget; `hall daemon resume` retries now). `hall inbox --notices` lists what the loop handles on its own (stuck items, waiting sessions, red CI being fixed, proposed learnings). `hall inbox 1` explains one: why it waits, the evidence, and each action. `hall inbox 1 --dismiss` hides one, `--clear` hides them all (each comes back if it changes), `--all` shows them. |
 | `hall ask <question>` | Asks you a question. `--options a,b`, `--default`, `--wait 4h`, `--item`, `--session` |
 | `hall answer <qid> <answer>` | Answers; the daemon resumes the asking session with it. |
 
@@ -115,7 +115,7 @@ A reason or note you give (`hall retry --reason`, `hall continue --reason` when 
 | Command | Does |
 | --- | --- |
 | `hall daemon start\|stop\|status\|run` | The review loop. `start --at-login`; `run --once --only <workers>` |
-| `hall daemon resume` | Lifts a pause (a rate limit or the daily budget) before its time. |
+| `hall daemon resume` | Lifts a pause (Claude's usage or session limit, or the daily budget) before its time: the loop retries now. |
 | `hall budget` | The caps at four levels, with today's spend. `--set key=value`; `--grant [<tokens>]` lets the loop go past the daily cap today without changing it ([ADR 0028](decisions/0028-grant-the-daily-budget.md)) |
 | `hall notify test` | Sends a test notification to every channel. `--channel` |
 | `hall library search\|review\|retire\|distill\|import\|export` | The Library of learnings, kept locally next to the journal, never in the repo. Distilling an item also prints its Gazette (`hall gazette`). |

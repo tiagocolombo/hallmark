@@ -2,7 +2,7 @@
 
 Status: Accepted, 2026-10-11. Amended by 0047: the fix run reads the checks
 again first, and a green re-run sends the item back to its PR. Amended by
-0048: `merge_failed` and `lit` holds on shipped items are escalations too.
+0048: `merge_failed` and `lit` holds on shipped items are escalations too. Amended by 0055: a `paused` loop (Claude's limit) is one.
 
 ## Context
 

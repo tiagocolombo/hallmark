@@ -761,27 +761,127 @@ fn said(raw: &str) -> String {
 }
 
 /// Claude's plan limit, as worded in its results: "Claude AI usage limit
-/// reached|1760000000", "You've hit your limit · resets 3pm", "rate limit".
-/// Returns the reset time when one is given as a Unix timestamp.
+/// reached|1760000000", "You've hit your limit · resets 3pm", "You've hit
+/// your session limit · resets 11:10pm (America/Toronto)", "rate limit".
+/// Returns the reset time when one is given: a Unix timestamp after `|`,
+/// or a clock time after "resets", read in this machine's time zone (Claude
+/// prints the account's zone, normally the same one).
 pub fn rate_limit(text: &str) -> Option<Option<DateTime<Utc>>> {
+    rate_limit_at(text, chrono::Local::now())
+}
+
+/// [`rate_limit`] with the clock given, for tests.
+pub fn rate_limit_at(text: &str, now: DateTime<chrono::Local>) -> Option<Option<DateTime<Utc>>> {
     let t = text.to_ascii_lowercase();
     let hit = [
         "usage limit",
         "rate limit",
         "rate_limit",
         "hit your limit",
+        "session limit",
+        "weekly limit",
         "limit reached",
     ]
     .iter()
-    .any(|p| t.contains(p));
+    .any(|p| t.contains(p))
+        || (t.contains("limit") && t.contains("resets"));
     if !hit {
         return None;
     }
-    let until = text.split('|').nth(1).and_then(|s| {
+    let stamp = text.split('|').nth(1).and_then(|s| {
         let digits: String = s.trim().chars().take_while(char::is_ascii_digit).collect();
         DateTime::from_timestamp(digits.parse().ok()?, 0)
     });
-    Some(until)
+    Some(stamp.or_else(|| resets_at(&t, now)))
+}
+
+/// "3pm", "11:10pm" or "23:10" (lower-case).
+fn clock_word(word: &str) -> Option<chrono::NaiveTime> {
+    let (clock, pm) = match word.strip_suffix("am") {
+        Some(c) => (c, Some(false)),
+        None => match word.strip_suffix("pm") {
+            Some(c) => (c, Some(true)),
+            None => (word, None),
+        },
+    };
+    let (h, m) = match clock.split_once(':') {
+        Some((h, m)) => (h.parse::<u32>().ok()?, m.parse::<u32>().ok()?),
+        None => (clock.parse::<u32>().ok()?, 0),
+    };
+    let h = match pm {
+        Some(true) if h < 12 => h + 12,
+        Some(false) if h == 12 => 0,
+        _ => h,
+    };
+    chrono::NaiveTime::from_hms_opt(h, m, 0)
+}
+
+/// What follows "resets" (lower-cased): a clock time ("11:10pm", "3pm",
+/// "23:10"), a date ("Oct 30", "Oct 30, 9am", "Oct 30 at 9am") or a weekday
+/// ("Mon 9am"): the next such instant in `now`'s zone, plus a minute of
+/// slack. A date or weekday without a time means the start of that day.
+/// None when the text gives none of these.
+fn resets_at(lower: &str, now: DateTime<chrono::Local>) -> Option<DateTime<Utc>> {
+    use chrono::{Datelike, NaiveDate, TimeZone};
+    const MONTHS: [&str; 12] = [
+        "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
+    ];
+    const DAYS: [&str; 7] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+    let rest = lower.split("resets").nth(1)?;
+    let rest = rest.split('(').next().unwrap_or("");
+    let words: Vec<&str> = rest
+        .split(|c: char| c.is_whitespace() || c == ',' || c == '·')
+        .filter(|w| !w.is_empty() && !matches!(*w, "at" | "on"))
+        .collect();
+    let first = *words.first()?;
+    let time_in = |ws: &[&str]| ws.iter().find_map(|w| clock_word(w));
+    let midnight = chrono::NaiveTime::MIN;
+    let prefix = first.get(..3).unwrap_or("");
+    let at = if let Some(month) = MONTHS.iter().position(|m| *m == prefix) {
+        let day: u32 = words
+            .get(1)?
+            .chars()
+            .take_while(char::is_ascii_digit)
+            .collect::<String>()
+            .parse()
+            .ok()?;
+        let time = time_in(&words[2..]).unwrap_or(midnight);
+        let on = |year| NaiveDate::from_ymd_opt(year, month as u32 + 1, day);
+        let this = on(now.year())?.and_time(time);
+        if this > now.naive_local() {
+            this
+        } else if this.date() == now.date_naive() {
+            // Today, at a time that has passed (or no time given): the
+            // limit lifts later today, so let the default wait apply.
+            return None;
+        } else {
+            on(now.year() + 1)?.and_time(time)
+        }
+    } else if let Some(wd) = DAYS.iter().position(|d| *d == prefix) {
+        let time = time_in(&words[1..]).unwrap_or(midnight);
+        if now.weekday().num_days_from_monday() as usize == wd
+            && now.date_naive().and_time(time) <= now.naive_local()
+        {
+            return None;
+        }
+        (0..=7)
+            .map(|n| (now.date_naive() + chrono::Duration::days(n)).and_time(time))
+            .find(|at| {
+                at.weekday().num_days_from_monday() as usize == wd && *at > now.naive_local()
+            })?
+    } else {
+        let time = clock_word(first)?;
+        let mut at = now.date_naive().and_time(time);
+        if at <= now.naive_local() {
+            at += chrono::Duration::days(1);
+        }
+        at
+    };
+    let at = now.timezone().from_local_datetime(&at).earliest()?;
+    let at = at.with_timezone(&Utc) + chrono::Duration::minutes(1);
+    // Nothing resets further out than a week: beyond that the text was
+    // misread, and the default wait applies.
+    (at <= now.with_timezone(&Utc) + chrono::Duration::days(8)).then_some(at)
 }
 
 // --- the fake runner, for tests ---------------------------------------------
@@ -1334,6 +1434,131 @@ mod tests {
         ));
     }
 
+    /// H-0094's review (live, 2026-10-27): the run ended with the session
+    /// limit, and was read as "model unavailable" because its own result
+    /// line mentions `modelUsage`. It is a rate limit, with its reset time.
+    #[test]
+    fn a_session_limit_is_a_rate_limit_with_its_reset_time() {
+        let line = r#"{"type":"result","subtype":"success","is_error":true,"terminal_reason":"api_error","result":"You've hit your session limit · resets 11:10pm (America/Toronto)","modelUsage":{},"num_turns":1,"total_cost_usd":0}"#;
+        let r: PrintResult = serde_json::from_str(line).unwrap();
+        let Some(Failure::RateLimited { until: Some(until) }) = classify(Some(&r), line, "", true)
+        else {
+            panic!("not a rate limit: {:?}", classify(Some(&r), line, "", true));
+        };
+        assert!(until > Utc::now());
+        // The same, mid-run and with tokens spent: still a rate limit.
+        let spent = line.replace(
+            r#""modelUsage":{}"#,
+            r#""modelUsage":{"m":{"costUSD":3.5}}"#,
+        );
+        let r: PrintResult = serde_json::from_str(&spent).unwrap();
+        assert!(matches!(
+            classify(Some(&r), &spent, "", true),
+            Some(Failure::RateLimited { .. })
+        ));
+        assert_eq!(rate_limit("the limit of this function is three"), None);
+        use chrono::TimeZone;
+        let now = chrono::Local
+            .with_ymd_and_hms(2026, 10, 27, 23, 10, 30)
+            .single()
+            .unwrap();
+        let at = |s: &str| rate_limit_at(s, now);
+        let slack = chrono::Duration::minutes(1);
+        let local = |y, mo, d, h| {
+            chrono::Local
+                .with_ymd_and_hms(y, mo, d, h, 0, 0)
+                .single()
+                .unwrap()
+                .with_timezone(&Utc)
+                + slack
+        };
+        // Only the "limit … resets" catch-all matches this one; a near miss
+        // without "limit" does not.
+        assert_eq!(
+            at("Opus limit · resets 3pm"),
+            Some(Some(local(2026, 10, 28, 15)))
+        );
+        assert_eq!(at("the build resets 3pm"), None);
+        // "resets 11:10pm", just past: tomorrow, exactly.
+        assert_eq!(
+            at("You've hit your session limit · resets 11:10pm (America/Toronto)"),
+            Some(Some(
+                chrono::Local
+                    .with_ymd_and_hms(2026, 10, 28, 23, 10, 0)
+                    .single()
+                    .unwrap()
+                    .with_timezone(&Utc)
+                    + slack
+            ))
+        );
+        // A weekly limit names a date, or a weekday.
+        assert_eq!(
+            at("You've hit your weekly limit · resets Oct 30"),
+            Some(Some(local(2026, 10, 30, 0)))
+        );
+        assert_eq!(
+            at("You've hit your weekly limit · resets Oct 30, 9am (UTC)"),
+            Some(Some(local(2026, 10, 30, 9)))
+        );
+        // 2026-10-27 is a Tuesday: Friday is the 30th.
+        assert_eq!(
+            at("You've hit your weekly limit · resets Fri 9am"),
+            Some(Some(local(2026, 10, 30, 9)))
+        );
+        // A date already past is next year's, which is beyond any limit: the
+        // default wait applies.
+        assert_eq!(at("weekly limit · resets Jan 5"), Some(None));
+        // A date or weekday naming today, read once it has begun: the limit
+        // lifts later today, not a year or a week away.
+        let morning = chrono::Local
+            .with_ymd_and_hms(2026, 10, 30, 8, 0, 0)
+            .single()
+            .unwrap();
+        assert_eq!(
+            rate_limit_at("weekly limit · resets Oct 30", morning),
+            Some(None)
+        );
+        assert_eq!(
+            rate_limit_at("weekly limit · resets Fri", morning),
+            Some(None)
+        );
+        assert_eq!(
+            rate_limit_at("weekly limit · resets Fri 9am", morning),
+            Some(Some(local(2026, 10, 30, 9)))
+        );
+    }
+
+    #[test]
+    fn a_reset_time_is_the_next_such_clock_time_here() {
+        use chrono::TimeZone;
+        let local = |h: u32, m: u32| {
+            chrono::Local
+                .with_ymd_and_hms(2026, 10, 27, h, m, 0)
+                .single()
+                .unwrap()
+        };
+        let now = local(0, 28);
+        let at = |s: &str| resets_at(s, now).unwrap();
+        let slack = chrono::Duration::minutes(1);
+        assert_eq!(
+            at("hit your session limit · resets 11:10pm (america/toronto)"),
+            local(23, 10) + slack
+        );
+        assert_eq!(at("resets 3pm"), local(15, 0) + slack);
+        assert_eq!(
+            at("resets 12am"),
+            local(0, 0) + chrono::Duration::days(1) + slack
+        );
+        assert_eq!(at("resets 23:10"), local(23, 10) + slack);
+        // A time already past today is tomorrow's.
+        assert_eq!(
+            resets_at("resets 3pm", local(16, 0)).unwrap(),
+            local(15, 0) + chrono::Duration::days(1) + slack
+        );
+        assert_eq!(resets_at("resets soon", now), None);
+        assert_eq!(resets_at("no reset here", now), None);
+    }
+
     #[test]
     fn a_streamed_run_is_no_rate_limit() {
         // Every stream has `{"type":"rate_limit_event",…,"status":"allowed"}`
@@ -1384,7 +1609,7 @@ mod tests {
         let r = PrintResult::parse(&text).unwrap();
         assert!(matches!(
             classify(Some(&r), &text, "You've hit your limit · resets 3pm", false),
-            Some(Failure::RateLimited { until: None })
+            Some(Failure::RateLimited { until: Some(_) })
         ));
     }
 

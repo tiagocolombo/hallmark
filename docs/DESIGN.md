@@ -612,7 +612,7 @@ system prompt.
 | Per item | `per_item` | The item goes to Your Office, marked "budget". |
 | Per room per day | `[budget.review] daily`, … | The room closes for the day. Items wait in order. |
 | Daily total | `daily` | The daemon pauses. Your session isn't blocked. |
-| Plan limit | Claude | The daemon pauses until the limit resets. |
+| Plan limit (usage, session, weekly) | Claude | The daemon pauses until the limit resets and retries by itself; `hall daemon resume` retries now. |
 
 **Views.** `hall usage` totals by item, room, role, model or day.
 
@@ -630,6 +630,7 @@ changes (ADR 0030).
 | ready? | the item is `awaiting_you` | nothing |
 | budget, run_failed, checks, ship_failed, conflict, feedback, ci_failed | a hold: a per-item cap, two failed runs in a row, `max_check_failures` failed checks in a row, a failed ship, a rebase the Delivery office couldn't finish, PR comments or failing CI its dev run didn't act on | that item, until `hall retry` (which, for a budget hold, grants the item more tokens); a `ci_failed` hold also clears when a re-run of the PR's checks passes (ADR 0047) |
 | merge_failed, lit | a hold on a shipped item: the merger's merge command failed, or the PR is ready but touches a `[merge] lit` path (ADR 0048) | that item, until `hall retry` (try again; for `lit`, merge this head) or the PR merges or closes |
+| paused | the daemon paused its model workers: a run hit Claude's usage or session limit, or the loop spent its daily budget (ADR 0016) | every model run, until the reset (the time Claude names, read in this machine's zone; 30 minutes when it names none) or `hall daemon resume`; no item is held |
 | ci_failed | an open PR's CI still fails after the Delivery office's fixes | a follow-up item |
 | base_red | a failed check on a base's tip (ADR 0051) | that base's merge queue, until its CI is green; a PR that fixes it is merged by hand |
 | ci_down | CI jobs that never started (an Actions billing limit, no runners): one entry for every PR | GitHub |

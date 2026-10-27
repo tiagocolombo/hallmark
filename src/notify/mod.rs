@@ -196,6 +196,7 @@ fn kind_label(kind: &str) -> &str {
         "stuck" => "stuck",
         "checks" => "checks failing",
         "daemon_stopped" => "daemon stopped",
+        "paused" => "loop paused",
         "learnings" => "learnings",
         other => other,
     }
@@ -208,6 +209,7 @@ fn tags(kind: &str) -> (Vec<String>, u8) {
         "stuck" | "daemon_stopped" => ("warning", 4),
         "ready" => ("white_check_mark", 3),
         "budget" => ("money_with_wings", 3),
+        "paused" => ("pause_button", 3),
         "run_failed" | "ship_failed" | "merge_failed" => ("x", 3),
         "lit" => ("bulb", 3),
         "conflict" => ("crossed_swords", 4),

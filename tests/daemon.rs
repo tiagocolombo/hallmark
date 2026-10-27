@@ -541,3 +541,135 @@ fn resume_lifts_a_pause_before_its_time() {
     assert_eq!(again.json["changed"], false);
     assert_eq!(again.json["note"], "not paused");
 }
+
+/// A pause (Claude's usage or session limit, the daily budget) is in the
+/// inbox with the way to retry now, until it ends or `hall daemon resume`.
+#[test]
+fn a_pause_is_in_the_inbox_until_resumed() {
+    let env = Env::initialized();
+    let now = Utc::now();
+    write_state(
+        &env,
+        json!({
+            "pid": std::process::id(), "started_at": now.to_rfc3339(),
+            "heartbeat": now.to_rfc3339(), "wanted": true,
+            "paused": {
+                "reason": "rate limited",
+                "until": (now + chrono::Duration::hours(1)).to_rfc3339(),
+                "since": now.to_rfc3339(),
+            },
+        }),
+    );
+    let r = env.hall(&env.repo, &["inbox"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let entries = r.json["entries"].as_array().unwrap();
+    let paused = entries
+        .iter()
+        .find(|e| e["kind"] == "paused")
+        .unwrap_or_else(|| panic!("{}", r.stdout));
+    assert!(
+        paused["text"]
+            .as_str()
+            .unwrap()
+            .starts_with("The loop is paused: rate limited, until "),
+        "{paused}"
+    );
+    assert_eq!(paused["answer_with"][0], "hall daemon resume");
+    let n = entries.iter().position(|e| e["kind"] == "paused").unwrap() + 1;
+    let r = env.hall(&env.repo, &["inbox", &n.to_string()]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(r.json["actions"][0]["command"], "hall daemon resume");
+    assert!(r.json["why"].as_str().unwrap().contains("session limit"));
+
+    // A pause that ends on another day names the day.
+    let mut s = read_state(&env);
+    s["paused"]["until"] = json!((now + chrono::Duration::days(2)).to_rfc3339());
+    write_state(&env, s);
+    let r = env.hall(&env.repo, &["inbox"]);
+    let text = r.json["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["kind"] == "paused")
+        .unwrap()["text"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let day = (now + chrono::Duration::days(2))
+        .with_timezone(&chrono::Local)
+        .format("until %a %b %-d ")
+        .to_string();
+    assert!(text.contains(&day), "{text} should contain {day}");
+
+    // A spent daily budget offers the grant, not a resume that pauses again.
+    let mut s = read_state(&env);
+    s["paused"]["reason"] = json!(
+        "the daily budget is spent (1M of 1M weighted tokens today); the loop waits until \
+         00:00 UTC, or `hall budget --grant` lets it go on today"
+    );
+    write_state(&env, s);
+    let r = env.hall(&env.repo, &["inbox"]);
+    let e = r.json["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["kind"] == "paused")
+        .unwrap()
+        .clone();
+    assert_eq!(e["answer_with"][0], "hall budget --grant");
+    let n = r.json["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|e| e["kind"] == "paused")
+        .unwrap()
+        + 1;
+    let r = env.hall(&env.repo, &["inbox", &n.to_string()]);
+    assert_eq!(r.json["actions"][0]["command"], "hall budget --grant");
+    let mut s = read_state(&env);
+    s["paused"]["reason"] = json!("rate limited");
+    write_state(&env, s);
+
+    let r = env.hall(&env.repo, &["daemon", "resume"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let r = env.hall(&env.repo, &["inbox"]);
+    assert!(
+        !r.json["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["kind"] == "paused"),
+        "{}",
+        r.stdout
+    );
+}
+
+/// A pause whose time has passed (the daemon stopped mid-pause) is no longer
+/// in the inbox.
+#[test]
+fn an_expired_pause_is_not_in_the_inbox() {
+    let env = Env::initialized();
+    let now = Utc::now();
+    write_state(
+        &env,
+        json!({
+            "pid": 0, "started_at": null, "heartbeat": null, "wanted": false,
+            "paused": {
+                "reason": "rate limited",
+                "until": (now - chrono::Duration::minutes(5)).to_rfc3339(),
+                "since": (now - chrono::Duration::hours(1)).to_rfc3339(),
+            },
+        }),
+    );
+    let r = env.hall(&env.repo, &["inbox"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert!(
+        !r.json["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["kind"] == "paused"),
+        "{}",
+        r.stdout
+    );
+}

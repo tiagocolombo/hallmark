@@ -268,7 +268,9 @@ agent, an escalation after repeated rejections, "looks done?", a budget hold
 a merge the merger couldn't do (`merge_failed`), a ready PR that touches a
 `[merge] lit` path (`lit`), CI that still fails after the Delivery office's
 two fixes, CI that never started (one `ci_down` entry), or a base whose own
-CI failed, which stops its merge queue (`base_red`). Hallmark tells you in Claude Code (a hook and
+CI failed, which stops its merge queue (`base_red`), or a loop paused by
+Claude's session or weekly limit (`paused`; `hall daemon resume` retries at
+once). Hallmark tells you in Claude Code (a hook and
 the status line), in the terminal app and the web app (`hall web`), with a desktop notification, and on
 your phone through [ntfy](https://ntfy.sh), Telegram or Slack, plus an
 optional morning digest.

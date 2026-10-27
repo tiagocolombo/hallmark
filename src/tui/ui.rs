@@ -130,6 +130,7 @@ fn kind_label(kind: &str) -> (&str, Color) {
         "session_waiting" => ("session", INFO),
         "learnings" => ("learnings", INFO),
         "daemon_stopped" => ("daemon", STOP),
+        "paused" => ("paused", BRASS),
         "ci_failed" => ("CI failed", STOP),
         "checks" => ("checks failing", STOP),
         k => (k, STOP),

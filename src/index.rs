@@ -65,7 +65,7 @@ pub struct Index {
 pub struct InboxEntry {
     /// Escalations: question, escalated, ready, budget, run_failed,
     /// ship_failed, conflict, feedback, checks, ci_failed (after the Delivery
-    /// office's fixes), merge_failed, lit, ci_down, base_red, daemon_stopped.
+    /// office's fixes), merge_failed, lit, ci_down, base_red, paused (Claude's limit), daemon_stopped.
     /// Notices: stuck, session_waiting, ci_failed (merged, or being fixed),
     /// learnings.
     pub kind: String,
@@ -875,6 +875,49 @@ impl Index {
                 session: None,
                 since,
                 answer_with: vec!["hall daemon start".into(), "hall daemon status".into()],
+                notice: false,
+            });
+        }
+        // A pause (Claude's usage or session limit, the daily budget): the
+        // loop resumes by itself, and `hall daemon resume` retries now.
+        if let Some(st) = crate::daemon::state::load()
+            && let Some(p) = st.pause_at(now)
+        {
+            let until = p
+                .until
+                .map(|u| {
+                    let u = u.with_timezone(&chrono::Local);
+                    // A pause past today (a weekly limit) names its day.
+                    let fmt = if u.date_naive() == chrono::Local::now().date_naive() {
+                        "%H:%M"
+                    } else {
+                        "%a %b %-d %H:%M"
+                    };
+                    format!(", until {}", u.format(fmt))
+                })
+                .unwrap_or_default();
+            // A spent daily cap pauses again at once on resume: the grant
+            // (a token cap) or a raised cap is what works (ADR 0028).
+            let answer_with = if p.reason.contains(crate::budget::DAILY_SPENT) {
+                let first = if p.reason.contains("hall budget --grant") {
+                    "hall budget --grant"
+                } else {
+                    "hall budget"
+                };
+                vec![first.into(), "hall daemon status".into()]
+            } else {
+                vec!["hall daemon resume".into(), "hall daemon status".into()]
+            };
+            out.push(InboxEntry {
+                kind: "paused".into(),
+                item: None,
+                qid: None,
+                text: format!("The loop is paused: {}{until}", p.reason),
+                options: vec![],
+                default: None,
+                session: None,
+                since: p.since,
+                answer_with,
                 notice: false,
             });
         }
