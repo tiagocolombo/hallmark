@@ -279,6 +279,9 @@ pub struct Item {
     /// path (`hall retry` on its `lit` hold). Cleared when the item reopens.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub merge_approved: Option<String>,
+    /// The merged PR was reverted on its base (ADR 0061).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reverted: Option<Reverted>,
     /// False when the worktree is a checkout the user made and adopted; the
     /// sweeper leaves it alone.
     #[serde(default = "own_default")]
@@ -324,6 +327,20 @@ pub struct RebaseRequest {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub files: Vec<String>,
     pub since: DateTime<Utc>,
+}
+
+/// A merged PR undone on its base (ADR 0061).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Reverted {
+    /// The base it was reverted on, as people read it (`origin/main`).
+    pub base: String,
+    /// The commit the PR landed as.
+    pub sha: String,
+    /// The commit that reverted it.
+    pub revert_sha: String,
+    /// The revert's subject.
+    pub subject: String,
+    pub at: DateTime<Utc>,
 }
 
 /// How the shipped PR's CI ended.

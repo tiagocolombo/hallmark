@@ -51,7 +51,8 @@ expression: "scrub(&env, &r.json)"
     "dropped": 1,
     "escalated": 0,
     "live": 0,
-    "merged": 0
+    "merged": 0,
+    "reverted": 0
   },
   "next": [
     "hall history --rejected",

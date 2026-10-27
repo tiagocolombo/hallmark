@@ -198,6 +198,7 @@ fn kind_label(kind: &str) -> &str {
         "daemon_stopped" => "daemon stopped",
         "paused" => "loop paused",
         "learnings" => "learnings",
+        "reverted" => "PR reverted",
         other => other,
     }
 }
@@ -213,6 +214,7 @@ fn tags(kind: &str) -> (Vec<String>, u8) {
         "run_failed" | "ship_failed" | "merge_failed" => ("x", 3),
         "lit" => ("bulb", 3),
         "conflict" => ("crossed_swords", 4),
+        "reverted" => ("rewind", 4),
         "feedback" => ("speech_balloon", 4),
         "session_waiting" => ("hourglass", 3),
         "digest" => ("sunrise", 2),

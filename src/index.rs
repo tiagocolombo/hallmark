@@ -708,6 +708,31 @@ impl Index {
                 notice: false,
             });
         }
+        // A merged PR that was reverted (ADR 0061): the loop missed
+        // something, and only you can say which layer should have caught
+        // it. Dismiss it once you have, or start the follow-up.
+        for item in &all {
+            let (State::Closed, Some(r), Some(url)) = (item.state, &item.reverted, &item.pr_url)
+            else {
+                continue;
+            };
+            out.push(InboxEntry {
+                kind: "reverted".into(),
+                item: Some(item.id),
+                qid: None,
+                text: crate::reverts::inbox_text(item, r),
+                options: vec![],
+                default: None,
+                session: None,
+                since: r.at,
+                answer_with: vec![
+                    format!("hall new --follow-up {url}"),
+                    format!("hall log {}", item.id),
+                    format!("hall export {}", item.id),
+                ],
+                notice: false,
+            });
+        }
         let mut down: Vec<(&Item, &str)> = Vec::new();
         for item in &all {
             let (Some(ci), Some(url)) = (&item.ci, &item.pr_url) else {

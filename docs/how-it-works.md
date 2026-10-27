@@ -21,8 +21,7 @@ macOS, `xdg-open` on Linux, `start` on Windows).
 | Repair Shop | A fixer addresses failing checks and findings | the fixer |
 | Stamping Room | The approved commit gets its hallmark, a git note | the assayer |
 | Dispatch Dock | Rebases onto the latest base, then the ship command opens the PR with a What, Why, How, Testing and How to revert description (ADR 0057) (or `update` updates an adopted one), posts the review as a PR comment, and the item closes | the shipper |
-| Delivery Office | Watches each PR until it merges. A conflict or new review comments send it back to development, where a headless dev run rebases it or addresses them and sends it to review; a rebase that leaves the approved change as it was keeps its approval, with no review. With the merger on, it merges each ready PR itself, one at a time, in dependency order, and brings each PR up to date only at its turn. Once the PR merges or closes, the item's worktree is removed; its branch and journal stay | the delivery and delivery-watch workers, the merger, the CI watch, the sweeper |
-
+| Delivery Office | Watches each PR until it merges. A conflict or new review comments send it back to development, where a headless dev run rebases it or addresses them and sends it to review; a rebase that leaves the approved change as it was keeps its approval, with no review. With the merger on, it merges each ready PR itself, one at a time, in dependency order, and brings each PR up to date only at its turn. Once the PR merges or closes, the item's worktree is removed; its branch and journal stay. For 30 days after a merge, the base is watched for a revert of the PR: one is recorded on the item, lands in your inbox, counts in `hall stats` and sends the item back to the librarian as a miss | the delivery and delivery-watch workers, the merger, the CI watch, the sweeper, the reverts worker |
 ## An item's states
 
 ```mermaid
@@ -273,7 +272,10 @@ a merge the merger couldn't do (`merge_failed`), a ready PR that touches a
 two fixes, CI that never started (one `ci_down` entry), or a base whose own
 CI failed, which stops its merge queue (`base_red`), or a loop paused by
 Claude's session or weekly limit (`paused`; `hall daemon resume` retries at
-once). Hallmark tells you in Claude Code (a hook and
+once), or a merged PR that was reverted on its base (`reverted`: the loop
+missed something, and the entry asks which layer should have caught it;
+dismiss it or start the follow-up,
+[ADR 0061](decisions/0061-a-revert-is-a-signal.md)). Hallmark tells you in Claude Code (a hook and
 the status line), in the terminal app and the web app (`hall web`), with a desktop notification, and on
 your phone through [ntfy](https://ntfy.sh), Telegram or Slack, plus an
 optional morning digest.

@@ -43,6 +43,13 @@ learnings, and the words for the item's Gazette.
 - `decision`: the human's ruling on an escalation (allowed another round,
   pulled back, dropped), with their reason, as guidance for similar cases.
 
+A digest with a **Reverted** section is a change the loop approved and a
+person then had to undo. That is the one item that must teach something:
+say which layer should have caught it, and propose a `rule` the reviewer
+can apply to the paths it touched. If a finding near the cause was
+withdrawn, or a dispute accepted, the `false-positive` that came from it is
+wrong: retire it.
+
 ## How to decide
 
 - Most items teach little. Return empty lists rather than a weak learning.

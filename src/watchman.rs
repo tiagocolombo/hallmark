@@ -118,6 +118,7 @@ mod tests {
             delivered: None,
             merged: None,
             merge_approved: None,
+            reverted: None,
             own_worktree: true,
             swept: false,
             hold: None,
