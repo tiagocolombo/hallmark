@@ -923,6 +923,7 @@ fn a_review_pulled_back_while_the_verifier_ran_is_discarded() {
     assert_eq!(env.fake_calls().len(), 2);
     assert!(events_of(&env, &id, "verdict").is_empty());
     assert!(events_of(&env, &id, "verified").is_empty());
+    assert!(events_of(&env, &id, "reasons_delivered").is_empty());
 }
 
 #[test]

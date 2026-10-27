@@ -491,8 +491,9 @@ fn resolve_key(key: &str) -> Option<(Option<&'static str>, &'static str, Kind)> 
         _ => {}
     }
     let (table, field) = key.split_once('.')?;
-    // `security` is a run role (it shares the review budget), not a table.
-    if table == "security" {
+    // `security` and `verifier` are run roles (they share the review
+    // budget), not tables.
+    if matches!(table, "security" | "verifier" | "verify") {
         return None;
     }
     let table = table_key(budget::role_of(table)?);
@@ -778,6 +779,8 @@ mod tests {
             "daily",
             "ship.daily=1M",
             "security.max_usd=2",
+            "verify.max_usd=2",
+            "verifier.timeout=5m",
         ] {
             let e = apply_sets("", &[s.to_string()]).unwrap_err();
             assert_eq!(e.code, ErrorCode::Usage, "{s}");

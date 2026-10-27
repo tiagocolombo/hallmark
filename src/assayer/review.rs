@@ -132,6 +132,14 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
             if let Some(p) = moved_on()? {
                 return Ok(p);
             }
+            // The verifier tries to refute the blocking findings before
+            // anyone acts on them (ADR 0062). The checkout is still here.
+            let (mv, verification) =
+                super::verify::verify(repo, ctx.runner, item, &sha, &req.cwd, &review_base, mv)?;
+            // It can take minutes: look again before recording.
+            if let Some(p) = moved_on()? {
+                return Ok(p);
+            }
             // The reviewer read the person's words; the next run doesn't.
             // Only now: a round stopped or discarded before its verdict is
             // recorded is reviewed again with them (ADR 0044).
@@ -142,14 +150,6 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
                 crate::words::pending(&events, "reviewer").as_ref(),
                 &events,
             )?;
-            // The verifier tries to refute the blocking findings before
-            // anyone acts on them (ADR 0062). The checkout is still here.
-            let (mv, verification) =
-                super::verify::verify(repo, ctx.runner, item, &sha, &req.cwd, &review_base, mv)?;
-            // It can take minutes: look again before recording.
-            if let Some(p) = moved_on()? {
-                return Ok(p);
-            }
             let rec = super::record_verdict(
                 repo,
                 item.id,
