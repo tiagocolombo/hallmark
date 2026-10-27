@@ -65,6 +65,7 @@ pub const ORDER: &[(&str, Tick)] = &[
     ("merger", crate::merger::tick),
     ("ci", crate::ci::tick),
     ("sweeper", crate::sweeper::tick),
+    ("reverts", crate::reverts::tick),
     ("librarian", crate::library::librarian_tick),
     ("notify", crate::notify::tick),
 ];

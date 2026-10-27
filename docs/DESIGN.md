@@ -84,7 +84,7 @@ The docs and the terminal app describe Hallmark as a building.
 | Repair Shop | The fixer | Fixing |
 | Stamping Room | The hallmark is struck | Hallmarked |
 | Dispatch Dock | Rebases onto the latest base; the ship command opens the PR, whose description is What, Why, How, Testing and How to revert (ADR 0057); `update` updates an adopted or reopened one. Each review is posted as a PR comment (`review_comment`, ADR 0039). If that PR already merged with the hallmarked work in it, the item closes with nothing pushed | Closed |
-| Delivery Office | Watches each shipped PR until it merges; a headless dev run rebases conflicting ones, addresses new review comments (ADR 0030) and fixes red CI (ADR 0031); a rebase that leaves the approved change as it was keeps its approval with no review (ADR 0049); a CI fix whose checks pass on a re-run goes back to its PR without a run (ADR 0047). With `[merge] mode = "auto"`, the merger merges each ready PR, one at a time per base, in dependency order (ADR 0048), and brings each PR up to date only at its turn (ADR 0050). Once the PR merges or closes, the sweeper removes the item's worktree (ADR 0040) | Closed, Development (rebasing, addressing comments) |
+| Delivery Office | Watches each shipped PR until it merges; a headless dev run rebases conflicting ones, addresses new review comments (ADR 0030) and fixes red CI (ADR 0031); a rebase that leaves the approved change as it was keeps its approval with no review (ADR 0049); a CI fix whose checks pass on a re-run goes back to its PR without a run (ADR 0047). With `[merge] mode = "auto"`, the merger merges each ready PR, one at a time per base, in dependency order (ADR 0048), and brings each PR up to date only at its turn (ADR 0050). Once the PR merges or closes, the sweeper removes the item's worktree (ADR 0040). For 30 days after, the `reverts` worker watches the base for a revert of the merged PR: one is recorded on the item, put in your inbox, counted by `hall stats` and distilled again by the librarian as a miss (ADR 0061) | Closed, Development (rebasing, addressing comments) |
 
 A **watchman** patrols the corridor. It flags any item with no new event for
 `stuck_after` (30 minutes by default), and a daemon that has stopped.
@@ -206,6 +206,8 @@ The journal records:
 - notifications
 - usage for every model run
 - the hallmark, the PR link, and the time spent in each state
+- a revert of the merged PR on its base, with the commit it landed as and
+  the commit that undid it (ADR 0061)
 
 ## The hallmark and the gates
 
@@ -637,6 +639,7 @@ changes (ADR 0030).
 | merge_failed, lit | a hold on a shipped item: the merger's merge command failed, or the PR is ready but touches a `[merge] lit` path (ADR 0048) | that item, until `hall retry` (try again; for `lit`, merge this head) or the PR merges or closes |
 | paused | the daemon paused its model workers: a run hit Claude's usage or session limit, or the loop spent its daily budget (ADR 0016) | every model run, until the reset (the time Claude names, read in this machine's zone; 30 minutes when it names none) or `hall daemon resume`; no item is held |
 | ci_failed | an open PR's CI still fails after the Delivery office's fixes | a follow-up item |
+| reverted | a merged PR was reverted on its base within 30 days (ADR 0061); the librarian distils it again, asking which layer should have caught it | a follow-up item, or `hall inbox --dismiss` |
 | base_red | a failed check on a base's tip (ADR 0051) | that base's merge queue, until its CI is green; a PR that fixes it is merged by hand |
 | ci_down | CI jobs that never started (an Actions billing limit, no runners): one entry for every PR | GitHub |
 | session waiting | an answer the loop couldn't deliver to the asking session | that session |
@@ -746,7 +749,7 @@ doubt makes one item.
 One process (`hall daemon start`, optionally at login) runs passes over every
 registered repo; every repo, worker and slot is scheduled on its own (ADR
 0026): watchman, resume, assayer, fixer, shipper, delivery, delivery-watch,
-merger, ci, sweeper, librarian, notify. Leases
+merger, ci, sweeper, reverts, librarian, notify. Leases
 keep one worker per item and count per phase against `[parallel]` (checks,
 review, fix, ship), not one assayer per repo. A rate limit or the daily budget
 pauses the model workers until the reset, recorded as `paused`. Stopping is a

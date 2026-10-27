@@ -628,6 +628,38 @@ pub fn explain(repo: &Repo, ix: &Index, entry: InboxEntry, number: usize) -> Res
                 acts
             },
         ),
+        "reverted" => {
+            let mut ev = Vec::new();
+            if let Some(r) = item.as_ref().and_then(|i| i.reverted.as_ref()) {
+                ev.push(format!(
+                    "{} landed as {} and was reverted by {} \"{}\"",
+                    r.base,
+                    crate::event::short(&r.sha),
+                    crate::event::short(&r.revert_sha),
+                    r.subject
+                ));
+            } else {
+                ev.push(entry.text.clone());
+            }
+            let mut acts = Vec::new();
+            for c in &entry.answer_with {
+                let does = if c.starts_with("hall new --follow-up") {
+                    "start the follow-up item that fixes what the revert undid; this entry clears"
+                } else if c.starts_with("hall log") {
+                    "read the item's history, to see which layer should have caught it"
+                } else {
+                    "export the item's record for the incident review"
+                };
+                acts.push(act(c, does));
+            }
+            (
+                "The merged PR was reverted on its base: the loop missed something. Which layer \
+                 should have caught it: the tests, the review, the gates or the request itself?"
+                    .into(),
+                ev,
+                acts,
+            )
+        }
         kind => {
             let why = match kind {
                 "ready" => {

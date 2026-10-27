@@ -41,6 +41,7 @@ pub mod plugin;
 pub mod process;
 pub mod repo;
 pub mod resume;
+pub mod reverts;
 pub mod runner;
 pub mod settings;
 pub mod shipper;

@@ -78,6 +78,9 @@ pub struct ItemView {
     /// (ADR 0060).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub escalation: Option<String>,
+    /// The merged PR was reverted on its base (ADR 0061).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reverted: Option<crate::item::Reverted>,
     pub created_at: DateTime<Utc>,
     pub state_since: DateTime<Utc>,
 }
@@ -105,6 +108,7 @@ impl From<&Item> for ItemView {
             ci_fix: i.ci_fix.clone(),
             delivered: i.delivered.clone(),
             escalation: i.escalation.clone(),
+            reverted: i.reverted.clone(),
             created_at: i.created_at,
             state_since: i.state_since,
         }

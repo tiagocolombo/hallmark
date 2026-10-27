@@ -566,6 +566,160 @@ fn the_delivery_office_watches_a_pr_until_it_merges() {
     assert_eq!(status.json["delivered"], "merged", "{}", status.stdout);
 }
 
+/// A commit on the remote's `main` with its own subject and body.
+fn main_lands(env: &Env, file: &str, subject: &str, body: &str) -> String {
+    std::fs::write(env.repo.join(file), "x\n").unwrap();
+    git(&env.repo, &["add", file]);
+    git(&env.repo, &["commit", "-q", "-m", subject, "-m", body]);
+    git(&env.repo, &["push", "-q", "origin", "main"]);
+    git(&env.repo, &["rev-parse", "HEAD"])
+}
+
+fn reverts_pass(env: &Env, gh: &Path) -> Value {
+    // The base is read at most every ten minutes: forget the last read.
+    let _ = std::fs::remove_file(env.repo.join(".git/hallmark/reverts.json"));
+    pass(env, gh, "reverts", json!([]))
+}
+
+#[test]
+fn a_reverted_pr_is_recorded_put_in_the_inbox_and_distilled_again() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    remote_with_main(&env);
+    let (id, _, sha) = hallmarked_item(&env, "Retry webhooks");
+    pass(&env, &gh, "shipper", json!([]));
+    pr(&gh, "MERGED", "UNKNOWN", &sha);
+    forget(&env);
+    pass(&env, &gh, "delivery-watch", json!([]));
+    assert_eq!(events(&env, &id, "delivered")[0]["outcome"], "merged");
+    // The librarian takes the closed item once.
+    let librarian = json!([{"role": "librarian", "structured": {"learnings": [], "retire": []}}]);
+    assert_eq!(
+        pass(&env, &gh, "librarian", librarian.clone())["progress"],
+        "worked"
+    );
+    assert_eq!(events(&env, &id, "distilled").len(), 1);
+
+    // The PR landed as a squash commit (its number is in the subject), and
+    // nothing reverted it: idle.
+    let landed = main_lands(&env, "retry.rs", "Retry webhooks (#1)", "The retry loop.");
+    assert_eq!(reverts_pass(&env, &gh)["progress"], "idle");
+    assert!(events(&env, &id, "reverted").is_empty());
+
+    // A follow-up made before the revert (say, for red checks at merge) does
+    // not settle a revert that comes after it.
+    let out = env
+        .cmd(&env.repo)
+        .env("HALL_GH", &gh)
+        .args(["--json", "new", "--follow-up", URL])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(0), "{:?}", out);
+
+    // Someone reverts it on main.
+    let revert = main_lands(
+        &env,
+        "retry-undo.rs",
+        "Revert \"Retry webhooks (#1)\" (#3)",
+        &format!("This reverts commit {landed}."),
+    );
+    let step = reverts_pass(&env, &gh);
+    assert_eq!(step["progress"], "worked", "{step}");
+    assert!(
+        step["what"]
+            .as_str()
+            .unwrap()
+            .contains(&format!("{id} was reverted on origin/main")),
+        "{step}"
+    );
+    let ev = events(&env, &id, "reverted");
+    assert_eq!(ev.len(), 1);
+    assert_eq!(ev[0]["actor"], "reverts");
+    assert_eq!(ev[0]["sha"], landed.as_str());
+    assert_eq!(ev[0]["revert_sha"], revert.as_str());
+    assert_eq!(ev[0]["base"], "origin/main");
+    assert_eq!(ev[0]["pr_url"], URL);
+    // Once: a second look records nothing.
+    assert_eq!(reverts_pass(&env, &gh)["progress"], "idle");
+    assert_eq!(events(&env, &id, "reverted").len(), 1);
+
+    // The item, the inbox and the stats say so.
+    let status = env.hall(&env.repo, &["status", &id]);
+    assert_eq!(status.json["reverted"]["revert_sha"], revert.as_str());
+    assert_eq!(
+        status.json["reverted"]["subject"],
+        "Revert \"Retry webhooks (#1)\" (#3)"
+    );
+    let inbox = env.hall(&env.repo, &["inbox"]);
+    let entry = inbox.json["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["kind"] == "reverted")
+        .unwrap_or_else(|| panic!("{}", inbox.stdout));
+    assert_eq!(entry["item"], id.as_str());
+    assert!(
+        entry["text"]
+            .as_str()
+            .unwrap()
+            .starts_with("Retry webhooks: its PR was reverted on origin/main by"),
+        "{entry}"
+    );
+    assert!(
+        entry["text"]
+            .as_str()
+            .unwrap()
+            .ends_with("Which layer should have caught it?")
+    );
+    assert_eq!(
+        entry["answer_with"][0],
+        format!("hall new --follow-up {URL}")
+    );
+    let stats = env.hall(&env.repo, &["stats"]);
+    assert_eq!(stats.json["items"]["reverted"], 1, "{}", stats.stdout);
+
+    // Its detail names the revert, asks the question and keeps its actions.
+    let detail = env.hall(&env.repo, &["inbox", "1"]);
+    let why = detail.json["why"].as_str().unwrap();
+    assert!(why.contains("Which layer should have caught it"), "{why}");
+    let evidence = detail.json["evidence"].to_string();
+    assert!(evidence.contains(&revert[..7]), "{evidence}");
+    let actions = detail.json["actions"].to_string();
+    assert!(
+        actions.contains(&format!("hall new --follow-up {URL}")),
+        "{actions}"
+    );
+    assert!(actions.contains(&format!("hall log {id}")), "{actions}");
+
+    // A follow-up made after the revert settles the entry.
+    hallmark::daemon::nap(std::time::Duration::from_millis(20));
+    let out = env
+        .cmd(&env.repo)
+        .env("HALL_GH", &gh)
+        .args(["--json", "new", "--follow-up", URL])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(0), "{:?}", out);
+    let inbox = env.hall(&env.repo, &["inbox"]);
+    assert!(
+        !inbox.stdout.contains("\"reverted\""),
+        "the follow-up clears the entry: {}",
+        inbox.stdout
+    );
+
+    // The librarian takes it again, and its digest asks the question.
+    let step = pass(&env, &gh, "librarian", librarian);
+    assert_eq!(step["progress"], "worked", "{step}");
+    assert_eq!(events(&env, &id, "distilled").len(), 2);
+    let calls = env.fake_calls();
+    let prompt = calls.last().unwrap()["prompt"].as_str().unwrap();
+    assert!(prompt.contains("## Reverted"), "{prompt}");
+    assert!(
+        prompt.contains("which layer should have caught it"),
+        "{prompt}"
+    );
+}
+
 /// Changes the watch's saved state, as time passing would.
 fn edit_watch(env: &Env, f: impl FnOnce(&mut Value)) {
     let path = env.repo.join(".git/hallmark/delivery-watch.json");

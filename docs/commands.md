@@ -107,7 +107,7 @@ A reason or note you give (`hall retry --reason`, `hall continue --reason` when 
 
 | Command | Does |
 | --- | --- |
-| `hall inbox [<n>]` | Only escalations: questions, "ready?", escalations, holds, CI that never ran, a base whose own CI failed (`base_red`), a paused loop (`paused`: Claude's usage or session limit, or the daily budget; `hall daemon resume` retries now). `hall inbox --notices` lists what the loop handles on its own (stuck items, waiting sessions, red CI being fixed, proposed learnings). `hall inbox 1` explains one: why it waits, the evidence, and each action. `hall inbox 1 --dismiss` hides one, `--clear` hides them all (each comes back if it changes), `--all` shows them. |
+| `hall inbox [<n>]` | Only escalations: questions, "ready?", escalations, holds, CI that never ran, a base whose own CI failed (`base_red`), a paused loop (`paused`: Claude's usage or session limit, or the daily budget; `hall daemon resume` retries now), a merged PR that was reverted on its base (`reverted`; dismiss it once you know which layer should have caught it, or `hall new --follow-up <pr>`, [ADR 0061](decisions/0061-a-revert-is-a-signal.md)). `hall inbox --notices` lists what the loop handles on its own (stuck items, waiting sessions, red CI being fixed, proposed learnings). `hall inbox 1` explains one: why it waits, the evidence, and each action. `hall inbox 1 --dismiss` hides one, `--clear` hides them all (each comes back if it changes), `--all` shows them. |
 | `hall ask <question>` | Asks you a question. `--options a,b`, `--default`, `--wait 4h`, `--item`, `--session` |
 | `hall answer <qid> <answer>` | Answers; the daemon resumes the asking session with it. |
 

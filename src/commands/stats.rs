@@ -45,6 +45,9 @@ pub struct ItemStats {
     pub live: u32,
     /// Items that reached `max_rejects` at least once.
     pub escalated: u32,
+    /// Items whose merged PR was reverted on its base: the loop's misses
+    /// (ADR 0061).
+    pub reverted: u32,
     /// Items whose journal could not be read: left out of every count, so
     /// the numbers are incomplete when this is not empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -146,10 +149,11 @@ impl Render for StatsOut {
         }
         let _ = writeln!(
             s,
-            "Items      {} ({}) · {} escalated",
+            "Items      {} ({}) · {} escalated · {} reverted",
             i.counted,
             parts.join(", "),
-            i.escalated
+            i.escalated,
+            i.reverted
         );
         let r = &self.reviews;
         let _ = writeln!(
@@ -338,6 +342,9 @@ fn count_item(
     if escalated {
         i.escalated += 1;
     }
+    if item.reverted.is_some() {
+        i.reverted += 1;
+    }
     if reviews > 0 {
         r.reviewed += 1;
         r.reviews += reviews;
@@ -479,7 +486,7 @@ mod tests {
         let text = out.render();
         for s in [
             "Hallmark stats (all time)",
-            "Items      2 (1 closed, 1 dropped) · 0 escalated",
+            "Items      2 (1 closed, 1 dropped) · 0 escalated · 0 reverted",
             "Reviews    2 reviews on 1 items, 1 approved · 1 fixes · 0 failed checks",
             "To approve mean 2.00, median 2 · one review 0% (0) · three or more 0% (0)",
             "Findings   3 raised (0 blocker, 1 major, 1 minor, 1 nit) · 1 fixed, 1 withdrawn, 1 open · noise 33%",

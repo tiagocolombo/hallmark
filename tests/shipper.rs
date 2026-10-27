@@ -561,7 +561,8 @@ fn stats_fold_rounds_findings_and_noise_from_the_journals() {
     let s = &r.json;
     assert_eq!(
         s["items"],
-        json!({"counted": 2, "closed": 1, "dropped": 1, "merged": 0, "live": 0, "escalated": 0})
+        json!({"counted": 2, "closed": 1, "dropped": 1, "merged": 0, "live": 0, "escalated": 0,
+               "reverted": 0})
     );
     // One item: rejected once, approved by the second review, one fix.
     assert_eq!(s["reviews"]["reviewed"], 1);

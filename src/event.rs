@@ -467,6 +467,15 @@ pub enum Body {
         pr_url: String,
         outcome: String,
     },
+    /// The merged PR was reverted on its base (ADR 0061): `sha` is the
+    /// commit it landed as, `revert_sha` the commit that undid it.
+    Reverted {
+        pr_url: String,
+        base: String,
+        sha: String,
+        revert_sha: String,
+        subject: String,
+    },
     /// The sweeper removed the worktree of an item that is done with it
     /// (ADR 0040). Its branch and journal are kept.
     WorktreeRemoved {
@@ -584,6 +593,7 @@ impl Body {
             Body::CiFixDeclined { .. } => "ci_fix_declined",
             Body::PrMerged { .. } => "pr_merged",
             Body::Delivered { .. } => "delivered",
+            Body::Reverted { .. } => "reverted",
             Body::WorktreeRemoved { .. } => "worktree_removed",
             Body::Attached { .. } => "attached",
             Body::FeedbackRequested { .. } => "feedback_requested",
@@ -879,6 +889,18 @@ impl Body {
             }
             Body::PrMerged { pr_url, sha } => format!("merged {} · {pr_url}", short(sha)),
             Body::Delivered { pr_url, outcome } => format!("PR {outcome} · {pr_url}"),
+            Body::Reverted {
+                base,
+                sha,
+                revert_sha,
+                subject,
+                ..
+            } => format!(
+                "reverted on {base} · {} undone by {} \"{}\"",
+                short(sha),
+                short(revert_sha),
+                c(subject, 50)
+            ),
             Body::WorktreeRemoved { path } => format!("worktree removed · {path}"),
             Body::Attached { path, caption } => match caption {
                 Some(c) => format!("attached {path}: {c}"),
@@ -973,8 +995,10 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
         ci_fixes: 0,
         ci_declined: None,
         delivered: None,
+        delivered_at: None,
         merged: None,
         merge_approved: None,
+        reverted: None,
         own_worktree: own_worktree.unwrap_or(!*adopted),
         swept: false,
     };
@@ -1102,6 +1126,7 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
                 item.own_worktree &= item.worktree == *worktree;
                 item.swept = false;
                 item.delivered = None;
+                item.delivered_at = None;
                 item.merged = None;
                 item.merge_approved = None;
                 item.worktree = worktree.clone();
@@ -1129,7 +1154,25 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
             }
             Body::CiFixDeclined { reason, .. } => item.ci_declined = Some(reason.clone()),
             Body::PrMerged { sha, .. } => item.merged = Some(sha.clone()),
-            Body::Delivered { outcome, .. } => item.delivered = Some(outcome.clone()),
+            Body::Delivered { outcome, .. } => {
+                item.delivered = Some(outcome.clone());
+                item.delivered_at = Some(e.t);
+            }
+            Body::Reverted {
+                base,
+                sha,
+                revert_sha,
+                subject,
+                ..
+            } => {
+                item.reverted = Some(crate::item::Reverted {
+                    base: base.clone(),
+                    sha: sha.clone(),
+                    revert_sha: revert_sha.clone(),
+                    subject: subject.clone(),
+                    at: e.t,
+                })
+            }
             Body::WorktreeRemoved { .. } => item.swept = true,
             Body::FeedbackRequested { comments, .. } => {
                 item.feedback = Some(crate::item::FeedbackRequest {

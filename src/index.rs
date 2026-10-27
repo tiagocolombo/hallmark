@@ -65,7 +65,8 @@ pub struct Index {
 pub struct InboxEntry {
     /// Escalations: question, escalated, ready, budget, run_failed,
     /// ship_failed, conflict, feedback, checks, ci_failed (after the Delivery
-    /// office's fixes), merge_failed, lit, ci_down, base_red, paused (Claude's limit), daemon_stopped.
+    /// office's fixes), merge_failed, lit, ci_down, base_red, reverted (a merged PR undone on its base), paused
+    /// (Claude's limit), daemon_stopped.
     /// Notices: stuck, session_waiting, ci_failed (merged, or being fixed),
     /// learnings.
     pub kind: String,
@@ -704,6 +705,38 @@ impl Index {
                 answer_with: vec![
                     format!("hall retry {} --reason \"<why>\"", item.id),
                     format!("hall log {}", item.id),
+                ],
+                notice: false,
+            });
+        }
+        // A merged PR that was reverted (ADR 0061): the loop missed
+        // something, and only you can say which layer should have caught
+        // it. Dismiss it once you have, or start the follow-up.
+        for item in &all {
+            let (State::Closed, Some(r), Some(url)) = (item.state, &item.reverted, &item.pr_url)
+            else {
+                continue;
+            };
+            if all.iter().any(|f| {
+                f.follow_up.as_deref() == Some(url.as_str())
+                    && f.state != State::Dropped
+                    && f.created_at >= r.at
+            }) {
+                continue;
+            }
+            out.push(InboxEntry {
+                kind: "reverted".into(),
+                item: Some(item.id),
+                qid: None,
+                text: crate::reverts::inbox_text(item, r),
+                options: vec![],
+                default: None,
+                session: None,
+                since: r.at,
+                answer_with: vec![
+                    format!("hall new --follow-up {url}"),
+                    format!("hall log {}", item.id),
+                    format!("hall export {}", item.id),
                 ],
                 notice: false,
             });

@@ -116,9 +116,12 @@ pub fn eligible(item: &Item, events: &[Event]) -> bool {
     }
 }
 
-/// A `distilled` event after the item's last state change.
+/// A `distilled` event after the item's last state change, or after its
+/// PR was reverted (ADR 0061): a revert is distilled again, as a miss.
 pub fn already_distilled(events: &[Event]) -> Option<&Event> {
-    let last_move = events.iter().rposition(|e| e.body.action().is_some());
+    let last_move = events
+        .iter()
+        .rposition(|e| e.body.action().is_some() || matches!(e.body, Body::Reverted { .. }));
     let last = events
         .iter()
         .rposition(|e| matches!(e.body, Body::Distilled { .. }))?;
@@ -163,6 +166,24 @@ pub fn digest(item: &Item, events: &[Event], changed: &[String]) -> String {
         outcome.push_str(&format!(", PR {pr}"));
     }
     s.push_str(&outcome);
+    if let Some(r) = &item.reverted {
+        s.push_str(&format!(
+            ".\n\n## Reverted\n\n\
+             This change merged and was then reverted on {} by {} \"{}\" (it had landed as \
+             {}). The loop approved something that had to be undone: that is a miss, and the \
+             most valuable thing this item can teach. Work out which layer should have caught \
+             it: the author's tests, the gates, the review (which lens, and was there a finding \
+             near it that was withdrawn or left open?), or the person who merged. Propose a \
+             `rule` learning that names what the reviewer must check next time, scoped to the \
+             paths this change touched, with `source` the item. If a withdrawn finding or an \
+             accepted dispute pointed at the cause, propose retiring the `false-positive` it \
+             produced",
+            r.base,
+            crate::event::short(&r.revert_sha),
+            clip(&r.subject, 120),
+            crate::event::short(&r.sha)
+        ));
+    }
     s.push_str(".\n");
 
     if let Some(Body::Created {
@@ -1045,6 +1066,43 @@ mod tests {
         ] {
             assert!(d.contains(want), "missing {want:?} in\n{d}");
         }
+    }
+
+    #[test]
+    fn a_reverted_item_is_distilled_again_with_the_incident_question() {
+        let mut events = journal();
+        assert!(already_distilled(&events).is_none());
+        events.push(ev(Body::Distilled {
+            into: None,
+            learnings: vec![],
+        }));
+        assert!(already_distilled(&events).is_some());
+        // The revert is a new move: the item is due again.
+        events.push(ev(Body::Reverted {
+            pr_url: "https://github.com/acme/app/pull/7".into(),
+            base: "origin/main".into(),
+            sha: "aaa1111aaa1111".into(),
+            revert_sha: "ccc3333ccc3333".into(),
+            subject: "Revert \"Retry webhooks (#7)\"".into(),
+        }));
+        assert!(already_distilled(&events).is_none());
+        let item = crate::event::fold(ItemId(42), &events).unwrap();
+        assert_eq!(
+            item.reverted.as_ref().map(|r| r.revert_sha.as_str()),
+            Some("ccc3333ccc3333")
+        );
+        let d = digest(&item, &events, &["src/retry.rs".into()]);
+        for want in [
+            "## Reverted",
+            "reverted on origin/main by ccc3333 \"Revert \"Retry webhooks (#7)\"\" (it had landed as aaa1111)",
+            "which layer should have caught it",
+            "Propose a `rule` learning",
+        ] {
+            assert!(d.contains(want), "missing {want:?} in\n{d}");
+        }
+        // Without a revert there is no such section.
+        let plain = crate::event::fold(ItemId(42), &journal()).unwrap();
+        assert!(!digest(&plain, &journal(), &[]).contains("## Reverted"));
     }
 
     #[test]
