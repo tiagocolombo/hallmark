@@ -321,18 +321,14 @@ mod tests {
             "Adds a login path.\n\nSecurity pass: The token check can be skipped."
         );
         // A more severe finding at the reviewer's place is added.
-        let (m, added) = merge(
-            mv("s", vec![mf(Severity::Nit, Lens::Correctness, 42, "Rename `tok`")]),
-            mv(
-                "t",
-                vec![mf(
-                    Severity::Blocker,
-                    Lens::SecurityTenancy,
-                    42,
-                    "An empty token passes the check",
-                )],
-            ),
+        let nit = mf(Severity::Nit, Lens::Correctness, 42, "Rename `tok`");
+        let blocker = mf(
+            Severity::Blocker,
+            Lens::SecurityTenancy,
+            42,
+            "An empty token passes the check",
         );
+        let (m, added) = merge(mv("s", vec![nit]), mv("t", vec![blocker]));
         assert_eq!(added, ["An empty token passes the check"]);
         assert_eq!(m.findings.len(), 2);
         // An empty summary adds no paragraph.
