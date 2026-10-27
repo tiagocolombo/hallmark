@@ -546,6 +546,50 @@ fn the_security_review_paths_come_from_the_base_branch() {
 }
 
 #[test]
+fn a_budget_stop_on_the_security_pass_holds_without_a_verdict_and_retry_runs_it() {
+    let env = Env::initialized();
+    configure(&env, &[("security_review", "[\"auth.rs\"]")]);
+    // The review's own run (5187 weighted tokens) crosses a 5k cap, so the
+    // pass is stopped by the item's budget.
+    let cfg = env.repo.join(".hallmark.toml");
+    let text = std::fs::read_to_string(&cfg)
+        .unwrap()
+        .replace("# per_item = \"800k\"", "per_item = \"5k\"");
+    std::fs::write(&cfg, text).unwrap();
+    git(&env.repo, &["commit", "-q", "-am", "cap the item"]);
+    let (id, _, _) = ready_item(&env, "Login", "auth.rs", "fn login() {}\n");
+    let script = env.script(json!([
+        reviewer(verdict(vec![], json!([]))),
+        reviewer(verdict(vec![], json!([]))),
+        security(verdict(vec![], json!([]))),
+    ]));
+    tick(&env, &script);
+    assert_eq!(env.fake_calls().len(), 1, "the pass never started");
+    assert!(events_of(&env, &id, "verdict").is_empty());
+    assert!(events_of(&env, &id, "security_pass").is_empty());
+    let held = events_of(&env, &id, "held");
+    assert_eq!(held.len(), 1, "{held:?}");
+    assert_eq!(held[0]["kind"], "budget");
+    assert_eq!(state(&env, &id), "review");
+
+    // After the grant the round is reviewed again, and the pass runs.
+    let r = env.hall(
+        &env.repo,
+        &["retry", &id, "--reason", "worth it", "--tokens", "50k"],
+    );
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    tick(&env, &script);
+    let roles: Vec<String> = env
+        .fake_calls()
+        .iter()
+        .map(|c| c["role"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(roles, ["reviewer", "reviewer", "security"]);
+    assert_eq!(events_of(&env, &id, "verdict").len(), 1);
+    assert_eq!(events_of(&env, &id, "security_pass").len(), 1);
+}
+
+#[test]
 fn a_rate_limit_on_the_security_pass_pauses_without_a_verdict() {
     let env = Env::initialized();
     configure(&env, &[("security_review", "[\"auth.rs\"]")]);
