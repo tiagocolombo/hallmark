@@ -339,6 +339,17 @@ pub struct ProposeReadyArgs {
     /// description's How. Without it, the commits are listed.
     #[arg(long)]
     pub how: Option<String>,
+    /// How it was tested beyond the gates (what you ran or tried by hand),
+    /// for the PR description's Testing. The gates that passed are always
+    /// listed after it.
+    #[arg(long)]
+    pub tested: Option<String>,
+    /// How to undo it once merged, when more than a git revert is needed
+    /// (a flag to turn off, a migration to roll back), for the PR
+    /// description's How to revert. A `git revert` line follows it: say
+    /// whether each step comes before or after the revert.
+    #[arg(long)]
+    pub revert: Option<String>,
     /// Something needs the human's confirmation: wait for their call
     /// instead of going straight to review.
     #[arg(long)]

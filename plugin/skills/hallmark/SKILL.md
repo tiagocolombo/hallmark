@@ -166,15 +166,26 @@ summary that names the tests, and why and how, for the PR:
 hall propose-ready \
   --summary "retries with jitter; 14 new tests (give-up, jitter bounds, concurrent claim), each red without the change" \
   --why "receivers that blip for a second lose the event today; #88 lost a day of orders" \
-  --how "a retry loop around deliver(), backoff with full jitter capped at 5 tries; the claim is a row lock so two workers can't send twice"
+  --how "a retry loop around deliver(), backoff with full jitter capped at 5 tries; the claim is a row lock so two workers can't send twice" \
+  --tested "ran the receiver against a flaky endpoint for an hour; every event arrived once" \
+  --revert "turn webhooks.retry off first; the retry table is additive and can stay"
 ```
 
-The PR description is `## What` (the summary), `## Why` and `## How`, and
-nothing else: the review goes in PR comments. Write `--why` as the reason
-the change is needed (the problem, who it hurts), and `--how` as the
-approach and the choices a reader of the diff should know. Leave out the
-review and the tests' details. Without `--why`, the request is used; without
-`--how`, the commit subjects.
+The PR description is `## What` (the summary), `## Why`, `## How`,
+`## Testing` and `## How to revert`, and nothing else: the review goes in PR
+comments. Write `--why` as the reason the change is needed (the problem,
+who it hurts), and `--how` as the approach and the choices a reader of the
+diff should know. Leave out the review and the tests' details. Without
+`--why`, the request is used; without `--how`, the commit subjects.
+
+`--tested` is what you ran or tried beyond the gates (a manual run, a
+scenario, a soak); the gates that passed are always listed after it, so
+leave it out when the gates are the whole story. `--revert` is what undoing
+the change takes beyond a `git revert`: a flag to turn off, a migration to
+roll back, a cache to clear. Say whether each step comes before or after the
+`git revert`, which the description always adds. Leave it out when a revert
+is enough. Never
+claim a test you didn't run.
 
 When nothing is left to confirm (no open question, a clean worktree, no open
 parts), it goes **straight to review** on its own: the reply's `state` is

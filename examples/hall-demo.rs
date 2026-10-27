@@ -739,6 +739,8 @@ fn seed(root: &Path) {
             summary: "Streaming CSV export, 11 tests. One open choice: refunds.".into(),
             why: None,
             how: None,
+            tested: None,
+            revert: None,
         },
     );
     let qid = r.hall.next_question_id().unwrap();
@@ -1207,6 +1209,8 @@ fn animate(root: &Path) {
             summary: "Prefix index and endpoint, 12 tests.".into(),
             why: None,
             how: None,
+            tested: None,
+            revert: None,
         },
     );
     r.now(

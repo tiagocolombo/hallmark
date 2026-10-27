@@ -1000,7 +1000,9 @@ fn item_context(i: &Item, inbox: usize) -> String {
             "Edit files only inside that worktree, with the Edit and Write tools, and run git \
              there with `git -C <worktree>`. When the work looks done, commit and run \
              `hall propose-ready --summary \"<what was done>\" --why \"<why it's needed>\" \
-             --how \"<the approach>\"` (the PR's What, Why and How): with nothing left to \
+             --how \"<the approach>\"` (the PR's What, Why and How; `--tested` and \
+             `--revert` when there is more to say than the gates and a git revert): with \
+             nothing left to \
              confirm it goes straight to review; add `--ask` when the human must decide \
              something. "
         }

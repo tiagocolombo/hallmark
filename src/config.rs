@@ -24,7 +24,7 @@ pub struct Config {
     pub branch: String,
     /// Ships a hallmarked commit. Placeholders: {branch} {id} {base}
     /// {title} {body_file} (the PR description the shipper writes: What,
-    /// Why and How) {review_file} (the review, which `review_comment` posts)
+    /// Why, How, Testing and How to revert) {review_file} (the review, which `review_comment` posts)
     /// {issue}.
     pub ship: String,
     /// Updates the open PR of an item that already has one (an adopted PR,
@@ -36,7 +36,7 @@ pub struct Config {
     /// then failed; ADR 0042).
     pub update: String,
     /// Posts the review on the PR as a comment, after `ship` opens it and
-    /// after every `update`: the description keeps only What, Why and How.
+    /// after every `update`: the description keeps only What, Why, How, Testing and How to revert.
     /// Runs when the PR's URL is known. Placeholders: {pr} (the PR's URL)
     /// {review_file} {branch} {id} {base}. Empty: no comment.
     pub review_comment: String,

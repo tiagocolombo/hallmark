@@ -177,6 +177,7 @@ fn ship(repo: &Repo, item: &Item, ctx_holder: &str) -> Result<Progress> {
         item,
         &events,
         &commit_subjects(&wt, &base, &head),
+        &base,
         !repo.config.review_comment.trim().is_empty(),
     );
     let body_file = body_path(repo, id);
@@ -740,21 +741,38 @@ fn commit_subjects(wt: &Path, base: &str, head: &str) -> Vec<String> {
 /// it as feedback.
 pub const REVIEW_MARK: &str = "<!-- hallmark:review -->";
 
-/// The PR description (ADR 0039): What, Why and How, and the issue it
-/// closes. No review: that goes in a comment ([`review_comment`]).
+/// The PR description (ADR 0039, 0057): What, Why, How, Testing and How to
+/// revert, and the issue it closes. No review: that goes in a comment
+/// ([`review_comment`]).
 ///
 /// - What: the author's summary (`propose-ready --summary`), else the title.
 /// - Why: `propose-ready --why`, else the request, else the issue.
 /// - How: `propose-ready --how`, else the commits.
+/// - Testing: `propose-ready --tested`, then the gates that passed on the
+///   hallmarked commit.
+/// - How to revert: `propose-ready --revert` when given, then always a
+///   `git revert` line for the commit the PR lands as.
 ///
 /// `review_posted` is whether a review comment will be posted; when it isn't,
 /// the footer says the review stays local.
-pub fn pr_body(item: &Item, events: &[Event], commits: &[String], review_posted: bool) -> String {
+pub fn pr_body(
+    item: &Item,
+    events: &[Event],
+    commits: &[String],
+    base: &str,
+    review_posted: bool,
+) -> String {
     let proposed = events.iter().rev().find_map(|e| match &e.body {
-        Body::ProposedReady { why, how, .. } => Some((why.clone(), how.clone())),
+        Body::ProposedReady {
+            why,
+            how,
+            tested,
+            revert,
+            ..
+        } => Some((why.clone(), how.clone(), tested.clone(), revert.clone())),
         _ => None,
     });
-    let (why, how) = proposed.unwrap_or_default();
+    let (why, how, tested, revert) = proposed.unwrap_or_default();
     // A follow-up's request is generated (PR feedback, CI logs): never the
     // Why. It gets a one-line pointer to the PR instead.
     let request = events.iter().find_map(|e| match &e.body {
@@ -792,6 +810,51 @@ pub fn pr_body(item: &Item, events: &[Event], commits: &[String], review_posted:
         }
         None => {
             let _ = writeln!(s, "See the commits.");
+        }
+    }
+
+    // Testing: what the author said, then the gates that passed last. The
+    // gates are the repository's own checks, not the review.
+    let _ = writeln!(s, "\n## Testing\n");
+    if let Some(t) = tested.filter(|t| !t.trim().is_empty()) {
+        let _ = writeln!(s, "{}\n", t.trim());
+    }
+    let gates: Option<Vec<String>> = events.iter().rev().find_map(|e| match &e.body {
+        Body::Checks {
+            passed: true, runs, ..
+        } => Some(runs.iter().map(|r| format!("`{}`", r.command)).collect()),
+        _ => None,
+    });
+    match gates {
+        Some(g) if !g.is_empty() => {
+            let _ = writeln!(
+                s,
+                "The repository's gates passed on this commit: {}.",
+                g.join(", ")
+            );
+        }
+        Some(_) => {
+            let _ = writeln!(s, "This repository has no gates configured.");
+        }
+        None => {
+            let _ = writeln!(s, "No gate run is recorded for this commit.");
+        }
+    }
+
+    let _ = writeln!(s, "\n## How to revert\n");
+    match revert.filter(|r| !r.trim().is_empty()) {
+        Some(r) => {
+            let _ = writeln!(
+                s,
+                "{}\n\nAlso `git revert` the commit this PR lands as on `{base}`.",
+                r.trim()
+            );
+        }
+        None => {
+            let _ = writeln!(
+                s,
+                "`git revert` the commit this PR lands as on `{base}`; the author listed no other steps."
+            );
         }
     }
     if let Some(i) = &item.issue {
@@ -1323,7 +1386,7 @@ mod tests {
             "request": "Follow-up to PR #12\nReview feedback:\n- @me: Hallmark review",
             "follow_up": "https://github.com/acme/app/pull/12"}))];
         let u = "https://github.com/acme/app/pull/12";
-        let b = pr_body(&item(Some(u)), &events, &[], true);
+        let b = pr_body(&item(Some(u)), &events, &[], "main", true);
         assert!(b.contains(&format!("## Why\n\nFollow-up to {u}.\n")), "{b}");
         assert!(
             !b.contains("Review feedback") && !b.contains("Hallmark review"),
@@ -1333,14 +1396,23 @@ mod tests {
 
     #[test]
     fn the_footer_says_when_no_review_is_posted() {
-        let b = pr_body(&item(None), &[], &[], false);
+        let b = pr_body(&item(None), &[], &[], "main", false);
         assert!(
             b.contains("the review stays local (`hall export H-0042`)"),
             "{b}"
         );
         assert!(!b.contains("in the comments"), "{b}");
-        let b = pr_body(&item(None), &[], &[], true);
+        let b = pr_body(&item(None), &[], &[], "main", true);
         assert!(b.contains("the review is in the comments"), "{b}");
+    }
+
+    #[test]
+    fn how_to_revert_names_the_base_the_pr_targets() {
+        let mut it = item(None);
+        it.base = "hm/H-0050-retry".into();
+        let b = pr_body(&it, &[], &[], "main", true);
+        assert!(b.contains("on `main`"), "{b}");
+        assert!(!b.contains("hm/H-0050-retry"), "{b}");
     }
 
     #[test]

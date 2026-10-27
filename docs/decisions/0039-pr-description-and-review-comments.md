@@ -1,6 +1,7 @@
 # 0039. The PR description is What, Why and How; the review goes in comments
 
-Status: Accepted, 2026-10-12. Amends 0019 and 0029.
+Status: Accepted, 2026-10-12. Amends 0019 and 0029. Amended by 0057: the
+description also has Testing and How to revert.
 
 ## Context
 

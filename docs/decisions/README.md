@@ -45,7 +45,7 @@ a decision, add a new record that supersedes the old one. Don't edit the old one
 | [0037](0037-repo-skills.md) | Repo skills: `.hallmark/skills/<name>/SKILL.md`, read from the base branch, extends or replaces Hallmark's | Accepted |
 | [0038](0038-extensions.md) | Extensions: skill packs by other authors (Matt Pocock's skills first), embedded unchanged and credited, turned on per role | Accepted |
 | [0035](0035-semver-from-conventional-commits.md) | Versions from conventional commits: typed PR titles, release-plz tags `vX.Y.Z` on main, `hall update` names versions and says when a release is out | Accepted; amends 0023 |
-| [0039](0039-pr-description-and-review-comments.md) | The PR description is What, Why and How; every review is a PR comment (`review_comment`) | Accepted; amends 0019, 0029 |
+| [0039](0039-pr-description-and-review-comments.md) | The PR description is What, Why and How; every review is a PR comment (`review_comment`) | Accepted; amends 0019, 0029; amended by 0057 |
 | [0040](0040-a-version-for-every-merge.md) | A version for every merge: release-plz reads tags, its release PR merges at once; a GitHub Release is published by hand | Accepted; amends 0023, 0035 |
 | [0040](0040-sweep-finished-worktrees.md) | The sweeper removes the worktree of each item that is done with it: its PR merged or closed, or it shipped with no PR to watch | Accepted |
 | [0041](0041-watch-runs-live.md) | Watch headless runs live: each run streams into `runs/<stamp>-<role>.jsonl`, `hall trace` and the terminal app read it | Accepted |
@@ -66,3 +66,4 @@ a decision, add a new record that supersedes the old one. Don't edit the old one
 | [0055](0055-the-setup-wizard-asks-first.md) | The setup wizard asks first: `hall init` and the first `hall setup` offer, on a terminal, to go through every setting with its default, or to skip for the defaults; `--defaults` never asks; `hall setup` creates the user config | Accepted; amends 0033 |
 | [0055](0055-a-limit-pause-is-an-escalation.md) | A limit pause is an escalation: Claude's session and usage limits (and the daily budget) pause the loop until the reset, `paused` is an inbox entry, and `hall daemon resume` retries at once | Accepted; amends 0031 |
 | [0056](0056-stats-for-the-loop.md) | Stats for the loop: `hall stats` folds the journals into reviews to approval, what became of each finding, the reviewer's noise by lens and how disputes went, so a change to the reviewer can be judged | Accepted |
+| [0057](0057-testing-and-how-to-revert-in-the-pr.md) | The PR description also says how the change was tested (`--tested`, then the gates that passed) and how to revert it (`--revert`, then always a `git revert` line) | Accepted; amends 0039 |

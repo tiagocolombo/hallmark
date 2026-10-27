@@ -255,7 +255,7 @@ and follow it at once.
 | --- | --- |
 | `worktree` | `{repo}` `{id}` `{branch}` `{slug}` `{base}` |
 | `branch` | `{id}` `{slug}` |
-| `ship` | `{branch}` `{id}` `{base}` `{title}` `{body_file}` (the PR description: What, Why and How) `{review_file}` (the review) `{issue}` |
+| `ship` | `{branch}` `{id}` `{base}` `{title}` `{body_file}` (the PR description: What, Why, How, Testing and How to revert) `{review_file}` (the review) `{issue}` |
 | `update` | those of `ship`, plus `{pr}` (the PR's URL) and `{pr_head}` (the commit the PR's head was at when the item took it over or last shipped; or the branch's head on `origin` when this item hallmarked that commit, as after an update that pushed and then failed, ADR 0042) |
 | `review_comment` | `{pr}` (the PR's URL) `{review_file}` `{branch}` `{id}` `{base}` |
 | `merge.command` | `{pr}` (the PR's URL) `{pr_head}` (the hallmarked head) `{branch}` `{base}` `{id}` `{title}` |
@@ -265,11 +265,15 @@ Commands run through `sh -c` on macOS and Linux and `cmd /C` on Windows.
 
 ## PR descriptions and review comments
 
-The PR the shipper opens has a description with three sections, `## What`,
-`## Why` and `## How`, and nothing of the review
-([ADR 0039](decisions/0039-pr-description-and-review-comments.md)). The
-author gives them with `hall propose-ready --summary … --why … --how …`;
-without `--why` the request is used, without `--how` the commit subjects.
+The PR the shipper opens has a description with five sections, `## What`,
+`## Why`, `## How`, `## Testing` and `## How to revert`, and nothing of the
+review ([ADR 0039](decisions/0039-pr-description-and-review-comments.md),
+[ADR 0057](decisions/0057-testing-and-how-to-revert-in-the-pr.md)). The
+author gives them with `hall propose-ready --summary … --why … --how …
+--tested … --revert …`; without `--why` the request is used, without
+`--how` the commit subjects. Testing always ends with the gates that passed
+on the hallmarked commit; How to revert gives the `--revert` steps, then
+always a line to `git revert` the commit the PR lands as on the base.
 
 Each review is a PR comment: `review_comment` posts `{review_file}` once the
 PR is open, and again after every `update` (PR comments addressed, CI fixed,
