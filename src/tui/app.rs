@@ -1935,7 +1935,9 @@ pub fn placeholder(arg: &str) -> Option<&str> {
 /// Commands whose reply is the point: the app shows it in full.
 fn reads_only(args: &[String]) -> bool {
     match args.first().map(String::as_str) {
-        Some("status" | "log" | "inbox" | "findings" | "history" | "export" | "usage") => true,
+        Some(
+            "status" | "log" | "inbox" | "findings" | "history" | "stats" | "export" | "usage",
+        ) => true,
         Some("daemon") => args.get(1).is_some_and(|a| a == "status"),
         _ => false,
     }
