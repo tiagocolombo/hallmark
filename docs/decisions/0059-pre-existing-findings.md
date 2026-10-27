@@ -42,5 +42,7 @@ like the author's fault, while still posting them.
 - A pre-existing finding stays open across rounds and is listed under the
   open findings each time; the reviewer rules on it like any other. One
   that a later change does fix is ruled `fixed` then.
-- `hall stats` counts should treat them as their own class, not as noise
-  or as the author's defects; that lands with the stats command.
+- `hall stats` (ADR 0056, not on this branch yet) should count them as their
+  own class, not as noise or as the author's defects. That needs a follow-up
+  item once this branch is rebased onto the stats command; until then
+  `hall stats` counts them with the rest.

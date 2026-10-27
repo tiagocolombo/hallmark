@@ -446,6 +446,7 @@ fn lower(h: &mut String, p: &Page) {
         let worst = p
             .corrections
             .iter()
+            .filter(|c| !c.pre_existing)
             .map(|c| c.severity)
             .min_by_key(|s| match s {
                 Severity::Blocker => 0,
@@ -471,7 +472,9 @@ fn lower(h: &mut String, p: &Page) {
                 "<li>{} <span class=\"mono\">{}</span>{}</li>",
                 prose(&c.text),
                 esc(&c.id),
-                if matches!(c.severity, Severity::Blocker | Severity::Major) {
+                if c.pre_existing {
+                    " <span class=\"sev\">Pre-existing</span>".to_string()
+                } else if matches!(c.severity, Severity::Blocker | Severity::Major) {
                     format!(" <span class=\"sev M\">{}</span>", sev_word(c.severity))
                 } else {
                     String::new()

@@ -1280,6 +1280,36 @@ fn actions_that_need_the_terminal_hand_it_over() {
 }
 
 #[test]
+fn a_pre_existing_finding_is_marked_in_the_findings_and_never_a_reason() {
+    let env = Env::initialized();
+    let hall = hall_of(&env);
+    env.new_item("Retry webhooks");
+    let mut old = finding("F1", 1, Lens::Correctness, Severity::Blocker, "Old race");
+    old.pre_existing = true;
+    add(
+        &hall,
+        1,
+        "assayer",
+        verdict("abc1234", 1, VerdictKind::Approve, false, vec![old], vec![]),
+    );
+    let mut app = load(&env, &env.repo);
+    select(&mut app, 1);
+    key(&mut app, KeyCode::Enter);
+    key(&mut app, KeyCode::Char('f'));
+    assert_eq!(app.view, View::Findings);
+    key(&mut app, KeyCode::Enter);
+    let s = render(&app, 140, 40);
+    // The mark fits its column: the whole word, then the star.
+    assert!(s.contains("blocker* "), "{s}");
+    assert!(s.contains("never blocks approval"), "{s}");
+    // History never lists it under why an item was rejected.
+    key(&mut app, KeyCode::Char('h'));
+    assert_eq!(app.view, View::History);
+    let s = render(&app, 140, 40);
+    assert!(!s.contains("✗ F1"), "{s}");
+}
+
+#[test]
 fn long_journal_lines_wrap_to_two_lines_then_clip() {
     let env = Env::initialized();
     let hall = hall_of(&env);

@@ -1633,6 +1633,25 @@ fn a_rebase_that_leaves_the_approved_change_as_it_was_keeps_its_approval() {
 }
 
 #[test]
+fn a_rebase_keeps_the_approval_of_an_item_with_a_pre_existing_major_open() {
+    let env = Env::initialized();
+    let mut old = finding("major", "retry.rs", "Old race in the lock");
+    old["pre_existing"] = json!(true);
+    // One review only: the second must never run.
+    let script = env.script(json!([reviewer(verdict(vec![old], json!([])))]));
+    let (id, _, approved, head) = approved_then_rewritten(&env, &script, |_| {});
+    assert_ne!(approved, head);
+
+    tick(&env, &script);
+    let r = tick(&env, &script);
+    assert!(what(&r).contains("approval carried"), "{}", r.stdout);
+    assert_eq!(state(&env, &id), "hallmarked");
+    assert_eq!(env.fake_calls().len(), 1, "no review ran");
+    let v = events_of(&env, &id, "verdict");
+    assert_eq!(v[1]["reviewer"], "carried");
+}
+
+#[test]
 fn a_rebase_that_changed_the_approved_change_is_reviewed_only_where_it_did() {
     let env = Env::initialized();
     let script = env.script(json!([

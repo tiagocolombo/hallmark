@@ -325,9 +325,14 @@ pub fn prepare(
             let f = &t.finding;
             let _ = writeln!(
                 p,
-                "- **{}** {} · {} · `{}:{}` (round {}): {}\n  Scenario: {}\n  Suggested fix: {}",
+                "- **{}** {}{} · {} · `{}:{}` (round {}): {}\n  Scenario: {}\n  Suggested fix: {}",
                 f.id,
                 f.severity.as_str(),
+                if f.pre_existing {
+                    " (pre-existing: not introduced by this change, never blocks approval)"
+                } else {
+                    ""
+                },
                 f.lens.as_str(),
                 f.file,
                 f.line,

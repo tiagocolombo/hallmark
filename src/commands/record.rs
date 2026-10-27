@@ -543,7 +543,11 @@ pub fn render_export(repo: &Repo, item: &Item, events: &[Event]) -> String {
                 "| {} | {} | {} | {} | `{}:{}` | {} | {} |",
                 f.id,
                 f.round,
-                f.severity.as_str(),
+                if f.pre_existing {
+                    format!("{} (pre-existing)", f.severity.as_str())
+                } else {
+                    f.severity.as_str().to_string()
+                },
                 f.lens.as_str(),
                 cell(&f.file),
                 f.line,

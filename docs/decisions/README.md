@@ -20,7 +20,7 @@ a decision, add a new record that supersedes the old one. Don't edit the old one
 | [0012](0012-config-from-the-main-checkout.md) | `.hallmark.toml` is read from the main checkout | Accepted; amended by 0053 |
 | [0013](0013-one-runner-for-claude-p.md) | One runner for every `claude -p` run | Superseded in part by 0041; amended by 0053 |
 | [0014](0014-daemon-workers-and-leases.md) | The daemon is a loop of workers, with leases | Accepted |
-| [0015](0015-verdicts-findings-and-approval.md) | Verdicts, findings, and who decides approval | Accepted; amended by 0039 |
+| [0015](0015-verdicts-findings-and-approval.md) | Verdicts, findings, and who decides approval | Accepted; amended by 0039, 0059 |
 | [0016](0016-budgets-holds-and-pauses.md) | Budgets, holds and pauses | Accepted |
 | [0017](0017-daemon-process-and-pauses.md) | The daemon process: one instance, stop by file, pauses for everyone | Accepted; amended by 0054 |
 | [0018](0018-the-assay-office.md) | The Assay Office: checks, then an isolated review | Accepted |

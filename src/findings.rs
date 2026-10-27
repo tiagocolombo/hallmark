@@ -778,6 +778,30 @@ mod tests {
                 "file", "fix", "lens", "line", "scenario", "severity", "title"
             ]
         );
+        // The properties are ModelFinding's fields; pre_existing is a
+        // boolean the reviewer may leave out.
+        let mut props: Vec<&str> = f["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        props.sort();
+        assert_eq!(
+            props,
+            [
+                "file",
+                "fix",
+                "lens",
+                "line",
+                "pre_existing",
+                "scenario",
+                "severity",
+                "title"
+            ]
+        );
+        assert_eq!(f["properties"]["pre_existing"]["type"], "boolean");
+        assert!(!req.contains(&"pre_existing"));
         // The example in the schema's description round-trips.
         let example = &schema["examples"][0];
         ModelVerdict::parse(example).unwrap();

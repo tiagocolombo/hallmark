@@ -10,7 +10,7 @@ use serde::Serialize;
 
 use crate::config::Role;
 use crate::event::{Body, Event};
-use crate::findings::{Ledger, Severity};
+use crate::findings::Ledger;
 use crate::item::{HoldKind, Item, ItemId, State};
 use crate::repo::Repo;
 use crate::trace::{self, RunFile, RunInfo, Step, StepKind, Tail};
@@ -368,7 +368,7 @@ fn now_with(repo: &Repo, item: &Item, items: &[Item], events: &[Event], git: boo
             if item.state == State::Fixing {
                 let ledger = Ledger::from_events(events);
                 for t in ledger.open() {
-                    if t.finding.severity.blocks() {
+                    if t.finding.severity.blocks() && !t.finding.pre_existing {
                         n.detail.push(format!(
                             "{} {} {}:{}: {}",
                             t.finding.id,
@@ -395,7 +395,7 @@ fn now_with(repo: &Repo, item: &Item, items: &[Item], events: &[Event], git: boo
             );
             let ledger = Ledger::from_events(events);
             for t in ledger.open() {
-                if matches!(t.finding.severity, Severity::Blocker | Severity::Major) {
+                if t.finding.severity.blocks() && !t.finding.pre_existing {
                     let dispute = t
                         .dispute
                         .as_deref()

@@ -7,7 +7,7 @@ use chrono::Utc;
 use crate::config::Role;
 use crate::error::Result;
 use crate::event::{Body, Event, short};
-use crate::findings::{Ledger, ModelVerdict, Severity};
+use crate::findings::{Ledger, ModelVerdict};
 use crate::item::{HoldKind, Item, State};
 use crate::repo::Repo;
 use crate::runner::{self, Failure, Metered, RunRequest};
@@ -144,7 +144,7 @@ fn carry(repo: &Repo, item: &Item, events: &[Event], sha: &str) -> Result<Option
     let serious = Ledger::from_events(events)
         .open()
         .iter()
-        .any(|t| matches!(t.finding.severity, Severity::Blocker | Severity::Major));
+        .any(|t| t.finding.severity.blocks() && !t.finding.pre_existing);
     if !cmp.same() || serious {
         return Ok(None);
     }

@@ -387,9 +387,10 @@ pub fn render(r: &Report) -> String {
             };
             let _ = write!(
                 s,
-                "- **{}** {} · `{}:{}` · {}: **{status}**",
+                "- **{}** {}{} · `{}:{}` · {}: **{status}**",
                 f.id,
                 f.severity.as_str(),
+                if f.pre_existing { " (pre-existing)" } else { "" },
                 f.file,
                 f.line,
                 f.title.trim()

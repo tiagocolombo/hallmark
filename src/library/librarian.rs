@@ -280,9 +280,14 @@ pub fn digest(item: &Item, events: &[Event], changed: &[String]) -> String {
                 f.file.clone()
             };
             s.push_str(&format!(
-                "- {} · {} · {} · `{place}` (round {}): {}\n",
+                "- {} · {}{} · {} · `{place}` (round {}): {}\n",
                 f.id,
                 f.severity.as_str(),
+                if f.pre_existing {
+                    " (pre-existing: not the change's to fix)"
+                } else {
+                    ""
+                },
                 f.lens.as_str(),
                 f.round,
                 clip(&f.title, 160)
