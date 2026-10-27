@@ -47,8 +47,8 @@ agent's approval.
 - **The PR says its tier.** `## Risk` in the description (after How to
   revert, ADR 0057): a person merges it (lit), needs N approvals and the
   paths, the reviewer's reason, or "Low: … merges on its hallmark once CI
-  is green." With `merge.mode = "off"` it says only that a person merges
-  it, since nothing gates the merge. The description isn't touched on an update, so the review
+  is green." With `merge.mode = "off"` it says that a person merges it, with the
+  reviewer's reason when there is one, since nothing gates the merge. The description isn't touched on an update, so the review
   comment posted on every ship and update ends with the current `**Risk**`
   line.
 

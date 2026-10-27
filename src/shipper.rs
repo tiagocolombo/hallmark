@@ -830,8 +830,8 @@ fn commit_subjects(wt: &Path, base: &str, head: &str) -> Vec<String> {
 /// it as feedback.
 pub const REVIEW_MARK: &str = "<!-- hallmark:review -->";
 
-/// The PR description (ADR 0039, 0057): What, Why, How, Testing and How to
-/// revert, and the issue it closes. No review: that goes in a comment
+/// The PR description (ADR 0039, 0057, 0063): What, Why, How, Testing, How
+/// to revert and Risk, and the issue it closes. No review: that goes in a comment
 /// ([`review_comment`]).
 ///
 /// - What: the author's summary (`propose-ready --summary`), else the title.
@@ -841,6 +841,8 @@ pub const REVIEW_MARK: &str = "<!-- hallmark:review -->";
 ///   hallmarked commit.
 /// - How to revert: `propose-ready --revert` when given, then always a
 ///   `git revert` line for the commit the PR lands as.
+/// - Risk: its merge tier ([`risk_line`]): a person merges it, the approvals
+///   it needs and why, or low.
 ///
 /// `review_posted` is whether a review comment will be posted; when it isn't,
 /// the footer says the review stays local.

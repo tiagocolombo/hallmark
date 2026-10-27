@@ -1523,9 +1523,10 @@ pub(crate) fn reopen_by(
         }
         let mut events = vec![];
         // A PR that waited for approvals and fell behind is rebased by the
-        // Delivery office, which skips held items: the merger lifts the wait
-        // (not as your approval, the fold knows) and asks again at the new
-        // head (ADR 0063).
+        // Delivery office. The reopen itself clears the hold (every accepted
+        // move does); this event only records why the wait ended, by the
+        // merger (not as your approval, the fold knows), before it asks
+        // again at the new head (ADR 0063).
         if actor == crate::merger::ACTOR
             && it.hold.as_ref().is_some_and(|h| {
                 h.kind == HoldKind::Lit && h.reason.starts_with(crate::merger::TIER_WAIT)
