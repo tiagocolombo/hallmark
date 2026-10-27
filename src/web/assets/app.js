@@ -42,12 +42,12 @@ const S = {
 // The commands the server runs for the page (cli::allowed_on_web decides;
 // this only picks which offered commands get a button).
 const WEB = new Set(['status', 'log', 'inbox', 'ready', 'pull-back', 'drop', 'retry', 'continue',
-  'answer', 'usage', 'reindex', 'config', 'findings', 'merge', 'history', 'queue', 'export',
-  'budget', 'notify', 'library', 'extensions', 'hud', 'doctor', 'new', 'adopt', 'trace',
-  'daemon', 'update', 'gazette']);
+  'answer', 'usage', 'reindex', 'config', 'findings', 'merge', 'history', 'stats', 'queue',
+  'export', 'budget', 'notify', 'library', 'extensions', 'hud', 'doctor', 'new', 'adopt',
+  'trace', 'daemon', 'update', 'gazette']);
 // Readers: offered as links to the view that shows them, not as buttons.
-const READERS = new Set(['status', 'log', 'findings', 'trace', 'history', 'queue', 'usage',
-  'hud', 'inbox', 'watch']);
+const READERS = new Set(['status', 'log', 'findings', 'trace', 'history', 'stats', 'queue',
+  'usage', 'hud', 'inbox', 'watch']);
 
 // ---------------------------------------------------------------- plumbing
 
@@ -675,7 +675,7 @@ async function records() {
   if (S.hist.rejected) args.push('--rejected');
   if (S.hist.lens) args.push('--lens', S.hist.lens);
   if (S.hist.since) args.push('--since', S.hist.since);
-  const r = await hall(args);
+  const [r, st] = await Promise.all([hall(args), hall(['stats', ...(S.hist.since ? ['--since', S.hist.since] : [])])]);
   const filters = `<div class="row">
     <label class="check"><input type="checkbox" data-bind="hist.rejected" ${S.hist.rejected ? 'checked' : ''}>Rejected at least once</label>
     <label class="row small muted">Lens <select data-bind="hist.lens">${['', 'correctness', 'evidence', 'security', 'operability', 'portability', 'docs', 'repo_rules', 'design'].map((l) =>
@@ -684,7 +684,7 @@ async function records() {
       `<option value="${v}" ${v === S.hist.since ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>`;
   if (errorOf(r)) return head('History', 'Records') + filters + failure(r, 'hall history');
   const items = r.reply.items || [];
-  return head('History', 'Records', `<span class="muted">${items.length} of ${r.reply.total ?? items.length}</span>`) + filters + `
+  return head('History', 'Records', `<span class="muted">${items.length} of ${r.reply.total ?? items.length}</span>`) + filters + statsTiles(st) + `
   <div class="table"><table><thead><tr><th scope="col">Item</th><th scope="col">Outcome</th><th scope="col">Rounds</th>
     <th scope="col">Took</th><th scope="col">Why it was rejected</th></tr></thead><tbody>
     ${items.map((x) => `<tr><td><a class="mono" href="#/item/${esc(x.id)}">${esc(x.id)}</a> ${esc(x.title)}</td>
@@ -694,6 +694,26 @@ async function records() {
       <td class="num">${esc(x.round)}</td><td class="mono small" style="white-space:nowrap">${esc(x.duration || '')}</td>
       <td class="small">${(x.blocking || []).slice(0, 3).map((b) => `<div><span class="muted">${esc(b.lens)}</span> ${esc(b.title)}</div>`).join('')}</td></tr>`).join('')
     || '<tr><td colspan="5" class="muted">Nothing in this range.</td></tr>'}</tbody></table></div>`;
+}
+
+// The loop's numbers (hall stats): what a change to the reviewer should move.
+function statsTiles(st) {
+  if (errorOf(st)) return failure(st, 'hall stats');
+  const s = st.reply;
+  if (!s.items || !s.items.counted) return '';
+  const t = s.reviews.to_approval;
+  const f = s.findings;
+  const pct = (x) => `${Math.round(x || 0)}%`;
+  const tile = (l, n, sub) => `<div class="card"><div class="small muted">${l}</div>
+    <div style="font:700 22px var(--display)">${n}</div><div class="small muted">${sub}</div></div>`;
+  return `<section class="tiles" aria-label="Review loop stats">
+    ${tile('Reviews to approval', s.reviews.approved ? t.mean.toFixed(2) : '—',
+    s.reviews.approved ? `median ${t.median} · one review ${pct(t.one_pct)} · three or more ${pct(t.three_or_more_pct)}` : 'nothing approved yet')}
+    ${tile('Reviewer noise', pct(f.noise_pct), `${f.withdrawn} of ${f.raised} findings withdrawn`)}
+    ${tile('Findings', f.raised, `${f.blocker} blocker · ${f.major} major · ${f.minor} minor · ${f.nit} nit · ${f.open} open`)}
+    ${tile('Disputes', f.disputed, f.disputed ? `${f.disputes_upheld} upheld · ${f.disputes_rejected} rejected` : 'none')}
+    ${tile('Items', s.items.counted, `${s.items.closed} closed · ${s.items.dropped} dropped · ${s.items.escalated} escalated`)}
+  </section>`;
 }
 
 async function gazette() {

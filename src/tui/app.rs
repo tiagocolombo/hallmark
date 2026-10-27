@@ -1935,7 +1935,9 @@ pub fn placeholder(arg: &str) -> Option<&str> {
 /// Commands whose reply is the point: the app shows it in full.
 fn reads_only(args: &[String]) -> bool {
     match args.first().map(String::as_str) {
-        Some("status" | "log" | "inbox" | "findings" | "history" | "export" | "usage") => true,
+        Some(
+            "status" | "log" | "inbox" | "findings" | "history" | "stats" | "export" | "usage",
+        ) => true,
         Some("daemon") => args.get(1).is_some_and(|a| a == "status"),
         _ => false,
     }
@@ -1972,4 +1974,17 @@ pub enum Tone {
     Decision,
     Dim,
     Plain,
+}
+
+#[cfg(test)]
+mod reads_only_tests {
+    use super::reads_only;
+
+    #[test]
+    fn stats_replies_are_shown_in_full() {
+        let a = |s: &[&str]| -> Vec<String> { s.iter().map(|x| x.to_string()).collect() };
+        assert!(reads_only(&a(&["stats"])));
+        assert!(reads_only(&a(&["stats", "--since", "7d"])));
+        assert!(!reads_only(&a(&["drop", "H-0001"])));
+    }
 }

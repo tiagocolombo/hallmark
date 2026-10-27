@@ -104,6 +104,9 @@ pub enum Cmd {
     Merge(MergeArgs),
     /// Closed and dropped items, and why things were rejected.
     History(HistoryArgs),
+    /// How the review loop is doing: reviews to approval, what became of
+    /// each finding, the reviewer's noise, disputes.
+    Stats(StatsArgs),
     /// The merge queue: every open shipped PR in the order the merger
     /// merges them, and why each one waits.
     Queue,
@@ -652,6 +655,16 @@ pub struct HistoryArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct StatsArgs {
+    /// Only items that ended within this long, such as 30d.
+    #[arg(long)]
+    pub since: Option<String>,
+    /// Count items that are still open too.
+    #[arg(long)]
+    pub all: bool,
+}
+
+#[derive(Debug, Args)]
 pub struct ExportArgs {
     pub id: Option<String>,
     /// Write to this file instead of the item's journal directory.
@@ -905,6 +918,7 @@ pub fn run_in_app(args: &[String], cwd: &std::path::Path) -> Result<Response> {
             | Cmd::Inbox(_)
             | Cmd::Findings(_)
             | Cmd::History(_)
+            | Cmd::Stats(_)
             | Cmd::Queue
             | Cmd::Export(_)
             | Cmd::Usage(_),
@@ -970,6 +984,7 @@ pub fn allowed_on_web(args: &[String]) -> Result<()> {
             | Cmd::Findings(_)
             | Cmd::Merge(_)
             | Cmd::History(_)
+            | Cmd::Stats(_)
             | Cmd::Queue
             | Cmd::Export(_)
             | Cmd::Budget(_)
@@ -1033,6 +1048,7 @@ fn dispatch(cmd: Option<Cmd>, cwd: &std::path::Path, mode: Mode) -> Result<Respo
         Some(Cmd::Verdict(a)) => review::verdict(cwd, a),
         Some(Cmd::Merge(a)) => merge::merge(cwd, a),
         Some(Cmd::History(a)) => record::history(cwd, a),
+        Some(Cmd::Stats(a)) => stats::stats(cwd, a),
         Some(Cmd::Queue) => queue::queue(cwd),
         Some(Cmd::Export(a)) => record::export(cwd, a),
         Some(Cmd::Budget(a)) => budget::budget(cwd, a),
@@ -1065,6 +1081,19 @@ mod web_tests {
         assert!(ok(&["update", "--check"]));
         assert!(ok(&["adopt", "--pr", "7"]));
         assert!(ok(&["new", "x"]));
+    }
+
+    #[test]
+    fn the_web_and_the_app_may_run_stats() {
+        assert!(ok(&["stats"]));
+        assert!(ok(&["stats", "--since", "30d"]));
+        assert!(ok(&["stats", "--all"]));
+        // Allowed in the terminal app too: the failure is not USAGE.
+        let dir = std::env::temp_dir();
+        let e = super::run_in_app(&["stats".to_string()], &dir);
+        if let Err(e) = e {
+            assert_ne!(e.code, crate::error::ErrorCode::Usage, "{}", e.message);
+        }
     }
 
     #[test]

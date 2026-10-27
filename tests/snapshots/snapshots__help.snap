@@ -1186,6 +1186,29 @@ expression: v
       "usage": "hall history [OPTIONS]"
     },
     {
+      "about": "How the review loop is doing: reviews to approval, what became of each finding, the reviewer's noise, disputes",
+      "args": [
+        {
+          "help": "Only items that ended within this long, such as 30d",
+          "name": "since",
+          "required": false,
+          "syntax": "--since <since>",
+          "takes_value": true
+        },
+        {
+          "default": "false",
+          "help": "Count items that are still open too",
+          "name": "all",
+          "required": false,
+          "syntax": "--all",
+          "takes_value": false
+        }
+      ],
+      "name": "stats",
+      "schema": "hall schema stats",
+      "usage": "hall stats [OPTIONS]"
+    },
+    {
       "about": "The merge queue: every open shipped PR in the order the merger merges them, and why each one waits",
       "args": [],
       "name": "queue",

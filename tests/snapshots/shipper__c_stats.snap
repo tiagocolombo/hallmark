@@ -1,0 +1,76 @@
+---
+source: tests/shipper.rs
+expression: "scrub(&env, &r.json)"
+---
+{
+  "all": false,
+  "findings": {
+    "blocker": 0,
+    "by_lens": [
+      {
+        "fixed": 1,
+        "lens": "correctness",
+        "noise_pct": 0.0,
+        "open": 0,
+        "raised": 1,
+        "withdrawn": 0
+      },
+      {
+        "fixed": 0,
+        "lens": "evidence",
+        "noise_pct": 0.0,
+        "open": 1,
+        "raised": 1,
+        "withdrawn": 0
+      },
+      {
+        "fixed": 0,
+        "lens": "repo_rules",
+        "noise_pct": 100.0,
+        "open": 0,
+        "raised": 1,
+        "withdrawn": 1
+      }
+    ],
+    "disputed": 1,
+    "disputes_pending": 0,
+    "disputes_rejected": 0,
+    "disputes_upheld": 1,
+    "fixed": 1,
+    "major": 1,
+    "minor": 1,
+    "nit": 1,
+    "noise_pct": 33.33,
+    "open": 1,
+    "raised": 3,
+    "withdrawn": 1
+  },
+  "items": {
+    "closed": 1,
+    "counted": 2,
+    "dropped": 1,
+    "escalated": 0,
+    "live": 0,
+    "merged": 0
+  },
+  "next": [
+    "hall history --rejected",
+    "hall stats --since 30d",
+    "hall usage --since 30d"
+  ],
+  "reviews": {
+    "approved": 1,
+    "checks_failed": 0,
+    "fixes": 1,
+    "reviewed": 1,
+    "reviews": 2,
+    "to_approval": {
+      "mean": 2.0,
+      "median": 2.0,
+      "one": 0,
+      "one_pct": 0.0,
+      "three_or_more": 0,
+      "three_or_more_pct": 0.0
+    }
+  }
+}

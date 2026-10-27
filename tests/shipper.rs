@@ -539,6 +539,170 @@ fn history_says_what_was_rejected_and_why() {
 }
 
 #[test]
+fn stats_fold_rounds_findings_and_noise_from_the_journals() {
+    let env = Env::initialized();
+    let (id, _dropped) = a_full_loop(&env);
+    // A live item counts only with --all.
+    env.new_item("CLI login flow");
+
+    let r = env.hall(&env.repo, &["stats"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let s = &r.json;
+    assert_eq!(
+        s["items"],
+        json!({"counted": 2, "closed": 1, "dropped": 1, "merged": 0, "live": 0, "escalated": 0})
+    );
+    // One item: rejected once, approved by the second review, one fix.
+    assert_eq!(s["reviews"]["reviewed"], 1);
+    assert_eq!(s["reviews"]["approved"], 1);
+    assert_eq!(s["reviews"]["reviews"], 2);
+    assert_eq!(s["reviews"]["fixes"], 1);
+    assert_eq!(s["reviews"]["checks_failed"], 0);
+    assert_eq!(
+        s["reviews"]["to_approval"],
+        json!({"mean": 2.0, "median": 2.0, "one": 0, "one_pct": 0.0,
+               "three_or_more": 0, "three_or_more_pct": 0.0})
+    );
+    // F1 fixed, F3 withdrawn on a dispute, F2 (minor) still open.
+    let f = &s["findings"];
+    assert_eq!(
+        (f["raised"].as_u64(), f["major"].as_u64()),
+        (Some(3), Some(1))
+    );
+    assert_eq!((f["minor"].as_u64(), f["nit"].as_u64()), (Some(1), Some(1)));
+    assert_eq!(f["fixed"], 1);
+    assert_eq!(f["withdrawn"], 1);
+    assert_eq!(f["open"], 1);
+    assert_eq!(f["noise_pct"], 33.33);
+    assert_eq!(f["disputed"], 1);
+    assert_eq!(f["disputes_upheld"], 1);
+    assert_eq!(f["disputes_rejected"], 0);
+    let lenses: Vec<(&str, u64, f64)> = f["by_lens"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| {
+            (
+                l["lens"].as_str().unwrap(),
+                l["raised"].as_u64().unwrap(),
+                l["noise_pct"].as_f64().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        lenses,
+        [
+            ("correctness", 1, 0.0),
+            ("evidence", 1, 0.0),
+            ("repo_rules", 1, 100.0)
+        ]
+    );
+    assert_eq!(f["by_lens"][2]["withdrawn"], 1);
+    assert_json_snapshot!("c_stats", scrub(&env, &r.json));
+    assert!(
+        r.json["next"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|n| n == "hall history --rejected")
+    );
+
+    // --all counts the live item; --since narrows the window.
+    let r = env.hall(&env.repo, &["stats", "--all"]);
+    assert_eq!(r.json["items"]["counted"], 3);
+    assert_eq!(r.json["items"]["live"], 1);
+    assert_eq!(r.json["all"], true);
+    let r = env.hall(&env.repo, &["stats", "--since", "7d"]);
+    assert_eq!(r.json["items"]["counted"], 2);
+    assert!(r.json["since"].is_string());
+    let r = env.hall(&env.repo, &["stats", "--since", "soon"]);
+    assert_eq!(r.code, 2);
+    assert_eq!(r.json["error"]["code"], "USAGE");
+    let _ = id;
+}
+
+#[test]
+fn stats_count_escalations_failed_checks_and_rejected_disputes() {
+    let env = Env::initialized();
+    let (id, wt, _) = fixing_item(&env, "Retry webhooks");
+    // The fixer disputes F1; the reviewer keeps it open, then it escalates.
+    commit_file(&wt, "retry.rs", "fn retry() { lock(); }\n");
+    let r = env.hall(
+        &wt,
+        &[
+            "fixed",
+            "F2",
+            "--dispute",
+            "F1",
+            "--reason",
+            "not reachable",
+        ],
+    );
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let sha = git(&wt, &["rev-parse", "HEAD"]);
+    append(&env, &id, "assayer", checks(&sha, 2, false, vec![]));
+    append(&env, &id, "assayer", checks(&sha, 2, true, vec![]));
+    let mut v = verdict(
+        &sha,
+        2,
+        vec![],
+        vec![("F1", PriorStatus::Open), ("F2", PriorStatus::Fixed)],
+        counts(0, 1, 0, 1),
+    );
+    if let hallmark::event::Body::Verdict { escalated, .. } = &mut v {
+        *escalated = true;
+    }
+    append(&env, &id, "assayer", v);
+    assert_eq!(
+        env.hall(&env.repo, &["drop", &id, "--reason", "rethink"])
+            .code,
+        0
+    );
+    let r = env.hall(&env.repo, &["stats"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(r.json["items"]["escalated"], 1);
+    assert_eq!(r.json["reviews"]["approved"], 0);
+    assert_eq!(r.json["reviews"]["reviews"], 2);
+    assert_eq!(r.json["reviews"]["checks_failed"], 1);
+    assert_eq!(r.json["findings"]["disputed"], 1);
+    assert_eq!(r.json["findings"]["disputes_rejected"], 1);
+    assert_eq!(r.json["findings"]["open"], 2);
+    assert_eq!(r.json["findings"]["fixed"], 1);
+}
+
+#[test]
+fn stats_leave_a_dispute_no_review_ruled_on_out_of_rejected() {
+    let env = Env::initialized();
+    let (id, wt, _) = fixing_item(&env, "Retry webhooks");
+    commit_file(&wt, "retry.rs", "fn retry() { lock(); }\n");
+    let r = env.hall(
+        &wt,
+        &[
+            "fixed",
+            "F2",
+            "--dispute",
+            "F1",
+            "--reason",
+            "not reachable",
+        ],
+    );
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    // Dropped before the next review: nobody ruled on the dispute.
+    assert_eq!(
+        env.hall(&env.repo, &["drop", &id, "--reason", "rethink"])
+            .code,
+        0
+    );
+    let r = env.hall(&env.repo, &["stats"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let f = &r.json["findings"];
+    assert_eq!(f["disputed"], 1);
+    assert_eq!(f["disputes_rejected"], 0);
+    assert_eq!(f["disputes_upheld"], 0);
+    assert_eq!(f["disputes_pending"], 1);
+}
+
+#[test]
 fn findings_from_both_rounds_are_tracked_for_history() {
     // A blocker raised in round 2 counts as a reason too.
     let env = Env::initialized();

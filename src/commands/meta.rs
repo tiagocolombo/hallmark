@@ -21,6 +21,7 @@ use super::notify::{NotifyOut, StatuslineOut};
 use super::record::{ExportOut, HistoryOut};
 use super::review::{FindingsOut, VerdictOut};
 use super::setup::SetupOut;
+use super::stats::StatsOut;
 use super::status::{InboxOut, LogOut, ReindexOut, StatusItem, StatusList, UsageOut};
 use super::update::UpdateOut;
 use crate::cli::{Cli, HelpArgs, SchemaArgs};
@@ -352,6 +353,7 @@ pub fn schema_value(name: &str) -> Option<serde_json::Value> {
         "verdict" => schema_for!(Out<VerdictOut>),
         "merge" => schema_for!(Out<MergeOut>),
         "history" => schema_for!(Out<HistoryOut>),
+        "stats" => schema_for!(Out<StatsOut>),
         "queue" => schema_for!(Out<super::queue::QueueOut>),
         "export" => schema_for!(Out<ExportOut>),
         "budget" => schema_for!(Out<BudgetOut>),
