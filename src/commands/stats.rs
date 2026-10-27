@@ -284,7 +284,7 @@ fn in_window(item: &Item, since: Option<DateTime<Utc>>) -> bool {
     } else {
         item.updated_at
     };
-    !since.is_some_and(|t| ended_at < t)
+    since.is_none_or(|t| ended_at >= t)
 }
 
 fn count_item(
