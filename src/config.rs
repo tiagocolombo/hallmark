@@ -68,6 +68,10 @@ pub struct Config {
     /// Nits a review may record: the reviewer is told the cap, and Hallmark
     /// keeps only the first this many nits of each verdict (ADR 0058).
     pub max_nits: u32,
+    /// The verifier (ADR 0062): a model ("sonnet", "haiku", …) that tries
+    /// to refute the reviewer's blocking findings before the fixer sees
+    /// them, under the review budget. "off" (the default) skips it.
+    pub verify: String,
     /// Failed checks in a row before the item is held for you (kind
     /// `checks`), so a fix that never turns the gates green can't loop.
     /// 0: never.
@@ -139,6 +143,7 @@ impl Default for Config {
             max_nits: 3,
             max_check_failures: 3,
             auto_ready: true,
+            verify: "off".into(),
             stuck_after: "30m".into(),
             lenses: Lenses::All("all".into()),
             security_review: Vec::new(),

@@ -94,6 +94,7 @@ expression: keys
   "repo ship string",
   "repo stuck_after string",
   "repo update string",
+  "repo verify string",
   "repo worktree string",
   "user tools.cargo string",
   "user tools.claude string",

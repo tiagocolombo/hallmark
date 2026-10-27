@@ -132,6 +132,14 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
             if let Some(p) = moved_on()? {
                 return Ok(p);
             }
+            // The verifier tries to refute the blocking findings before
+            // anyone acts on them (ADR 0062). The checkout is still here.
+            let (mv, verification) =
+                super::verify::verify(repo, ctx.runner, item, &sha, &req.cwd, &review_base, mv)?;
+            // It can take minutes: look again before recording.
+            if let Some(p) = moved_on()? {
+                return Ok(p);
+            }
             // The reviewer read the person's words; the next run doesn't.
             // Only now: a round stopped or discarded before its verdict is
             // recorded is reviewed again with them (ADR 0044).
@@ -150,6 +158,7 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
                 super::ROLE,
                 reviewer,
                 Some(review_base),
+                Some(&verification),
             )?;
             if !pass.paths.is_empty() {
                 repo.hall.append_item(
@@ -169,7 +178,7 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
                 )?;
             }
             Ok(Progress::worked(format!(
-                "{} review round {}: {}{} ({} findings, {} blocker, {} major open{})",
+                "{} review round {}: {}{} ({} findings, {} blocker, {} major open{}{})",
                 item.id,
                 rec.round,
                 super::verdict::kind(rec.verdict),
@@ -181,6 +190,15 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
                     (_, true) => String::new(),
                     (Some(why), false) => format!("; no security pass: {why}"),
                     (None, false) => format!("; the security pass added {}", pass.added.len()),
+                },
+                if verification.dropped.is_empty() {
+                    String::new()
+                } else {
+                    format!(
+                        "; the verifier dropped {} of {}",
+                        verification.dropped.len(),
+                        verification.checked
+                    )
                 }
             )))
         }
@@ -227,6 +245,7 @@ fn carry(repo: &Repo, item: &Item, events: &[Event], sha: &str) -> Result<Option
         super::ROLE,
         Some(CARRIED.into()),
         Some(base.sha.clone()),
+        None,
     )?;
     // Only now is the approval known to be recorded.
     repo.hall.append_item(

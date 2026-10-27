@@ -17,6 +17,7 @@ pub mod rebased;
 pub mod review;
 pub mod security;
 pub mod verdict;
+pub mod verify;
 
 use std::path::{Path, PathBuf};
 
@@ -66,7 +67,12 @@ pub fn lease_ttl(repo: &Repo) -> Duration {
 
 /// [`lease_ttl`] for a config: outlasts the reviewer and the slowest gate.
 pub fn lease_ttl_for(config: &crate::config::Config) -> Duration {
-    let run = config.budget.timeout_secs(Role::Reviewer).max(0);
+    let mut run = config.budget.timeout_secs(Role::Reviewer).max(0);
+    // The verifier runs after the reviewer, under the same lease.
+    let v = config.verify.trim();
+    if !v.is_empty() && !v.eq_ignore_ascii_case(verify::OFF) {
+        run += verify::TIMEOUT_SECS as i64;
+    }
     let gate = config.longest_gate_secs() as i64;
     Duration::seconds(run.max(gate).max(600) + 600)
 }
@@ -204,5 +210,15 @@ mod lease_tests {
             .unwrap();
         assert!(lease_ttl_for(&c).num_seconds() > 7200);
         assert!(lease_ttl_for(&crate::config::Config::default()).num_seconds() < 7200);
+    }
+
+    #[test]
+    fn the_verifier_adds_its_time_to_the_lease() {
+        let off = lease_ttl_for(&crate::config::Config::default());
+        let on = crate::config::Config::parse("verify = 'sonnet'\n").unwrap();
+        assert_eq!(
+            lease_ttl_for(&on).num_seconds() - off.num_seconds(),
+            verify::TIMEOUT_SECS as i64
+        );
     }
 }

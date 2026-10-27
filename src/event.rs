@@ -264,6 +264,18 @@ pub enum Body {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         skipped: Option<String>,
     },
+    /// The verifier's pass over the reviewer's blocking findings before
+    /// the verdict was recorded (ADR 0062): how many it checked and the
+    /// ones it showed are not real, which the verdict leaves out.
+    Verified {
+        sha: String,
+        round: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
+        checked: u32,
+        #[serde(default)]
+        dropped: Vec<crate::findings::DroppedFinding>,
+    },
     /// The fixer resubmits (`hall fixed`): the commit, the findings it
     /// claims to fix, and the ones it disputes.
     FixSubmitted {
@@ -573,6 +585,7 @@ impl Body {
             Body::Checks { .. } => "checks",
             Body::Verdict { .. } => "verdict",
             Body::SecurityPass { .. } => "security_pass",
+            Body::Verified { .. } => "verified",
             Body::FixSubmitted { .. } => "fix_submitted",
             Body::Hallmarked { .. } => "hallmarked",
             Body::Shipped { .. } => "shipped",
@@ -733,6 +746,14 @@ impl Body {
                     if added.len() == 1 { "" } else { "s" }
                 ),
             },
+            Body::Verified {
+                checked, dropped, ..
+            } => format!(
+                "verifier · {} of {} blocking finding{} dropped",
+                dropped.len(),
+                checked,
+                if *checked == 1 { "" } else { "s" }
+            ),
             Body::FixSubmitted { sha, fixes, .. } => {
                 format!("fix submitted {} · {}", short(sha), fixes.join(", "))
             }

@@ -247,6 +247,63 @@ fn budget_levels_through_run_metered() {
 }
 
 #[test]
+fn a_no_hold_run_never_holds_the_item() {
+    // The verifier (ADR 0062) is a `no_hold` run in the review room.
+    let env = Env::initialized();
+    let (id, wt) = env.new_item("Usage page");
+    let script = env.script(json!([
+        {"role": "reviewer"},
+        {"role": "verifier", "fail": "error"},
+        {"role": "verifier", "fail": "error"}
+    ]));
+    let mut repo = Repo::discover(&env.repo).unwrap();
+    let runner = FakeRunner::new(script);
+    let item: ItemId = id.parse().unwrap();
+    let mut req = RunRequest {
+        role: "reviewer".into(),
+        room: "assay".into(),
+        prompt: "Review".into(),
+        cwd: wt.clone(),
+        ..Default::default()
+    };
+    assert!(matches!(
+        run_metered(&repo, &runner, Some(item), &req).unwrap(),
+        Metered::Done(_)
+    ));
+    req.role = "verifier".into();
+    req.no_hold = true;
+
+    // Failing twice in a row records both failures and holds nothing.
+    for _ in 0..2 {
+        assert!(matches!(
+            run_metered(&repo, &runner, Some(item), &req).unwrap(),
+            Metered::Failed { held: false, .. }
+        ));
+    }
+    let j = env.journal(&id);
+    assert_eq!(events(&j, "run_failed").len(), 2);
+    assert!(events(&j, "held").is_empty());
+
+    // The item cap skips it without a hold; the verifier counts against the
+    // review room's caps like the reviewer.
+    repo.config.budget.per_item = Some("5k".into());
+    match run_metered(&repo, &runner, Some(item), &req).unwrap() {
+        Metered::Blocked(stop) => assert_eq!(stop.level, Level::Item),
+        other => panic!("{other:?}"),
+    }
+    assert!(events(&env.journal(&id), "held").is_empty());
+    repo.config.budget.per_item = None;
+    repo.config.budget.review = Some(hallmark::config::RoleBudget {
+        daily: Some("5k".into()),
+        ..Default::default()
+    });
+    match run_metered(&repo, &runner, Some(item), &req).unwrap() {
+        Metered::Blocked(stop) => assert_eq!(stop.level, Level::Room),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
 fn retry_grants_a_budget_hold_more_tokens() {
     let env = Env::initialized();
     let cfg = env.repo.join(".hallmark.toml");

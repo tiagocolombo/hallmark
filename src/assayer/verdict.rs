@@ -47,6 +47,7 @@ pub struct Recorded {
 /// base branch now. Idempotent: the same round and commit again is
 /// `changed: false`. An item that is not in review at `sha` is
 /// `WRONG_STATE`.
+#[allow(clippy::too_many_arguments)]
 pub fn record_verdict(
     repo: &Repo,
     id: ItemId,
@@ -55,6 +56,7 @@ pub fn record_verdict(
     actor: &str,
     reviewer: Option<String>,
     base: Option<String>,
+    verification: Option<&super::verify::Verification>,
 ) -> Result<Recorded> {
     mv.check()?;
     let item = repo.hall.load_item(id)?;
@@ -108,8 +110,24 @@ pub fn record_verdict(
             escalated,
             max_rejects,
             max_nits,
+            verification,
         });
         fs::write(dir.join(format!("r{}.md", cur.round)), report)?;
+        // The verifier's pass goes on the record before the verdict it
+        // shaped (ADR 0062), only when it ran.
+        let verified = verification.filter(|v| v.skipped.is_none()).map(|v| {
+            ev(
+                actor,
+                Some(id),
+                Body::Verified {
+                    sha: sha.to_string(),
+                    round: cur.round,
+                    model: v.model.clone(),
+                    checked: v.checked,
+                    dropped: v.dropped.clone(),
+                },
+            )
+        });
         let e = ev(
             actor,
             Some(id),
@@ -130,7 +148,7 @@ pub fn record_verdict(
             },
         );
         Ok((
-            vec![e],
+            verified.into_iter().chain([e]).collect(),
             Partial {
                 round: cur.round,
                 verdict,
@@ -271,6 +289,9 @@ pub struct Report<'a> {
     pub escalated: bool,
     pub max_rejects: u32,
     pub max_nits: u32,
+    /// What the verifier did with the reviewer's blocking findings, when
+    /// there was one (ADR 0062).
+    pub verification: Option<&'a super::verify::Verification>,
 }
 
 /// The review as readable Markdown: `reviews/r<round>.md`.
@@ -337,6 +358,46 @@ pub fn render(r: &Report) -> String {
             "\nThe reviewer reported {} nits beyond the cap of {} (`max_nits`); they were not recorded.",
             r.judged.dropped_nits, r.max_nits
         );
+    }
+    if let Some(v) = r.verification {
+        match &v.skipped {
+            Some(why) if v.checked > 0 => {
+                let _ = writeln!(
+                    s,
+                    "\nThe verifier did not rule on the {} blocking finding{}: {why}. The \
+                     verdict stands as the reviewer gave it.",
+                    v.checked,
+                    if v.checked == 1 { "" } else { "s" }
+                );
+            }
+            Some(_) => {}
+            None => {
+                let _ = writeln!(
+                    s,
+                    "\nThe verifier{} checked {} blocking finding{} and dropped {}{}",
+                    v.model
+                        .as_deref()
+                        .map(|m| format!(" ({m})"))
+                        .unwrap_or_default(),
+                    v.checked,
+                    if v.checked == 1 { "" } else { "s" },
+                    v.dropped.len(),
+                    if v.dropped.is_empty() { "." } else { ":" }
+                );
+                for d in &v.dropped {
+                    let _ = writeln!(
+                        s,
+                        "\n- {} · {} · `{}:{}` · {}: {}",
+                        d.severity.as_str(),
+                        d.lens.as_str(),
+                        d.file,
+                        d.line,
+                        d.title.trim(),
+                        d.reason.trim()
+                    );
+                }
+            }
+        }
     }
 
     if !r.judged.findings.is_empty() {

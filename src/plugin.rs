@@ -41,6 +41,14 @@ pub const FILES: &[(&str, &str)] = &[
     ),
     ("agents/fixer.md", include_str!("../plugin/agents/fixer.md")),
     (
+        "agents/verifier.md",
+        include_str!("../plugin/agents/verifier.md"),
+    ),
+    (
+        "schemas/verification.json",
+        include_str!("../plugin/schemas/verification.json"),
+    ),
+    (
         "agents/intake.md",
         include_str!("../plugin/agents/intake.md"),
     ),

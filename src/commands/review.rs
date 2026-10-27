@@ -223,7 +223,7 @@ pub fn verdict(cwd: &Path, a: VerdictArgs) -> Result<Response> {
             .next([format!("hall status {}", item.id)]));
         }
     };
-    let rec = crate::assayer::record_verdict(&repo, item.id, &sha, &mv, &actor, None, None)?;
+    let rec = crate::assayer::record_verdict(&repo, item.id, &sha, &mv, &actor, None, None, None)?;
     let mut next = Vec::new();
     if rec.verdict == VerdictKind::Changes && !rec.escalated {
         next.push(format!("hall findings {}", item.id));

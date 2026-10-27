@@ -1,0 +1,31 @@
+{
+  "title": "Hallmark verification",
+  "description": "The verifier's ruling on each of the reviewer's blocking findings, by the number the prompt gave it. A finding ruled not real is dropped from the verdict.",
+  "type": "object",
+  "properties": {
+    "rulings": {
+      "type": "array",
+      "description": "One ruling per numbered finding. Leave none out.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "index": { "type": "integer", "minimum": 1, "description": "The finding's number in the prompt." },
+          "real": { "type": "boolean", "description": "True when the scenario holds; false when you can show what makes it impossible or the claim false." },
+          "reason": { "type": "string", "description": "One sentence naming the file and line you checked." }
+        },
+        "required": ["index", "real", "reason"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["rulings"],
+  "additionalProperties": false,
+  "examples": [
+    {
+      "rulings": [
+        { "index": 1, "real": true, "reason": "retry.rs:42 reads the attempt without a lock; nothing serializes two workers." },
+        { "index": 2, "real": false, "reason": "tests/retry.rs:88 fails the endpoint five times and asserts no sixth send." }
+      ]
+    }
+  ]
+}

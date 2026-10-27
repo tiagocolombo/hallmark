@@ -84,6 +84,10 @@ pub struct RunRequest {
     /// remove_env`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub env_remove: Vec<String>,
+    /// A run whose failure never holds the item: the verifier (ADR 0062),
+    /// whose caller goes on without it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub no_hold: bool,
     /// The file stdout streams into as it arrives, ending with a
     /// `hall_run_end` line (ADR 0041). [`run_metered`] sets it for runs with
     /// an item; none streams nowhere.
@@ -216,6 +220,7 @@ pub fn request(
         extra_args,
         env,
         env_remove: confined.env_remove,
+        no_hold: false,
         stream: None,
     })
 }
@@ -1180,7 +1185,9 @@ pub fn run_metered(
         .unwrap_or_else(crate::repo::actor);
     let actor = actor.as_str();
     if let Err(stop) = crate::budget::check(repo, item, &req.role) {
-        if let (Some(id), crate::budget::Level::Item) = (item, stop.level) {
+        if let (Some(id), crate::budget::Level::Item) = (item, stop.level)
+            && !req.no_hold
+        {
             record(
                 repo,
                 Some(id),
@@ -1277,7 +1284,7 @@ pub fn run_metered(
             attempt,
         },
     )?;
-    let held = attempt >= 2 && item.is_some();
+    let held = attempt >= 2 && item.is_some() && !req.no_hold;
     if held {
         record(
             repo,

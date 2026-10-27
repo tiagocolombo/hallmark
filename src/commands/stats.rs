@@ -98,6 +98,9 @@ pub struct FindingStats {
     pub open: u32,
     /// Withdrawn findings as a share of those raised: the reviewer's noise.
     pub noise_pct: f64,
+    /// Blocking findings the verifier refuted before they were recorded
+    /// (ADR 0062): noise caught before it cost a round. Not in `raised`.
+    pub verifier_dropped: u32,
     /// Findings the fixer disputed.
     pub disputed: u32,
     /// Disputes the reviewer accepted (the finding was withdrawn).
@@ -180,6 +183,14 @@ impl Render for StatsOut {
             "Findings   {} raised ({} blocker, {} major, {} minor, {} nit) · {} fixed, {} withdrawn, {} open · noise {:.0}%",
             f.raised, f.blocker, f.major, f.minor, f.nit, f.fixed, f.withdrawn, f.open, f.noise_pct
         );
+        if f.verifier_dropped > 0 {
+            let _ = writeln!(
+                s,
+                "Verifier   dropped {} blocking finding{} before the fixer saw them",
+                f.verifier_dropped,
+                if f.verifier_dropped == 1 { "" } else { "s" }
+            );
+        }
         if f.disputed > 0 {
             let _ = write!(
                 s,
@@ -334,6 +345,9 @@ fn count_item(
             Body::FixSubmitted { disputes, .. } => {
                 r.fixes += 1;
                 unruled.extend(disputes.iter().map(|d| d.id.as_str()));
+            }
+            Body::Verified { dropped, .. } => {
+                out.findings.verifier_dropped += dropped.len() as u32;
             }
             Body::Checks { passed: false, .. } => r.checks_failed += 1,
             _ => {}

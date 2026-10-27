@@ -495,6 +495,14 @@ The role is defined once, in the plugin:
 - `agents/principal-engineer.md`: the role, with read-only tools.
 - `skills/principal-review/`: how it reviews.
 - `schemas/verdict.json`: the exact shape of the verdict.
+- `agents/verifier.md` and `schemas/verification.json`: the verifier
+  (ADR 0062). With `verify = "<model>"` in `.hallmark.toml`, a second,
+  cheaper run in the same checkout takes the verdict's blocking findings
+  and tries to refute each one by reading the code; a finding it can show
+  is not real is dropped before the verdict is recorded, and the
+  `verified` event and the review report say which and why. It never adds
+  findings or touches rulings on earlier rounds, shares the review budget,
+  and when it can't run the verdict stands.
 
 A change that touches a `security_review` path (ADR 0064) gets a second
 run of the same agent over the same change, with only the

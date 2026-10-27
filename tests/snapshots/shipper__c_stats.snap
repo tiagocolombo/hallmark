@@ -43,6 +43,7 @@ expression: "scrub(&env, &r.json)"
     "noise_pct": 33.33,
     "open": 1,
     "raised": 3,
+    "verifier_dropped": 0,
     "withdrawn": 1
   },
   "items": {
