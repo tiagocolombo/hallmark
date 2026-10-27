@@ -721,8 +721,7 @@ impl Index {
                 f.follow_up.as_deref() == Some(url.as_str())
                     && f.state != State::Dropped
                     && f.created_at >= r.at
-            })
-            {
+            }) {
                 continue;
             }
             out.push(InboxEntry {
