@@ -1315,9 +1315,7 @@ mod tests {
         ];
         let c = review_comment(&item(None), &events, false);
         assert!(
-            c.contains(
-                "The verifier (claude-sonnet-5-5) checked 1 blocking finding and dropped 1"
-            ),
+            c.contains("The verifier (claude-sonnet-5-5) checked 1 blocking finding and dropped 1"),
             "{c}"
         );
         assert!(
@@ -1325,10 +1323,7 @@ mod tests {
             "{c}"
         );
         // A verification from another round isn't this approval's.
-        let events = vec![
-            events[0].clone(),
-            verdict(2, "approve", vec![], json!([])),
-        ];
+        let events = vec![events[0].clone(), verdict(2, "approve", vec![], json!([]))];
         let c = review_comment(&item(None), &events, false);
         assert!(!c.contains("The verifier"), "{c}");
     }
