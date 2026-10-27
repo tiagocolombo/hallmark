@@ -65,7 +65,7 @@ pub struct Index {
 pub struct InboxEntry {
     /// Escalations: question, escalated, ready, budget, run_failed,
     /// ship_failed, conflict, feedback, checks, ci_failed (after the Delivery
-    /// office's fixes), merge_failed, lit, ci_down, base_red, daemon_stopped.
+    /// office's fixes), merge_failed, lit, ci_down, base_red, paused (Claude's limit), daemon_stopped.
     /// Notices: stuck, session_waiting, ci_failed (merged, or being fixed),
     /// learnings.
     pub kind: String,
