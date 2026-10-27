@@ -2347,8 +2347,7 @@ fn a_rebase_that_leaves_the_approved_change_as_it_was_keeps_its_approval() {
     assert_eq!(v[1]["reviewer"], "carried");
     assert_eq!(v[1]["sha"], head.as_str());
     assert_eq!(
-        v[1]["needs_person"],
-        "it changes what the auto-updater downloads",
+        v[1]["needs_person"], "it changes what the auto-updater downloads",
         "the carried approval keeps the request for a person"
     );
     let rebased = events_of(&env, &id, "rebased");

@@ -1334,10 +1334,17 @@ mod tests {
                 },
             )
         };
-        let wait = format!("{}2 approvals from people (has 1)", crate::merger::TIER_WAIT);
+        let wait = format!(
+            "{}2 approvals from people (has 1)",
+            crate::merger::TIER_WAIT
+        );
         let by_merger = fold(
             ItemId(1),
-            &[c.clone(), held(wait.clone()), released(crate::merger::ACTOR)],
+            &[
+                c.clone(),
+                held(wait.clone()),
+                released(crate::merger::ACTOR),
+            ],
         )
         .unwrap();
         assert!(by_merger.hold.is_none());
