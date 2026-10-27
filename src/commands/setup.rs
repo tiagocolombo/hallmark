@@ -30,7 +30,7 @@ pub struct SetupOut {
     /// With `--statusline`: the settings file and the command written to it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub statusline: Option<StatusLineOut>,
-    /// With `--interactive`: the settings written, as `key = value`.
+    /// What the wizard set, as `key = value`.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub settings: Vec<String>,
     pub steps: Vec<Step>,
@@ -593,37 +593,64 @@ fn write_atomic(path: &Path, text: &str) -> Result<()> {
 
 /// `hall setup`: the plugin and status line, this repo, the daemon at
 /// login, a phone topic, then `hall doctor`. Every step is idempotent and
-/// reported; a failed step doesn't stop the others. With `--interactive`,
-/// the wizard asks its questions first, and nothing happens if you cancel.
+/// reported; a failed step doesn't stop the others. The first time on a
+/// terminal (no user config yet, or a repo without `.hallmark.toml`), and
+/// with `--interactive`, the wizard asks its questions first, and nothing
+/// happens if you cancel (ADR 0055).
 fn all(cwd: &Path, a: &SetupArgs, mode: Mode) -> Result<Response> {
-    use super::wizard::{self, Phone};
+    use super::wizard::{self, Ask, Phone};
     use crate::cli::{DaemonAction, DaemonArgs, InitArgs, NotifyAction, NotifyArgs};
-    let plan = if a.interactive {
-        use std::io::IsTerminal;
-        if mode == Mode::Json || !std::io::stdin().is_terminal() || !std::io::stderr().is_terminal()
-        {
-            return Err(HallError::usage(
-                "--interactive asks questions, so it runs only on a terminal",
-            )
-            .next([
-                "hall config list",
-                "hall config set <key> <value>",
-                "hall setup",
-            ]));
-        }
+    let user_file = crate::config::UserConfig::path();
+    let first = wizard::first_run(
+        user_file.is_file(),
+        crate::repo::Repo::discover(cwd)
+            .ok()
+            .map(|r| r.main_root.join(crate::config::FILE_NAME).is_file()),
+    );
+    let can_ask = wizard::can_ask(mode);
+    if a.interactive && !can_ask {
+        return Err(HallError::usage(
+            "--interactive asks questions, so it runs only on a terminal",
+        )
+        .next([
+            "hall config list",
+            "hall config set <key> <value>",
+            "hall setup",
+        ]));
+    }
+    let ask_step = "ask about every setting";
+    let mut steps = Vec::new();
+    let plan = if wizard::asks(a.interactive, a.defaults, first, can_ask) {
         let ctx = wizard::context(cwd);
-        Some(wizard::run(
-            &ctx,
-            std::io::stdin().lock(),
-            std::io::stderr(),
-        )?)
+        let plan = wizard::run(&ctx, Ask::SETUP, std::io::stdin().lock(), std::io::stderr())?;
+        steps.push(if plan.skipped {
+            step(
+                ask_step.into(),
+                "skipped",
+                Some("skipped for now: the defaults; `hall setup --interactive` asks again".into()),
+            )
+        } else {
+            step(
+                ask_step.into(),
+                "done",
+                Some(format!("{} to write", plan.changes.len())),
+            )
+        });
+        Some(plan)
     } else {
+        let why = if a.defaults {
+            "--defaults"
+        } else if !first {
+            "already set up; `hall setup --interactive` asks again"
+        } else {
+            "not on a terminal; `hall setup --interactive` asks on one, and `hall config` sets any key"
+        };
+        steps.push(step(ask_step.into(), "skipped", Some(why.into())));
         None
     };
     let exe = paths::normalize(&std::env::current_exe()?);
     let shown = paths::display(&exe);
     let planned = |command: &str| step(command.to_string(), "planned", None);
-    let mut steps = Vec::new();
     let mut next: Vec<String> = Vec::new();
 
     // 1. Which hall the hooks and the daemon will run.
@@ -653,6 +680,7 @@ fn all(cwd: &Path, a: &SetupArgs, mode: Mode) -> Result<Response> {
         no_daemon: a.no_daemon,
         no_notify: a.no_notify,
         interactive: false,
+        defaults: true,
     };
     let mut plugin_files = Vec::new();
     let mut statusline = None;
@@ -719,7 +747,9 @@ fn all(cwd: &Path, a: &SetupArgs, mode: Mode) -> Result<Response> {
                 capture: None,
                 base: None,
                 no_claude_md: false,
+                defaults: true,
             },
+            mode,
         ) {
             Ok(r) => {
                 let created: Vec<String> =
@@ -739,7 +769,27 @@ fn all(cwd: &Path, a: &SetupArgs, mode: Mode) -> Result<Response> {
         },
     }
 
-    // 3b. The wizard's answers, written once `hall init` made the file.
+    // 3a. Your user config, with the defaults, once. The wizard's answers
+    // are edits to it, so its comments survive them.
+    let write_user = format!("write {}", paths::display(&user_file));
+    if user_file.is_file() {
+        steps.push(step(write_user, "skipped", Some("already present".into())));
+    } else if a.dry_run {
+        steps.push(planned(&write_user));
+    } else {
+        let dir = user_file
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_default();
+        match std::fs::create_dir_all(&dir)
+            .and_then(|_| std::fs::write(&user_file, crate::config::render_initial_user()))
+        {
+            Ok(()) => steps.push(step(write_user, "done", Some("the defaults".into()))),
+            Err(e) => steps.push(step(write_user, "failed", Some(e.to_string()))),
+        }
+    }
+
+    // 3b. The wizard's answers, written once the files exist.
     let mut settings = Vec::new();
     if let Some(plan) = &plan
         && !plan.changes.is_empty()

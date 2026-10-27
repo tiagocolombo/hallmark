@@ -314,7 +314,10 @@ Agents are the primary users of `hall`, so the command line is an API.
 - **Output.**
   - JSON when stdout isn't a TTY; `--json` forces it.
   - Readable text only on a TTY.
-- **Never prompts.**
+- **Never prompts**, except the setup wizard on a terminal.
+  - `hall init` and the first `hall setup` ask first; `hall setup
+    --interactive` asks again. `--defaults`, or no terminal, never asks
+    ([ADR 0055](decisions/0055-the-setup-wizard-asks-first.md)).
   - Destructive actions need explicit flags, such as `drop --reason`.
 - **Idempotent.**
   - Repeating a command returns the current result.
@@ -357,7 +360,7 @@ $ echo $?
 | Command | Does |
 | --- | --- |
 | `hall` | The terminal app on a TTY; JSON status otherwise. |
-| `hall init [--capture] [--base] [--no-claude-md]` | Creates the journal directory. Writes `.hallmark.toml` from detected gates, a stub `.hallmark/review.md`, and the CLAUDE.md section. Registers the repo. |
+| `hall init [--defaults] [--capture] [--base] [--no-claude-md]` | Creates the journal directory. Writes `.hallmark.toml` from detected gates, a stub `.hallmark/review.md`, and the CLAUDE.md section. Registers the repo. On a terminal, a repo without `.hallmark.toml` is first asked about every setting, or to skip (ADR 0055); `--defaults` doesn't ask. |
 | `hall doctor` | Checks git, gh, claude, the plugin, the hooks and the repo. Each failed check names its fix. |
 | `hall setup claude [--dry-run]` | Installs the Claude Code plugin at user level. |
 | `hall new [<request>] [--title] [--issue <n>] [--open] [--branch]` | Creates an item, its branch and its worktree. `--open` starts Claude there. |

@@ -1214,6 +1214,26 @@ intake_model = "haiku"
     )
 }
 
+/// The user config `hall setup` writes when you have none: the defaults,
+/// with the keys people set as comments.
+pub fn render_initial_user() -> String {
+    r#"# Hallmark settings for you, on every repository: how you are notified and
+# where your tools live. Every key is optional. `hall config list --user`
+# shows them, `hall config set --user <key> <value>` changes one, and
+# `hall setup --interactive` asks about them again.
+
+[notify]
+desktop = true   # macOS, Linux and Windows notifications
+# phone = "ntfy://ntfy.sh/<topic>"   # `hall notify test` creates a private topic
+# quiet_hours = "22:00-07:30"         # the phone waits; the desktop still shows
+
+[tools]   # programs that aren't on the daemon's PATH, as absolute paths
+# claude = "/path/to/claude"
+# gh = "/path/to/gh"
+"#
+    .into()
+}
+
 fn toml_str(s: &str) -> String {
     toml::Value::String(s.to_string()).to_string()
 }

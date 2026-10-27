@@ -11,8 +11,17 @@ item can't change its own gate
 You never need to edit the TOML by hand
 ([ADR 0033](decisions/0033-configurable-setup.md)).
 
-- `hall setup --interactive` asks about the settings people change most, then
-  offers the rest. It writes nothing until you confirm.
+- The setup wizard asks about every setting, section by section, each with
+  its default: Enter keeps it, `-` goes back to the default, `?` explains it.
+  It runs on a terminal when Hallmark is first set up: `hall init` in a repo
+  without `.hallmark.toml` asks about the repo's settings, and the first
+  `hall setup` (no user config yet) asks about everything, your tools and
+  notifications included. Its first question offers to skip for now: then a
+  basic file with the defaults is written, and `hall setup --interactive`
+  asks again whenever you like. `--defaults` writes the defaults without a
+  question, and nothing is asked off a terminal. The wizard writes nothing
+  until you confirm
+  ([ADR 0055](decisions/0055-the-setup-wizard-asks-first.md)).
 - `hall config` reads and writes any single key. It keeps the file's comments
   and checks each value before writing.
 
@@ -30,8 +39,9 @@ hall config set --user tools.gh /opt/homebrew/bin/gh
 
 Repo keys go to the main checkout's `.hallmark.toml`. Commit them like any
 other change. `--user` keys go to your user config,
-`<user data dir>/hallmark/config.toml`, along with keys only it has, such as
-`tools.*`. In Claude Code, ask Claude to "set up Hallmark" and the
+`<user data dir>/hallmark/config.toml`, which `hall setup` creates with the
+defaults, along with keys only it has, such as `tools.*`. In Claude Code, ask
+Claude to "set up Hallmark" and the
 `hallmark-setup` skill walks you through the same questions.
 
 ## Defaults

@@ -86,6 +86,32 @@ fn init_prefers_agents_md_when_it_is_the_only_one() {
     assert!(toml.contains("base     = \"trunk\""));
 }
 
+/// Off a terminal nothing is asked, and `--defaults` says so explicitly:
+/// both write the same file (ADR 0055).
+#[test]
+fn init_defaults_writes_without_asking() {
+    let asked = Env::new();
+    std::fs::write(asked.repo.join("Cargo.toml"), "[package]\nname = \"x\"\n").unwrap();
+    let r = asked.hall(&asked.repo, &["init", "--base", "trunk"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert!(r.json.get("settings").is_none(), "{}", r.stdout);
+
+    let defaults = Env::new();
+    std::fs::write(
+        defaults.repo.join("Cargo.toml"),
+        "[package]\nname = \"x\"\n",
+    )
+    .unwrap();
+    let r = defaults.hall(&defaults.repo, &["init", "--defaults", "--base", "trunk"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(r.json["base"], "trunk");
+    assert_eq!(r.json["gates"][0], "cargo test");
+    assert_eq!(
+        std::fs::read_to_string(asked.repo.join(".hallmark.toml")).unwrap(),
+        std::fs::read_to_string(defaults.repo.join(".hallmark.toml")).unwrap()
+    );
+}
+
 #[test]
 fn new_creates_an_item_with_its_own_worktree() {
     let env = Env::initialized();

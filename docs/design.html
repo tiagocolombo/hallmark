@@ -875,7 +875,7 @@ retire_after   = "90d"     # unused learnings</code></pre>
   <div class="two">
     <ul class="rules">
       <li><b>JSON when it isn't a terminal.</b> <code>--json</code> forces it; readable text appears only on a terminal.</li>
-      <li><b>Never prompts.</b> Anything destructive needs an explicit flag, such as <code>--reason</code>.</li>
+      <li><b>Never prompts</b>, except the setup wizard on a terminal (<code>hall init</code>, the first <code>hall setup</code>; never with <code>--defaults</code>). Anything destructive needs an explicit flag, such as <code>--reason</code>.</li>
       <li><b>Safe to repeat.</b> Running <code>hall ready</code> twice returns the same review, not an error.</li>
       <li><b>Says what to do next.</b> Every reply has a <code>next</code> list of commands that make sense now.</li>
       <li><b>Errors are data.</b> A stable code, a message and <code>next</code>, plus a documented exit code.</li>

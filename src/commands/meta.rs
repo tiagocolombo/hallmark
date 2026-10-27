@@ -94,7 +94,7 @@ pub fn contract() -> Vec<String> {
         "Every reply has `next`: the commands that make sense now.".into(),
         "Errors are {\"error\":{\"code\",\"message\",\"next\"}} with a documented exit code."
             .into(),
-        "Commands never prompt (only `hall setup --interactive` asks, on a terminal); destructive ones need explicit flags such as --reason.".into(),
+        "Commands never prompt. The one exception is the setup wizard, on a terminal: `hall init` and `hall setup` ask about every setting (or to skip) the first time, `hall setup --interactive` whenever asked, and `--defaults` writes the defaults instead. Destructive commands need explicit flags such as --reason.".into(),
         "Commands are idempotent: repeating one returns the current result.".into(),
         "Inside an item's worktree the item ID is optional.".into(),
         "`hall schema <command>` prints the JSON Schema of a command's output.".into(),

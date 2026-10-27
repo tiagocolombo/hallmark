@@ -144,6 +144,10 @@ pub struct InitArgs {
     /// Don't add the Hallmark section to CLAUDE.md or AGENTS.md.
     #[arg(long)]
     pub no_claude_md: bool,
+    /// Write the defaults without asking. On a terminal, a repo that has no
+    /// `.hallmark.toml` yet is asked about every setting first, or to skip.
+    #[arg(long)]
+    pub defaults: bool,
 }
 
 #[derive(Debug, Args)]
@@ -429,12 +433,17 @@ pub struct SetupArgs {
     /// `hall setup`: don't create a phone topic.
     #[arg(long)]
     pub no_notify: bool,
-    /// `hall setup`: ask about every setting first: base branch, gates and
-    /// the shell they run in, how work is shipped, models, budget, tools
-    /// and notifications. Needs a terminal; `hall config` sets the same
-    /// keys without questions.
+    /// `hall setup`: ask about every setting first, even when already set
+    /// up: base branch, gates and the shell they run in, how work is
+    /// shipped, models, budget, tools and notifications. Needs a terminal;
+    /// `hall config` sets the same keys without questions.
     #[arg(long, short = 'i')]
     pub interactive: bool,
+    /// `hall setup`: don't ask. The first `hall setup` on a terminal (no user
+    /// config yet, or a repo without `.hallmark.toml`) asks about every
+    /// setting, or to skip; this writes the defaults instead.
+    #[arg(long, conflicts_with = "interactive")]
+    pub defaults: bool,
 }
 
 #[derive(Debug, Args)]
@@ -992,7 +1001,7 @@ fn dispatch(cmd: Option<Cmd>, cwd: &std::path::Path, mode: Mode) -> Result<Respo
     match cmd {
         None if mode == Mode::Text => crate::tui::run(cwd),
         None => status::status(cwd, None, false, true),
-        Some(Cmd::Init(a)) => init::init(cwd, a),
+        Some(Cmd::Init(a)) => init::init(cwd, a, mode),
         Some(Cmd::Doctor) => doctor::doctor(cwd),
         Some(Cmd::New(a)) => new::new(cwd, a, mode),
         Some(Cmd::Adopt(a)) => new::adopt(cwd, a),

@@ -34,6 +34,14 @@ expression: v
           "required": false,
           "syntax": "--no-claude-md",
           "takes_value": false
+        },
+        {
+          "default": "false",
+          "help": "Write the defaults without asking. On a terminal, a repo that has no `.hallmark.toml` yet is asked about every setting first, or to skip",
+          "name": "defaults",
+          "required": false,
+          "syntax": "--defaults",
+          "takes_value": false
         }
       ],
       "name": "init",
@@ -728,10 +736,18 @@ expression: v
         },
         {
           "default": "false",
-          "help": "`hall setup`: ask about every setting first: base branch, gates and the shell they run in, how work is shipped, models, budget, tools and notifications. Needs a terminal; `hall config` sets the same keys without questions",
+          "help": "`hall setup`: ask about every setting first, even when already set up: base branch, gates and the shell they run in, how work is shipped, models, budget, tools and notifications. Needs a terminal; `hall config` sets the same keys without questions",
           "name": "interactive",
           "required": false,
           "syntax": "--interactive",
+          "takes_value": false
+        },
+        {
+          "default": "false",
+          "help": "`hall setup`: don't ask. The first `hall setup` on a terminal (no user config yet, or a repo without `.hallmark.toml`) asks about every setting, or to skip; this writes the defaults instead",
+          "name": "defaults",
+          "required": false,
+          "syntax": "--defaults",
           "takes_value": false
         }
       ],
@@ -1601,7 +1617,7 @@ expression: v
     "Output is JSON when stdout is not a terminal; --json forces it.",
     "Every reply has `next`: the commands that make sense now.",
     "Errors are {\"error\":{\"code\",\"message\",\"next\"}} with a documented exit code.",
-    "Commands never prompt (only `hall setup --interactive` asks, on a terminal); destructive ones need explicit flags such as --reason.",
+    "Commands never prompt. The one exception is the setup wizard, on a terminal: `hall init` and `hall setup` ask about every setting (or to skip) the first time, `hall setup --interactive` whenever asked, and `--defaults` writes the defaults instead. Destructive commands need explicit flags such as --reason.",
     "Commands are idempotent: repeating one returns the current result.",
     "Inside an item's worktree the item ID is optional.",
     "`hall schema <command>` prints the JSON Schema of a command's output."

@@ -92,25 +92,33 @@ That one command does every step and reports each one; it is safe to repeat:
    `hall statusline`. The rest of the file is kept as it was. A status line of
    your own is kept too: that step is skipped and `--force` replaces it.
    `CLAUDE_CONFIG_DIR` is honored.
-4. **The repo** (`hall init`): `.hallmark.toml` from the gates it detects, a stub
-   `.hallmark/review.md`, a CLAUDE.md section, and the journal. It tells you what
-   to commit (`git add .hallmark.toml .hallmark/ CLAUDE.md && git commit -m
-   "Adopt Hallmark"`).
-5. **The daemon**, started now and registered to start at login, with the
+4. **The repo** (`hall init`): `.hallmark.toml` from the gates it detects and
+   your answers, a stub `.hallmark/review.md`, a CLAUDE.md section, and the
+   journal. It tells you what to commit (`git add .hallmark.toml .hallmark/
+   CLAUDE.md && git commit -m "Adopt Hallmark"`).
+5. **Your user config**, `<user data dir>/hallmark/config.toml`, with the
+   defaults, if you have none yet.
+6. **The daemon**, started now and registered to start at login, with the
    PATH you ran `hall setup` from. If `claude` or `gh` aren't on that PATH,
    set `tools.claude` and `tools.gh` (`hall config set --user tools.gh
    <path>`). If your gates need a toolchain shell such as `nix develop`, wrap
    them (see [Configuration](configuration.md#gates-that-need-a-toolchain-shell)).
-6. **A phone topic**: a private, random ntfy topic, if you have no phone
+7. **A phone topic**: a private, random ntfy topic, if you have no phone
    channel yet, with how to subscribe.
-7. **`hall doctor`**, whose fixes go in `next`.
+8. **`hall doctor`**, whose fixes go in `next`.
 
-**`hall setup --interactive`** (or `-i`) asks first. It covers the base
-branch, the gates and the shell they run in (`nix develop`, devbox, mise,
-direnv), how work is shipped, models and budget caps, where `claude` and `gh`
-are, notifications and the daemon. Then it offers every other setting. It
-writes nothing until you confirm, and then runs the steps above. Every answer
-can also be set later with `hall config`; see
+**The first time, on a terminal, `hall setup` asks first.** When you have no
+user config yet, or the repo has no `.hallmark.toml`, the wizard offers to go
+through every setting, section by section: the base branch, the gates and the
+shell they run in (`nix develop`, devbox, mise, direnv), how work is shipped,
+models and budget caps, merging, the Library, the sandbox, where `claude` and
+`gh` are, notifications and the daemon. Each shows its default, so Enter keeps
+it, `-` goes back to it and `?` explains it. Or skip for now: the defaults are
+written, and nothing is asked again. The wizard writes nothing until you
+confirm, and then runs the steps above. `hall setup --interactive` (or `-i`)
+asks again any time, `--defaults` never asks, and off a terminal (a script, an
+agent) nothing is asked. `hall init` on its own asks the same way about the
+repo's settings. Every answer can also be set later with `hall config`; see
 [Configuration](configuration.md#changing-settings).
 
 `--dry-run` shows the plan without doing anything; `--no-statusline`,

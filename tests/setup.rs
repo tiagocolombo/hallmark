@@ -350,9 +350,14 @@ fn setup_without_a_target_plans_every_step() {
     assert!(has("hall init", "planned"), "{steps:?}");
     assert!(has("hall daemon start --at-login", "planned"), "{steps:?}");
     assert!(has("hall notify test", "planned"), "{steps:?}");
-    // A dry run changes nothing: no plugin written, no daemon state.
+    // Off a terminal the wizard doesn't ask, and the user config is planned.
+    assert!(has("ask about every setting", "skipped"), "{steps:?}");
+    assert!(has("write ", "planned"), "{steps:?}");
+    // A dry run changes nothing: no plugin written, no daemon state, no
+    // user config.
     assert!(!env.home.join("claude-plugin").exists());
     assert!(!env.home.join("daemon").join("state.json").exists());
+    assert!(!env.home.join("config.toml").exists());
 
     let r = env.hall(
         &env.repo,
@@ -379,6 +384,64 @@ fn setup_without_a_target_plans_every_step() {
             .iter()
             .any(|s| s["command"] == "hall setup claude --statusline")
     );
+}
+
+/// `hall setup` writes the user config with the defaults once, and
+/// `--defaults` is how a script says it doesn't want the wizard (ADR 0055).
+#[test]
+fn setup_writes_the_user_config_once() {
+    let env = Env::initialized();
+    let user_file = env.home.join("config.toml");
+    let run = || {
+        let out = env
+            .cmd(&env.repo)
+            // No real home: nothing is linked into ~/.local/bin.
+            .env("HOME", &env.root)
+            .args([
+                "setup",
+                "--defaults",
+                "--no-daemon",
+                "--no-notify",
+                "--no-statusline",
+            ])
+            .output()
+            .unwrap();
+        reply(out)
+    };
+    let first = run();
+    assert_eq!(first.code, 0, "{}", first.stdout);
+    let status = |r: &Reply, cmd: &str| {
+        r.json["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["command"].as_str().unwrap().starts_with(cmd))
+            .map(|s| s["status"].as_str().unwrap().to_string())
+    };
+    assert_eq!(
+        status(&first, "ask about every setting").as_deref(),
+        Some("skipped")
+    );
+    assert_eq!(status(&first, "write ").as_deref(), Some("done"));
+    let text = std::fs::read_to_string(&user_file).unwrap();
+    assert!(text.contains("desktop = true"), "{text}");
+    // The file is the defaults: Hallmark reads it as if it weren't there.
+    let r = env.hall(&env.repo, &["config", "list", "notify"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    for e in r.json["entries"].as_array().unwrap() {
+        let source = e["source"].as_str().unwrap();
+        assert!(
+            source == "default" || (e["key"] == "notify.desktop" && source == "user"),
+            "{e}"
+        );
+    }
+
+    let second = run();
+    assert_eq!(status(&second, "write ").as_deref(), Some("skipped"));
+    assert_eq!(std::fs::read_to_string(&user_file).unwrap(), text);
+
+    let r = env.hall(&env.repo, &["setup", "--interactive", "--defaults"]);
+    assert_eq!(r.code, 2, "{}", r.stdout);
 }
 
 #[cfg(unix)]
