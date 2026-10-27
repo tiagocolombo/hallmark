@@ -239,19 +239,23 @@ pub fn prepare(
     // The last round before escalation (ADR 0060): a rejection now goes to
     // a person, who needs a diagnosis more than a longer list.
     let max_rejects = base.config.max_rejects.max(1);
-    if item.rejects + 1 >= max_rejects && item.rejects > 0 {
+    if item.rejects + 1 >= max_rejects {
+        let rejected = match item.rejects {
+            0 => "not rejected yet".to_string(),
+            1 => "rejected 1 time".to_string(),
+            n => format!("rejected {n} times"),
+        };
         let _ = writeln!(
             p,
             "\n## The last round before escalation\n\n\
-             This change has been rejected {} time{} and `max_rejects` is {max_rejects}: if \
+             This change has been {rejected} and `max_rejects` is {max_rejects}: if \
              you request changes now, the item escalates to a person instead of going back \
              to the fixer. Review as usual, then make your `summary` the diagnosis that person \
              needs: say whether the approach itself is wrong and what you would do instead \
              (a different design, a smaller scope, a split), or whether the remaining \
-             findings are ordinary and one more round would do. A rejection with the same \
-             findings restated is not useful here.",
-            item.rejects,
-            if item.rejects == 1 { "" } else { "s" }
+             findings are ordinary and one more round would do. Restating the findings is \
+             not a diagnosis. Rule on every open finding as it stands: this section changes \
+             what the summary says, not the bar."
         );
     }
 

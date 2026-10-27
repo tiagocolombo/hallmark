@@ -41,7 +41,8 @@ converge, and the fix is to change what the reviewer says, not how often.
   `hall drop` without reading the rounds.
 - The round itself costs the same; the reviewer writes a different summary,
   not a longer review.
-- With `max_rejects = 1` every review is the last round, and the section
-  is shown on round 1 only when the item was already rejected once, which
-  can't happen; so a repository that escalates on the first rejection
-  never sees it.
+- With `max_rejects = 1` every review is the last round, so the section is
+  shown from round 1 ("not rejected yet"), and a repository that escalates
+  on the first rejection gets the diagnosis too.
+- The section changes what the summary says, not the bar: the reviewer
+  still rules on every open finding as it stands.
