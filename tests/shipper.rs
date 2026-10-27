@@ -188,7 +188,7 @@ fn the_description_takes_what_why_and_how_from_the_author() {
              ## Testing\n\nRan the receiver against a flaky endpoint for an hour; every event \
              arrived once.\n\nThis repository has no gates configured.\n\n\
              ## How to revert\n\nTurn `webhooks.retry` off first; the retry table is additive \
-             and can stay.\n\nThen `git revert` the commit this PR lands as on `main`.\n"
+             and can stay.\n\nAlso `git revert` the commit this PR lands as on `main`.\n"
         ),
         "{body}"
     );

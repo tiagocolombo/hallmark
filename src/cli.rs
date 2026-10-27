@@ -346,7 +346,8 @@ pub struct ProposeReadyArgs {
     pub tested: Option<String>,
     /// How to undo it once merged, when more than a git revert is needed
     /// (a flag to turn off, a migration to roll back), for the PR
-    /// description's How to revert.
+    /// description's How to revert. A `git revert` line follows it: say
+    /// whether each step comes before or after the revert.
     #[arg(long)]
     pub revert: Option<String>,
     /// Something needs the human's confirmation: wait for their call

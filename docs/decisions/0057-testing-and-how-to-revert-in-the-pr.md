@@ -29,9 +29,12 @@ is reversible, but doesn't write the steps).
   so. The gates are the repository's checks, not the review, so naming them
   doesn't break 0039's rule that the description holds nothing of the
   review.
-- **How to revert** is `propose-ready --revert` when given, else "`git
-  revert` the commit this PR lands as on `<base>`; the author listed no
-  other steps."
+- **How to revert** is the author's `propose-ready --revert` steps when
+  given, then always "Also `git revert` the commit this PR lands as on
+  `<base>`" for the base the PR targets. Without `--revert` the line reads
+  "`git revert` the commit this PR lands as on `<base>`; the author listed
+  no other steps." The line says "Also", not "Then", so it sets no order;
+  authors say whether each of their steps comes before or after the revert.
 - **The author is asked, not required.** The `hallmark` skill and the
   session hook name both flags and say when to use them: `--tested` for
   what was run or tried beyond the gates, `--revert` for what a revert

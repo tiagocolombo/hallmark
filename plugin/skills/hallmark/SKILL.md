@@ -182,7 +182,9 @@ diff should know. Leave out the review and the tests' details. Without
 scenario, a soak); the gates that passed are always listed after it, so
 leave it out when the gates are the whole story. `--revert` is what undoing
 the change takes beyond a `git revert`: a flag to turn off, a migration to
-roll back, a cache to clear. Leave it out when a revert is enough. Never
+roll back, a cache to clear. Say whether each step comes before or after the
+`git revert`, which the description always adds. Leave it out when a revert
+is enough. Never
 claim a test you didn't run.
 
 When nothing is left to confirm (no open question, a clean worktree, no open

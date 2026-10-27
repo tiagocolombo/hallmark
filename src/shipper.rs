@@ -750,8 +750,8 @@ pub const REVIEW_MARK: &str = "<!-- hallmark:review -->";
 /// - How: `propose-ready --how`, else the commits.
 /// - Testing: `propose-ready --tested`, then the gates that passed on the
 ///   hallmarked commit.
-/// - How to revert: `propose-ready --revert`, else a `git revert` of the
-///   commit the PR lands as.
+/// - How to revert: `propose-ready --revert` when given, then always a
+///   `git revert` line for the commit the PR lands as.
 ///
 /// `review_posted` is whether a review comment will be posted; when it isn't,
 /// the footer says the review stays local.
@@ -846,7 +846,7 @@ pub fn pr_body(
         Some(r) => {
             let _ = writeln!(
                 s,
-                "{}\n\nThen `git revert` the commit this PR lands as on `{base}`.",
+                "{}\n\nAlso `git revert` the commit this PR lands as on `{base}`.",
                 r.trim()
             );
         }
