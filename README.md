@@ -238,6 +238,8 @@ hall usage --by model --since 7d
 hall budget --set per_item=800k
 hall history --rejected --since 7d
 hall stats --since 30d       # reviews to approval, finding outcomes, the reviewer's noise
+hall eval --dry-run           # the reverted changes the reviewer let through, scored then
+hall eval --limit 5           # replay today's reviewer on them: did it catch them now?
 
 hall extensions              # skills by other authors, with credits, per role
 hall extensions enable mattpocock   # Matt Pocock's skills for the planner, developer, reviewer and fixer

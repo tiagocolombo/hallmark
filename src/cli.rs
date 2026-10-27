@@ -107,6 +107,9 @@ pub enum Cmd {
     /// How the review loop is doing: reviews to approval, what became of
     /// each finding, the reviewer's noise, disputes.
     Stats(StatsArgs),
+    /// Replay today's reviewer on the items whose merged PR was reverted,
+    /// scored against what the revert touched, then and now (spends usage).
+    Eval(EvalArgs),
     /// The merge queue: every open shipped PR in the order the merger
     /// merges them, and why each one waits.
     Queue,
@@ -676,6 +679,21 @@ pub struct StatsArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct EvalArgs {
+    /// The items to replay (default: every reverted item, newest first).
+    pub ids: Vec<String>,
+    /// Only items reverted within this long, such as 90d.
+    #[arg(long)]
+    pub since: Option<String>,
+    /// How many cases at most (default 10).
+    #[arg(long)]
+    pub limit: Option<usize>,
+    /// List the cases and the scores of the time without running a model.
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+#[derive(Debug, Args)]
 pub struct ExportArgs {
     pub id: Option<String>,
     /// Write to this file instead of the item's journal directory.
@@ -1060,6 +1078,7 @@ fn dispatch(cmd: Option<Cmd>, cwd: &std::path::Path, mode: Mode) -> Result<Respo
         Some(Cmd::Merge(a)) => merge::merge(cwd, a),
         Some(Cmd::History(a)) => record::history(cwd, a),
         Some(Cmd::Stats(a)) => stats::stats(cwd, a),
+        Some(Cmd::Eval(a)) => eval::eval(cwd, a),
         Some(Cmd::Queue) => queue::queue(cwd),
         Some(Cmd::Export(a)) => record::export(cwd, a),
         Some(Cmd::Budget(a)) => budget::budget(cwd, a),

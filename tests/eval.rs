@@ -1,0 +1,182 @@
+//! `hall eval` (ADR 0065): today's reviewer replayed on the changes the
+//! loop got wrong, scored against what the revert touched.
+
+mod c_support;
+mod common;
+
+use c_support::*;
+use common::{Env, commit_file};
+use hallmark::event::Body;
+use serde_json::json;
+
+const URL: &str = "https://github.com/acme/app/pull/7";
+
+/// A hallmarked item whose PR merged and was then reverted on main by a
+/// commit that touches `retry.rs`. Returns the item, its reviewed commit
+/// and the revert commit.
+fn reverted_item(env: &Env) -> (String, String, String) {
+    let (id, _, sha) = hallmarked_item(env, "Retry webhooks");
+    append(
+        env,
+        &id,
+        "shipper",
+        Body::Shipped {
+            sha: sha.clone(),
+            pr_url: Some(URL.into()),
+        },
+    );
+    append(
+        env,
+        &id,
+        "delivery",
+        Body::Delivered {
+            pr_url: URL.into(),
+            outcome: "merged".into(),
+        },
+    );
+    let landed = commit_file(&env.repo, "retry.rs", "fn retry() {}\n");
+    let revert = commit_file(&env.repo, "retry.rs", "");
+    append(
+        env,
+        &id,
+        "reverts",
+        Body::Reverted {
+            pr_url: URL.into(),
+            base: "main".into(),
+            sha: landed,
+            revert_sha: revert.clone(),
+            subject: "Revert \"Retry webhooks (#7)\"".into(),
+        },
+    );
+    assert_eq!(env.hall(&env.repo, &["reindex"]).code, 0);
+    (id, sha, revert)
+}
+
+fn eval_step(findings: serde_json::Value) -> serde_json::Value {
+    json!({
+        "role": "eval",
+        "structured": {
+            "summary": "Replayed.",
+            "findings": findings,
+            "prior": [],
+            "learnings": []
+        },
+        "model": "claude-opus-5-5"
+    })
+}
+
+#[test]
+fn a_dry_run_lists_the_reverted_items_and_scores_the_verdict_of_the_time() {
+    let env = Env::initialized();
+    let (id, sha, revert) = reverted_item(&env);
+    // An item that was never reverted is not a case.
+    env.new_item("Other");
+
+    let r = env.hall(&env.repo, &["eval", "--dry-run"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(r.json["dry_run"], true);
+    let cases = r.json["cases"].as_array().unwrap();
+    assert_eq!(cases.len(), 1, "{}", r.stdout);
+    let c = &cases[0];
+    assert_eq!(c["item"], id.as_str());
+    assert_eq!(c["sha"], sha.as_str());
+    assert_eq!(c["reverted_by"], revert.as_str());
+    assert_eq!(c["revert_files"], json!(["retry.rs"]));
+    // The round-1 review approved it with a minor riding along: missed.
+    assert_eq!(c["then"]["rejected"], false);
+    assert_eq!(c["then"]["caught"], false);
+    assert_eq!(c["then"]["findings"], 1);
+    assert!(c.get("now").is_none());
+    assert_eq!(r.json["totals"]["cases"], 1);
+    assert_eq!(r.json["totals"]["ran"], 0);
+    assert!(env.fake_calls().is_empty());
+}
+
+#[test]
+fn the_replay_runs_todays_reviewer_as_a_round_one_review_and_scores_it() {
+    let env = Env::initialized();
+    let (id, sha, _) = reverted_item(&env);
+    let script = env.script(json!([eval_step(json!([{
+        "lens": "correctness", "severity": "blocker", "file": "retry.rs", "line": 1,
+        "title": "Two workers can retry the same delivery",
+        "scenario": "both read attempt 2 before either writes",
+        "fix": "claim the delivery with a row lock first"
+    }, {
+        "lens": "repo_rules", "severity": "nit", "file": "README.md", "line": 1,
+        "title": "Name it", "scenario": "s", "fix": "f"
+    }]))]));
+    let r = env.hall_fake(&env.repo, &script, &["eval"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let c = &r.json["cases"][0];
+    assert_eq!(c["now"]["rejected"], true);
+    assert_eq!(c["now"]["caught"], true);
+    assert_eq!(c["now"]["findings"], 2);
+    assert_eq!(c["now"]["blocking"], 1);
+    assert_eq!(c["now"]["model"], "claude-opus-5-5");
+    assert_eq!(
+        c["now"]["titles"],
+        json!(["blocker · retry.rs · Two workers can retry the same delivery"])
+    );
+    let t = &r.json["totals"];
+    assert_eq!((t["cases"].as_u64(), t["ran"].as_u64()), (Some(1), Some(1)));
+    assert_eq!(
+        (t["then_caught"].as_u64(), t["now_caught"].as_u64()),
+        (Some(0), Some(1))
+    );
+
+    // The run: the reviewer's agent and schema, at the reviewed commit, as
+    // a round-1 review with nothing to rule on, under the eval role.
+    let calls = env.fake_calls();
+    assert_eq!(calls.len(), 1);
+    let call = &calls[0];
+    assert_eq!(call["role"], "eval");
+    assert_eq!(call["room"], "assay");
+    let args: Vec<&str> = call["args"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a.as_str().unwrap())
+        .collect();
+    let after = |flag: &str| args.iter().position(|a| *a == flag).map(|i| args[i + 1]);
+    assert_eq!(after("--agent"), Some("hallmark:principal-engineer"));
+    assert!(after("--json-schema").unwrap().contains("Hallmark verdict"));
+    let prompt = call["prompt"].as_str().unwrap();
+    assert!(
+        prompt.contains(&format!("# Review {id} round 1")),
+        "{prompt}"
+    );
+    assert!(prompt.contains(&format!("commit {sha}")), "{prompt}");
+    assert!(!prompt.contains("## Open findings"), "{prompt}");
+    assert!(!prompt.contains("The diff since round"), "{prompt}");
+    // The checkout is gone, and the item's journal has no new verdict.
+    let cwd = std::path::PathBuf::from(call["cwd"].as_str().unwrap());
+    assert!(!cwd.exists());
+    assert_eq!(events(&env, &id, "verdict").len(), 1);
+    assert!(events(&env, &id, "run_failed").is_empty());
+}
+
+#[test]
+fn a_failed_replay_is_said_and_an_unreverted_item_is_refused() {
+    let env = Env::initialized();
+    let (id, _, _) = reverted_item(&env);
+    // No step for the eval role: the run fails, the case says so, nothing
+    // is held.
+    let script = env.script(json!([]));
+    let r = env.hall_fake(&env.repo, &script, &["eval", &id]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let c = &r.json["cases"][0];
+    assert!(c.get("now").is_none());
+    assert!(
+        c["skipped"].as_str().unwrap().starts_with("the run failed"),
+        "{c}"
+    );
+    assert_eq!(r.json["totals"]["ran"], 0);
+    assert!(events(&env, &id, "held").is_empty());
+
+    let (other, _) = env.new_item("Never reverted");
+    let r = env.hall_fake(&env.repo, &script, &["eval", &other]);
+    assert_eq!(r.code, 4, "{}", r.stdout);
+    assert_eq!(r.json["error"]["code"], "WRONG_STATE");
+    let r = env.hall(&env.repo, &["eval", "--since", "soon"]);
+    assert_eq!(r.code, 2);
+}

@@ -9,6 +9,7 @@ use super::budget::BudgetOut;
 use super::config::ConfigOut;
 use super::daemon::DaemonOut;
 use super::doctor::DoctorOut;
+use super::eval::EvalOut;
 use super::fix::FixedOut;
 use super::flow::FlowOut;
 use super::hud::HudOut;
@@ -354,6 +355,7 @@ pub fn schema_value(name: &str) -> Option<serde_json::Value> {
         "merge" => schema_for!(Out<MergeOut>),
         "history" => schema_for!(Out<HistoryOut>),
         "stats" => schema_for!(Out<StatsOut>),
+        "eval" => schema_for!(Out<EvalOut>),
         "queue" => schema_for!(Out<super::queue::QueueOut>),
         "export" => schema_for!(Out<ExportOut>),
         "budget" => schema_for!(Out<BudgetOut>),

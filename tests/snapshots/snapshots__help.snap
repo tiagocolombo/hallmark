@@ -1223,6 +1223,43 @@ expression: v
       "usage": "hall stats [OPTIONS]"
     },
     {
+      "about": "Replay today's reviewer on the items whose merged PR was reverted, scored against what the revert touched, then and now (spends usage)",
+      "args": [
+        {
+          "help": "The items to replay (default: every reverted item, newest first)",
+          "name": "ids",
+          "required": false,
+          "syntax": "<ids>",
+          "takes_value": true
+        },
+        {
+          "help": "Only items reverted within this long, such as 90d",
+          "name": "since",
+          "required": false,
+          "syntax": "--since <since>",
+          "takes_value": true
+        },
+        {
+          "help": "How many cases at most (default 10)",
+          "name": "limit",
+          "required": false,
+          "syntax": "--limit <limit>",
+          "takes_value": true
+        },
+        {
+          "default": "false",
+          "help": "List the cases and the scores of the time without running a model",
+          "name": "dry_run",
+          "required": false,
+          "syntax": "--dry-run",
+          "takes_value": false
+        }
+      ],
+      "name": "eval",
+      "schema": "hall schema eval",
+      "usage": "hall eval [OPTIONS] [IDS]..."
+    },
+    {
       "about": "The merge queue: every open shipped PR in the order the merger merges them, and why each one waits",
       "args": [],
       "name": "queue",
