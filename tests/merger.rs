@@ -619,8 +619,17 @@ fn the_reviewer_can_ask_for_a_person_on_any_change() {
         learnings: vec![],
         needs_person: Some("it changes what the auto-updater downloads".into()),
     };
-    hallmark::assayer::record_verdict(&repo, id.parse().unwrap(), &sha, &mv, "assayer", None, None)
-        .unwrap();
+    hallmark::assayer::record_verdict(
+        &repo,
+        id.parse().unwrap(),
+        &sha,
+        &mv,
+        "assayer",
+        None,
+        None,
+        None,
+    )
+    .unwrap();
     let branch = git(&wt, &["rev-parse", "--abbrev-ref", "HEAD"]);
     git(&wt, &["push", "-q", "origin", &branch]);
     append(
