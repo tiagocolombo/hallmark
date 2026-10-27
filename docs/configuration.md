@@ -65,6 +65,7 @@ max_check_failures = 3      # failed checks in a row before the item is held for
 auto_ready  = true          # propose-ready goes straight to review when nothing is left to confirm
 stuck_after = "30m"
 lenses      = "all"
+security_review = []        # paths whose changes get a second, security-only review pass (ADR 0064)
 rules       = ["CLAUDE.md", "AGENTS.md"]
 
 [parallel]                     # how many of each run at once, per repo
@@ -228,6 +229,26 @@ Whatever these say, `git notes` writes (`add`, `append`, `edit`, `copy`,
 `remove`, `merge`, `prune`, and `git update-ref` on a notes ref) are denied
 unless `HALL_ACTOR` is `assayer` or `shipper`: the hallmark is a note, and
 only the daemon writes it.
+
+## The security pass
+
+`security_review` lists globs (`auth/`, `billing/**`, `.github/workflows/`,
+`installer/`). When a change touches one, the principal engineer's review is
+followed by a second run of the same reviewer over the same change with
+only the `security_tenancy` lens, at `max` effort, asking who can reach
+each changed path and what they can do
+([ADR 0064](decisions/0064-the-security-pass.md)). Its new findings join
+the round's verdict (the pass is told what the reviewer already reported,
+and a finding at the same file and line as a reviewer finding at least as
+severe is not added twice, whatever its title), its summary is appended to the review's, and a `security_pass`
+event records the paths, the model and what it added. Its rulings on
+earlier findings and its learnings are dropped: those are the main
+review's. It shares the review budget. A budget stop or the plan limit
+during the pass records no verdict: the round is reviewed again after the
+grant or the reset. When the pass fails for another reason, the verdict
+stands as the reviewer gave it and the event says why. Read from the base
+branch, like `lenses`. A glob that doesn't parse is refused when the
+config loads.
 
 ## Extensions
 

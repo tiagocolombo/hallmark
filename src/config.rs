@@ -80,6 +80,10 @@ pub struct Config {
     pub stuck_after: String,
     /// "all", or a list of lens names.
     pub lenses: Lenses,
+    /// Paths whose changes get a second, security-only review pass at
+    /// full effort, whose findings join the verdict (ADR 0064). Globs;
+    /// empty for none.
+    pub security_review: Vec<String>,
     /// Files the repo-rules lens reads.
     pub rules: Vec<String>,
     pub capture: Capture,
@@ -137,6 +141,7 @@ impl Default for Config {
             auto_ready: true,
             stuck_after: "30m".into(),
             lenses: Lenses::All("all".into()),
+            security_review: Vec::new(),
             rules: vec!["CLAUDE.md".into(), "AGENTS.md".into()],
             capture: Capture::default(),
             budget: Budget::default(),
@@ -1096,6 +1101,18 @@ impl Config {
             )
             .next(["hall schema config"]));
         }
+        // A glob that doesn't build is dropped when matching, which would
+        // switch the security pass off without a word.
+        for g in &c.security_review {
+            let t = g.trim().trim_start_matches("./").trim_start_matches('/');
+            if let Err(e) = globset::GlobBuilder::new(t).literal_separator(true).build() {
+                return Err(HallError::new(
+                    ErrorCode::Usage,
+                    format!(".hallmark.toml: security_review glob `{g}` is invalid: {e}"),
+                )
+                .next(["hall schema config"]));
+            }
+        }
         // `hall init` wrote the old default, which posted the PR body as a
         // comment; the review comment does that job now (ADR 0039).
         if c.update == OLD_UPDATE {
@@ -1367,6 +1384,14 @@ max_usd = 0.5
         let back = toml::to_string(&c.budget).unwrap();
         assert!(back.contains(r#"max_usd = "none""#), "{back}");
         assert!(Config::parse("[budget.review]\nmax_usd = \"lots\"\n").is_err());
+    }
+
+    #[test]
+    fn a_security_review_glob_that_does_not_parse_is_refused() {
+        let e = Config::parse("security_review = [\"src/{admin/**\"]\n").unwrap_err();
+        assert_eq!(e.code, ErrorCode::Usage);
+        assert!(e.message.contains("security_review"), "{}", e.message);
+        assert!(Config::parse("security_review = [\"src/admin/**\"]\n").is_ok());
     }
 
     #[test]

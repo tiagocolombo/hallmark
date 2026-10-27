@@ -491,6 +491,10 @@ fn resolve_key(key: &str) -> Option<(Option<&'static str>, &'static str, Kind)> 
         _ => {}
     }
     let (table, field) = key.split_once('.')?;
+    // `security` is a run role (it shares the review budget), not a table.
+    if table == "security" {
+        return None;
+    }
     let table = table_key(budget::role_of(table)?);
     let (field, kind) = match field {
         "daily" => ("daily", Kind::Tokens),
@@ -773,6 +777,7 @@ mod tests {
             "review.timeout=5",
             "daily",
             "ship.daily=1M",
+            "security.max_usd=2",
         ] {
             let e = apply_sets("", &[s.to_string()]).unwrap_err();
             assert_eq!(e.code, ErrorCode::Usage, "{s}");

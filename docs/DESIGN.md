@@ -496,6 +496,14 @@ The role is defined once, in the plugin:
 - `skills/principal-review/`: how it reviews.
 - `schemas/verdict.json`: the exact shape of the verdict.
 
+A change that touches a `security_review` path (ADR 0064) gets a second
+run of the same agent over the same change, with only the
+`security_tenancy` lens at `max` effort; its new findings join the
+round's verdict before it is recorded, its summary is appended, and a
+`security_pass` event records what it did. When the pass fails, the
+verdict stands. A budget stop or the plan limit records no verdict, and
+the round is reviewed again after the grant or the reset.
+
 It runs headless with a fresh context:
 
 ```sh

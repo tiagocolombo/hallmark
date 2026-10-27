@@ -56,6 +56,18 @@ pub struct Review {
     pub prompt: String,
 }
 
+/// A second pass over the same change with its own lenses and heading
+/// (ADR 0064: the security pass). Its effort is always `max`.
+#[derive(Debug, Clone)]
+pub struct Pass {
+    /// What the prompt's heading calls it ("Security pass").
+    pub title: String,
+    /// The only lenses it applies.
+    pub lenses: Vec<Lens>,
+    /// What this pass is for, after the heading.
+    pub note: String,
+}
+
 /// Builds the review of `item` at `sha`. `default_effort` is
 /// `[budget.review] effort`.
 pub fn prepare(
@@ -65,8 +77,25 @@ pub fn prepare(
     sha: &str,
     default_effort: Option<&str>,
 ) -> Result<Review> {
+    prepare_with(repo, item, events, sha, default_effort, None, None)
+}
+
+/// [`prepare`], as a second pass when `pass` is given, and with the base
+/// pinned to `pin` (the commit an earlier run of the round read) when given.
+pub fn prepare_with(
+    repo: &Repo,
+    item: &Item,
+    events: &[Event],
+    sha: &str,
+    default_effort: Option<&str>,
+    pass: Option<&Pass>,
+    pin: Option<&str>,
+) -> Result<Review> {
     let dir = &repo.main_root;
-    let base = Base::resolve(repo, &item.base)?;
+    let base = match pin {
+        Some(sha) => Base::at(repo, &item.base, sha),
+        None => Base::resolve(repo, &item.base)?,
+    };
     let merge_base = fork_point(repo, item, &base.sha, sha);
     // Incremental from round 2, unless the branch was rewritten since.
     let reviewed = item.reviewed_sha.clone().filter(|s| s != sha);
@@ -160,9 +189,15 @@ pub fn prepare(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
-    let effort = effort(default_effort, lines, !sensitive.is_empty());
     let max_nits = base.config.max_nits;
-    let lenses = base.lenses();
+    let effort = match pass {
+        Some(_) => Some("max".into()),
+        None => effort(default_effort, lines, !sensitive.is_empty()),
+    };
+    let lenses = match pass {
+        Some(p) => p.lenses.clone(),
+        None => base.lenses(),
+    };
     let rules = base::rules(repo, &base);
     let briefing =
         crate::library::briefing(repo, &all_changed, &diff, effort.as_deref()).unwrap_or_default();
@@ -205,11 +240,15 @@ pub fn prepare(
     let b = &base.name;
     let _ = writeln!(
         p,
-        "# Review {} round {}: commit {sha} against {b} ({})\n",
+        "# {} {} round {}: commit {sha} against {b} ({})\n",
+        pass.map(|x| x.title.as_str()).unwrap_or("Review"),
         item.id,
         item.round,
         short(&base.sha)
     );
+    if let Some(x) = pass {
+        let _ = writeln!(p, "{}\n", x.note.trim());
+    }
     let _ = writeln!(p, "## The item\n\nTitle: {}", item.title);
     if let Some(Some(r)) = &created
         && !r.trim().is_empty()
@@ -264,7 +303,12 @@ pub fn prepare(
         let names: Vec<&str> = lenses.iter().map(|l| l.as_str()).collect();
         let _ = writeln!(
             p,
-            "\n## Lenses\n\nThis repository applies only these lenses: {}. Report findings under them only.",
+            "\n## Lenses\n\n{} only these lenses: {}. Report findings under them only.",
+            if pass.is_some() {
+                "This pass applies"
+            } else {
+                "This repository applies"
+            },
             names.join(", ")
         );
     }

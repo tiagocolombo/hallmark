@@ -373,6 +373,314 @@ fn a_review_with_blockers_requests_changes() {
     assert_eq!(f.json["open"]["blocker"], 1);
 }
 
+fn security(structured: Value) -> Value {
+    json!({"role": "security", "structured": structured, "model": "claude-opus-4-1"})
+}
+
+#[test]
+fn a_change_on_a_security_review_path_gets_a_second_security_only_pass() {
+    let env = Env::initialized();
+    configure(&env, &[("security_review", "[\"auth.rs\"]")]);
+    let (id, _, sha) = ready_item(&env, "Login", "auth.rs", "fn login() {}\n");
+    let sec = json!({
+        "lens": "security_tenancy", "severity": "blocker", "file": "auth.rs", "line": 42,
+        "title": "The token check can be skipped",
+        "scenario": "an empty token passes the check and reaches the session",
+        "fix": "refuse an empty token before the lookup"
+    });
+    let dup = finding("major", "auth.rs", "Retries forever");
+    let mut theirs = verdict(
+        vec![sec, dup.clone()],
+        json!([{"id": "F9", "status": "fixed"}]),
+    );
+    theirs["summary"] = json!("An empty token passes.");
+    let script = env.script(json!([
+        reviewer(verdict(vec![dup], json!([]))),
+        security(theirs),
+    ]));
+    tick(&env, &script);
+    tick(&env, &script);
+    assert_eq!(state(&env, &id), "fixing");
+
+    // Two runs on the same checkout: the review, then the pass, narrowed.
+    let calls = env.fake_calls();
+    assert_eq!(calls.len(), 2, "{calls:?}");
+    assert_eq!(calls[0]["role"], "reviewer");
+    let s = &calls[1];
+    assert_eq!(s["role"], "security");
+    assert_eq!(s["room"], "assay");
+    assert_eq!(s["cwd"], calls[0]["cwd"]);
+    assert_eq!(arg_after(s, "--agent"), Some("hallmark:principal-engineer"));
+    assert_eq!(arg_after(s, "--effort"), Some("max"));
+    // The same schema and read-only tools as the review: without the
+    // schema a real run returns no structured output.
+    assert!(arg_after(s, "--json-schema").is_some(), "{s:?}");
+    assert_eq!(
+        arg_after(s, "--json-schema"),
+        arg_after(&calls[0], "--json-schema")
+    );
+    assert!(arg_after(s, "--allowedTools").is_some(), "{s:?}");
+    assert_eq!(
+        arg_after(s, "--allowedTools"),
+        arg_after(&calls[0], "--allowedTools")
+    );
+    let prompt = s["prompt"].as_str().unwrap();
+    assert!(
+        prompt.contains(&format!("# Security pass {id} round 1")),
+        "{prompt}"
+    );
+    assert!(
+        prompt.contains("touches `auth.rs`: paths this repository marks `security_review`"),
+        "{prompt}"
+    );
+    assert!(
+        prompt.contains("This pass applies only these lenses: security_tenancy."),
+        "{prompt}"
+    );
+    assert!(
+        !calls[0]["prompt"]
+            .as_str()
+            .unwrap()
+            .contains("Security pass")
+    );
+    // The pass is told what the reviewer already reported.
+    assert!(
+        prompt.contains("already reported these this round"),
+        "{prompt}"
+    );
+    assert!(prompt.contains("- `auth.rs:1` Retries forever"), "{prompt}");
+
+    // One verdict for the round: the reviewer's finding, then the pass's;
+    // the duplicate isn't added twice; the summary carries both.
+    let v = events_of(&env, &id, "verdict");
+    assert_eq!(v.len(), 1);
+    let titles: Vec<&str> = v[0]["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["title"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        titles,
+        ["Retries forever", "The token check can be skipped"]
+    );
+    assert_eq!(v[0]["findings"][1]["id"], "F2");
+    assert_eq!(v[0]["counts"]["blocker"], 1);
+    assert_eq!(
+        v[0]["summary"],
+        "Adds retries to webhook delivery.\n\nSecurity pass: An empty token passes."
+    );
+    assert!(
+        v[0]["prior"].as_array().is_none_or(|p| p.is_empty()),
+        "the pass rules on nothing"
+    );
+    let p = events_of(&env, &id, "security_pass");
+    assert_eq!(p.len(), 1);
+    assert_eq!(p[0]["paths"], json!(["auth.rs"]));
+    assert_eq!(p[0]["added"], json!(["The token check can be skipped"]));
+    assert_eq!(p[0]["sha"], sha.as_str());
+    assert!(p[0].get("skipped").is_none());
+
+    // Off the path: one run, no event.
+    let env = Env::initialized();
+    configure(&env, &[("security_review", "[\"auth.rs\"]")]);
+    let (id, _, _) = ready_item(&env, "Docs", "readme.rs", "fn a() {}\n");
+    let script = env.script(json!([reviewer(verdict(vec![], json!([])))]));
+    tick(&env, &script);
+    tick(&env, &script);
+    assert_eq!(env.fake_calls().len(), 1);
+    assert_eq!(state(&env, &id), "hallmarked");
+    assert!(events_of(&env, &id, "security_pass").is_empty());
+
+    // On the path but the pass fails (no step for it): the verdict stands
+    // and the event says why.
+    let env = Env::initialized();
+    configure(&env, &[("security_review", "[\"auth.rs\"]")]);
+    let (id, _, _) = ready_item(&env, "Login", "auth.rs", "fn login() {}\n");
+    let script = env.script(json!([reviewer(verdict(vec![], json!([])))]));
+    tick(&env, &script);
+    let r = tick(&env, &script);
+    assert!(
+        what(&r).contains("no security pass: the run failed"),
+        "{}",
+        r.stdout
+    );
+    assert_eq!(state(&env, &id), "hallmarked");
+    let p = events_of(&env, &id, "security_pass");
+    assert_eq!(p.len(), 1);
+    assert!(
+        p[0]["skipped"]
+            .as_str()
+            .unwrap()
+            .starts_with("the run failed"),
+        "{p:?}"
+    );
+}
+
+#[test]
+fn the_security_review_paths_come_from_the_base_branch() {
+    // A branch that empties `security_review` in its own config still gets
+    // the pass on an auth change.
+    let env = Env::initialized();
+    configure(&env, &[("security_review", "[\"auth.rs\"]")]);
+    let (id, wt) = env.new_item("Login");
+    let cfg = std::fs::read_to_string(wt.join(".hallmark.toml")).unwrap();
+    let cfg: Vec<String> = cfg
+        .lines()
+        .map(|l| {
+            if l.trim_start().starts_with("security_review") {
+                "security_review = []".to_string()
+            } else {
+                l.to_string()
+            }
+        })
+        .collect();
+    commit_file(&wt, ".hallmark.toml", &(cfg.join("\n") + "\n"));
+    commit_file(&wt, "auth.rs", "fn login() {}\n");
+    let r = env.hall(&wt, &["ready", "--note", "please look"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let script = env.script(json!([
+        reviewer(verdict(vec![], json!([]))),
+        security(verdict(vec![], json!([]))),
+    ]));
+    tick(&env, &script);
+    tick(&env, &script);
+    assert_eq!(env.fake_calls().len(), 2, "{:?}", env.fake_calls());
+    let p = events_of(&env, &id, "security_pass");
+    assert_eq!(p.len(), 1, "{p:?}");
+    assert_eq!(p[0]["paths"], json!(["auth.rs"]));
+}
+
+#[test]
+fn a_budget_stop_on_the_security_pass_holds_without_a_verdict_and_retry_runs_it() {
+    let env = Env::initialized();
+    configure(&env, &[("security_review", "[\"auth.rs\"]")]);
+    // The review's own run (5187 weighted tokens) crosses a 5k cap, so the
+    // pass is stopped by the item's budget.
+    let cfg = env.repo.join(".hallmark.toml");
+    let text = std::fs::read_to_string(&cfg)
+        .unwrap()
+        .replace("# per_item = \"800k\"", "per_item = \"5k\"");
+    std::fs::write(&cfg, text).unwrap();
+    git(&env.repo, &["commit", "-q", "-am", "cap the item"]);
+    let (id, _, _) = ready_item(&env, "Login", "auth.rs", "fn login() {}\n");
+    let script = env.script(json!([
+        reviewer(verdict(vec![], json!([]))),
+        reviewer(verdict(vec![], json!([]))),
+        security(verdict(vec![], json!([]))),
+    ]));
+    tick(&env, &script);
+    tick(&env, &script);
+    assert_eq!(env.fake_calls().len(), 1, "the pass never started");
+    assert!(events_of(&env, &id, "verdict").is_empty());
+    assert!(events_of(&env, &id, "security_pass").is_empty());
+    let held = events_of(&env, &id, "held");
+    assert_eq!(held.len(), 1, "{held:?}");
+    assert_eq!(held[0]["kind"], "budget");
+    assert_eq!(state(&env, &id), "review");
+
+    // After the grant the round is reviewed again, and the pass runs.
+    let r = env.hall(
+        &env.repo,
+        &["retry", &id, "--reason", "worth it", "--tokens", "50k"],
+    );
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    tick(&env, &script);
+    let roles: Vec<String> = env
+        .fake_calls()
+        .iter()
+        .map(|c| c["role"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(roles, ["reviewer", "reviewer", "security"]);
+    // The stopped round's review didn't count, so the person's words still
+    // reach the one that does.
+    let calls = env.fake_calls();
+    for i in [0, 1] {
+        assert!(
+            calls[i]["prompt"]
+                .as_str()
+                .unwrap()
+                .contains("please look at the retry path"),
+            "review {i}"
+        );
+    }
+    assert_eq!(events_of(&env, &id, "verdict").len(), 1);
+    assert_eq!(events_of(&env, &id, "security_pass").len(), 1);
+}
+
+/// A shell-quoted path for a fake step's command.
+#[cfg(unix)]
+fn sh_quote(p: &Path) -> String {
+    format!("'{}'", p.display().to_string().replace('\'', "'\\''"))
+}
+
+#[cfg(unix)]
+#[test]
+fn the_lease_is_renewed_before_the_security_pass() {
+    let env = Env::initialized();
+    configure(&env, &[("security_review", "[\"auth.rs\"]")]);
+    let (id, _, _) = ready_item(&env, "Login", "auth.rs", "fn login() {}\n");
+    let lease = env
+        .repo
+        .join(".git/hallmark/leases")
+        .join(format!("{id}.json"));
+    let copy = env.root.join("lease-during-pass.json");
+    // The review runs so long that the lease lapses; the pass starts only
+    // if it was renewed first.
+    let mut review = reviewer(verdict(vec![], json!([])));
+    review["run"] = json!([format!(
+        "perl -pi -e 's/\"expires\"\\s*:\\s*\"[^\"]*\"/\"expires\": \"2000-01-01T00:00:00Z\"/' {}",
+        sh_quote(&lease)
+    )]);
+    let mut pass = security(verdict(vec![], json!([])));
+    pass["run"] = json!([format!("cp {} {}", sh_quote(&lease), sh_quote(&copy))]);
+    let script = env.script(json!([review, pass]));
+    tick(&env, &script);
+    tick(&env, &script);
+    let seen: Value = serde_json::from_str(&std::fs::read_to_string(&copy).unwrap()).unwrap();
+    let expires: chrono::DateTime<chrono::Utc> =
+        serde_json::from_value(seen["expires"].clone()).unwrap();
+    assert!(expires > chrono::Utc::now(), "{seen}");
+}
+
+#[cfg(unix)]
+#[test]
+fn an_item_pulled_back_during_the_security_pass_is_discarded() {
+    let env = Env::initialized();
+    configure(&env, &[("security_review", "[\"auth.rs\"]")]);
+    let (id, wt, _) = ready_item(&env, "Login", "auth.rs", "fn login() {}\n");
+    let mut pass = security(verdict(vec![], json!([])));
+    pass["run"] = json!([format!("cd {} && {{hall}} pull-back", sh_quote(&wt))]);
+    let script = env.script(json!([reviewer(verdict(vec![], json!([]))), pass]));
+    tick(&env, &script);
+    let r = tick(&env, &script);
+    assert!(
+        what(&r).contains("discarded: the item moved on"),
+        "{}",
+        r.stdout
+    );
+    assert!(events_of(&env, &id, "verdict").is_empty());
+    assert!(events_of(&env, &id, "security_pass").is_empty());
+    assert!(events_of(&env, &id, "reasons_delivered").is_empty());
+}
+
+#[test]
+fn a_rate_limit_on_the_security_pass_pauses_without_a_verdict() {
+    let env = Env::initialized();
+    configure(&env, &[("security_review", "[\"auth.rs\"]")]);
+    let (id, _, _) = ready_item(&env, "Login", "auth.rs", "fn login() {}\n");
+    let script = env.script(json!([
+        reviewer(verdict(vec![], json!([]))),
+        {"role": "security", "fail": "rate_limit"},
+    ]));
+    tick(&env, &script);
+    let r = tick(&env, &script);
+    assert_eq!(r.json["steps"][0]["progress"], "pause", "{}", r.stdout);
+    assert!(events_of(&env, &id, "verdict").is_empty());
+    assert!(events_of(&env, &id, "security_pass").is_empty());
+    assert_eq!(state(&env, &id), "review");
+}
+
 #[test]
 fn a_real_reviewer_result_is_recorded() {
     // tests/fixtures/claude/print_principal_engineer.json is the result of
