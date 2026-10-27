@@ -7,6 +7,7 @@ mod common;
 use c_support::*;
 use common::{Env, commit_file, git};
 use hallmark::event::Body;
+use insta::assert_json_snapshot;
 use serde_json::json;
 
 const URL: &str = "https://github.com/acme/app/pull/7";
@@ -281,50 +282,29 @@ fn a_learning_from_the_reverted_item_does_not_brief_its_replay() {
 
 #[test]
 fn replies_keep_their_shape() {
+    // The dry-run and replay replies are pinned by snapshots: a renamed
+    // field (`now_caught` is what ADR 0065 tells people to compare between
+    // runs) or a dropped one is a contract change, reviewed on the `.snap`.
     let env = Env::initialized();
     let (id, _, _) = reverted_item(&env);
-    let has = |v: &serde_json::Value, keys: &[&str]| {
-        for k in keys {
-            assert!(v.get(*k).is_some(), "missing {k} in {v}");
-        }
-    };
     let dry = env.hall(&env.repo, &["eval", "--dry-run"]);
-    has(&dry.json, &["cases", "dry_run", "next", "totals"]);
-    has(
-        &dry.json["cases"][0],
-        &[
-            "item",
-            "title",
-            "sha",
-            "reverted_by",
-            "revert_files",
-            "then",
-        ],
-    );
-    has(
-        &dry.json["cases"][0]["then"],
-        &["rejected", "caught", "findings", "blocking", "titles"],
-    );
-    has(
-        &dry.json["totals"],
-        &[
-            "cases",
-            "ran",
-            "then_caught",
-            "now_caught",
-            "now_rejected",
-            "cost_usd",
-        ],
-    );
+    assert_eq!(dry.code, 0, "{}", dry.stdout);
+    assert_json_snapshot!("eval_dry_run", dry.json, {
+        ".cases[].sha" => "[sha]",
+        ".cases[].reverted_by" => "[sha]",
+    });
     let script = env.script(json!([eval_step(json!([{
         "lens": "correctness", "severity": "blocker", "file": "retry.rs", "line": 1,
         "title": "Two workers", "scenario": "s", "fix": "f"
     }]))]));
     let r = env.hall_fake(&env.repo, &script, &["eval", &id]);
-    has(
-        &r.json["cases"][0]["now"],
-        &["rejected", "caught", "findings", "blocking", "titles"],
-    );
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_json_snapshot!("eval_replay", r.json, {
+        ".cases[].sha" => "[sha]",
+        ".cases[].reverted_by" => "[sha]",
+        ".cases[].now.cost_usd" => "[usd]",
+        ".totals.cost_usd" => "[usd]",
+    });
 }
 
 #[test]
