@@ -77,10 +77,11 @@ pub fn prepare(
     sha: &str,
     default_effort: Option<&str>,
 ) -> Result<Review> {
-    prepare_with(repo, item, events, sha, default_effort, None)
+    prepare_with(repo, item, events, sha, default_effort, None, None)
 }
 
-/// [`prepare`], as a second pass when `pass` is given.
+/// [`prepare`], as a second pass when `pass` is given, and with the base
+/// pinned to `pin` (the commit an earlier run of the round read) when given.
 pub fn prepare_with(
     repo: &Repo,
     item: &Item,
@@ -88,9 +89,13 @@ pub fn prepare_with(
     sha: &str,
     default_effort: Option<&str>,
     pass: Option<&Pass>,
+    pin: Option<&str>,
 ) -> Result<Review> {
     let dir = &repo.main_root;
-    let base = Base::resolve(repo, &item.base)?;
+    let base = match pin {
+        Some(sha) => Base::at(repo, &item.base, sha),
+        None => Base::resolve(repo, &item.base)?,
+    };
     let merge_base = fork_point(repo, item, &base.sha, sha);
     // Incremental from round 2, unless the branch was rewritten since.
     let reviewed = item.reviewed_sha.clone().filter(|s| s != sha);

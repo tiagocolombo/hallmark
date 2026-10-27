@@ -1101,6 +1101,18 @@ impl Config {
             )
             .next(["hall schema config"]));
         }
+        // A glob that doesn't build is dropped when matching, which would
+        // switch the security pass off without a word.
+        for g in &c.security_review {
+            let t = g.trim().trim_start_matches("./").trim_start_matches('/');
+            if let Err(e) = globset::GlobBuilder::new(t).literal_separator(true).build() {
+                return Err(HallError::new(
+                    ErrorCode::Usage,
+                    format!(".hallmark.toml: security_review glob `{g}` is invalid: {e}"),
+                )
+                .next(["hall schema config"]));
+            }
+        }
         // `hall init` wrote the old default, which posted the PR body as a
         // comment; the review comment does that job now (ADR 0039).
         if c.update == OLD_UPDATE {

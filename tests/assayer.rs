@@ -412,6 +412,18 @@ fn a_change_on_a_security_review_path_gets_a_second_security_only_pass() {
     assert_eq!(s["cwd"], calls[0]["cwd"]);
     assert_eq!(arg_after(s, "--agent"), Some("hallmark:principal-engineer"));
     assert_eq!(arg_after(s, "--effort"), Some("max"));
+    // The same schema and read-only tools as the review: without the
+    // schema a real run returns no structured output.
+    assert!(arg_after(s, "--json-schema").is_some(), "{s:?}");
+    assert_eq!(
+        arg_after(s, "--json-schema"),
+        arg_after(&calls[0], "--json-schema")
+    );
+    assert!(arg_after(s, "--allowedTools").is_some(), "{s:?}");
+    assert_eq!(
+        arg_after(s, "--allowedTools"),
+        arg_after(&calls[0], "--allowedTools")
+    );
     let prompt = s["prompt"].as_str().unwrap();
     assert!(
         prompt.contains(&format!("# Security pass {id} round 1")),
@@ -497,6 +509,57 @@ fn a_change_on_a_security_review_path_gets_a_second_security_only_pass() {
             .starts_with("the run failed"),
         "{p:?}"
     );
+}
+
+#[test]
+fn the_security_review_paths_come_from_the_base_branch() {
+    // A branch that empties `security_review` in its own config still gets
+    // the pass on an auth change.
+    let env = Env::initialized();
+    configure(&env, &[("security_review", "[\"auth.rs\"]")]);
+    let (id, wt) = env.new_item("Login");
+    let cfg = std::fs::read_to_string(wt.join(".hallmark.toml")).unwrap();
+    let cfg: Vec<String> = cfg
+        .lines()
+        .map(|l| {
+            if l.trim_start().starts_with("security_review") {
+                "security_review = []".to_string()
+            } else {
+                l.to_string()
+            }
+        })
+        .collect();
+    commit_file(&wt, ".hallmark.toml", &(cfg.join("\n") + "\n"));
+    commit_file(&wt, "auth.rs", "fn login() {}\n");
+    let r = env.hall(&wt, &["ready", "--note", "please look"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let script = env.script(json!([
+        reviewer(verdict(vec![], json!([]))),
+        security(verdict(vec![], json!([]))),
+    ]));
+    tick(&env, &script);
+    tick(&env, &script);
+    assert_eq!(env.fake_calls().len(), 2, "{:?}", env.fake_calls());
+    let p = events_of(&env, &id, "security_pass");
+    assert_eq!(p.len(), 1, "{p:?}");
+    assert_eq!(p[0]["paths"], json!(["auth.rs"]));
+}
+
+#[test]
+fn a_rate_limit_on_the_security_pass_pauses_without_a_verdict() {
+    let env = Env::initialized();
+    configure(&env, &[("security_review", "[\"auth.rs\"]")]);
+    let (id, _, _) = ready_item(&env, "Login", "auth.rs", "fn login() {}\n");
+    let script = env.script(json!([
+        reviewer(verdict(vec![], json!([]))),
+        {"role": "security", "fail": "rate_limit"},
+    ]));
+    tick(&env, &script);
+    let r = tick(&env, &script);
+    assert_eq!(r.json["steps"][0]["progress"], "pause", "{}", r.stdout);
+    assert!(events_of(&env, &id, "verdict").is_empty());
+    assert!(events_of(&env, &id, "security_pass").is_empty());
+    assert_eq!(state(&env, &id), "review");
 }
 
 #[test]

@@ -238,13 +238,17 @@ followed by a second run of the same reviewer over the same change with
 only the `security_tenancy` lens, at `max` effort, asking who can reach
 each changed path and what they can do
 ([ADR 0064](decisions/0064-the-security-pass.md)). Its new findings join
-the round's verdict (one the reviewer already raised at the same place is
-not added twice), its summary is appended to the review's, and a
-`security_pass` event records the paths, the model and what it added. Its
-rulings on earlier findings and its learnings are dropped: those are the
-main review's. It shares the review budget; when it can't run, the verdict
+the round's verdict (the pass is told what the reviewer already reported,
+and a finding at the same file and line is not added twice, whatever its
+title), its summary is appended to the review's, and a `security_pass`
+event records the paths, the model and what it added. Its rulings on
+earlier findings and its learnings are dropped: those are the main
+review's. It shares the review budget. A budget stop or the plan limit
+during the pass records no verdict: the round is reviewed again after the
+grant or the reset. When the pass fails for another reason, the verdict
 stands as the reviewer gave it and the event says why. Read from the base
-branch, like `lenses`.
+branch, like `lenses`. A glob that doesn't parse is refused when the
+config loads.
 
 ## Extensions
 

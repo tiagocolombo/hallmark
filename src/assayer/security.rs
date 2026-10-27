@@ -19,7 +19,8 @@ use crate::event::{Event, short};
 use crate::findings::{Lens, ModelFinding, ModelVerdict};
 use crate::item::Item;
 use crate::repo::Repo;
-use crate::runner::{self, Metered, Runner};
+use crate::runner::{self, Failure, Metered, Runner};
+use crate::worker::Progress;
 
 /// The run's role, for the fake runner, the live log and usage. It shares
 /// the review budget (`budget::role_of`).
@@ -36,6 +37,16 @@ pub struct SecurityPass {
     /// Why it didn't run or didn't count: the verdict stands as the
     /// reviewer gave it.
     pub skipped: Option<String>,
+}
+
+/// What running the pass came to.
+pub enum Ran {
+    /// The verdict (with the pass's findings joined, if it ran) and the
+    /// record of the pass.
+    Done(ModelVerdict, SecurityPass),
+    /// A budget stop or the plan limit: no verdict yet; the round is
+    /// reviewed again after the grant or the reset.
+    Stop(Progress),
 }
 
 /// The changed files under a `security_review` glob, read from the base
@@ -71,12 +82,12 @@ pub fn run(
     wt: &std::path::Path,
     base_sha: &str,
     mv: ModelVerdict,
-) -> Result<(ModelVerdict, SecurityPass)> {
+) -> Result<Ran> {
     let base = super::base::Base::at(repo, &item.base, base_sha);
     let merge_base = super::prompt::fork_point(repo, item, &base.sha, sha);
     let paths = paths(repo, &base, &merge_base, sha);
     if paths.is_empty() {
-        return Ok((
+        return Ok(Ran::Done(
             mv,
             SecurityPass {
                 skipped: Some("no `security_review` path in the change".into()),
@@ -97,15 +108,36 @@ pub fn run(
              logged with secrets, and whether a new dependency, permission or workflow step \
              widens what can run. Report only what you can show: a concrete path to the \
              break. Your rulings on earlier findings and your learnings are not used; your \
-             summary and your new findings are added to the review.",
+             summary and your new findings are added to the review.{}",
             paths
                 .iter()
                 .map(|p| format!("`{p}`"))
                 .collect::<Vec<_>>()
-                .join(", ")
+                .join(", "),
+            if mv.findings.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "\n\nThe principal engineer already reported these this round; don't report \
+                     the same defect again, at the same place or under another title:\n{}",
+                    mv.findings
+                        .iter()
+                        .map(|f| format!("- `{}:{}` {}", f.file, f.line, f.title.trim()))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                )
+            }
         ),
     };
-    let review = super::prompt::prepare_with(repo, item, events, sha, None, Some(&pass))?;
+    let review = super::prompt::prepare_with(
+        repo,
+        item,
+        events,
+        sha,
+        None,
+        Some(&pass),
+        Some(base_sha),
+    )?;
     let mut req = runner::request(
         repo,
         Role::Reviewer,
@@ -117,6 +149,9 @@ pub fn run(
     req.json_schema = Some(crate::plugin::file("schemas/verdict.json").into());
     req.allowed_tools = super::review::TOOLS.iter().map(|t| t.to_string()).collect();
     req.effort = review.effort.clone();
+    if let Some(path) = super::review::path_with_hall() {
+        req.env.push(("PATH".into(), path));
+    }
     let dir = repo.hall.item_runs(item.id);
     std::fs::create_dir_all(&dir)?;
     let _ = std::fs::write(
@@ -136,18 +171,21 @@ pub fn run(
     ));
     let outcome = match runner::run_metered(repo, runner_, Some(item.id), &req)? {
         Metered::Done(o) => o,
-        Metered::Blocked(stop) => {
-            return Ok((
-                mv,
-                SecurityPass {
-                    paths,
-                    skipped: Some(format!("didn't run: {}", stop.reason)),
-                    ..Default::default()
-                },
-            ));
+        // A budget stop or the plan limit is not a verdict without the
+        // pass: stop as the review does, and review the round again once
+        // the grant or the reset comes.
+        Metered::Blocked(stop) => return Ok(Ran::Stop(stop.progress())),
+        Metered::Failed {
+            failure: Failure::RateLimited { until },
+            ..
+        } => {
+            return Ok(Ran::Stop(Progress::Pause {
+                reason: format!("{} security pass: Claude's plan limit", item.id),
+                until,
+            }));
         }
         Metered::Failed { failure, .. } => {
-            return Ok((
+            return Ok(Ran::Done(
                 mv,
                 SecurityPass {
                     paths,
@@ -170,7 +208,7 @@ pub fn run(
     let theirs = match ModelVerdict::parse(&outcome.structured().cloned().unwrap_or_default()) {
         Ok(v) => v,
         Err(e) => {
-            return Ok((
+            return Ok(Ran::Done(
                 mv,
                 SecurityPass {
                     paths,
@@ -182,7 +220,7 @@ pub fn run(
         }
     };
     let (merged, added) = merge(mv, theirs);
-    Ok((
+    Ok(Ran::Done(
         merged,
         SecurityPass {
             paths,
@@ -195,12 +233,10 @@ pub fn run(
 
 /// Adds the pass's findings to the main verdict (its rulings and learnings
 /// are dropped), skipping one the reviewer already raised at the same file
-/// and line with the same title, and appends its summary. Returns the
+/// and line (whatever its title), and appends its summary. Returns the
 /// titles added.
 pub fn merge(mut mv: ModelVerdict, theirs: ModelVerdict) -> (ModelVerdict, Vec<String>) {
-    let same = |a: &ModelFinding, b: &ModelFinding| {
-        a.file == b.file && a.line == b.line && a.title.trim().eq_ignore_ascii_case(b.title.trim())
-    };
+    let same = |a: &ModelFinding, b: &ModelFinding| a.file == b.file && a.line == b.line;
     let mut added = Vec::new();
     for f in theirs.findings {
         if mv.findings.iter().any(|m| same(m, &f)) {
@@ -267,7 +303,7 @@ mod tests {
                     Severity::Major,
                     Lens::SecurityTenancy,
                     10,
-                    " retries FOREVER ",
+                    "The same defect, another title",
                 ),
             ],
         );

@@ -23,8 +23,8 @@ any number of findings per round.
   `prompt::prepare_with` builds it; the setting is read from the base
   like `lenses`.
 - **Its new findings join the verdict** before it is recorded: one the
-  reviewer already raised at the same file, line and title is not added
-  twice, and its summary is appended as "Security pass: …". Its rulings
+  reviewer already raised at the same file and line is not added twice (the
+  pass is told the reviewer's findings), and its summary is appended as "Security pass: …". Its rulings
   on earlier findings and its learnings are dropped: those are the main
   review's. The ledger then numbers and judges one verdict for the round,
   so the fixer, the report, the PR comment and `hall stats` see the
@@ -32,8 +32,10 @@ any number of findings per round.
 - **It is on the record.** A `security_pass` event carries the paths, the
   model, the titles it added, or why it didn't count. It runs as role
   `security` under the review budget.
-- **When it can't run, the verdict stands** as the reviewer gave it, and
-  the event and the live log say why.
+- **When it fails, the verdict stands** as the reviewer gave it, and the
+  event and the live log say why. A budget stop or the plan limit is not a
+  failure: no verdict is recorded and the round is reviewed again after
+  the grant or the reset.
 
 ## Consequences
 

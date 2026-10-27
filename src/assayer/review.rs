@@ -96,20 +96,34 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
                 &events,
             )?;
             // Pulled back or dropped while the reviewer ran: discard.
-            let now = repo.hall.load_item(item.id)?;
-            if now.state != State::Review || now.frozen_sha.as_deref() != Some(sha.as_str()) {
-                let what = format!(
-                    "{} review at {} discarded: the item moved on",
-                    item.id,
-                    short(&sha)
-                );
-                repo.hall.live(&what);
-                return Ok(Progress::worked(what));
+            let moved_on = || -> Result<Option<Progress>> {
+                let now = repo.hall.load_item(item.id)?;
+                if now.state != State::Review || now.frozen_sha.as_deref() != Some(sha.as_str()) {
+                    let what = format!(
+                        "{} review at {} discarded: the item moved on",
+                        item.id,
+                        short(&sha)
+                    );
+                    repo.hall.live(&what);
+                    return Ok(Some(Progress::worked(what)));
+                }
+                Ok(None)
+            };
+            if let Some(p) = moved_on()? {
+                return Ok(p);
             }
+            // The pass is a second run: the lease covers it too.
+            let _ = crate::lease::claim(
+                &repo.hall,
+                item.id,
+                super::ROLE,
+                &ctx.holder,
+                super::lease_ttl(repo),
+            );
             // A change on a `security_review` path gets a second,
             // security-only pass whose findings join this verdict (ADR
             // 0064). The checkout is still here.
-            let (mv, pass) = super::security::run(
+            let (mv, pass) = match super::security::run(
                 repo,
                 ctx.runner,
                 item,
@@ -118,7 +132,14 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
                 &req.cwd,
                 &review_base,
                 mv,
-            )?;
+            )? {
+                super::security::Ran::Done(mv, pass) => (mv, pass),
+                super::security::Ran::Stop(p) => return Ok(p),
+            };
+            // The pass can take as long as the review did.
+            if let Some(p) = moved_on()? {
+                return Ok(p);
+            }
             let rec = super::record_verdict(
                 repo,
                 item.id,
@@ -337,7 +358,7 @@ pub fn request(
 
 /// PATH with this binary's directory first, so the reviewer's
 /// `hall log` is this `hall`.
-fn path_with_hall() -> Option<String> {
+pub(super) fn path_with_hall() -> Option<String> {
     let exe = std::env::current_exe().ok()?;
     let dir = exe.parent()?.to_path_buf();
     let mut dirs = vec![dir];
