@@ -15,6 +15,7 @@ pub mod checks;
 pub mod prompt;
 pub mod rebased;
 pub mod review;
+pub mod security;
 pub mod verdict;
 
 use std::path::{Path, PathBuf};

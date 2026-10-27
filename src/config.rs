@@ -80,6 +80,10 @@ pub struct Config {
     pub stuck_after: String,
     /// "all", or a list of lens names.
     pub lenses: Lenses,
+    /// Paths whose changes get a second, security-only review pass at
+    /// full effort, whose findings join the verdict (ADR 0064). Globs;
+    /// empty for none.
+    pub security_review: Vec<String>,
     /// Files the repo-rules lens reads.
     pub rules: Vec<String>,
     pub capture: Capture,
@@ -137,6 +141,7 @@ impl Default for Config {
             auto_ready: true,
             stuck_after: "30m".into(),
             lenses: Lenses::All("all".into()),
+            security_review: Vec::new(),
             rules: vec!["CLAUDE.md".into(), "AGENTS.md".into()],
             capture: Capture::default(),
             budget: Budget::default(),

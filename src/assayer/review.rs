@@ -106,6 +106,19 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
                 repo.hall.live(&what);
                 return Ok(Progress::worked(what));
             }
+            // A change on a `security_review` path gets a second,
+            // security-only pass whose findings join this verdict (ADR
+            // 0064). The checkout is still here.
+            let (mv, pass) = super::security::run(
+                repo,
+                ctx.runner,
+                item,
+                &events,
+                &sha,
+                &req.cwd,
+                &review_base,
+                mv,
+            )?;
             let rec = super::record_verdict(
                 repo,
                 item.id,
@@ -115,15 +128,37 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
                 reviewer,
                 Some(review_base),
             )?;
+            if !pass.paths.is_empty() {
+                repo.hall.append_item(
+                    item.id,
+                    &Event::new(
+                        super::ROLE,
+                        Some(item.id),
+                        Body::SecurityPass {
+                            sha: sha.clone(),
+                            round: rec.round,
+                            paths: pass.paths.clone(),
+                            model: pass.model.clone(),
+                            added: pass.added.clone(),
+                            skipped: pass.skipped.clone(),
+                        },
+                    ),
+                )?;
+            }
             Ok(Progress::worked(format!(
-                "{} review round {}: {}{} ({} findings, {} blocker, {} major open)",
+                "{} review round {}: {}{} ({} findings, {} blocker, {} major open{})",
                 item.id,
                 rec.round,
                 super::verdict::kind(rec.verdict),
                 if rec.escalated { ", escalated" } else { "" },
                 rec.findings.len(),
                 rec.open.blocker,
-                rec.open.major
+                rec.open.major,
+                match (&pass.skipped, pass.paths.is_empty()) {
+                    (_, true) => String::new(),
+                    (Some(why), false) => format!("; no security pass: {why}"),
+                    (None, false) => format!("; the security pass added {}", pass.added.len()),
+                }
             )))
         }
     }

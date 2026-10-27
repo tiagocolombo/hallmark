@@ -250,6 +250,20 @@ pub enum Body {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         since: Option<String>,
     },
+    /// The security pass (ADR 0064) that ran, or couldn't, before this
+    /// round's verdict was recorded: the paths that asked for it, the
+    /// titles of the findings it added, or why it didn't count.
+    SecurityPass {
+        sha: String,
+        round: u32,
+        paths: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
+        #[serde(default)]
+        added: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        skipped: Option<String>,
+    },
     /// The fixer resubmits (`hall fixed`): the commit, the findings it
     /// claims to fix, and the ones it disputes.
     FixSubmitted {
@@ -558,6 +572,7 @@ impl Body {
             Body::Retried { .. } => "retried",
             Body::Checks { .. } => "checks",
             Body::Verdict { .. } => "verdict",
+            Body::SecurityPass { .. } => "security_pass",
             Body::FixSubmitted { .. } => "fix_submitted",
             Body::Hallmarked { .. } => "hallmarked",
             Body::Shipped { .. } => "shipped",
@@ -710,6 +725,14 @@ impl Body {
                 };
                 format!("review · {v} · round {round} · {} findings", findings.len())
             }
+            Body::SecurityPass { added, skipped, .. } => match skipped {
+                Some(why) => format!("security pass · did not count: {}", c(why, 60)),
+                None => format!(
+                    "security pass · {} finding{} added",
+                    added.len(),
+                    if added.len() == 1 { "" } else { "s" }
+                ),
+            },
             Body::FixSubmitted { sha, fixes, .. } => {
                 format!("fix submitted {} · {}", short(sha), fixes.join(", "))
             }

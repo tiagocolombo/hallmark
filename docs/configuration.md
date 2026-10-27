@@ -65,6 +65,7 @@ max_check_failures = 3      # failed checks in a row before the item is held for
 auto_ready  = true          # propose-ready goes straight to review when nothing is left to confirm
 stuck_after = "30m"
 lenses      = "all"
+security_review = []        # paths whose changes get a second, security-only review pass (ADR 0064)
 rules       = ["CLAUDE.md", "AGENTS.md"]
 
 [parallel]                     # how many of each run at once, per repo
@@ -228,6 +229,22 @@ Whatever these say, `git notes` writes (`add`, `append`, `edit`, `copy`,
 `remove`, `merge`, `prune`, and `git update-ref` on a notes ref) are denied
 unless `HALL_ACTOR` is `assayer` or `shipper`: the hallmark is a note, and
 only the daemon writes it.
+
+## The security pass
+
+`security_review` lists globs (`auth/`, `billing/**`, `.github/workflows/`,
+`installer/`). When a change touches one, the principal engineer's review is
+followed by a second run of the same reviewer over the same change with
+only the `security_tenancy` lens, at `max` effort, asking who can reach
+each changed path and what they can do
+([ADR 0064](decisions/0064-the-security-pass.md)). Its new findings join
+the round's verdict (one the reviewer already raised at the same place is
+not added twice), its summary is appended to the review's, and a
+`security_pass` event records the paths, the model and what it added. Its
+rulings on earlier findings and its learnings are dropped: those are the
+main review's. It shares the review budget; when it can't run, the verdict
+stands as the reviewer gave it and the event says why. Read from the base
+branch, like `lenses`.
 
 ## Extensions
 

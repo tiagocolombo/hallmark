@@ -90,6 +90,7 @@ expression: keys
   "repo sandbox.mode choice",
   "repo sandbox.remove_env list",
   "repo sandbox.unix_sockets list",
+  "repo security_review list",
   "repo ship string",
   "repo stuck_after string",
   "repo update string",

@@ -373,6 +373,132 @@ fn a_review_with_blockers_requests_changes() {
     assert_eq!(f.json["open"]["blocker"], 1);
 }
 
+fn security(structured: Value) -> Value {
+    json!({"role": "security", "structured": structured, "model": "claude-opus-4-1"})
+}
+
+#[test]
+fn a_change_on_a_security_review_path_gets_a_second_security_only_pass() {
+    let env = Env::initialized();
+    configure(&env, &[("security_review", "[\"auth.rs\"]")]);
+    let (id, _, sha) = ready_item(&env, "Login", "auth.rs", "fn login() {}\n");
+    let sec = json!({
+        "lens": "security_tenancy", "severity": "blocker", "file": "auth.rs", "line": 1,
+        "title": "The token check can be skipped",
+        "scenario": "an empty token passes the check and reaches the session",
+        "fix": "refuse an empty token before the lookup"
+    });
+    let dup = finding("major", "auth.rs", "Retries forever");
+    let mut theirs = verdict(
+        vec![sec, dup.clone()],
+        json!([{"id": "F9", "status": "fixed"}]),
+    );
+    theirs["summary"] = json!("An empty token passes.");
+    let script = env.script(json!([
+        reviewer(verdict(vec![dup], json!([]))),
+        security(theirs),
+    ]));
+    tick(&env, &script);
+    tick(&env, &script);
+    assert_eq!(state(&env, &id), "fixing");
+
+    // Two runs on the same checkout: the review, then the pass, narrowed.
+    let calls = env.fake_calls();
+    assert_eq!(calls.len(), 2, "{calls:?}");
+    assert_eq!(calls[0]["role"], "reviewer");
+    let s = &calls[1];
+    assert_eq!(s["role"], "security");
+    assert_eq!(s["room"], "assay");
+    assert_eq!(s["cwd"], calls[0]["cwd"]);
+    assert_eq!(arg_after(s, "--agent"), Some("hallmark:principal-engineer"));
+    assert_eq!(arg_after(s, "--effort"), Some("max"));
+    let prompt = s["prompt"].as_str().unwrap();
+    assert!(
+        prompt.contains(&format!("# Security pass {id} round 1")),
+        "{prompt}"
+    );
+    assert!(
+        prompt.contains("touches `auth.rs`: paths this repository marks `security_review`"),
+        "{prompt}"
+    );
+    assert!(
+        prompt.contains("This pass applies only these lenses: security_tenancy."),
+        "{prompt}"
+    );
+    assert!(
+        !calls[0]["prompt"]
+            .as_str()
+            .unwrap()
+            .contains("Security pass")
+    );
+
+    // One verdict for the round: the reviewer's finding, then the pass's;
+    // the duplicate isn't added twice; the summary carries both.
+    let v = events_of(&env, &id, "verdict");
+    assert_eq!(v.len(), 1);
+    let titles: Vec<&str> = v[0]["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["title"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        titles,
+        ["Retries forever", "The token check can be skipped"]
+    );
+    assert_eq!(v[0]["findings"][1]["id"], "F2");
+    assert_eq!(v[0]["counts"]["blocker"], 1);
+    assert_eq!(
+        v[0]["summary"],
+        "Adds retries to webhook delivery.\n\nSecurity pass: An empty token passes."
+    );
+    assert!(
+        v[0]["prior"].as_array().is_none_or(|p| p.is_empty()),
+        "the pass rules on nothing"
+    );
+    let p = events_of(&env, &id, "security_pass");
+    assert_eq!(p.len(), 1);
+    assert_eq!(p[0]["paths"], json!(["auth.rs"]));
+    assert_eq!(p[0]["added"], json!(["The token check can be skipped"]));
+    assert_eq!(p[0]["sha"], sha.as_str());
+    assert!(p[0].get("skipped").is_none());
+
+    // Off the path: one run, no event.
+    let env = Env::initialized();
+    configure(&env, &[("security_review", "[\"auth.rs\"]")]);
+    let (id, _, _) = ready_item(&env, "Docs", "readme.rs", "fn a() {}\n");
+    let script = env.script(json!([reviewer(verdict(vec![], json!([])))]));
+    tick(&env, &script);
+    tick(&env, &script);
+    assert_eq!(env.fake_calls().len(), 1);
+    assert_eq!(state(&env, &id), "hallmarked");
+    assert!(events_of(&env, &id, "security_pass").is_empty());
+
+    // On the path but the pass fails (no step for it): the verdict stands
+    // and the event says why.
+    let env = Env::initialized();
+    configure(&env, &[("security_review", "[\"auth.rs\"]")]);
+    let (id, _, _) = ready_item(&env, "Login", "auth.rs", "fn login() {}\n");
+    let script = env.script(json!([reviewer(verdict(vec![], json!([])))]));
+    tick(&env, &script);
+    let r = tick(&env, &script);
+    assert!(
+        what(&r).contains("no security pass: the run failed"),
+        "{}",
+        r.stdout
+    );
+    assert_eq!(state(&env, &id), "hallmarked");
+    let p = events_of(&env, &id, "security_pass");
+    assert_eq!(p.len(), 1);
+    assert!(
+        p[0]["skipped"]
+            .as_str()
+            .unwrap()
+            .starts_with("the run failed"),
+        "{p:?}"
+    );
+}
+
 #[test]
 fn a_real_reviewer_result_is_recorded() {
     // tests/fixtures/claude/print_principal_engineer.json is the result of

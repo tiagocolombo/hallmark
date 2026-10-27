@@ -212,6 +212,10 @@ const REPO_SECTIONS: &[(&str, &[(&str, &str)])] = &[
             ("auto_ready", ""),
             ("stuck_after", ""),
             ("lenses", ""),
+            (
+                "security_review",
+                "Paths whose changes get a second, security-only review pass",
+            ),
             ("parallel.checks", "Checks run at once"),
             ("parallel.review", "Reviews run at once"),
             ("parallel.fix", "Fixes run at once"),
