@@ -16,12 +16,14 @@ Git already carries it. `git revert` and GitHub's Revert button both write
 "This reverts commit <sha>" into the reverting commit, and a revert PR's
 subject starts with `Revert "`. The commit a PR landed as is findable from
 its number (`(#N)` on a squash, `Merge pull request #N` on a merge) or its
-head (a rebase or fast-forward).
+head (a fast-forward only). GitHub's "Rebase and merge" writes new SHAs and
+no `(#N)`, so a PR merged that way is not matched and its revert is not
+recorded: a known limitation.
 
 ## Decision
 
 - **A `reverts` worker**, a script after the sweeper. For each base that
-  has a merged, unreverted item closed within the last 30 days, at most
+  has a merged, unreverted item merged within the last 30 days, at most
   every ten minutes, it fetches `origin/<base>` (the Delivery office's
   `base_ref`), reads the last 400 commits, finds the commit each PR landed
   as (the oldest match, so a revert PR naming the number is never taken for

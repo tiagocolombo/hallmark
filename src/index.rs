@@ -717,9 +717,11 @@ impl Index {
             else {
                 continue;
             };
-            if all
-                .iter()
-                .any(|f| f.follow_up.as_deref() == Some(url.as_str()) && f.state != State::Dropped)
+            if all.iter().any(|f| {
+                f.follow_up.as_deref() == Some(url.as_str())
+                    && f.state != State::Dropped
+                    && f.created_at >= r.at
+            })
             {
                 continue;
             }

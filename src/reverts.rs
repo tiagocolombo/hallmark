@@ -26,7 +26,7 @@ use crate::repo::Repo;
 use crate::worker::{Progress, WorkerCtx};
 
 pub const ACTOR: &str = "reverts";
-/// How long after an item closes its base is watched for a revert.
+/// How long after an item is delivered as merged its base is watched for a revert.
 pub const WINDOW_DAYS: i64 = 30;
 /// Seconds between two reads of the same base.
 pub const EVERY: i64 = 600;
@@ -59,7 +59,7 @@ impl Seen {
 }
 
 /// A merged item still worth a look: closed, delivered as merged, not yet
-/// known to be reverted, closed within the window.
+/// known to be reverted, merged within the window.
 pub fn watched(i: &Item, now: DateTime<Utc>) -> bool {
     i.state == State::Closed
         && i.delivered.as_deref() == Some("merged")
@@ -353,6 +353,7 @@ mod tests {
             merged: None,
             merge_approved: None,
             reverted: None,
+            escalation: None,
             own_worktree: true,
             swept: false,
             hold: None,

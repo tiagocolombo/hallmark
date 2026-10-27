@@ -606,6 +606,16 @@ fn a_reverted_pr_is_recorded_put_in_the_inbox_and_distilled_again() {
     assert_eq!(reverts_pass(&env, &gh)["progress"], "idle");
     assert!(events(&env, &id, "reverted").is_empty());
 
+    // A follow-up made before the revert (say, for red checks at merge) does
+    // not settle a revert that comes after it.
+    let out = env
+        .cmd(&env.repo)
+        .env("HALL_GH", &gh)
+        .args(["--json", "new", "--follow-up", URL])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(0), "{:?}", out);
+
     // Someone reverts it on main.
     let revert = main_lands(
         &env,
@@ -681,7 +691,8 @@ fn a_reverted_pr_is_recorded_put_in_the_inbox_and_distilled_again() {
     );
     assert!(actions.contains(&format!("hall log {id}")), "{actions}");
 
-    // A follow-up settles the entry.
+    // A follow-up made after the revert settles the entry.
+    std::thread::sleep(std::time::Duration::from_millis(20));
     let out = env
         .cmd(&env.repo)
         .env("HALL_GH", &gh)
