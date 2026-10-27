@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.17](https://github.com/tiagocolombo/hallmark/compare/v0.3.16...v0.3.17) - 2026-10-27
+
+### Added
+
+- Risk tiers for the merger: paths and the reviewer can require a person's approval before a PR merges ([#145](https://github.com/tiagocolombo/hallmark/pull/145))
+
 ## [0.3.16](https://github.com/tiagocolombo/hallmark/compare/v0.3.15...v0.3.16) - 2026-10-27
 
 ### Added
