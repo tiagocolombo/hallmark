@@ -78,7 +78,7 @@ pub fn today() -> String {
 /// budgeted role. `resume` and anything else have no role caps.
 pub fn role_of(role: &str) -> Option<Role> {
     match role {
-        "reviewer" | "review" | "security" => Some(Role::Reviewer),
+        "reviewer" | "review" | "security" | "verifier" | "verify" => Some(Role::Reviewer),
         "fixer" | "fix" => Some(Role::Fixer),
         "intake" => Some(Role::Intake),
         "librarian" => Some(Role::Librarian),

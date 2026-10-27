@@ -247,6 +247,19 @@ pub struct Finding {
     pub pre_existing: bool,
 }
 
+/// A finding the verifier showed is not real, left out of the verdict
+/// (ADR 0062).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DroppedFinding {
+    pub lens: Lens,
+    pub severity: Severity,
+    pub file: String,
+    pub line: u32,
+    pub title: String,
+    /// What makes the scenario impossible, with the file and line checked.
+    pub reason: String,
+}
+
 /// A fixer's dispute of a finding, with its reason.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Dispute {

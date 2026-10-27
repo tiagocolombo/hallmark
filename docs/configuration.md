@@ -61,6 +61,7 @@ claude_args = []            # extra arguments for every headless claude -p run, 
 dev_commands = []           # what headless dev runs may run besides the gates
 max_rejects = 3             # rejected reviews before the item is escalated to you
 max_nits    = 3             # nits a review may record; the rest are dropped (ADR 0058)
+verify      = "off"         # or a model ("sonnet"): refutes blocking findings before the fixer sees them (ADR 0062)
 max_check_failures = 3      # failed checks in a row before the item is held for you; 0 for never
 auto_ready  = true          # propose-ready goes straight to review when nothing is left to confirm
 stuck_after = "30m"

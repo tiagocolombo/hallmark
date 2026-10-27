@@ -17,7 +17,7 @@ macOS, `xdg-open` on Linux, `start` on Windows).
 | Post Room | Every handoff passes through and is recorded | the `hall` CLI, the watchman |
 | Records | The journal: every prompt, commit, check, verdict and decision | `hall log` |
 | Library | What closed items taught, briefed to each review, and the Gazette, a newspaper page about each finished item for people; kept locally, never committed | the librarian |
-| Assay Office | The checks, then the principal engineer's review; a change on a `security_review` path gets a second, security-only pass whose findings join the verdict | the assayer |
+| Assay Office | The checks, then the principal engineer's review; a change on a `security_review` path gets a second, security-only pass whose findings join the verdict; with `verify` set to a model, a verifier then tries to refute the review's blocking findings, and drops the ones it can show are not real | the assayer, the verifier |
 | Repair Shop | A fixer addresses failing checks and findings | the fixer |
 | Stamping Room | The approved commit gets its hallmark, a git note | the assayer |
 | Dispatch Dock | Rebases onto the latest base, then the ship command opens the PR with a What, Why, How, Testing and How to revert description (ADR 0057) (or `update` updates an adopted one), posts the review as a PR comment, and the item closes | the shipper |

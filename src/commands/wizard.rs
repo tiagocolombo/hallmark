@@ -208,6 +208,10 @@ const REPO_SECTIONS: &[(&str, &[(&str, &str)])] = &[
                 "Rejected reviews before the item is escalated to you",
             ),
             ("max_nits", "Nits a review may record; the rest are dropped"),
+            (
+                "verify",
+                "The verifier model that refutes blocking findings; off to skip",
+            ),
             ("max_check_failures", ""),
             ("auto_ready", ""),
             ("stuck_after", ""),

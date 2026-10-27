@@ -17,6 +17,7 @@ pub mod rebased;
 pub mod review;
 pub mod security;
 pub mod verdict;
+pub mod verify;
 
 use std::path::{Path, PathBuf};
 
