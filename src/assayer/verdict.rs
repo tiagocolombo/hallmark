@@ -67,6 +67,10 @@ pub fn record_verdict(
         .map(|b| b.config.max_rejects)
         .unwrap_or(repo.config.max_rejects)
         .max(1);
+    let max_nits = base
+        .as_ref()
+        .map(|b| b.config.max_nits)
+        .unwrap_or(repo.config.max_nits);
     let base_sha = base.as_ref().map(|b| b.sha.clone());
     let base_name = item.base.clone();
 
@@ -78,7 +82,7 @@ pub fn record_verdict(
             return Err(not_in_review(cur, sha));
         }
         let ledger = Ledger::from_events(events);
-        let judged = ledger.judge(cur.round, mv);
+        let judged = ledger.judge(cur.round, mv, max_nits);
         let verdict = if judged.approves() {
             VerdictKind::Approve
         } else {
@@ -103,6 +107,7 @@ pub fn record_verdict(
             verdict,
             escalated,
             max_rejects,
+            max_nits,
         });
         fs::write(dir.join(format!("r{}.md", cur.round)), report)?;
         let e = ev(
@@ -265,6 +270,7 @@ pub struct Report<'a> {
     pub verdict: VerdictKind,
     pub escalated: bool,
     pub max_rejects: u32,
+    pub max_nits: u32,
 }
 
 /// The review as readable Markdown: `reviews/r<round>.md`.
@@ -325,6 +331,13 @@ pub fn render(r: &Report) -> String {
         ),
     };
     let _ = writeln!(s, "\n## Summary\n\n{}", r.mv.summary.trim());
+    if r.judged.dropped_nits > 0 {
+        let _ = writeln!(
+            s,
+            "\nThe reviewer reported {} nits beyond the cap of {} (`max_nits`); they were not recorded.",
+            r.judged.dropped_nits, r.max_nits
+        );
+    }
 
     if !r.judged.findings.is_empty() {
         let _ = writeln!(s, "\n## New findings");

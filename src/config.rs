@@ -65,6 +65,9 @@ pub struct Config {
     pub sandbox: Sandbox,
     /// Rejected reviews before the item is escalated to you.
     pub max_rejects: u32,
+    /// Nits a review may record: the reviewer is told the cap, and Hallmark
+    /// keeps only the first this many nits of each verdict (ADR 0058).
+    pub max_nits: u32,
     /// Failed checks in a row before the item is held for you (kind
     /// `checks`), so a fix that never turns the gates green can't loop.
     /// 0: never.
@@ -129,6 +132,7 @@ impl Default for Config {
             claude_args: Vec::new(),
             sandbox: Sandbox::default(),
             max_rejects: 3,
+            max_nits: 3,
             max_check_failures: 3,
             auto_ready: true,
             stuck_after: "30m".into(),

@@ -724,6 +724,121 @@ fn effort_follows_risk() {
 }
 
 #[test]
+fn paths_the_notes_say_to_skip_leave_the_review() {
+    let env = Env::initialized();
+    std::fs::write(
+        env.repo.join(".hallmark/review.md"),
+        "# Review notes\n\n## Sensitive paths\n\n## Paths to skip\n\n<!-- e.g. a/** -->\n\
+         - `docs/generated/**`: built from the schema\n\n## Invariants\n",
+    )
+    .unwrap();
+    git(&env.repo, &["commit", "-q", "-am", "paths to skip"]);
+    configure_table(&env, "\n[budget.review]\neffort = \"high\"\n");
+
+    let script = env.script(json!([
+        reviewer(verdict(vec![], json!([]))),
+        reviewer(verdict(vec![], json!([]))),
+    ]));
+    // A small hand-written change next to a large generated one.
+    let (id, wt) = env.new_item("Schema docs");
+    std::fs::create_dir_all(wt.join("docs/generated")).unwrap();
+    let generated: String = (0..150)
+        .map(|i| format!("row {i} GENERATED_MARKER\n"))
+        .collect();
+    std::fs::write(wt.join("docs/generated/schema.md"), generated).unwrap();
+    commit_file(&wt, "lib.rs", "fn a() {}\n");
+    git(&wt, &["add", "docs/generated/schema.md"]);
+    git(&wt, &["commit", "-q", "-m", "generated"]);
+    assert_eq!(env.hall(&wt, &["ready"]).code, 0);
+    tick(&env, &script);
+    tick(&env, &script);
+
+    let calls = env.fake_calls();
+    assert_eq!(calls.len(), 1);
+    let prompt = calls[0]["prompt"].as_str().unwrap();
+    assert!(
+        prompt.contains("Skipped: the review notes say not to review these paths")
+            && prompt.contains("docs/generated/schema.md"),
+        "{prompt}"
+    );
+    assert!(
+        !prompt.contains("GENERATED_MARKER"),
+        "the skipped file's diff is left out:\n{prompt}"
+    );
+    assert!(prompt.contains("+fn a() {}"), "{prompt}");
+    assert!(prompt.contains("1 files, 1 lines changed."), "{prompt}");
+    // The effort follows the lines left, not the generated ones.
+    assert_eq!(arg_after(&calls[0], "--effort"), Some("low"));
+    assert_eq!(state(&env, &id), "hallmarked");
+
+    // Without the section, the same change is reviewed whole at the
+    // configured effort.
+    let env = Env::initialized();
+    configure_table(&env, "\n[budget.review]\neffort = \"high\"\n");
+    let script = env.script(json!([reviewer(verdict(vec![], json!([])))]));
+    let (_, wt) = env.new_item("Schema docs");
+    std::fs::create_dir_all(wt.join("docs/generated")).unwrap();
+    let generated: String = (0..150)
+        .map(|i| format!("row {i} GENERATED_MARKER\n"))
+        .collect();
+    std::fs::write(wt.join("docs/generated/schema.md"), generated).unwrap();
+    commit_file(&wt, "lib.rs", "fn a() {}\n");
+    git(&wt, &["add", "docs/generated/schema.md"]);
+    git(&wt, &["commit", "-q", "-m", "generated"]);
+    assert_eq!(env.hall(&wt, &["ready"]).code, 0);
+    tick(&env, &script);
+    tick(&env, &script);
+    let calls = env.fake_calls();
+    let prompt = calls[0]["prompt"].as_str().unwrap();
+    assert!(prompt.contains("GENERATED_MARKER") && !prompt.contains("Skipped:"));
+    assert_eq!(arg_after(&calls[0], "--effort"), Some("high"));
+}
+
+#[test]
+fn nits_past_the_cap_are_not_recorded() {
+    let env = Env::initialized();
+    configure(&env, &[("max_nits", "1")]);
+    let nit = |t: &str| {
+        json!({
+            "lens": "repo_rules", "severity": "nit", "file": "a.rs", "line": 1,
+            "title": t, "scenario": "style", "fix": "rename"
+        })
+    };
+    let script = env.script(json!([reviewer(verdict(
+        vec![nit("first nit"), nit("second nit"), nit("third nit")],
+        json!([])
+    )),]));
+    let (id, _, _) = ready_item(&env, "Nits", "a.rs", "fn a() {}\n");
+    tick(&env, &script);
+    tick(&env, &script);
+    let prompt = env.fake_calls()[0]["prompt"].as_str().unwrap().to_string();
+    assert!(
+        prompt.contains("Report at most 1 nit; Hallmark records only the first 1"),
+        "{prompt}"
+    );
+    let verdicts = events_of(&env, &id, "verdict");
+    assert_eq!(verdicts.len(), 1);
+    let findings = verdicts[0]["findings"].as_array().unwrap();
+    assert_eq!(findings.len(), 1, "{verdicts:?}");
+    assert_eq!(findings[0]["title"], "first nit");
+    assert_eq!(verdicts[0]["counts"]["nit"], 1);
+    assert_eq!(state(&env, &id), "hallmarked", "nits never block");
+    let report = std::fs::read_to_string(
+        env.repo
+            .join(".git/hallmark/items")
+            .join(&id)
+            .join("reviews/r1.md"),
+    )
+    .unwrap();
+    assert!(
+        report.contains("The reviewer reported 2 nits beyond the cap of 1 (`max_nits`)"),
+        "{report}"
+    );
+    let r = env.hall(&env.repo, &["findings", &id]);
+    assert_eq!(r.json["findings"].as_array().unwrap().len(), 1);
+}
+
+#[test]
 fn the_briefing_a_review_gets_follows_its_effort() {
     let env = Env::initialized();
     let body = "The ledgerguard check keeps every invoice balanced. ".repeat(90);

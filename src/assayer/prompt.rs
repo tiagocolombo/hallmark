@@ -46,6 +46,9 @@ pub struct Review {
     pub lines: u64,
     /// Changed files (or open findings' files) under a sensitive path.
     pub sensitive: Vec<String>,
+    /// Changed files under a path the review notes say to skip: left out of
+    /// the diff, the file and line counts and the effort (ADR 0058).
+    pub skipped: Vec<String>,
     pub effort: Option<String>,
     pub lenses: Vec<Lens>,
     /// The Library learnings included in the briefing.
@@ -86,26 +89,43 @@ pub fn prepare(
         .clone()
         .filter(|r| r.lines <= MEDIUM_LINES && r.interdiff.len() <= DIFF_MAX);
 
-    let (diff, changed, lines) = match &rebase {
-        Some(r) => (r.interdiff.clone(), r.files.clone(), r.lines),
+    let notes = base::review_notes(repo, &base);
+    let skip = base::globset(&notes.as_deref().map(base::skip_globs).unwrap_or_default());
+    let (diff, changed, lines, skipped) = match &rebase {
+        Some(r) => (r.interdiff.clone(), r.files.clone(), r.lines, Vec::new()),
         None => {
             let diff = git::run(
                 dir,
                 &["diff", "--no-color", "--no-ext-diff", &from, sha, "--"],
             )?;
-            let (changed, lines) = numstat(&git::run(dir, &["diff", "--numstat", &from, sha])?);
-            (diff, changed, lines)
+            let numstat_text = git::run(dir, &["diff", "--numstat", &from, sha])?;
+            let (all, _) = numstat(&numstat_text);
+            let skipped: Vec<String> = all.into_iter().filter(|f| skip.is_match(f)).collect();
+            if skipped.is_empty() {
+                let (changed, lines) = numstat(&numstat_text);
+                (diff, changed, lines, skipped)
+            } else {
+                // The skipped files leave the diff and the counts, so the
+                // effort and the reviewer see only what is to be reviewed.
+                let kept: String = numstat_text
+                    .lines()
+                    .filter(|l| !skipped.iter().any(|s| l.ends_with(&format!("\t{s}"))))
+                    .map(|l| format!("{l}\n"))
+                    .collect();
+                let (changed, lines) = numstat(&kept);
+                (drop_files(&diff, &skipped), changed, lines, skipped)
+            }
         }
     };
     let all_changed: Vec<String> = git::run(dir, &["diff", "--name-only", &merge_base, sha])?
         .lines()
         .map(String::from)
+        .filter(|f| !skip.is_match(f))
         .collect();
 
     let ledger = Ledger::from_events(events);
     let open = ledger.open();
 
-    let notes = base::review_notes(repo, &base);
     let set = base::globset(
         &notes
             .as_deref()
@@ -122,6 +142,7 @@ pub fn prepare(
         .into_iter()
         .collect();
     let effort = effort(default_effort, lines, !sensitive.is_empty());
+    let max_nits = base.config.max_nits;
     let lenses = base.lenses();
     let rules = base::rules(repo, &base);
     let briefing =
@@ -235,6 +256,20 @@ pub fn prepare(
             sensitive.join(", ")
         );
     }
+    if !skipped.is_empty() {
+        let _ = writeln!(
+            p,
+            "\nSkipped: the review notes say not to review these paths, so their changes are \
+             left out of the diff below and are not yours to judge: {}",
+            skipped.join(", ")
+        );
+    }
+    let _ = writeln!(
+        p,
+        "\nReport at most {max_nits} nit{}; Hallmark records only the first {max_nits} and \
+         drops the rest.",
+        if max_nits == 1 { "" } else { "s" }
+    );
 
     // The last round before escalation (ADR 0060): a rejection now goes to
     // a person, who needs a diagnosis more than a longer list.
@@ -422,11 +457,21 @@ pub fn prepare(
         changed,
         lines,
         sensitive,
+        skipped,
         effort,
         lenses,
         learnings: briefing.ids,
         prompt: p,
     })
+}
+
+/// `diff` without the chunks of `files` (ADR 0058: paths the review notes
+/// say to skip).
+pub fn drop_files(diff: &str, files: &[String]) -> String {
+    split_files(diff)
+        .into_iter()
+        .filter(|chunk| !files.contains(&file_of(chunk)))
+        .collect()
 }
 
 /// Where `sha` left its base: the merge-base with the base commit the rules
@@ -618,6 +663,32 @@ mod tests {
         );
         assert_eq!(files, ["src/a.rs", "logo.png", "src/new/b.rs", "y.rs"]);
         assert_eq!(lines, 8);
+    }
+
+    #[test]
+    fn skipped_files_leave_the_diff_whole_chunks_at_a_time() {
+        let one = |f: &str| format!("diff --git a/{f} b/{f}\n--- a/{f}\n+++ b/{f}\n+x\n");
+        let diff = format!(
+            "{}{}{}",
+            one("src/a.rs"),
+            one("docs/generated/s.md"),
+            one("b.rs")
+        );
+        let kept = drop_files(&diff, &["docs/generated/s.md".to_string()]);
+        assert_eq!(kept, format!("{}{}", one("src/a.rs"), one("b.rs")));
+        // Nothing to drop: the diff is unchanged. Everything dropped: empty.
+        assert_eq!(drop_files(&diff, &[]), diff);
+        assert_eq!(
+            drop_files(
+                &diff,
+                &[
+                    "src/a.rs".into(),
+                    "docs/generated/s.md".into(),
+                    "b.rs".into()
+                ]
+            ),
+            ""
+        );
     }
 
     #[test]
