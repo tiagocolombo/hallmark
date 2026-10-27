@@ -1314,7 +1314,7 @@ mod tests {
             "",                // update
             "",                // review_comment
         ];
-        answers.extend([""; 13]); // the loop: fixer … parallel.ship
+        answers.extend([""; 14]); // the loop: fixer … parallel.ship
         answers.extend([
             "2", // capture: ask
             "",  // capture.free
