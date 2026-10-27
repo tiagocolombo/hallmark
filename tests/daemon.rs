@@ -594,3 +594,33 @@ fn a_pause_is_in_the_inbox_until_resumed() {
         r.stdout
     );
 }
+
+/// A pause whose time has passed (the daemon stopped mid-pause) is no longer
+/// in the inbox.
+#[test]
+fn an_expired_pause_is_not_in_the_inbox() {
+    let env = Env::initialized();
+    let now = Utc::now();
+    write_state(
+        &env,
+        json!({
+            "pid": 0, "started_at": null, "heartbeat": null, "wanted": false,
+            "paused": {
+                "reason": "rate limited",
+                "until": (now - chrono::Duration::minutes(5)).to_rfc3339(),
+                "since": (now - chrono::Duration::hours(1)).to_rfc3339(),
+            },
+        }),
+    );
+    let r = env.hall(&env.repo, &["inbox"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert!(
+        !r.json["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["kind"] == "paused"),
+        "{}",
+        r.stdout
+    );
+}

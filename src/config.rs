@@ -1321,6 +1321,14 @@ split = "off"
         assert_eq!(d.channels("ready"), ["desktop"]);
         assert_eq!(d.channels("checks"), d.channels("escalated"));
         assert_eq!(d.channels("checks"), ["desktop", "phone"]);
+        // A pause takes the budget route, whatever it is set to.
+        let custom = Route {
+            budget: vec!["phone".into()],
+            ..Route::default()
+        };
+        assert_eq!(custom.channels("paused"), ["phone"]);
+        assert_eq!(custom.channels("paused"), custom.channels("budget"));
+        assert_ne!(custom.channels("paused"), custom.channels("ready"));
         assert_eq!(c.library.search, SearchBackend::Qmd);
         assert_eq!(c.library.briefing_limit, "6k");
         assert_eq!(c.intake.split, SplitMode::Off);

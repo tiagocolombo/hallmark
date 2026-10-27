@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use crate::config::Role;
 use crate::output::clip;
 use crate::repo::Repo;
-use crate::runner::{self, Metered};
+use crate::runner::{self, Failure, Metered};
 
 /// One independent part of a split request.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -134,13 +134,31 @@ pub fn plan(repo: &Repo, request: &str) -> Outcome {
         }
         Ok(Metered::Failed {
             outcome, failure, ..
-        }) => Outcome {
-            plan: Plan::single(
-                true,
-                format!("the Front Desk run failed: {}", failure.describe()),
-            ),
-            raw: Some(outcome.stream_text()),
-        },
+        }) => {
+            let mut reason = format!("the Front Desk run failed: {}", failure.describe());
+            if let Failure::RateLimited { until } = &failure {
+                // Pause the loop like any other limit hit, so the inbox and
+                // notifications say so; the split isn't retried by itself.
+                let now = chrono::Utc::now();
+                let began = crate::daemon::state::update(|s| {
+                    crate::daemon::pause::begin(
+                        s,
+                        &repo.name,
+                        "Claude's usage limit was hit (Front Desk)",
+                        *until,
+                        std::slice::from_ref(&repo.hall),
+                        now,
+                    )
+                });
+                if matches!(began, Ok(Ok(_))) {
+                    reason.push_str("; the split can be redone after the reset");
+                }
+            }
+            Outcome {
+                plan: Plan::single(true, reason),
+                raw: Some(outcome.stream_text()),
+            }
+        }
         Ok(Metered::Blocked(stop)) => {
             skipped(format!("the Front Desk did not run: {}", stop.reason))
         }

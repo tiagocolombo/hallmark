@@ -771,10 +771,7 @@ pub fn rate_limit(text: &str) -> Option<Option<DateTime<Utc>>> {
 }
 
 /// [`rate_limit`] with the clock given, for tests.
-pub fn rate_limit_at(
-    text: &str,
-    now: DateTime<chrono::Local>,
-) -> Option<Option<DateTime<Utc>>> {
+pub fn rate_limit_at(text: &str, now: DateTime<chrono::Local>) -> Option<Option<DateTime<Utc>>> {
     let t = text.to_ascii_lowercase();
     let hit = [
         "usage limit",
