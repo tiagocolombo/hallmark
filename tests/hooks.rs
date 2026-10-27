@@ -569,7 +569,7 @@ fn an_escalated_item_leaves_its_pre_existing_blocker_out_of_why_it_waits() {
         assert_eq!(r.code, 0, "{}", r.stdout);
     }
     let st = env.hall(&env.repo, &["status", &id]);
-    assert_eq!(st.json["item"]["state"], "escalated", "{}", st.stdout);
+    assert_eq!(st.json["state"], "escalated", "{}", st.stdout);
     let detail = st.json["now"]["detail"].to_string();
     assert!(detail.contains("NEWBLOCKER"), "{detail}");
     assert!(!detail.contains("OLDBLOCKER"), "{detail}");
