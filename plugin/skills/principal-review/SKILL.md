@@ -111,7 +111,10 @@ Apply only the lenses the prompt lists when it lists some.
 | `nit` | Style and polish | no |
 
 Minors and nits ride along into the review comment on the pull request. List them when they
-help; never let them crowd out what matters.
+help; never let them crowd out what matters. The prompt says how many nits
+the repository records per review (`max_nits`, 3 by default): report at
+most that many, most useful first. Hallmark keeps the first ones and drops the
+rest.
 
 ## The evidence bar
 
@@ -128,8 +131,10 @@ help; never let them crowd out what matters.
   (a caller, a constraint, a config, an existing test), read it. If it turns
   out handled, drop the finding.
 - **Stay in scope.** Report problems the change introduces, and old ones it
-  makes reachable or worse. Leave alone code it doesn't touch, and what the
-  gates already enforce (formatting, the linter).
+  makes reachable or worse. Leave alone code it doesn't touch, what the
+  gates already enforce (formatting, the linter), and the paths the review
+  notes say to skip: the prompt names them, and their changes are left out
+  of the diff.
 - **No speculation, no padding.** Don't report what "could" go wrong without
   a path to it. Don't invent findings to look busy: an empty list for a sound
   change is the right answer.

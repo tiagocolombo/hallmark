@@ -232,7 +232,17 @@ pub fn strip_comments(text: &str) -> String {
 /// The globs listed under "## Sensitive paths" in the review notes. Each
 /// list item's first `code span`, else its first word, is a glob.
 pub fn sensitive_globs(notes: &str) -> Vec<String> {
-    let Some(sec) = section(&strip_comments(notes), "sensitive paths") else {
+    section_globs(notes, "sensitive paths")
+}
+
+/// The globs listed under "## Paths to skip" in the review notes: changes
+/// there are left out of the review (ADR 0058).
+pub fn skip_globs(notes: &str) -> Vec<String> {
+    section_globs(notes, "paths to skip")
+}
+
+fn section_globs(notes: &str, heading: &str) -> Vec<String> {
+    let Some(sec) = section(&strip_comments(notes), heading) else {
         return Vec::new();
     };
     sec.lines()
@@ -302,10 +312,30 @@ mod tests {
 * *.sql
 secrets.toml
 
+## Paths to skip
+
+<!-- e.g. docs/generated/** -->
+- `docs/generated/**`: built from the schema
+- vendor/
+
 ## Invariants
 
 - every query goes through the tenant-scoped client
 ";
+
+    #[test]
+    fn paths_to_skip_come_from_their_section() {
+        let g = skip_globs(NOTES);
+        assert_eq!(g, ["docs/generated/**", "vendor/"]);
+        let set = globset(&g);
+        assert!(set.is_match("docs/generated/schema.md"));
+        assert!(set.is_match("vendor/lib/x.js"));
+        assert!(!set.is_match("docs/commands.md"));
+        // Skipping is never read from the sensitive section, or the reverse.
+        assert!(!sensitive_globs(NOTES).contains(&"vendor/".to_string()));
+        assert!(skip_globs("## Paths to skip\n\n<!-- e.g. a/** -->\n").is_empty());
+        assert!(skip_globs("no section").is_empty());
+    }
 
     #[test]
     fn sensitive_paths_come_from_their_section() {

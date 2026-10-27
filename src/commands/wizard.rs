@@ -207,6 +207,7 @@ const REPO_SECTIONS: &[(&str, &[(&str, &str)])] = &[
                 "max_rejects",
                 "Rejected reviews before the item is escalated to you",
             ),
+            ("max_nits", "Nits a review may record; the rest are dropped"),
             ("max_check_failures", ""),
             ("auto_ready", ""),
             ("stuck_after", ""),
@@ -1309,7 +1310,7 @@ mod tests {
             "",                // update
             "",                // review_comment
         ];
-        answers.extend([""; 12]); // the loop: fixer … parallel.ship
+        answers.extend([""; 13]); // the loop: fixer … parallel.ship
         answers.extend([
             "2", // capture: ask
             "",  // capture.free

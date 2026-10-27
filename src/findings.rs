@@ -409,7 +409,11 @@ impl Ledger {
     /// Applies a model verdict for `round`: rules on prior findings (ones it
     /// leaves out stay open; unknown IDs are ignored), numbers the new ones,
     /// and returns the recorded findings and the open counts afterwards.
-    pub fn judge(&self, round: u32, mv: &ModelVerdict) -> Judged {
+    ///
+    /// `max_nits` caps the nits recorded from this verdict (ADR 0058): the
+    /// first `max_nits` in the reviewer's order are kept, the rest are
+    /// counted in `dropped_nits` and never recorded.
+    pub fn judge(&self, round: u32, mv: &ModelVerdict, max_nits: u32) -> Judged {
         let open_ids: Vec<String> = self.open().iter().map(|t| t.finding.id.clone()).collect();
         let prior: Vec<PriorRuling> = mv
             .prior
@@ -418,9 +422,22 @@ impl Ledger {
             .cloned()
             .collect();
         let mut n = self.next_number();
+        let mut nits = 0u32;
+        let mut dropped_nits = 0u32;
         let findings: Vec<Finding> = mv
             .findings
             .iter()
+            .filter(|f| {
+                if f.severity != Severity::Nit {
+                    return true;
+                }
+                nits += 1;
+                if nits > max_nits {
+                    dropped_nits += 1;
+                    return false;
+                }
+                true
+            })
             .map(|f| {
                 let id = format!("F{n}");
                 n += 1;
@@ -458,6 +475,7 @@ impl Ledger {
             findings,
             prior,
             counts,
+            dropped_nits,
         }
     }
 
@@ -478,6 +496,8 @@ pub struct Judged {
     pub prior: Vec<PriorRuling>,
     /// Open findings after this verdict.
     pub counts: Counts,
+    /// Nits the reviewer reported beyond `max_nits`, not recorded.
+    pub dropped_nits: u32,
 }
 
 impl Judged {
@@ -527,6 +547,38 @@ mod tests {
     }
 
     #[test]
+    fn nits_beyond_the_cap_are_dropped_in_the_reviewers_order() {
+        let l = Ledger::default();
+        let v = ModelVerdict {
+            summary: "s".into(),
+            findings: vec![
+                mf(Severity::Nit, "n1"),
+                mf(Severity::Major, "m1"),
+                mf(Severity::Nit, "n2"),
+                mf(Severity::Nit, "n3"),
+                mf(Severity::Minor, "mi"),
+                mf(Severity::Nit, "n4"),
+            ],
+            prior: vec![],
+            learnings: vec![],
+        };
+        let j = l.judge(1, &v, 2);
+        let titles: Vec<&str> = j.findings.iter().map(|f| f.title.as_str()).collect();
+        assert_eq!(titles, ["n1", "m1", "n2", "mi"]);
+        assert_eq!(
+            j.findings.iter().map(|f| f.id.as_str()).collect::<Vec<_>>(),
+            ["F1", "F2", "F3", "F4"],
+            "numbering has no gaps"
+        );
+        assert_eq!(j.dropped_nits, 2);
+        assert_eq!(j.counts.nit, 2);
+        // A cap of zero records no nits; a large cap drops none.
+        assert_eq!(l.judge(1, &v, 0).dropped_nits, 4);
+        assert_eq!(l.judge(1, &v, 10).dropped_nits, 0);
+        assert_eq!(l.judge(1, &v, 10).findings.len(), 6);
+    }
+
+    #[test]
     fn approval_is_computed_from_open_findings() {
         let mut l = Ledger::default();
         let v1 = ModelVerdict {
@@ -535,7 +587,7 @@ mod tests {
             prior: vec![],
             learnings: vec![],
         };
-        let j1 = l.judge(1, &v1);
+        let j1 = l.judge(1, &v1, 3);
         assert!(!j1.approves());
         assert_eq!(j1.findings[0].id, "F1");
         assert_eq!(j1.findings[1].id, "F2");
@@ -571,7 +623,7 @@ mod tests {
             ],
             learnings: vec![],
         };
-        let j2 = l.judge(2, &v2);
+        let j2 = l.judge(2, &v2, 3);
         assert_eq!(j2.prior.len(), 1, "unknown IDs are ignored");
         assert_eq!(j2.findings[0].id, "F3");
         assert_eq!(
@@ -597,7 +649,7 @@ mod tests {
             }],
             learnings: vec![],
         };
-        let j3 = l.judge(3, &v3);
+        let j3 = l.judge(3, &v3, 3);
         assert!(j3.approves());
         record(&mut l, 3, &j3);
         assert_eq!(l.open().len(), 1);

@@ -37,14 +37,24 @@ Never push: work reaches GitHub only through review.
 const REVIEW_STUB: &str = "# Review notes for Hallmark
 
 The principal engineer reads this file from the base branch before every
-review. Add what a reviewer new to this repo should know: sensitive paths,
-invariants, conventions that aren't written down elsewhere. To change how the
-reviewer, the fixer or your sessions work here, add a skill under
-`.hallmark/skills/<name>/SKILL.md` (`hall doctor` lists them).
+review. Keep it short. Say what a failure looks like in this repo, which
+paths get the deepest review and which to leave alone, and the invariants
+that aren't written down elsewhere. To change how the reviewer, the fixer or
+your sessions work here, add a skill under `.hallmark/skills/<name>/SKILL.md`
+(`hall doctor` lists them).
+
+## What failure looks like here
+
+<!-- e.g. for docs: a claim that doesn't match the code; for config: a
+request routed to the wrong service -->
 
 ## Sensitive paths
 
 <!-- e.g. apps/api/src/billing/** gets the deepest review -->
+
+## Paths to skip
+
+<!-- e.g. docs/generated/** is built from the schema; the review leaves it out -->
 
 ## Invariants
 

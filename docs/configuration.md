@@ -60,6 +60,7 @@ fixer       = "claude -p"   # or another fix engine, run in the worktree
 claude_args = []            # extra arguments for every headless claude -p run, never ones that loosen it
 dev_commands = []           # what headless dev runs may run besides the gates
 max_rejects = 3             # rejected reviews before the item is escalated to you
+max_nits    = 3             # nits a review may record; the rest are dropped (ADR 0058)
 max_check_failures = 3      # failed checks in a row before the item is held for you; 0 for never
 auto_ready  = true          # propose-ready goes straight to review when nothing is left to confirm
 stuck_after = "30m"
@@ -262,6 +263,31 @@ and follow it at once.
 | `fixer` | `{id}` `{worktree}` `{findings_file}` (JSON from `hall findings`) |
 
 Commands run through `sh -c` on macOS and Linux and `cmd /C` on Windows.
+
+## Review notes
+
+`.hallmark/review.md` is what the principal engineer reads about this
+repository before every review, from the base branch, so a branch can't
+change its own review ([ADR 0018](decisions/0018-the-assay-office.md)).
+`hall init` writes a stub with four sections; keep it short:
+
+| Section | What it does |
+| --- | --- |
+| `## What failure looks like here` | Tells the reviewer what to look for in this repo: for docs, a claim that doesn't match the code; for config, a request routed to the wrong service. Prose; the reviewer reads it as a rule. |
+| `## Sensitive paths` | One glob per list item (`` `billing/**` ``, `migrations/`). A change that touches one gets the deepest review effort, and the prompt names the files. |
+| `## Paths to skip` | One glob per list item. Changes under them are left out of the diff the reviewer sees, out of the file and line counts that set the effort, and out of the Library briefing; the prompt names what was skipped. A path that is also under `## Sensitive paths` is never skipped, and a file moved into a skipped path still shows its removal from the old one ([ADR 0058](decisions/0058-review-notes-skip-paths-and-a-nit-cap.md)). For generated files, vendored code, fixtures. A rebase review (ADR 0049) skips nothing: it is already only what the rebase changed. |
+| `## Invariants` | Rules the code must keep that aren't written down elsewhere. |
+
+Globs match like `.gitignore`: a pattern without a slash matches at any
+depth, a trailing slash means everything under that directory. Text inside
+`<!-- -->` is ignored, so the stub's examples don't count.
+
+`max_nits` (3 by default) caps the nits a review records: the reviewer is
+told the cap, and the ledger keeps only the first that many nits of each
+verdict, in the reviewer's order. The review report says how many were
+dropped. With an agent author every nit becomes a commit and another
+round, so the cap bounds that cost; blockers, majors and minors are never
+capped.
 
 ## PR descriptions and review comments
 
