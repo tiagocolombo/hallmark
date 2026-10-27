@@ -182,7 +182,9 @@ pub fn digest(item: &Item, events: &[Event], changed: &[String]) -> String {
     }
 
     if let Some((summary, why, how)) = events.iter().rev().find_map(|e| match &e.body {
-        Body::ProposedReady { summary, why, how } => Some((summary, why, how)),
+        Body::ProposedReady {
+            summary, why, how, ..
+        } => Some((summary, why, how)),
         _ => None,
     }) {
         s.push_str(&format!(
@@ -1068,6 +1070,8 @@ mod tests {
             summary: "Retries check the endpoint".into(),
             why: Some("Deleted endpoints kept retrying".into()),
             how: None,
+            tested: None,
+            revert: None,
         }));
         events.push(ev(Body::Attached {
             path: "attachments/1-flow.png".into(),

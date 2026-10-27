@@ -555,6 +555,8 @@ pub fn propose_ready(cwd: &Path, a: ProposeReadyArgs) -> Result<Response> {
                     summary: a.summary.clone(),
                     why: a.why.clone().filter(|w| !w.trim().is_empty()),
                     how: a.how.clone().filter(|h| !h.trim().is_empty()),
+                    tested: a.tested.clone().filter(|t| !t.trim().is_empty()),
+                    revert: a.revert.clone().filter(|r| !r.trim().is_empty()),
                 },
             )];
             if let Some(sha) = &head {

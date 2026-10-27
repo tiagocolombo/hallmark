@@ -265,11 +265,15 @@ Commands run through `sh -c` on macOS and Linux and `cmd /C` on Windows.
 
 ## PR descriptions and review comments
 
-The PR the shipper opens has a description with three sections, `## What`,
-`## Why` and `## How`, and nothing of the review
-([ADR 0039](decisions/0039-pr-description-and-review-comments.md)). The
-author gives them with `hall propose-ready --summary … --why … --how …`;
-without `--why` the request is used, without `--how` the commit subjects.
+The PR the shipper opens has a description with five sections, `## What`,
+`## Why`, `## How`, `## Testing` and `## How to revert`, and nothing of the
+review ([ADR 0039](decisions/0039-pr-description-and-review-comments.md),
+[ADR 0057](decisions/0057-testing-and-how-to-revert-in-the-pr.md)). The
+author gives them with `hall propose-ready --summary … --why … --how …
+--tested … --revert …`; without `--why` the request is used, without
+`--how` the commit subjects. Testing always ends with the gates that passed
+on the hallmarked commit; without `--revert`, How to revert says to
+`git revert` the commit the PR lands as.
 
 Each review is a PR comment: `review_comment` posts `{review_file}` once the
 PR is open, and again after every `update` (PR comments addressed, CI fixed,

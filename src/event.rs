@@ -180,6 +180,14 @@ pub enum Body {
         /// How it was done: the PR description's How.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         how: Option<String>,
+        /// How it was tested, beyond the gates: the PR description's
+        /// Testing (ADR 0057).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tested: Option<String>,
+        /// How to undo it once merged, when a `git revert` isn't enough:
+        /// the PR description's How to revert (ADR 0057).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        revert: Option<String>,
     },
     Ready {
         sha: String,
@@ -1243,6 +1251,8 @@ mod tests {
                 summary: "done".into(),
                 why: None,
                 how: None,
+                tested: None,
+                revert: None,
             }),
             ev(Body::Ready {
                 sha: "aaa".into(),

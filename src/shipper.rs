@@ -740,21 +740,32 @@ fn commit_subjects(wt: &Path, base: &str, head: &str) -> Vec<String> {
 /// it as feedback.
 pub const REVIEW_MARK: &str = "<!-- hallmark:review -->";
 
-/// The PR description (ADR 0039): What, Why and How, and the issue it
-/// closes. No review: that goes in a comment ([`review_comment`]).
+/// The PR description (ADR 0039, 0057): What, Why, How, Testing and How to
+/// revert, and the issue it closes. No review: that goes in a comment
+/// ([`review_comment`]).
 ///
 /// - What: the author's summary (`propose-ready --summary`), else the title.
 /// - Why: `propose-ready --why`, else the request, else the issue.
 /// - How: `propose-ready --how`, else the commits.
+/// - Testing: `propose-ready --tested`, then the gates that passed on the
+///   hallmarked commit.
+/// - How to revert: `propose-ready --revert`, else a `git revert` of the
+///   commit the PR lands as.
 ///
 /// `review_posted` is whether a review comment will be posted; when it isn't,
 /// the footer says the review stays local.
 pub fn pr_body(item: &Item, events: &[Event], commits: &[String], review_posted: bool) -> String {
     let proposed = events.iter().rev().find_map(|e| match &e.body {
-        Body::ProposedReady { why, how, .. } => Some((why.clone(), how.clone())),
+        Body::ProposedReady {
+            why,
+            how,
+            tested,
+            revert,
+            ..
+        } => Some((why.clone(), how.clone(), tested.clone(), revert.clone())),
         _ => None,
     });
-    let (why, how) = proposed.unwrap_or_default();
+    let (why, how, tested, revert) = proposed.unwrap_or_default();
     // A follow-up's request is generated (PR feedback, CI logs): never the
     // Why. It gets a one-line pointer to the PR instead.
     let request = events.iter().find_map(|e| match &e.body {
@@ -792,6 +803,48 @@ pub fn pr_body(item: &Item, events: &[Event], commits: &[String], review_posted:
         }
         None => {
             let _ = writeln!(s, "See the commits.");
+        }
+    }
+
+    // Testing: what the author said, then the gates that passed last. The
+    // gates are the repository's own checks, not the review.
+    let _ = writeln!(s, "\n## Testing\n");
+    if let Some(t) = tested.filter(|t| !t.trim().is_empty()) {
+        let _ = writeln!(s, "{}\n", t.trim());
+    }
+    let gates: Option<Vec<String>> = events.iter().rev().find_map(|e| match &e.body {
+        Body::Checks {
+            passed: true, runs, ..
+        } => Some(runs.iter().map(|r| format!("`{}`", r.command)).collect()),
+        _ => None,
+    });
+    match gates {
+        Some(g) if !g.is_empty() => {
+            let _ = writeln!(
+                s,
+                "The repository's gates passed on this commit: {}.",
+                g.join(", ")
+            );
+        }
+        Some(_) => {
+            let _ = writeln!(s, "This repository has no gates configured.");
+        }
+        None => {
+            let _ = writeln!(s, "No gate run is recorded for this commit.");
+        }
+    }
+
+    let _ = writeln!(s, "\n## How to revert\n");
+    match revert.filter(|r| !r.trim().is_empty()) {
+        Some(r) => {
+            let _ = writeln!(s, "{}", r.trim());
+        }
+        None => {
+            let _ = writeln!(
+                s,
+                "`git revert` the commit this PR lands as on `{}`; the author listed no other steps.",
+                item.base
+            );
         }
     }
     if let Some(i) = &item.issue {

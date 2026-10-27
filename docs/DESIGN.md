@@ -372,7 +372,7 @@ $ echo $?
 | `hall pull-back [<id>] [--reason]` | Returns the item to development. |
 | `hall drop [<id>] --reason [--keep-worktree]` | Abandons the item. The branch and journal stay. |
 | `hall retry [<id>] --reason [--tokens <n>]` | Allows an escalated item one more round, or releases a held item. A budget hold also grants that item another `per_item` (or `--tokens`); the budget is unchanged. |
-| `hall propose-ready [<id>] --summary [--why] [--how] [--ask]` | The agent says the work is done: straight to review when nothing is left to confirm, else (or with `--ask`) it waits for you. Refused like `ready` while a rebase is pending and the branch isn't on its base (ADR 0043). |
+| `hall propose-ready [<id>] --summary [--why] [--how] [--tested] [--revert] [--ask]` | The agent says the work is done: straight to review when nothing is left to confirm, else (or with `--ask`) it waits for you. The flags are the PR description's What, Why, How, Testing and How to revert (ADR 0039, 0057). Refused like `ready` while a rebase is pending and the branch isn't on its base (ADR 0043). |
 | `hall ask <q> [--item] [--options] [--default] [--wait] [--session]` | Records a question. |
 | `hall answer <qid> <answer>` | Records the answer; the daemon resumes the asking session with it. |
 | `hall usage [--by item\|room\|role\|model\|day] [--since] [--item]` | Shows tokens and list-price cost. |

@@ -52,14 +52,17 @@ fn ships_to_a_local_remote() {
     let remote_sha = git(&remote, &["rev-parse", &format!("refs/heads/{branch}")]);
     assert_eq!(remote_sha, sha);
 
-    // The description: What, Why and How, and nothing of the review.
+    // The description: What, Why, How, Testing and How to revert, and
+    // nothing of the review.
     let body = std::fs::read_to_string(item_file(&env, &id, "pr-body.md")).unwrap();
     assert_eq!(
         body,
         format!(
             "## What\n\nRetry webhooks\n\n## Why\n\nRetry webhooks\n\n## How\n\n\
-             - change retry.rs\n\n---\n\nReviewed and hallmarked as {id}: the review is in \
-             the comments.\n"
+             - change retry.rs\n\n## Testing\n\nThis repository has no gates \
+             configured.\n\n## How to revert\n\n`git revert` the commit this PR \
+             lands as on `main`; the author listed no other steps.\n\n---\n\nReviewed and \
+             hallmarked as {id}: the review is in the comments.\n"
         )
     );
     // The review, for the PR comment: the summary, each finding and how it
@@ -140,6 +143,10 @@ fn proposed_item(env: &Env) -> (String, std::path::PathBuf) {
             "Receivers that blip lose events today; #88 lost a day of orders.",
             "--how",
             "A retry loop around `deliver`, with jittered backoff capped at 5 tries.",
+            "--tested",
+            "Ran the receiver against a flaky endpoint for an hour; every event arrived once.",
+            "--revert",
+            "Turn `webhooks.retry` off first; the retry table is additive and can stay.",
         ],
     );
     assert_eq!(r.code, 0, "{}", r.stdout);
@@ -177,7 +184,11 @@ fn the_description_takes_what_why_and_how_from_the_author() {
         body.starts_with(
             "## What\n\nFailed webhook deliveries are retried with backoff.\n\n\
              ## Why\n\nReceivers that blip lose events today; #88 lost a day of orders.\n\n\
-             ## How\n\nA retry loop around `deliver`, with jittered backoff capped at 5 tries.\n"
+             ## How\n\nA retry loop around `deliver`, with jittered backoff capped at 5 tries.\n\n\
+             ## Testing\n\nRan the receiver against a flaky endpoint for an hour; every event \
+             arrived once.\n\nThis repository has no gates configured.\n\n\
+             ## How to revert\n\nTurn `webhooks.retry` off first; the retry table is additive \
+             and can stay.\n"
         ),
         "{body}"
     );
@@ -808,9 +819,14 @@ fn the_review_comment_says_how_each_finding_was_settled() {
     }
     assert!(review.find("**F2**").unwrap() < review.find("**F1**").unwrap());
     let body = std::fs::read_to_string(item_file(&env, &id, "pr-body.md")).unwrap();
-    for s in ["F1", "F2", "F3", "Hallmarked", "cargo test"] {
+    for s in ["F1", "F2", "F3", "Hallmarked", "3.1s"] {
         assert!(!body.contains(s), "{s} in the description:\n{body}");
     }
+    // The gates that passed are Testing, not review.
+    assert!(
+        body.contains("## Testing\n\nThe repository's gates passed on this commit: `cargo test`."),
+        "{body}"
+    );
 }
 
 #[test]
