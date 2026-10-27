@@ -65,7 +65,8 @@ pub struct Index {
 pub struct InboxEntry {
     /// Escalations: question, escalated, ready, budget, run_failed,
     /// ship_failed, conflict, feedback, checks, ci_failed (after the Delivery
-    /// office's fixes), merge_failed, lit, ci_down, base_red, paused (Claude's limit), daemon_stopped.
+    /// office's fixes), merge_failed, lit, ci_down, base_red, reverted (a merged PR undone on its base), paused
+    /// (Claude's limit), daemon_stopped.
     /// Notices: stuck, session_waiting, ci_failed (merged, or being fixed),
     /// learnings.
     pub kind: String,
@@ -716,6 +717,12 @@ impl Index {
             else {
                 continue;
             };
+            if all
+                .iter()
+                .any(|f| f.follow_up.as_deref() == Some(url.as_str()) && f.state != State::Dropped)
+            {
+                continue;
+            }
             out.push(InboxEntry {
                 kind: "reverted".into(),
                 item: Some(item.id),

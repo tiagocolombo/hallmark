@@ -65,7 +65,14 @@ pub fn watched(i: &Item, now: DateTime<Utc>) -> bool {
         && i.delivered.as_deref() == Some("merged")
         && i.reverted.is_none()
         && i.pr_url.as_deref().is_some_and(|u| u.contains("/pull/"))
-        && now - i.state_since <= Duration::days(WINDOW_DAYS)
+        && now - i.delivered_at.unwrap_or(i.state_since) <= Duration::days(WINDOW_DAYS)
+}
+
+/// Whether `base` was read less than [`EVERY`] seconds ago.
+fn throttled(seen: &Seen, base: &str, now: DateTime<Utc>) -> bool {
+    seen.bases
+        .get(base)
+        .is_some_and(|t| now - *t < Duration::seconds(EVERY))
 }
 
 /// One commit of the base, newest first in the list.
@@ -102,17 +109,21 @@ pub fn pr_number(url: &str) -> Option<u64> {
 
 /// The commit a PR landed as, in a log that is newest first: the merge
 /// commit ("Merge pull request #N"), the squash commit ("… (#N)"), or the
-/// PR's own head when it was rebased or fast-forwarded. The oldest match
-/// wins, so a later revert PR that names the number can't be mistaken for
-/// the landing.
+/// PR's own head when it was rebased or fast-forwarded. The subject match
+/// comes first: under a merge commit the head is in the history too, as its
+/// second parent, but it is the merge commit that gets reverted. The oldest
+/// match wins, so a later revert PR that names the number can't be mistaken
+/// for the landing.
 pub fn landed<'a>(log: &'a [Commit], number: u64, head: Option<&str>) -> Option<&'a Commit> {
     let squash = format!("(#{number})");
     let merge = format!("Merge pull request #{number} ");
-    log.iter().rev().find(|c| {
-        head.is_some_and(|h| c.sha == h)
-            || c.subject.starts_with(&merge)
-            || (c.subject.ends_with(&squash) && !c.subject.starts_with("Revert \""))
-    })
+    log.iter()
+        .rev()
+        .find(|c| {
+            c.subject.starts_with(&merge)
+                || (c.subject.ends_with(&squash) && !c.subject.starts_with("Revert \""))
+        })
+        .or_else(|| log.iter().rev().find(|c| head.is_some_and(|h| c.sha == h)))
 }
 
 /// A commit newer than `landed` that reverts it.
@@ -142,11 +153,7 @@ pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
     let mut seen = Seen::load(repo);
     let mut done = Vec::new();
     for (base, items) in by_base {
-        if seen
-            .bases
-            .get(base)
-            .is_some_and(|t| now - *t < Duration::seconds(EVERY))
-        {
+        if throttled(&seen, base, now) {
             continue;
         }
         seen.bases.insert(base.to_string(), now);
@@ -292,6 +299,91 @@ mod tests {
         // A commit older than the landing is never its revert.
         let old = parse_log("l1\x1fx (#4)\x1f\x1e r0\x1fRevert \"x (#4)\"\x1f\x1e");
         assert!(revert_of(&old, landed(&old, 4, None).unwrap()).is_none());
+    }
+
+    #[test]
+    fn a_merge_commit_is_reverted_not_its_head() {
+        // `git revert -m 1 M`: the head h1 sits after M in the log.
+        let l = parse_log(
+            "r1\x1fRevert \"Merge pull request #3 from acme/x\"\x1fThis reverts commit m1, reversing changes made to p0.\x1e\
+             m1\x1fMerge pull request #3 from acme/x\x1fthing\x1e\
+             h1\x1ffeat: thing\x1f\x1e\
+             p0\x1finit\x1f\x1e",
+        );
+        let m = landed(&l, 3, Some("h1")).unwrap();
+        assert_eq!(m.sha, "m1");
+        assert_eq!(revert_of(&l, m).unwrap().sha, "r1");
+    }
+
+    fn shipped(delivered_ago: i64, state_ago: i64) -> Item {
+        let now = Utc::now();
+        let t = now - Duration::days(state_ago);
+        Item {
+            id: crate::item::ItemId(1),
+            title: "t".into(),
+            state: State::Closed,
+            branch: "b".into(),
+            worktree: "w".into(),
+            base: "main".into(),
+            issue: None,
+            created_at: t,
+            updated_at: t,
+            state_since: t,
+            round: 1,
+            rejects: 0,
+            check_failures: 0,
+            frozen_sha: None,
+            hallmark_sha: None,
+            pr_url: Some("https://github.com/acme/app/pull/3".into()),
+            pr_head: None,
+            summary: None,
+            drop_reason: None,
+            adopted: false,
+            events: 2,
+            parent: None,
+            follow_up: None,
+            ci: None,
+            rebase: None,
+            feedback: None,
+            ci_fix: None,
+            ci_fixes: 0,
+            ci_declined: None,
+            delivered: Some("merged".into()),
+            delivered_at: Some(now - Duration::days(delivered_ago)),
+            merged: None,
+            merge_approved: None,
+            reverted: None,
+            own_worktree: true,
+            swept: false,
+            hold: None,
+            stuck_since: None,
+            reviewed_sha: None,
+            findings: Default::default(),
+        }
+    }
+
+    #[test]
+    fn the_window_counts_from_the_merge() {
+        let now = Utc::now();
+        // Shipped 40 days ago, merged 2 days ago: watched.
+        assert!(watched(&shipped(2, 40), now));
+        // Shipped 40 days ago, merged 31 days ago: not.
+        assert!(!watched(&shipped(31, 40), now));
+        assert!(watched(&shipped(29, 29), now));
+    }
+
+    #[test]
+    fn a_fresh_read_throttles_the_base() {
+        let now = Utc::now();
+        let mut seen = Seen::default();
+        assert!(!throttled(&seen, "main", now));
+        seen.bases
+            .insert("main".into(), now - Duration::seconds(EVERY - 60));
+        assert!(throttled(&seen, "main", now));
+        assert!(!throttled(&seen, "dev", now));
+        seen.bases
+            .insert("main".into(), now - Duration::seconds(EVERY + 1));
+        assert!(!throttled(&seen, "main", now));
     }
 
     #[test]

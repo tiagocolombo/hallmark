@@ -271,6 +271,10 @@ pub struct Item {
     /// Delivery office watches it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub delivered: Option<String>,
+    /// When `delivered` was recorded: the merge, which the revert watch
+    /// counts its window from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivered_at: Option<DateTime<Utc>>,
     /// The PR head the merger merged (ADR 0048); the watch then records
     /// `delivered`. Cleared when the item reopens.
     #[serde(default, skip_serializing_if = "Option::is_none")]

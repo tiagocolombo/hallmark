@@ -668,6 +668,34 @@ fn a_reverted_pr_is_recorded_put_in_the_inbox_and_distilled_again() {
     let stats = env.hall(&env.repo, &["stats"]);
     assert_eq!(stats.json["items"]["reverted"], 1, "{}", stats.stdout);
 
+    // Its detail names the revert, asks the question and keeps its actions.
+    let detail = env.hall(&env.repo, &["inbox", "1"]);
+    let why = detail.json["why"].as_str().unwrap();
+    assert!(why.contains("Which layer should have caught it"), "{why}");
+    let evidence = detail.json["evidence"].to_string();
+    assert!(evidence.contains(&revert[..7]), "{evidence}");
+    let actions = detail.json["actions"].to_string();
+    assert!(
+        actions.contains(&format!("hall new --follow-up {URL}")),
+        "{actions}"
+    );
+    assert!(actions.contains(&format!("hall log {id}")), "{actions}");
+
+    // A follow-up settles the entry.
+    let out = env
+        .cmd(&env.repo)
+        .env("HALL_GH", &gh)
+        .args(["--json", "new", "--follow-up", URL])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(0), "{:?}", out);
+    let inbox = env.hall(&env.repo, &["inbox"]);
+    assert!(
+        !inbox.stdout.contains("\"reverted\""),
+        "the follow-up clears the entry: {}",
+        inbox.stdout
+    );
+
     // The librarian takes it again, and its digest asks the question.
     let step = pass(&env, &gh, "librarian", librarian);
     assert_eq!(step["progress"], "worked", "{step}");

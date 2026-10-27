@@ -995,6 +995,7 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
         ci_fixes: 0,
         ci_declined: None,
         delivered: None,
+        delivered_at: None,
         merged: None,
         merge_approved: None,
         reverted: None,
@@ -1125,6 +1126,7 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
                 item.own_worktree &= item.worktree == *worktree;
                 item.swept = false;
                 item.delivered = None;
+                item.delivered_at = None;
                 item.merged = None;
                 item.merge_approved = None;
                 item.worktree = worktree.clone();
@@ -1152,7 +1154,10 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
             }
             Body::CiFixDeclined { reason, .. } => item.ci_declined = Some(reason.clone()),
             Body::PrMerged { sha, .. } => item.merged = Some(sha.clone()),
-            Body::Delivered { outcome, .. } => item.delivered = Some(outcome.clone()),
+            Body::Delivered { outcome, .. } => {
+                item.delivered = Some(outcome.clone());
+                item.delivered_at = Some(e.t);
+            }
             Body::Reverted {
                 base,
                 sha,

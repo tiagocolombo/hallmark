@@ -1,6 +1,6 @@
 # 0061. A revert is a signal
 
-Status: Accepted, 2026-10-27. Amends 0021 and 0056.
+Status: Accepted, 2026-10-27. Amends 0021, 0031 and 0056.
 
 ## Context
 

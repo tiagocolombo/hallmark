@@ -116,6 +116,7 @@ mod tests {
             ci_fixes: 0,
             ci_declined: None,
             delivered: None,
+            delivered_at: None,
             merged: None,
             merge_approved: None,
             reverted: None,

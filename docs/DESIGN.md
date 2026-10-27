@@ -638,6 +638,7 @@ changes (ADR 0030).
 | merge_failed, lit | a hold on a shipped item: the merger's merge command failed, or the PR is ready but touches a `[merge] lit` path (ADR 0048) | that item, until `hall retry` (try again; for `lit`, merge this head) or the PR merges or closes |
 | paused | the daemon paused its model workers: a run hit Claude's usage or session limit, or the loop spent its daily budget (ADR 0016) | every model run, until the reset (the time Claude names, read in this machine's zone; 30 minutes when it names none) or `hall daemon resume`; no item is held |
 | ci_failed | an open PR's CI still fails after the Delivery office's fixes | a follow-up item |
+| reverted | a merged PR was reverted on its base within 30 days (ADR 0061); the librarian distils it again, asking which layer should have caught it | a follow-up item, or `hall inbox --dismiss` |
 | base_red | a failed check on a base's tip (ADR 0051) | that base's merge queue, until its CI is green; a PR that fixes it is merged by hand |
 | ci_down | CI jobs that never started (an Actions billing limit, no runners): one entry for every PR | GitHub |
 | session waiting | an answer the loop couldn't deliver to the asking session | that session |
@@ -747,7 +748,7 @@ doubt makes one item.
 One process (`hall daemon start`, optionally at login) runs passes over every
 registered repo; every repo, worker and slot is scheduled on its own (ADR
 0026): watchman, resume, assayer, fixer, shipper, delivery, delivery-watch,
-merger, ci, sweeper, librarian, notify. Leases
+merger, ci, sweeper, reverts, librarian, notify. Leases
 keep one worker per item and count per phase against `[parallel]` (checks,
 review, fix, ship), not one assayer per repo. A rate limit or the daily budget
 pauses the model workers until the reset, recorded as `paused`. Stopping is a
