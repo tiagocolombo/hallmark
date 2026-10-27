@@ -551,6 +551,45 @@ fn a_tiered_path_waits_for_peoples_approvals_and_counts_yours_as_one() {
 }
 
 #[test]
+fn a_pr_waiting_for_approvals_that_falls_behind_is_rebased_not_stranded() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    set_config(&env, "merge.one_approval", "[\"charge.rs\"]");
+    let (id, _, _) = shipped_files(&env, &gh, 1, &["charge.rs", "lib.rs"]);
+    pass(&env, &gh);
+    assert_eq!(events(&env, &id, "held")[0]["kind"], "lit");
+    // Main changes lib.rs, which the waiting PR also touches.
+    commit_file(&env.repo, "lib.rs", "// main's lib.rs\n");
+    git(&env.repo, &["push", "-q", "origin", "main"]);
+    let step = pass(&env, &gh);
+    assert!(
+        step["what"].as_str().unwrap().contains("reopened"),
+        "{step}"
+    );
+    assert_eq!(state(&env, &id), "development");
+    let rel = events(&env, &id, "released");
+    assert_eq!(rel[0]["actor"], "merger");
+    let status = env.hall(&env.repo, &["status", &id]);
+    assert!(status.json.get("hold").is_none_or(|h| h.is_null()), "{}", status.stdout);
+}
+
+#[test]
+fn queueing_never_writes_to_a_journal_of_a_pr_that_waits_for_approvals() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    set_config(&env, "merge.two_approvals", "[\"setup.sh\"]");
+    let (id, _, sha) = shipped(&env, &gh, 1, "setup.sh");
+    pass(&env, &gh);
+    pr(&gh, 1, "MERGEABLE", &sha, "", approved_by(&["ana", "bob"], &sha));
+    let before = events(&env, &id, "released").len();
+    let q = queue(&env, &gh);
+    assert_eq!(status_of(&q, &id)["status"], "ready");
+    assert_eq!(events(&env, &id, "released").len(), before);
+}
+
+#[test]
 fn the_reviewer_can_ask_for_a_person_on_any_change() {
     let env = Env::initialized();
     let gh = fake_gh(&env);

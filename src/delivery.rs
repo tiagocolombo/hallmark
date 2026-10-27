@@ -1521,22 +1521,37 @@ pub(crate) fn reopen_by(
         if it.state != State::Closed {
             return Ok((vec![], false));
         }
-        Ok((
-            vec![
-                Event::new(
-                    actor,
-                    Some(id),
-                    Body::Reopened {
-                        pr_url: url.to_string(),
-                        pr_head: head.to_string(),
-                        base: base.clone(),
-                        worktree: it.worktree.clone(),
-                    },
-                ),
-                Event::new(actor, Some(id), request.clone()),
-            ],
-            true,
-        ))
+        let mut events = vec![];
+        // A PR that waited for approvals and fell behind is rebased by the
+        // Delivery office, which skips held items: the merger lifts the wait
+        // (not as your approval, the fold knows) and asks again at the new
+        // head (ADR 0063).
+        if actor == crate::merger::ACTOR
+            && it.hold.as_ref().is_some_and(|h| {
+                h.kind == HoldKind::Lit && h.reason.starts_with(crate::merger::TIER_WAIT)
+            })
+        {
+            events.push(Event::new(
+                actor,
+                Some(id),
+                Body::Released {
+                    reason: Some("it fell behind its base: asked again at the new head".into()),
+                    granted_tokens: None,
+                },
+            ));
+        }
+        events.push(Event::new(
+            actor,
+            Some(id),
+            Body::Reopened {
+                pr_url: url.to_string(),
+                pr_head: head.to_string(),
+                base: base.clone(),
+                worktree: it.worktree.clone(),
+            },
+        ));
+        events.push(Event::new(actor, Some(id), request.clone()));
+        Ok((events, true))
     })?;
     if !reopened {
         return Ok(Progress::Idle);

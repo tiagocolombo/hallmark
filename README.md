@@ -70,7 +70,7 @@ holds up:
 - **A rebase keeps its approval.** When a rebase leaves the approved change
   as it was, the hallmark carries over with no new review. When it changed
   something, the reviewer reads only that difference.
-- **PRs that read well.** A shipped PR's description is What, Why, How, Testing and How to revert;
+- **PRs that read well.** A shipped PR's description is What, Why, How, Testing, How to revert and Risk;
   every review, with its findings and how each was fixed, is a PR comment.
 - **A full record.** Every prompt, commit, check, verdict, fix and decision is
   appended to a journal. You can always see what was rejected, what was fixed

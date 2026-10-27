@@ -457,7 +457,7 @@ fn now_with(repo: &Repo, item: &Item, items: &[Item], events: &[Event], git: boo
                     n.actions.push(act(
                         format!("hall retry {id} --reason \"<why>\""),
                         if h.kind == HoldKind::Lit {
-                            "let the merger merge this head"
+                            "let the merger merge this head (counts as one person's approval)"
                         } else {
                             "let the merger try again"
                         },

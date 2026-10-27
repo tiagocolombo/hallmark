@@ -61,9 +61,8 @@ fn ships_to_a_local_remote() {
             "## What\n\nRetry webhooks\n\n## Why\n\nRetry webhooks\n\n## How\n\n\
              - change retry.rs\n\n## Testing\n\nThis repository has no gates \
              configured.\n\n## How to revert\n\n`git revert` the commit this PR \
-             lands as on `main`; the author listed no other steps.\n\n## Risk\n\nLow: \
-             touches no path that needs a person, and the reviewer asked for none; it \
-             merges on its hallmark once CI is green.\n\n---\n\nReviewed and \
+             lands as on `main`; the author listed no other steps.\n\n## Risk\n\nA person \
+             merges it: `[merge] mode` is off.\n\n---\n\nReviewed and \
              hallmarked as {id}: the review is in the comments.\n"
         )
     );

@@ -2331,7 +2331,9 @@ fn approved_then_rewritten(
 fn a_rebase_that_leaves_the_approved_change_as_it_was_keeps_its_approval() {
     let env = Env::initialized();
     // One review only: the second must never run.
-    let script = env.script(json!([reviewer(verdict(vec![], json!([])))]));
+    let mut first = verdict(vec![], json!([]));
+    first["needs_person"] = json!("it changes what the auto-updater downloads");
+    let script = env.script(json!([reviewer(first)]));
     let (id, _, approved, head) = approved_then_rewritten(&env, &script, |_| {});
     assert_ne!(approved, head);
 
@@ -2344,6 +2346,11 @@ fn a_rebase_that_leaves_the_approved_change_as_it_was_keeps_its_approval() {
     assert_eq!(v[1]["verdict"], "approve");
     assert_eq!(v[1]["reviewer"], "carried");
     assert_eq!(v[1]["sha"], head.as_str());
+    assert_eq!(
+        v[1]["needs_person"],
+        "it changes what the auto-updater downloads",
+        "the carried approval keeps the request for a person"
+    );
     let rebased = events_of(&env, &id, "rebased");
     assert_eq!(rebased[0]["carried"], true);
     assert_eq!(rebased[0]["from"], approved.as_str());
@@ -2377,8 +2384,10 @@ fn a_rebase_keeps_the_approval_of_an_item_with_a_pre_existing_major_open() {
 #[test]
 fn a_rebase_that_changed_the_approved_change_is_reviewed_only_where_it_did() {
     let env = Env::initialized();
+    let mut first = verdict(vec![], json!([]));
+    first["needs_person"] = json!("it changes what the auto-updater downloads");
     let script = env.script(json!([
-        reviewer(verdict(vec![], json!([]))),
+        reviewer(first),
         reviewer(verdict(vec![], json!([]))),
     ]));
     configure_table(&env, "\n[budget.review]\neffort = \"high\"\n");
@@ -2401,6 +2410,11 @@ fn a_rebase_that_changed_the_approved_change_is_reviewed_only_where_it_did() {
         "{prompt}"
     );
     assert!(prompt.contains("RESOLVED_MARKER"), "{prompt}");
+    assert!(
+        prompt.contains("## A person was asked to approve")
+            && prompt.contains("it changes what the auto-updater downloads"),
+        "{prompt}"
+    );
     assert!(
         !prompt.contains("UNCHANGED_MARKER"),
         "the unchanged file isn't reviewed again"

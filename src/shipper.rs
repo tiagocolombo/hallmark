@@ -754,6 +754,15 @@ pub fn risk_line(
     files: &[String],
     needs_person: Option<&str>,
 ) -> String {
+    // With the merger off nothing gates the merge: a person merges every PR,
+    // so the tiers promise nothing (ADR 0063).
+    if merge.mode == crate::config::MergeMode::Off {
+        let mut s = String::from("A person merges it: `[merge] mode` is off.");
+        if let Some(r) = needs_person.map(str::trim).filter(|r| !r.is_empty()) {
+            s.push_str(&format!(" The reviewer asked for a person's approval: {r}"));
+        }
+        return s;
+    }
     let lit = crate::assayer::base::globset(&merge.lit);
     let lit_paths: Vec<&String> = files.iter().filter(|f| lit.is_match(f)).collect();
     let (needed, tiered) = merge.approvals_needed(files);
@@ -1574,9 +1583,19 @@ mod tests {
             lit: vec![".github/".into()],
             one_approval: vec!["billing/".into()],
             two_approvals: vec!["installer/".into()],
+            mode: crate::config::MergeMode::Auto,
             ..Default::default()
         };
         let f = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        // With the merger off a person merges, and the tiers promise nothing.
+        let off = crate::config::Merge {
+            mode: crate::config::MergeMode::Off,
+            ..m.clone()
+        };
+        assert_eq!(
+            risk_line(&off, &f(&["billing/charge.rs"]), None),
+            "A person merges it: `[merge] mode` is off."
+        );
         assert!(risk_line(&m, &f(&["src/a.rs"]), None).starts_with("Low: touches no path"));
         assert_eq!(
             risk_line(&m, &f(&["billing/charge.rs", "src/a.rs"]), None),

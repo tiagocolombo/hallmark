@@ -172,8 +172,8 @@ hall propose-ready \
 ```
 
 The PR description is `## What` (the summary), `## Why`, `## How`,
-`## Testing` and `## How to revert`, and nothing else: the review goes in PR
-comments. Write `--why` as the reason the change is needed (the problem,
+`## Testing` and `## How to revert`, then a `## Risk` Hallmark writes itself,
+and nothing else: the review goes in PR comments. Write `--why` as the reason the change is needed (the problem,
 who it hurts), and `--how` as the approach and the choices a reader of the
 diff should know. Leave out the review and the tests' details. Without
 `--why`, the request is used; without `--how`, the commit subjects.

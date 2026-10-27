@@ -1313,6 +1313,41 @@ mod tests {
     }
 
     #[test]
+    fn the_mergers_release_of_a_tier_wait_is_not_your_approval() {
+        let mut c = created();
+        if let Body::Created { pr_head, .. } = &mut c.body {
+            *pr_head = Some("abc".into());
+        }
+        let held = |reason: String| {
+            ev(Body::Held {
+                kind: HoldKind::Lit,
+                reason,
+            })
+        };
+        let released = |actor: &str| {
+            Event::new(
+                actor,
+                Some(ItemId(1)),
+                Body::Released {
+                    reason: None,
+                    granted_tokens: None,
+                },
+            )
+        };
+        let wait = format!("{}2 approvals from people (has 1)", crate::merger::TIER_WAIT);
+        let by_merger = fold(
+            ItemId(1),
+            &[c.clone(), held(wait.clone()), released(crate::merger::ACTOR)],
+        )
+        .unwrap();
+        assert!(by_merger.hold.is_none());
+        assert_eq!(by_merger.merge_approved, None);
+        // Your release of the same wait is your approval.
+        let by_you = fold(ItemId(1), &[c, held(wait), released("you")]).unwrap();
+        assert_eq!(by_you.merge_approved.as_deref(), Some("abc"));
+    }
+
+    #[test]
     fn a_legacy_adopted_created_event_is_not_the_sweepers() {
         let line = r#"{"v":1,"t":"2026-01-01T00:00:00Z","actor":"you","item":"H-0001","event":"created","title":"T","branch":"b","worktree":"/home/me/app","base":"main","adopted":true}"#;
         let e: Event = serde_json::from_str(line).unwrap();
