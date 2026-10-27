@@ -33,8 +33,8 @@ hall · app (1 of 3 repos)   daemon ● running   ⚑ 3 waiting   rejected today
 │                           │  /         filter by ID, title or state                      │                           │
 └───────────────────────────│  esc       back · stop replaying · clear filter              │───────────────────────────┘
 ┌ Findings · 2 open of 2 ───│  q         quit (work carries on)                            │───────────────────────────┐
-│F1   major   correctness   │                                                              │ open · fix claimed #######│
-│F2   minor   evidence      └ any key closes ──────────────────────────────────────────────┘ open                      │
+│F1   major    correctness  │                                                              │ open · fix claimed #######│
+│F2   minor    evidence     └ any key closes ──────────────────────────────────────────────┘ open                      │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 
 ↑↓ item enter journal i your office ←→ step f findings d diff t trace p pull back x drop / filter ? help q quit

@@ -390,7 +390,11 @@ pub fn render(r: &Report) -> String {
                 "- **{}** {}{} · `{}:{}` · {}: **{status}**",
                 f.id,
                 f.severity.as_str(),
-                if f.pre_existing { " (pre-existing)" } else { "" },
+                if f.pre_existing {
+                    " (pre-existing)"
+                } else {
+                    ""
+                },
                 f.file,
                 f.line,
                 f.title.trim()
