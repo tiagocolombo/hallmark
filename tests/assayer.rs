@@ -661,6 +661,7 @@ fn an_item_pulled_back_during_the_security_pass_is_discarded() {
     );
     assert!(events_of(&env, &id, "verdict").is_empty());
     assert!(events_of(&env, &id, "security_pass").is_empty());
+    assert!(events_of(&env, &id, "reasons_delivered").is_empty());
 }
 
 #[test]

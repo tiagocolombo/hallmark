@@ -265,6 +265,7 @@ mod tests {
             title: title.into(),
             scenario: "s".into(),
             fix: "f".into(),
+            pre_existing: false,
         }
     }
 
@@ -331,6 +332,12 @@ mod tests {
         let (m, added) = merge(mv("s", vec![nit]), mv("t", vec![blocker]));
         assert_eq!(added, ["An empty token passes the check"]);
         assert_eq!(m.findings.len(), 2);
+        // A less severe finding at the reviewer's place is not added.
+        let big = mf(Severity::Blocker, Lens::Correctness, 42, "Token skipped");
+        let small = mf(Severity::Minor, Lens::SecurityTenancy, 42, "Weak token");
+        let (m, added) = merge(mv("s", vec![big]), mv("t", vec![small]));
+        assert!(added.is_empty());
+        assert_eq!(m.findings.len(), 1);
         // An empty summary adds no paragraph.
         let (m, _) = merge(mv("s", vec![]), mv("  ", vec![]));
         assert_eq!(m.summary, "s");
