@@ -564,6 +564,7 @@ fn a_budget_stop_on_the_security_pass_holds_without_a_verdict_and_retry_runs_it(
         security(verdict(vec![], json!([]))),
     ]));
     tick(&env, &script);
+    tick(&env, &script);
     assert_eq!(env.fake_calls().len(), 1, "the pass never started");
     assert!(events_of(&env, &id, "verdict").is_empty());
     assert!(events_of(&env, &id, "security_pass").is_empty());

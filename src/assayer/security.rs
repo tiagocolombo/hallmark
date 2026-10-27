@@ -129,15 +129,8 @@ pub fn run(
             }
         ),
     };
-    let review = super::prompt::prepare_with(
-        repo,
-        item,
-        events,
-        sha,
-        None,
-        Some(&pass),
-        Some(base_sha),
-    )?;
+    let review =
+        super::prompt::prepare_with(repo, item, events, sha, None, Some(&pass), Some(base_sha))?;
     let mut req = runner::request(
         repo,
         Role::Reviewer,
