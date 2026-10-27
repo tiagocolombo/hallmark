@@ -5,7 +5,7 @@ mod c_support;
 mod common;
 
 use c_support::*;
-use common::{Env, commit_file};
+use common::{Env, commit_file, git};
 use hallmark::event::Body;
 use serde_json::json;
 
@@ -325,4 +325,41 @@ fn replies_keep_their_shape() {
         &r.json["cases"][0]["now"],
         &["rejected", "caught", "findings", "blocking", "titles"],
     );
+}
+
+#[test]
+fn a_merge_commit_merge_leaves_no_diff_and_the_case_is_skipped() {
+    let env = Env::initialized();
+    let (id, _, sha) = hallmarked_item(&env, "Retry webhooks");
+    git(&env.repo, &["merge", "--no-ff", "-q", "-m", "merge", &sha]);
+    revert_it(&env, &id, &sha, "retry.rs", 0);
+    let script = env.script(json!([eval_step(json!([]))]));
+    let r = env.hall_fake(&env.repo, &script, &["eval"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let c = &r.json["cases"][0];
+    assert!(c.get("now").is_none(), "{c}");
+    assert!(
+        c["skipped"].as_str().unwrap().contains("no diff to replay"),
+        "{c}"
+    );
+    assert!(env.fake_calls().is_empty());
+}
+
+#[test]
+fn an_item_with_no_review_is_not_a_case_and_naming_it_is_refused() {
+    let env = Env::initialized();
+    let (reviewed, _, _) = reverted_item(&env);
+    let (bare, _) = env.new_item("Shipped without a review");
+    let head = git(&env.repo, &["rev-parse", "HEAD"]);
+    revert_it(&env, &bare, &head, "other.rs", 0);
+
+    let r = env.hall(&env.repo, &["eval", "--dry-run", "--limit", "1"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let cases = r.json["cases"].as_array().unwrap();
+    assert_eq!(cases.len(), 1, "{}", r.stdout);
+    assert_eq!(cases[0]["item"], reviewed.as_str());
+
+    let r = env.hall(&env.repo, &["eval", "--dry-run", &bare]);
+    assert_eq!(r.code, 4, "{}", r.stdout);
+    assert_eq!(r.json["error"]["code"], "WRONG_STATE");
 }

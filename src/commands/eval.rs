@@ -398,10 +398,13 @@ fn replay(repo: &Repo, runner_: &dyn Runner, item: &Item, events: &[Event], case
     }
     // A merge-commit merge leaves the commit in the base: there is no
     // diff left to review.
-    if crate::git::ok(
-        &repo.main_root,
-        &["merge-base", "--is-ancestor", &case.sha, &item.base],
-    ) {
+    // The fork point is the one the review's prompt would use: the base as
+    // resolved, and its remote when that is ahead. The commit being its own
+    // fork point means it is already in the base.
+    let kept = crate::assayer::base::Base::resolve(repo, &item.base)
+        .map(|b| crate::assayer::prompt::fork_point(repo, item, &b.sha, &case.sha) == case.sha)
+        .unwrap_or(false);
+    if kept {
         case.skipped = Some(format!(
             "{} is already in {}: the merge kept it, so there is no diff to replay",
             short(&case.sha),
