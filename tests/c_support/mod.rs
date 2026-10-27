@@ -256,27 +256,37 @@ pub fn hallmarked_item_with(
     title: &str,
     message: Option<&str>,
 ) -> (String, PathBuf, String) {
+    hallmarked_item_asking(env, title, message, None)
+}
+
+/// [`hallmarked_item_with`], the approving review asking for a person's
+/// approval (`needs_person`).
+pub fn hallmarked_item_asking(
+    env: &Env,
+    title: &str,
+    message: Option<&str>,
+    needs_person: Option<&str>,
+) -> (String, PathBuf, String) {
     let (id, wt, _) = ready_item_with(env, title, message);
     let sha = git(&wt, &["rev-parse", "HEAD"]);
     append(env, &id, "assayer", checks(&sha, 1, true, vec![]));
-    append(
-        env,
-        &id,
-        "assayer",
-        verdict(
-            &sha,
+    let mut v = verdict(
+        &sha,
+        1,
+        vec![finding(
+            "F1",
             1,
-            vec![finding(
-                "F1",
-                1,
-                Severity::Minor,
-                Lens::Evidence,
-                "No retry test",
-            )],
-            vec![],
-            counts(0, 0, 1, 0),
-        ),
+            Severity::Minor,
+            Lens::Evidence,
+            "No retry test",
+        )],
+        vec![],
+        counts(0, 0, 1, 0),
     );
+    if let Body::Verdict { needs_person: np, .. } = &mut v {
+        *np = needs_person.map(String::from);
+    }
+    append(env, &id, "assayer", v);
     let repo = Repo::discover(&env.repo).unwrap();
     hallmark::stamp::strike(
         &repo,

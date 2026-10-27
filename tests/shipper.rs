@@ -785,12 +785,13 @@ fn the_reviewers_reason_for_a_person_is_in_the_risk() {
     let env = Env::initialized();
     bare_remote(&env);
     set_config(&env, "ship", &toml("git push -q -u origin {branch}"));
-    let (id, _, sha) = hallmarked_item(&env, "Retry webhooks");
-    let mut asked = verdict(&sha, 1, vec![], vec![], counts(0, 0, 0, 0));
-    if let hallmark::event::Body::Verdict { needs_person, .. } = &mut asked {
-        *needs_person = Some("it changes what the updater downloads".into());
-    }
-    append(&env, &id, "assayer", asked);
+    // The reviewer's word rides on the approving verdict, before the hallmark.
+    let (id, _, _) = hallmarked_item_asking(
+        &env,
+        "Retry webhooks",
+        None,
+        Some("it changes what the updater downloads"),
+    );
     assert_eq!(ship_pass(&env)["progress"], "worked");
     let body = std::fs::read_to_string(item_file(&env, &id, "pr-body.md")).unwrap();
     assert!(
