@@ -1084,6 +1084,19 @@ mod web_tests {
     }
 
     #[test]
+    fn the_web_and_the_app_may_run_stats() {
+        assert!(ok(&["stats"]));
+        assert!(ok(&["stats", "--since", "30d"]));
+        assert!(ok(&["stats", "--all"]));
+        // Allowed in the terminal app too: the failure is not USAGE.
+        let dir = std::env::temp_dir();
+        let e = super::run_in_app(&["stats".to_string()], &dir);
+        if let Err(e) = e {
+            assert_ne!(e.code, crate::error::ErrorCode::Usage, "{}", e.message);
+        }
+    }
+
+    #[test]
     fn the_web_reads_the_gazette_but_attaches_nothing() {
         assert!(ok(&["gazette", "H-0001", "--html"]));
         assert!(ok(&["gazette", "--list"]));

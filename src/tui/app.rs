@@ -1975,3 +1975,16 @@ pub enum Tone {
     Dim,
     Plain,
 }
+
+#[cfg(test)]
+mod reads_only_tests {
+    use super::reads_only;
+
+    #[test]
+    fn stats_replies_are_shown_in_full() {
+        let a = |s: &[&str]| -> Vec<String> { s.iter().map(|x| x.to_string()).collect() };
+        assert!(reads_only(&a(&["stats"])));
+        assert!(reads_only(&a(&["stats", "--since", "7d"])));
+        assert!(!reads_only(&a(&["drop", "H-0001"])));
+    }
+}

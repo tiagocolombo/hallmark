@@ -598,6 +598,7 @@ fn stats_fold_rounds_findings_and_noise_from_the_journals() {
         ]
     );
     assert_eq!(f["by_lens"][2]["withdrawn"], 1);
+    assert_json_snapshot!("c_stats", scrub(&env, &r.json));
     assert!(
         r.json["next"]
             .as_array()
@@ -667,6 +668,38 @@ fn stats_count_escalations_failed_checks_and_rejected_disputes() {
     assert_eq!(r.json["findings"]["disputes_rejected"], 1);
     assert_eq!(r.json["findings"]["open"], 2);
     assert_eq!(r.json["findings"]["fixed"], 1);
+}
+
+#[test]
+fn stats_leave_a_dispute_no_review_ruled_on_out_of_rejected() {
+    let env = Env::initialized();
+    let (id, wt, _) = fixing_item(&env, "Retry webhooks");
+    commit_file(&wt, "retry.rs", "fn retry() { lock(); }\n");
+    let r = env.hall(
+        &wt,
+        &[
+            "fixed",
+            "F2",
+            "--dispute",
+            "F1",
+            "--reason",
+            "not reachable",
+        ],
+    );
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    // Dropped before the next review: nobody ruled on the dispute.
+    assert_eq!(
+        env.hall(&env.repo, &["drop", &id, "--reason", "rethink"])
+            .code,
+        0
+    );
+    let r = env.hall(&env.repo, &["stats"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let f = &r.json["findings"];
+    assert_eq!(f["disputed"], 1);
+    assert_eq!(f["disputes_rejected"], 0);
+    assert_eq!(f["disputes_upheld"], 0);
+    assert_eq!(f["disputes_pending"], 1);
 }
 
 #[test]

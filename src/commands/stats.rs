@@ -5,7 +5,7 @@
 //! (noise), and how disputes went. These are the numbers that say whether
 //! a change to the reviewer, its skill or its model helped.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::path::Path;
 
@@ -45,6 +45,10 @@ pub struct ItemStats {
     pub live: u32,
     /// Items that reached `max_rejects` at least once.
     pub escalated: u32,
+    /// Items whose journal could not be read: left out of every count, so
+    /// the numbers are incomplete when this is not empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unreadable: Vec<String>,
 }
 
 #[derive(Debug, Default, Serialize, JsonSchema)]
@@ -95,9 +99,12 @@ pub struct FindingStats {
     pub disputed: u32,
     /// Disputes the reviewer accepted (the finding was withdrawn).
     pub disputes_upheld: u32,
-    /// Disputes the reviewer turned down (the finding stayed open or was
-    /// fixed anyway).
+    /// Disputes the reviewer ruled on and turned down (the finding stayed
+    /// open or was fixed anyway).
     pub disputes_rejected: u32,
+    /// Disputes no review has ruled on yet: the item ended, or is still in
+    /// flight, before the next review.
+    pub disputes_pending: u32,
     pub by_lens: Vec<LensStats>,
 }
 
@@ -170,10 +177,22 @@ impl Render for StatsOut {
             f.raised, f.blocker, f.major, f.minor, f.nit, f.fixed, f.withdrawn, f.open, f.noise_pct
         );
         if f.disputed > 0 {
-            let _ = writeln!(
+            let _ = write!(
                 s,
                 "Disputes   {} · {} upheld, {} rejected",
                 f.disputed, f.disputes_upheld, f.disputes_rejected
+            );
+            if f.disputes_pending > 0 {
+                let _ = write!(s, ", {} not yet ruled on", f.disputes_pending);
+            }
+            s.push('\n');
+        }
+        if !i.unreadable.is_empty() {
+            let _ = writeln!(
+                s,
+                "\nIncomplete: {} unreadable journal(s) left out: {}",
+                i.unreadable.len(),
+                i.unreadable.join(", ")
             );
         }
         if !f.by_lens.is_empty() {
@@ -236,17 +255,15 @@ pub fn stats(cwd: &Path, a: StatsArgs) -> Result<Response> {
         if !item.state.is_terminal() && !a.all {
             continue;
         }
-        let ended_at = if item.state.is_terminal() {
-            item.state_since
-        } else {
-            item.updated_at
-        };
-        if since.is_some_and(|t| ended_at < t) {
+        if !in_window(&item, since) {
             continue;
         }
         let events = match repo.hall.read_item(item.id) {
             Ok(e) => e,
-            Err(_) => continue,
+            Err(_) => {
+                out.items.unreadable.push(item.id.to_string());
+                continue;
+            }
         };
         count_item(&mut out, &mut to_approval, &mut by_lens, &item, &events);
     }
@@ -257,6 +274,17 @@ pub fn stats(cwd: &Path, a: StatsArgs) -> Result<Response> {
     }
     next.push("hall usage --since 30d".into());
     Ok(Response::new(out, next))
+}
+
+/// Whether the item falls in the `--since` window: a finished item by when
+/// it ended, a live one (only counted with `--all`) by its last update.
+fn in_window(item: &Item, since: Option<DateTime<Utc>>) -> bool {
+    let ended_at = if item.state.is_terminal() {
+        item.state_since
+    } else {
+        item.updated_at
+    };
+    !since.is_some_and(|t| ended_at < t)
 }
 
 fn count_item(
@@ -278,13 +306,19 @@ fn count_item(
     let mut reviews = 0u32;
     let mut first_approval: Option<u32> = None;
     let mut escalated = false;
+    // Disputed findings no verdict has ruled on since the dispute.
+    let mut unruled: BTreeSet<&str> = BTreeSet::new();
     for e in events {
         match &e.body {
             Body::Verdict {
                 verdict,
                 escalated: esc,
+                prior,
                 ..
             } => {
+                for p in prior {
+                    unruled.remove(p.id.as_str());
+                }
                 reviews += 1;
                 if *esc {
                     escalated = true;
@@ -293,7 +327,10 @@ fn count_item(
                     first_approval = Some(reviews);
                 }
             }
-            Body::FixSubmitted { .. } => r.fixes += 1,
+            Body::FixSubmitted { disputes, .. } => {
+                r.fixes += 1;
+                unruled.extend(disputes.iter().map(|d| d.id.as_str()));
+            }
             Body::Checks { passed: false, .. } => r.checks_failed += 1,
             _ => {}
         }
@@ -339,7 +376,9 @@ fn count_item(
         }
         if t.dispute.is_some() {
             f.disputed += 1;
-            if t.status == Status::Withdrawn {
+            if unruled.contains(t.finding.id.as_str()) {
+                f.disputes_pending += 1;
+            } else if t.status == Status::Withdrawn {
                 f.disputes_upheld += 1;
             } else {
                 f.disputes_rejected += 1;
@@ -458,6 +497,65 @@ mod tests {
         assert_eq!(out.reviews.to_approval.mean, 0.0);
         assert_eq!(out.findings.noise_pct, 0.0);
         assert!(out.render().contains("No items yet."));
+    }
+
+    fn item(state: &str, parent: bool, ended: DateTime<Utc>) -> Item {
+        let id = serde_json::to_value(crate::item::ItemId(1)).unwrap();
+        let parent = if parent {
+            serde_json::to_value(crate::item::ItemId(2)).unwrap()
+        } else {
+            serde_json::Value::Null
+        };
+        serde_json::from_value(serde_json::json!({
+            "id": id, "title": "t", "state": state, "branch": "b",
+            "worktree": "w", "base": "main",
+            "created_at": ended, "updated_at": ended, "state_since": ended,
+            "round": 0, "rejects": 0, "adopted": false, "events": 0,
+            "parent": parent,
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn the_window_keeps_what_ended_inside_it() {
+        let now = Utc::now();
+        let day = chrono::Duration::days(1);
+        let since = Some(now - day * 7);
+        let old = item("closed", false, now - day * 30);
+        let recent = item("closed", false, now - day);
+        assert!(!in_window(&old, since));
+        assert!(in_window(&recent, since));
+        assert!(in_window(&old, None));
+        // A live item (counted with --all) is windowed by its last update.
+        let stale = item("review", false, now - day * 30);
+        let busy = item("review", false, now - day);
+        assert!(!in_window(&stale, since));
+        assert!(in_window(&busy, since));
+    }
+
+    #[test]
+    fn a_merged_part_is_not_a_closed_item() {
+        let now = Utc::now();
+        let mut out = empty();
+        let mut t = Vec::new();
+        let mut l = BTreeMap::new();
+        count_item(&mut out, &mut t, &mut l, &item("closed", true, now), &[]);
+        assert_eq!((out.items.merged, out.items.closed), (1, 0));
+        count_item(&mut out, &mut t, &mut l, &item("closed", false, now), &[]);
+        assert_eq!((out.items.merged, out.items.closed), (1, 1));
+        count_item(&mut out, &mut t, &mut l, &item("dropped", true, now), &[]);
+        assert_eq!(out.items.dropped, 1);
+        assert_eq!(out.items.counted, 3);
+    }
+
+    #[test]
+    fn unreadable_journals_are_named_in_the_text() {
+        let mut out = empty();
+        out.items.counted = 1;
+        out.items.closed = 1;
+        out.items.unreadable = vec!["H-0007".into()];
+        let text = out.render();
+        assert!(text.contains("Incomplete: 1 unreadable journal(s) left out: H-0007"));
     }
 
     fn empty() -> StatsOut {
