@@ -319,6 +319,7 @@ mod tests {
             title: title.into(),
             scenario: "two workers retry at once".into(),
             fix: "take a row lock".into(),
+            pre_existing: false,
         }
     }
 
