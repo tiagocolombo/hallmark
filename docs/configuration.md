@@ -275,7 +275,7 @@ change its own review ([ADR 0018](decisions/0018-the-assay-office.md)).
 | --- | --- |
 | `## What failure looks like here` | Tells the reviewer what to look for in this repo: for docs, a claim that doesn't match the code; for config, a request routed to the wrong service. Prose; the reviewer reads it as a rule. |
 | `## Sensitive paths` | One glob per list item (`` `billing/**` ``, `migrations/`). A change that touches one gets the deepest review effort, and the prompt names the files. |
-| `## Paths to skip` | One glob per list item. Changes under them are left out of the diff the reviewer sees, out of the file and line counts that set the effort, and out of the Library briefing; the prompt names what was skipped ([ADR 0058](decisions/0058-review-notes-skip-paths-and-a-nit-cap.md)). For generated files, vendored code, fixtures. A rebase review (ADR 0049) skips nothing: it is already only what the rebase changed. |
+| `## Paths to skip` | One glob per list item. Changes under them are left out of the diff the reviewer sees, out of the file and line counts that set the effort, and out of the Library briefing; the prompt names what was skipped. A path that is also under `## Sensitive paths` is never skipped, and a file moved into a skipped path still shows its removal from the old one ([ADR 0058](decisions/0058-review-notes-skip-paths-and-a-nit-cap.md)). For generated files, vendored code, fixtures. A rebase review (ADR 0049) skips nothing: it is already only what the rebase changed. |
 | `## Invariants` | Rules the code must keep that aren't written down elsewhere. |
 
 Globs match like `.gitignore`: a pattern without a slash matches at any

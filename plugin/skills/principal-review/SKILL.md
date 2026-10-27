@@ -112,8 +112,8 @@ Apply only the lenses the prompt lists when it lists some.
 
 Minors and nits ride along into the review comment on the pull request. List them when they
 help; never let them crowd out what matters. The prompt says how many nits
-the repository records per review (`max_nits`, 3 by default): report the
-ones worth a reader's time, in that order, and no more. Hallmark drops the
+the repository records per review (`max_nits`, 3 by default): report at
+most that many, most useful first. Hallmark keeps the first ones and drops the
 rest.
 
 ## The evidence bar

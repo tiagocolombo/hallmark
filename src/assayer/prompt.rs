@@ -90,48 +90,67 @@ pub fn prepare(
         .filter(|r| r.lines <= MEDIUM_LINES && r.interdiff.len() <= DIFF_MAX);
 
     let notes = base::review_notes(repo, &base);
-    let skip = base::globset(&notes.as_deref().map(base::skip_globs).unwrap_or_default());
-    let (diff, changed, lines, skipped) = match &rebase {
-        Some(r) => (r.interdiff.clone(), r.files.clone(), r.lines, Vec::new()),
-        None => {
-            let diff = git::run(
-                dir,
-                &["diff", "--no-color", "--no-ext-diff", &from, sha, "--"],
-            )?;
-            let numstat_text = git::run(dir, &["diff", "--numstat", &from, sha])?;
-            let (all, _) = numstat(&numstat_text);
-            let skipped: Vec<String> = all.into_iter().filter(|f| skip.is_match(f)).collect();
-            if skipped.is_empty() {
-                let (changed, lines) = numstat(&numstat_text);
-                (diff, changed, lines, skipped)
-            } else {
-                // The skipped files leave the diff and the counts, so the
-                // effort and the reviewer see only what is to be reviewed.
-                let kept: String = numstat_text
-                    .lines()
-                    .filter(|l| !skipped.iter().any(|s| l.ends_with(&format!("\t{s}"))))
-                    .map(|l| format!("{l}\n"))
-                    .collect();
-                let (changed, lines) = numstat(&kept);
-                (drop_files(&diff, &skipped), changed, lines, skipped)
-            }
-        }
-    };
-    let all_changed: Vec<String> = git::run(dir, &["diff", "--name-only", &merge_base, sha])?
-        .lines()
-        .map(String::from)
-        .filter(|f| !skip.is_match(f))
-        .collect();
-
-    let ledger = Ledger::from_events(events);
-    let open = ledger.open();
-
+    let skip_globs = notes.as_deref().map(base::skip_globs).unwrap_or_default();
+    let skip = base::globset(&skip_globs);
     let set = base::globset(
         &notes
             .as_deref()
             .map(base::sensitive_globs)
             .unwrap_or_default(),
     );
+    // A sensitive path is never skipped: the deepest review wins.
+    let is_skipped = |f: &str| skip.is_match(f) && !set.is_match(f);
+    let (diff, changed, lines, skipped) = match &rebase {
+        Some(r) => (r.interdiff.clone(), r.files.clone(), r.lines, Vec::new()),
+        None if skip_globs.is_empty() => {
+            let diff = git::run(
+                dir,
+                &["diff", "--no-color", "--no-ext-diff", &from, sha, "--"],
+            )?;
+            let (changed, lines) = numstat(&git::run(dir, &["diff", "--numstat", &from, sha])?);
+            (diff, changed, lines, Vec::new())
+        }
+        None => {
+            // Without rename detection, moving a reviewed file into a skipped
+            // path still shows its removal from the old path.
+            let diff = git::run(
+                dir,
+                &[
+                    "diff",
+                    "--no-color",
+                    "--no-ext-diff",
+                    "--no-renames",
+                    &from,
+                    sha,
+                    "--",
+                ],
+            )?;
+            let numstat_text = git::run(dir, &["diff", "--numstat", "--no-renames", &from, sha])?;
+            let (all, _) = numstat(&numstat_text);
+            let skipped: Vec<String> = all.into_iter().filter(|f| is_skipped(f)).collect();
+            // The skipped files leave the diff and the counts, so the
+            // effort and the reviewer see only what is to be reviewed.
+            let kept: String = numstat_text
+                .lines()
+                .filter(|l| {
+                    let path = l.splitn(3, '\t').nth(2).unwrap_or("");
+                    !is_skipped(path)
+                })
+                .map(|l| format!("{l}\n"))
+                .collect();
+            let (changed, lines) = numstat(&kept);
+            (drop_files(&diff, &skipped), changed, lines, skipped)
+        }
+    };
+    let all_changed: Vec<String> = git::run(dir, &["diff", "--name-only", &merge_base, sha])?
+        .lines()
+        .map(String::from)
+        .filter(|f| !is_skipped(f))
+        .collect();
+
+    let ledger = Ledger::from_events(events);
+    let open = ledger.open();
+
     let sensitive: Vec<String> = changed
         .iter()
         .map(String::as_str)

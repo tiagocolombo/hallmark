@@ -734,6 +734,10 @@ fn paths_the_notes_say_to_skip_leave_the_review() {
     .unwrap();
     git(&env.repo, &["commit", "-q", "-am", "paths to skip"]);
     configure_table(&env, "\n[budget.review]\neffort = \"high\"\n");
+    let skipped_learning = "---\nid: L-0020\nkind: map\nscope: [\"docs/generated/**\"]\nlens: correctness\nsource: [H-0009/F1]\nstatus: accepted\nused: 0\n---\n# SkippedScopeMarker\n\nAbout the generated docs.\n";
+    let ldir = env.repo.join(".git/hallmark/library/learnings");
+    std::fs::create_dir_all(&ldir).unwrap();
+    std::fs::write(ldir.join("L-0020-skipped.md"), skipped_learning).unwrap();
 
     let script = env.script(json!([
         reviewer(verdict(vec![], json!([]))),
@@ -765,6 +769,10 @@ fn paths_the_notes_say_to_skip_leave_the_review() {
         !prompt.contains("GENERATED_MARKER"),
         "the skipped file's diff is left out:\n{prompt}"
     );
+    assert!(
+        !prompt.contains("SkippedScopeMarker"),
+        "a learning scoped only to a skipped path stays out of the briefing:\n{prompt}"
+    );
     assert!(prompt.contains("+fn a() {}"), "{prompt}");
     assert!(prompt.contains("1 files, 1 lines changed."), "{prompt}");
     // The effort follows the lines left, not the generated ones.
@@ -775,6 +783,9 @@ fn paths_the_notes_say_to_skip_leave_the_review() {
     // configured effort.
     let env = Env::initialized();
     configure_table(&env, "\n[budget.review]\neffort = \"high\"\n");
+    let ldir = env.repo.join(".git/hallmark/library/learnings");
+    std::fs::create_dir_all(&ldir).unwrap();
+    std::fs::write(ldir.join("L-0020-skipped.md"), skipped_learning).unwrap();
     let script = env.script(json!([reviewer(verdict(vec![], json!([])))]));
     let (_, wt) = env.new_item("Schema docs");
     std::fs::create_dir_all(wt.join("docs/generated")).unwrap();
@@ -791,7 +802,87 @@ fn paths_the_notes_say_to_skip_leave_the_review() {
     let calls = env.fake_calls();
     let prompt = calls[0]["prompt"].as_str().unwrap();
     assert!(prompt.contains("GENERATED_MARKER") && !prompt.contains("Skipped:"));
+    assert!(
+        prompt.contains("SkippedScopeMarker"),
+        "without the section the learning is briefed:\n{prompt}"
+    );
     assert_eq!(arg_after(&calls[0], "--effort"), Some("high"));
+}
+
+#[test]
+fn moving_a_reviewed_file_into_a_skipped_path_still_shows_its_removal() {
+    let env = Env::initialized();
+    std::fs::write(
+        env.repo.join(".hallmark/review.md"),
+        "# Review notes\n\n## Sensitive paths\n\n## Paths to skip\n\n<!-- e.g. a/** -->\n\
+         - `fixtures/**`: test data\n\n## Invariants\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(env.repo.join("tests")).unwrap();
+    let body: String = (0..30).map(|i| format!("fn t{i}() {{}}\n")).collect();
+    std::fs::write(env.repo.join("tests/gate.rs"), body).unwrap();
+    git(&env.repo, &["add", "-A"]);
+    git(&env.repo, &["commit", "-q", "-m", "notes and tests"]);
+
+    let script = env.script(json!([
+        reviewer(verdict(vec![], json!([]))),
+        reviewer(verdict(vec![], json!([]))),
+    ]));
+    let (_, wt) = env.new_item("Move the gate tests");
+    std::fs::create_dir_all(wt.join("fixtures")).unwrap();
+    git(&wt, &["mv", "tests/gate.rs", "fixtures/gate.rs"]);
+    git(&wt, &["commit", "-q", "-m", "move"]);
+    assert_eq!(env.hall(&wt, &["ready"]).code, 0);
+    tick(&env, &script);
+    tick(&env, &script);
+
+    let calls = env.fake_calls();
+    let prompt = calls[0]["prompt"].as_str().unwrap();
+    assert!(
+        prompt.contains("deleted file mode") && prompt.contains("-fn t0() {}"),
+        "the removal from the reviewed path stays in the diff:\n{prompt}"
+    );
+    assert!(
+        !prompt.contains("+fn t0() {}"),
+        "the skipped side leaves the diff:\n{prompt}"
+    );
+    assert!(prompt.contains("1 files, 30 lines changed."), "{prompt}");
+}
+
+#[test]
+fn a_sensitive_path_is_never_skipped() {
+    let env = Env::initialized();
+    std::fs::write(
+        env.repo.join(".hallmark/review.md"),
+        "# Review notes\n\n## Sensitive paths\n\n- `plugin/**`: shipped to users\n\n\
+         ## Paths to skip\n\n<!-- e.g. a/** -->\n- `*.json`: data\n\n## Invariants\n",
+    )
+    .unwrap();
+    git(&env.repo, &["commit", "-q", "-am", "notes"]);
+    configure_table(&env, "\n[budget.review]\neffort = \"high\"\n");
+    let script = env.script(json!([
+        reviewer(verdict(vec![], json!([]))),
+        reviewer(verdict(vec![], json!([]))),
+    ]));
+    let (_, wt) = env.new_item("Schema");
+    std::fs::create_dir_all(wt.join("plugin")).unwrap();
+    std::fs::write(wt.join("plugin/verdict.json"), "{\"SENSITIVE_JSON\": 1}\n").unwrap();
+    std::fs::write(wt.join("other.json"), "{\"PLAIN_JSON\": 1}\n").unwrap();
+    git(&wt, &["add", "-A"]);
+    git(&wt, &["commit", "-q", "-m", "json"]);
+    assert_eq!(env.hall(&wt, &["ready"]).code, 0);
+    tick(&env, &script);
+    tick(&env, &script);
+
+    let calls = env.fake_calls();
+    let prompt = calls[0]["prompt"].as_str().unwrap();
+    assert!(
+        prompt.contains("Sensitive paths in this change (review them most carefully): plugin/verdict.json"),
+        "{prompt}"
+    );
+    assert!(prompt.contains("SENSITIVE_JSON"), "{prompt}");
+    assert!(!prompt.contains("PLAIN_JSON"), "{prompt}");
+    assert_eq!(arg_after(&calls[0], "--effort"), Some("max"));
 }
 
 #[test]
