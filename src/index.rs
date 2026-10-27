@@ -886,12 +886,28 @@ impl Index {
             let until = p
                 .until
                 .map(|u| {
-                    format!(
-                        ", until {}",
-                        u.with_timezone(&chrono::Local).format("%H:%M")
-                    )
+                    let u = u.with_timezone(&chrono::Local);
+                    // A pause past today (a weekly limit) names its day.
+                    let fmt = if u.date_naive() == chrono::Local::now().date_naive() {
+                        "%H:%M"
+                    } else {
+                        "%a %b %-d %H:%M"
+                    };
+                    format!(", until {}", u.format(fmt))
                 })
                 .unwrap_or_default();
+            // A spent daily cap pauses again at once on resume: the grant
+            // (a token cap) or a raised cap is what works (ADR 0028).
+            let answer_with = if p.reason.contains(crate::budget::DAILY_SPENT) {
+                let first = if p.reason.contains("hall budget --grant") {
+                    "hall budget --grant"
+                } else {
+                    "hall budget"
+                };
+                vec![first.into(), "hall daemon status".into()]
+            } else {
+                vec!["hall daemon resume".into(), "hall daemon status".into()]
+            };
             out.push(InboxEntry {
                 kind: "paused".into(),
                 item: None,
@@ -901,7 +917,7 @@ impl Index {
                 default: None,
                 session: None,
                 since: p.since,
-                answer_with: vec!["hall daemon resume".into(), "hall daemon status".into()],
+                answer_with,
                 notice: false,
             });
         }

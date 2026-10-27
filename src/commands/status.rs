@@ -603,16 +603,24 @@ pub fn explain(repo: &Repo, ix: &Index, entry: InboxEntry, number: usize) -> Res
                 let mut acts = Vec::new();
                 // A spent daily cap pauses again at once on resume: the
                 // grant is the action that works (ADR 0028).
-                if crate::budget::daily_note(repo).is_some() {
+                if entry.text.contains(crate::budget::DAILY_SPENT) {
+                    if entry.text.contains("hall budget --grant") {
+                        acts.push(act(
+                            "hall budget --grant",
+                            "let the loop go on today: the daily cap stays as it is",
+                        ));
+                    } else {
+                        acts.push(act(
+                            "hall budget",
+                            "see the dollar cap; raise `[budget] daily` to go on today",
+                        ));
+                    }
+                } else {
                     acts.push(act(
-                        "hall budget --grant",
-                        "let the loop go on today: the daily cap stays as it is",
+                        "hall daemon resume",
+                        "retry now: lift the pause before its time, once you topped up or the limit reset early",
                     ));
                 }
-                acts.push(act(
-                    "hall daemon resume",
-                    "retry now: lift the pause before its time, once you topped up or the limit reset early",
-                ));
                 acts.push(act(
                     "hall daemon status",
                     "see the pause and what the daemon last did",

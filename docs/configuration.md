@@ -479,7 +479,10 @@ it, the model workers pause until the time Claude names (read in this
 machine's time zone; 30 minutes when it names none), and the loop retries by
 itself. The pause is in your inbox as `paused` and is notified like a budget
 stop; `hall daemon resume` retries at once, after you top up or the limit
-resets early.
+resets early. A reset more than about a week away, or a date that is today
+and already begun, isn't trusted: the 30-minute wait applies. The Front Desk
+is the exception to the retry: its request stays one item, and to split it
+you `hall drop` the item and run `hall new` again after the reset.
 
 Failed checks have a cap too: after `max_check_failures` (default 3) failed
 checks in a row, the item is held for you with kind `checks`, because the

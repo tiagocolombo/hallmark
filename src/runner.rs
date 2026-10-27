@@ -850,11 +850,20 @@ fn resets_at(lower: &str, now: DateTime<chrono::Local>) -> Option<DateTime<Utc>>
         let this = on(now.year())?.and_time(time);
         if this > now.naive_local() {
             this
+        } else if this.date() == now.date_naive() {
+            // Today, at a time that has passed (or no time given): the
+            // limit lifts later today, so let the default wait apply.
+            return None;
         } else {
             on(now.year() + 1)?.and_time(time)
         }
     } else if let Some(wd) = DAYS.iter().position(|d| *d == prefix) {
         let time = time_in(&words[1..]).unwrap_or(midnight);
+        if now.weekday().num_days_from_monday() as usize == wd
+            && now.date_naive().and_time(time) <= now.naive_local()
+        {
+            return None;
+        }
         (0..=7)
             .map(|n| (now.date_naive() + chrono::Duration::days(n)).and_time(time))
             .find(|at| {
@@ -869,7 +878,10 @@ fn resets_at(lower: &str, now: DateTime<chrono::Local>) -> Option<DateTime<Utc>>
         at
     };
     let at = now.timezone().from_local_datetime(&at).earliest()?;
-    Some(at.with_timezone(&Utc) + chrono::Duration::minutes(1))
+    let at = at.with_timezone(&Utc) + chrono::Duration::minutes(1);
+    // Nothing resets further out than a week: beyond that the text was
+    // misread, and the default wait applies.
+    (at <= now.with_timezone(&Utc) + chrono::Duration::days(8)).then_some(at)
 }
 
 // --- the fake runner, for tests ---------------------------------------------
@@ -1493,10 +1505,26 @@ mod tests {
             at("You've hit your weekly limit · resets Fri 9am"),
             Some(Some(local(2026, 10, 30, 9)))
         );
-        // A date already past is next year's.
+        // A date already past is next year's, which is beyond any limit: the
+        // default wait applies.
+        assert_eq!(at("weekly limit · resets Jan 5"), Some(None));
+        // A date or weekday naming today, read once it has begun: the limit
+        // lifts later today, not a year or a week away.
+        let morning = chrono::Local
+            .with_ymd_and_hms(2026, 10, 30, 8, 0, 0)
+            .single()
+            .unwrap();
         assert_eq!(
-            at("weekly limit · resets Jan 5"),
-            Some(Some(local(2027, 1, 5, 0)))
+            rate_limit_at("weekly limit · resets Oct 30", morning),
+            Some(None)
+        );
+        assert_eq!(
+            rate_limit_at("weekly limit · resets Fri", morning),
+            Some(None)
+        );
+        assert_eq!(
+            rate_limit_at("weekly limit · resets Fri 9am", morning),
+            Some(Some(local(2026, 10, 30, 9)))
         );
     }
 

@@ -151,7 +151,10 @@ pub fn plan(repo: &Repo, request: &str) -> Outcome {
                     )
                 });
                 if matches!(began, Ok(Ok(_))) {
-                    reason.push_str("; the split can be redone after the reset");
+                    reason.push_str(
+                        "; the request stays one item: to split it, `hall drop` it and \
+                         run `hall new` again after the reset",
+                    );
                 }
             }
             Outcome {

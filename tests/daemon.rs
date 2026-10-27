@@ -581,6 +581,55 @@ fn a_pause_is_in_the_inbox_until_resumed() {
     assert_eq!(r.json["actions"][0]["command"], "hall daemon resume");
     assert!(r.json["why"].as_str().unwrap().contains("session limit"));
 
+    // A pause that ends on another day names the day.
+    let mut s = read_state(&env);
+    s["paused"]["until"] = json!((now + chrono::Duration::days(2)).to_rfc3339());
+    write_state(&env, s);
+    let r = env.hall(&env.repo, &["inbox"]);
+    let text = r.json["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["kind"] == "paused")
+        .unwrap()["text"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let day = (now + chrono::Duration::days(2))
+        .with_timezone(&chrono::Local)
+        .format("until %a %b %-d ")
+        .to_string();
+    assert!(text.contains(&day), "{text} should contain {day}");
+
+    // A spent daily budget offers the grant, not a resume that pauses again.
+    let mut s = read_state(&env);
+    s["paused"]["reason"] = json!(
+        "the daily budget is spent (1M of 1M weighted tokens today); the loop waits until \
+         00:00 UTC, or `hall budget --grant` lets it go on today"
+    );
+    write_state(&env, s);
+    let r = env.hall(&env.repo, &["inbox"]);
+    let e = r.json["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["kind"] == "paused")
+        .unwrap()
+        .clone();
+    assert_eq!(e["answer_with"][0], "hall budget --grant");
+    let n = r.json["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|e| e["kind"] == "paused")
+        .unwrap()
+        + 1;
+    let r = env.hall(&env.repo, &["inbox", &n.to_string()]);
+    assert_eq!(r.json["actions"][0]["command"], "hall budget --grant");
+    let mut s = read_state(&env);
+    s["paused"]["reason"] = json!("rate limited");
+    write_state(&env, s);
+
     let r = env.hall(&env.repo, &["daemon", "resume"]);
     assert_eq!(r.code, 0, "{}", r.stdout);
     let r = env.hall(&env.repo, &["inbox"]);
