@@ -135,6 +135,12 @@ rest.
   gates already enforce (formatting, the linter), and the paths the review
   notes say to skip: the prompt names them, and their changes are left out
   of the diff.
+- **Mark what was already there.** A real defect in a line the change
+  touches, that the base already had (`git show <base>:<path>`) and that
+  the change doesn't make worse, is reported with `pre_existing: true`. Rate
+  its severity as you would any finding; Hallmark records it, shows it in
+  the review and on the PR, and never lets it block approval or send the
+  item back. Don't use it to soften a problem the change caused.
 - **No speculation, no padding.** Don't report what "could" go wrong without
   a path to it. Don't invent findings to look busy: an empty list for a sound
   change is the right answer.

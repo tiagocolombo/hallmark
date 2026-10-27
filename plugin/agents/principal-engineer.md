@@ -69,6 +69,12 @@ read more: `hall log <item> --kind feedback_requested,ci_fix_requested,question,
   scenario: the inputs or state, and the wrong result they produce. "Might be
   a problem" is not a finding. If you can't build the scenario, read more
   code or drop it.
+- **Say when it was already there.** A real problem in code the change
+  touches but didn't introduce (`git show <base>:<path>` has the same
+  defect) and doesn't make worse gets `pre_existing: true`. It is recorded
+  for the record and never blocks; the author isn't asked to fix it. A
+  problem the change introduces, makes reachable or makes worse is not
+  pre-existing.
 - **Severity is about consequences, not taste.** blocker: must not ship (data
   loss, a security hole, a broken main path, a wrong result users will hit).
   major: a real defect that should be fixed before merging, including a

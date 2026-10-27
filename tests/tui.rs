@@ -45,6 +45,7 @@ fn finding(id: &str, round: u32, lens: Lens, severity: Severity, title: &str) ->
         title: title.into(),
         scenario: format!("{title}: a retry after a timeout sends the delivery twice"),
         fix: "Key deliveries by event ID and skip ones already sent.".into(),
+        pre_existing: false,
     }
 }
 

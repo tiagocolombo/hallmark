@@ -1023,9 +1023,14 @@ pub fn review_comment(item: &Item, events: &[Event], update: bool) -> String {
         let f = &t.finding;
         let _ = writeln!(
             s,
-            "- **{}** {} · {} · `{}:{}` · {}",
+            "- **{}** {}{} · {} · `{}:{}` · {}",
             f.id,
             f.severity.as_str(),
+            if f.pre_existing {
+                " (pre-existing)"
+            } else {
+                ""
+            },
             f.lens.as_str(),
             f.file,
             f.line,
@@ -1061,7 +1066,14 @@ pub fn review_comment(item: &Item, events: &[Event], update: bool) -> String {
                 } else {
                     format!(" Suggested: {}", crate::output::clip(&f.fix, 200))
                 };
-                format!("Still open ({} rides along).{fix}", f.severity.as_str())
+                if f.pre_existing {
+                    format!(
+                        "Still open (pre-existing: not introduced by this change, and not its \
+                         to fix).{fix}"
+                    )
+                } else {
+                    format!("Still open ({} rides along).{fix}", f.severity.as_str())
+                }
             }
         };
         let _ = writeln!(s, "  - {outcome}");
@@ -1377,6 +1389,26 @@ mod tests {
             "{c}"
         );
         assert!(!c.contains("Fixed in `"), "{c}");
+    }
+
+    #[test]
+    fn a_pre_existing_finding_is_marked_and_not_the_changes_to_fix() {
+        let mut old = finding("F1", 1);
+        old["pre_existing"] = json!(true);
+        old["title"] = json!("Old race");
+        let events = vec![verdict(1, "approve", vec![old], json!([]))];
+        let c = review_comment(&item(None), &events, false);
+        assert!(
+            c.contains("- **F1** major (pre-existing) · correctness · `a.rs:1` · Old race"),
+            "{c}"
+        );
+        assert!(
+            c.contains(
+                "Still open (pre-existing: not introduced by this change, and not its to fix)."
+            ),
+            "{c}"
+        );
+        assert!(!c.contains("rides along"), "{c}");
     }
 
     #[test]

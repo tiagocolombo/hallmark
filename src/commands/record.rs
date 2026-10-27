@@ -155,9 +155,10 @@ fn row(i: &Item, findings: &[&crate::index::FindingRow]) -> HistoryRow {
         i.updated_at
     };
     let secs = (ended_at - i.created_at).num_seconds().max(0);
+    // A pre-existing finding never rejected the item (ADR 0059).
     let mut blocking: Vec<Reason> = findings
         .iter()
-        .filter(|f| f.severity == "blocker" || f.severity == "major")
+        .filter(|f| (f.severity == "blocker" || f.severity == "major") && !f.pre_existing)
         .map(|f| Reason {
             id: f.id.clone(),
             round: f.round,

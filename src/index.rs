@@ -16,7 +16,7 @@ use crate::findings::PriorStatus;
 use crate::item::{Item, ItemId, State};
 use crate::journal::{self, Hall};
 
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA_VERSION: i64 = 3;
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS files (path TEXT PRIMARY KEY, offset INTEGER NOT NULL);
@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS findings (
   item TEXT NOT NULL, id TEXT NOT NULL, round INTEGER NOT NULL, t TEXT NOT NULL, sha TEXT,
   lens TEXT NOT NULL, severity TEXT NOT NULL, file TEXT, line INTEGER, title TEXT, scenario TEXT,
   fix TEXT, status TEXT NOT NULL, claimed_by TEXT, dispute TEXT, settled_round INTEGER,
+  pre_existing INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (item, id)
 );
 "#;
@@ -194,6 +195,9 @@ pub struct FindingRow {
     pub claimed_by: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dispute: Option<String>,
+    /// Not introduced by the change (ADR 0059).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub pre_existing: bool,
 }
 
 impl Index {
@@ -213,7 +217,7 @@ impl Index {
     ) -> Result<Vec<FindingRow>> {
         let mut stmt = self.conn.prepare(
             "SELECT item, id, round, t, lens, severity, file, line, title, scenario, fix, status,
-                    claimed_by, dispute
+                    claimed_by, dispute, pre_existing
              FROM findings WHERE (?1 IS NULL OR item = ?1) AND (?2 IS NULL OR lens = ?2)
                AND (?3 IS NULL OR t >= ?3)
              ORDER BY t DESC, item, CAST(SUBSTR(id, 2) AS INTEGER)",
@@ -240,6 +244,7 @@ impl Index {
                     status: r.get(11)?,
                     claimed_by: r.get(12)?,
                     dispute: r.get(13)?,
+                    pre_existing: r.get::<_, i64>(14)? != 0,
                 })
             },
         )?;
@@ -1352,8 +1357,8 @@ fn index_event(tx: &rusqlite::Transaction<'_>, file_item: Option<ItemId>, e: &Ev
             for f in findings {
                 tx.execute(
                     "INSERT OR IGNORE INTO findings(item, id, round, t, sha, lens, severity, file, line,
-                       title, scenario, fix, status)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, 'open')",
+                       title, scenario, fix, status, pre_existing)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, 'open', ?13)",
                     params![
                         item,
                         f.id,
@@ -1366,7 +1371,8 @@ fn index_event(tx: &rusqlite::Transaction<'_>, file_item: Option<ItemId>, e: &Ev
                         f.line,
                         f.title,
                         f.scenario,
-                        f.fix
+                        f.fix,
+                        i64::from(f.pre_existing)
                     ],
                 )?;
             }

@@ -521,6 +521,9 @@ claude -p --plugin-dir "$PLUGIN" --agent principal-engineer \
 
 - There are four: blocker, major, minor and nit.
 - Approval means 0 blockers and 0 majors.
+- A finding the reviewer marks `pre_existing` (the base already had the
+  defect and the change doesn't make it worse) is recorded and shown but
+  never counts toward approval, and the fixer may leave it (ADR 0059).
 
 **Findings.** Each finding names its lens, file, line, severity, and the
 concrete scenario that breaks.

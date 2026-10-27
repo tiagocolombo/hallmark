@@ -25,7 +25,8 @@
           "line": { "type": "integer", "minimum": 0, "description": "1-based line; 0 for the whole file." },
           "title": { "type": "string", "minLength": 1, "description": "One line." },
           "scenario": { "type": "string", "minLength": 1, "description": "The concrete inputs or state, and the wrong result they produce." },
-          "fix": { "type": "string", "minLength": 1, "description": "How to fix it." }
+          "fix": { "type": "string", "minLength": 1, "description": "How to fix it." },
+          "pre_existing": { "type": "boolean", "description": "True when the problem was there before this change (the base has the same code) and the change doesn't make it worse. It is recorded and shown, but never blocks approval and isn't the author's to fix." }
         },
         "required": ["lens", "severity", "file", "line", "title", "scenario", "fix"],
         "additionalProperties": false

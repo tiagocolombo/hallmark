@@ -138,6 +138,10 @@ pub struct ModelFinding {
     pub scenario: String,
     /// How to fix it.
     pub fix: String,
+    /// The problem was there before this change and the change doesn't
+    /// make it worse: recorded and shown, never blocking (ADR 0059).
+    #[serde(default)]
+    pub pre_existing: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -237,6 +241,10 @@ pub struct Finding {
     pub title: String,
     pub scenario: String,
     pub fix: String,
+    /// Not introduced by this change: it never blocks approval, and the
+    /// fixer may leave it (ADR 0059).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub pre_existing: bool,
 }
 
 /// A fixer's dispute of a finding, with its reason.
@@ -388,12 +396,24 @@ impl Ledger {
             .collect()
     }
 
+    /// Open findings by severity, leaving out the pre-existing ones: they
+    /// never count toward approval (ADR 0059).
     pub fn open_counts(&self) -> Counts {
         let mut c = Counts::default();
         for t in self.open() {
-            c.add(t.finding.severity);
+            if !t.finding.pre_existing {
+                c.add(t.finding.severity);
+            }
         }
         c
+    }
+
+    /// Open findings the change didn't introduce.
+    pub fn open_pre_existing(&self) -> Vec<&Tracked> {
+        self.open()
+            .into_iter()
+            .filter(|t| t.finding.pre_existing)
+            .collect()
     }
 
     /// The next free `F<n>`.
@@ -451,6 +471,7 @@ impl Ledger {
                     title: f.title.clone(),
                     scenario: f.scenario.clone(),
                     fix: f.fix.clone(),
+                    pre_existing: f.pre_existing,
                 }
             })
             .collect();
@@ -521,7 +542,48 @@ mod tests {
             title: title.into(),
             scenario: "two workers retry at once → double delivery".into(),
             fix: "take a row lock".into(),
+            pre_existing: false,
         }
+    }
+
+    #[test]
+    fn a_pre_existing_finding_is_recorded_but_never_blocks() {
+        let mut l = Ledger::default();
+        let v = ModelVerdict {
+            summary: "s".into(),
+            findings: vec![
+                ModelFinding {
+                    pre_existing: true,
+                    ..mf(Severity::Blocker, "old race")
+                },
+                mf(Severity::Minor, "naming"),
+            ],
+            prior: vec![],
+            learnings: vec![],
+        };
+        let j = l.judge(1, &v);
+        assert!(j.approves(), "{:?}", j.counts);
+        assert_eq!(j.counts.blocker, 0);
+        assert_eq!(j.counts.minor, 1);
+        assert!(j.findings[0].pre_existing);
+        record(&mut l, 1, &j);
+        assert_eq!(l.open().len(), 2, "it is tracked like any finding");
+        assert_eq!(l.open_pre_existing().len(), 1);
+        assert_eq!(l.open_pre_existing()[0].finding.id, "F1");
+        // The flag is written only when set, so old journals read as before.
+        let json = serde_json::to_value(&j.findings).unwrap();
+        assert_eq!(json[0]["pre_existing"], true);
+        assert!(json[1].get("pre_existing").is_none());
+        let back: Finding = serde_json::from_value(json[1].clone()).unwrap();
+        assert!(!back.pre_existing);
+        // A verdict without the field still parses.
+        let mv = ModelVerdict::parse(&serde_json::json!({
+            "summary": "s", "findings": [{"lens": "correctness", "severity": "major",
+            "file": "a.rs", "line": 1, "title": "t", "scenario": "s", "fix": "f"}],
+            "prior": [], "learnings": []
+        }))
+        .unwrap();
+        assert!(!mv.findings[0].pre_existing);
     }
 
     fn record(l: &mut Ledger, round: u32, j: &Judged) {

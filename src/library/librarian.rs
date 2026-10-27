@@ -953,6 +953,7 @@ mod tests {
             title: title.into(),
             scenario: "A deleted endpoint keeps its deliveries.".into(),
             fix: "Check first.".into(),
+            pre_existing: false,
         };
         let verdict = |round, findings, prior, escalated, learnings| Body::Verdict {
             sha: "abc".into(),

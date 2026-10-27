@@ -434,10 +434,11 @@ pub fn failing_checks(events: &[Event]) -> Vec<CheckRun> {
         .collect()
 }
 
-/// Open findings, most severe first, then in the order raised.
+/// Open findings, most severe first, then in the order raised; the
+/// pre-existing ones last, whatever their severity (ADR 0059).
 pub fn sorted_open(ledger: &Ledger) -> Vec<&Tracked> {
     let mut open = ledger.open();
-    open.sort_by_key(|t| t.finding.severity);
+    open.sort_by_key(|t| (t.finding.pre_existing, t.finding.severity));
     open
 }
 
@@ -530,9 +531,14 @@ pub fn prompt(repo: &Repo, item: &Item, events: &[Event], ledger: &Ledger) -> St
         for t in open {
             let f = &t.finding;
             s.push_str(&format!(
-                "\n### {} · {} · {} · {}:{}\n\n{}\n\n- Scenario: {}\n- Suggested fix: {}\n",
+                "\n### {} · {}{} · {} · {}:{}\n\n{}\n\n- Scenario: {}\n- Suggested fix: {}\n",
                 f.id,
                 f.severity.as_str(),
+                if f.pre_existing {
+                    " (pre-existing)"
+                } else {
+                    ""
+                },
                 f.lens.as_str(),
                 f.file,
                 f.line,
@@ -540,6 +546,13 @@ pub fn prompt(repo: &Repo, item: &Item, events: &[Event], ledger: &Ledger) -> St
                 f.scenario.trim(),
                 f.fix.trim()
             ));
+            if f.pre_existing {
+                s.push_str(
+                    "- Pre-existing: this change didn't introduce it, and it never blocks \
+                     approval. Fix it only when that is cheap and safe; otherwise leave it, \
+                     and say so in your summary.\n",
+                );
+            }
             if let Some(d) = &t.dispute {
                 s.push_str(&format!("- You disputed it before: \"{}\"\n", d.trim()));
             }
@@ -766,6 +779,7 @@ mod tests {
                 title: "t".into(),
                 scenario: "s".into(),
                 fix: "f".into(),
+                pre_existing: false,
             },
             status: Status::Open,
             claimed_by: None,

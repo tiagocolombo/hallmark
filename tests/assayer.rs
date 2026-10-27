@@ -675,6 +675,59 @@ fn rules_come_from_the_base_branch() {
 }
 
 #[test]
+fn a_pre_existing_blocker_is_recorded_but_never_blocks() {
+    let env = Env::initialized();
+    let mut old = finding("blocker", "retry.rs", "Old race in the lock");
+    old["pre_existing"] = json!(true);
+    let script = env.script(json!([reviewer(verdict(
+        vec![old, finding("minor", "retry.rs", "Name the constant")],
+        json!([])
+    ))]));
+    let (id, _, _) = ready_item(&env, "Retry", "retry.rs", "fn retry() {}\n");
+    tick(&env, &script);
+    tick(&env, &script);
+    // Approved: the blocker was there before the change.
+    assert_eq!(state(&env, &id), "hallmarked");
+    let verdicts = events_of(&env, &id, "verdict");
+    assert_eq!(verdicts[0]["verdict"], "approve");
+    assert_eq!(verdicts[0]["findings"][0]["pre_existing"], true);
+    assert!(verdicts[0]["findings"][1].get("pre_existing").is_none());
+    assert_eq!(
+        verdicts[0]["counts"],
+        json!({"blocker": 0, "major": 0, "minor": 1, "nit": 0})
+    );
+    // It is tracked, shown and marked everywhere.
+    let r = env.hall(&env.repo, &["findings", &id]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let f = r.json["findings"].as_array().unwrap();
+    assert_eq!(f.len(), 2);
+    assert_eq!(f[0]["id"], "F1");
+    assert_eq!(f[0]["pre_existing"], true);
+    assert_eq!(f[0]["status"], "open");
+    assert_eq!(r.json["open"]["blocker"], 0);
+    let report = std::fs::read_to_string(
+        env.repo
+            .join(".git/hallmark/items")
+            .join(&id)
+            .join("reviews/r1.md"),
+    )
+    .unwrap();
+    assert!(
+        report.contains("#### F1 · Old race in the lock (pre-existing: not introduced by this change; never blocks)"),
+        "{report}"
+    );
+    assert!(report.contains("**Approved**"), "{report}");
+    // The index knows too, after a rebuild: a pre-existing blocker is not
+    // a reason the item was rejected.
+    assert_eq!(env.hall(&env.repo, &["reindex"]).code, 0);
+    let r = env.hall(&env.repo, &["history", "--all"]);
+    let row = &r.json["items"][0];
+    assert_eq!(row["id"], id.as_str());
+    assert_eq!(row["blocking"], json!([]));
+    assert_eq!(row["rejected"], 0);
+}
+
+#[test]
 fn effort_follows_risk() {
     let env = Env::initialized();
     std::fs::write(
