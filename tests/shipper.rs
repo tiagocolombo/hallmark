@@ -761,6 +761,7 @@ fn the_description_says_the_risk_tier_of_the_paths_it_touches() {
     let env = Env::initialized();
     bare_remote(&env);
     set_config(&env, "ship", &toml("git push -q -u origin {branch}"));
+    set_config(&env, "merge.mode", &toml("auto"));
     set_config(&env, "merge.one_approval", "[\"retry.rs\"]");
     let (id, _, _) = hallmarked_item(&env, "Retry webhooks");
     assert_eq!(ship_pass(&env)["progress"], "worked");
