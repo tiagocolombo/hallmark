@@ -173,16 +173,17 @@ fn ship(repo: &Repo, item: &Item, ctx_holder: &str) -> Result<Progress> {
     }
     let item = &repo.hall.load_item(id)?;
     let events = repo.hall.read_item(id)?;
+    let risk = risk_line(
+        &repo.config.merge,
+        &changed_files(&wt, &base, &head),
+        item.needs_person.as_deref(),
+    );
     let body = pr_body(
         item,
         &events,
         &commit_subjects(&wt, &base, &head),
         &base,
-        &risk_line(
-            &repo.config.merge,
-            &changed_files(&wt, &base, &head),
-            item.needs_person.as_deref(),
-        ),
+        &risk,
         !repo.config.review_comment.trim().is_empty(),
     );
     let body_file = body_path(repo, id);
@@ -190,7 +191,12 @@ fn ship(repo: &Repo, item: &Item, ctx_holder: &str) -> Result<Progress> {
     let review_file = review_path(repo, id);
     std::fs::write(
         &review_file,
-        review_comment(item, &events, item.pr_url.is_some()),
+        // The description isn't touched on an update, so the comment, posted
+        // on every ship and update, carries the current risk (ADR 0063).
+        format!(
+            "{}\n**Risk**: {risk}\n",
+            review_comment(item, &events, item.pr_url.is_some()).trim_end()
+        ),
     )?;
     let title = pr_title(&wt, &base, &head, &item.title);
     let issue = item
@@ -722,7 +728,6 @@ fn base_ref(wt: &Path, base: &str) -> String {
     }
 }
 
-/// The subjects of the commits the PR ships, oldest first, merges left out.
 /// The files the PR changes against its base.
 fn changed_files(wt: &Path, base: &str, head: &str) -> Vec<String> {
     git::run(
@@ -792,6 +797,7 @@ pub fn risk_line(
     }
 }
 
+/// The subjects of the commits the PR ships, oldest first, merges left out.
 fn commit_subjects(wt: &Path, base: &str, head: &str) -> Vec<String> {
     git::run(
         wt,

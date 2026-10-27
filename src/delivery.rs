@@ -1475,10 +1475,7 @@ pub fn new_comments(events: &[Event], pr: &crate::gh::GhPr) -> (Vec<PrComment>, 
             let bot = author.ends_with("[bot]") || author == "github-actions";
             // Only people with write-side standing on the repo: a stranger's
             // comment must not start a run that edits and executes code.
-            let assoc = c.author_association.clone().unwrap_or_default();
-            let trusted = ["OWNER", "MEMBER", "COLLABORATOR"]
-                .iter()
-                .any(|a| assoc.eq_ignore_ascii_case(a));
+            let trusted = c.trusted();
             let fresh = at > since && !body.is_empty() && !bot && trusted && !is_ours(body);
             fresh.then(|| PrComment {
                 author,

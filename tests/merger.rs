@@ -456,10 +456,16 @@ fn a_lit_path_waits_for_a_person_and_retry_lets_it_merge() {
     assert_eq!(events(&env, &lit, "pr_merged").len(), 1);
 }
 
-fn approved_by(who: &[&str]) -> Value {
+/// Members' approving reviews of the commit `oid`.
+fn approved_by(who: &[&str], oid: &str) -> Value {
     json!(
         who.iter()
-            .map(|w| json!({"author": {"login": w}, "state": "APPROVED"}))
+            .map(|w| json!({
+                "author": {"login": w},
+                "state": "APPROVED",
+                "authorAssociation": "MEMBER",
+                "commit": {"oid": oid}
+            }))
             .collect::<Vec<_>>()
     )
 }
@@ -523,7 +529,7 @@ fn a_tiered_path_waits_for_peoples_approvals_and_counts_yours_as_one() {
     delivered(&env, &one, 1);
 
     // Two approvals: one person on GitHub plus yours.
-    pr(&gh, 2, "MERGEABLE", &sha2, "", approved_by(&["ana"]));
+    pr(&gh, 2, "MERGEABLE", &sha2, "", approved_by(&["ana"], &sha2));
     pass(&env, &gh);
     assert!(events(&env, &two, "pr_merged").is_empty());
     // The queue says what it still needs; the hold's reason is from when
@@ -594,14 +600,27 @@ fn the_reviewer_can_ask_for_a_person_on_any_change() {
         reason.contains("needs 1 approval from people (has 0); the reviewer asked for a person: it changes what the auto-updater downloads"),
         "{reason}"
     );
+    // An approval of an earlier head, and one from a stranger, don't count.
+    let stale = approved_by(&["ana"], "0000000000000000000000000000000000000000");
+    let mut stranger = approved_by(&["eve"], &sha);
+    stranger[0]["authorAssociation"] = json!("NONE");
+    let mut both = stale.as_array().unwrap().clone();
+    both.extend(stranger.as_array().unwrap().clone());
+    pr(&gh, 1, "MERGEABLE", &sha, "", json!(both));
+    pass(&env, &gh);
+    assert!(events(&env, &id, "pr_merged").is_empty());
+    // A member's approval of this head lifts the wait; `hall queue` only
+    // reads, and the merger's release is not your approval.
     pr(
         &gh,
         1,
         "MERGEABLE",
         &sha,
         "",
-        approved_by(&["ana", "lint[bot]"]),
+        approved_by(&["ana", "lint[bot]"], &sha),
     );
+    queue(&env, &gh);
+    assert!(events(&env, &id, "released").is_empty());
     pass(&env, &gh);
     assert_eq!(events(&env, &id, "pr_merged").len(), 1);
 }

@@ -1,6 +1,6 @@
 # 0057. The PR description says how the change was tested and how to revert it
 
-Status: Accepted, 2026-10-27. Amends 0039.
+Status: Accepted, 2026-10-27. Amends 0039. Amended by 0063: a sixth section, `## Risk`.
 
 ## Context
 

@@ -825,6 +825,24 @@ mod tests {
         );
         assert_eq!(f["properties"]["pre_existing"]["type"], "boolean");
         assert!(!req.contains(&"pre_existing"));
+        // The schema offers exactly the fields the type accepts.
+        let mut props: Vec<String> = schema["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect();
+        props.sort();
+        let generated = serde_json::to_value(schemars::schema_for!(ModelVerdict)).unwrap();
+        let mut want: Vec<String> = generated["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect();
+        want.sort();
+        assert_eq!(props, want);
+        assert!(schema["examples"][0]["needs_person"].is_string());
         // The example in the schema's description round-trips.
         let example = &schema["examples"][0];
         ModelVerdict::parse(example).unwrap();

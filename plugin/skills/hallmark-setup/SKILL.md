@@ -106,6 +106,9 @@ are happy with.
      are still running.
    - `merge.lit`: paths a person merges, as globs (`.github/`, release
      settings). Such a PR waits in the inbox, and `hall retry` lets it merge.
+   - `merge.one_approval` and `merge.two_approvals`: paths that need that
+     many people's approvals (`hall retry` counts as one, members' approving
+     reviews on GitHub the rest) before the merger merges the PR.
 8. **The sandbox** (`[sandbox]`, ADR 0053): every headless run is confined.
    Its file tools read only inside the run's directories and never
    `deny_read`. Its commands run in Claude Code's sandbox, with no network

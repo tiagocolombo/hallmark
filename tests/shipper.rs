@@ -772,6 +772,33 @@ fn the_description_says_the_risk_tier_of_the_paths_it_touches() {
         ),
         "{body}"
     );
+    // The comment posted on every ship and update says it, too.
+    let comment = std::fs::read_to_string(item_file(&env, &id, "review.md")).unwrap();
+    assert!(
+        comment.contains("**Risk**: Needs 1 approval from people"),
+        "{comment}"
+    );
+}
+
+#[test]
+fn the_reviewers_reason_for_a_person_is_in_the_risk() {
+    let env = Env::initialized();
+    bare_remote(&env);
+    set_config(&env, "ship", &toml("git push -q -u origin {branch}"));
+    let (id, _, sha) = hallmarked_item(&env, "Retry webhooks");
+    let mut asked = verdict(&sha, 1, vec![], vec![], counts(0, 0, 0, 0));
+    if let hallmark::event::Body::Verdict { needs_person, .. } = &mut asked {
+        *needs_person = Some("it changes what the updater downloads".into());
+    }
+    append(&env, &id, "assayer", asked);
+    assert_eq!(ship_pass(&env)["progress"], "worked");
+    let body = std::fs::read_to_string(item_file(&env, &id, "pr-body.md")).unwrap();
+    assert!(
+        body.contains(
+            "The reviewer asked for a person's approval: it changes what the updater downloads"
+        ),
+        "{body}"
+    );
 }
 
 #[test]

@@ -1124,7 +1124,16 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
             }
             Body::Released { .. } => {
                 // Releasing a lit hold is your approval to merge that head.
-                if item.hold.as_ref().is_some_and(|h| h.kind == HoldKind::Lit) {
+                // The merger lifting a wait for approvals is not a person's
+                // approval (ADR 0063).
+                let by_merger_tier = e.actor == crate::merger::ACTOR
+                    && item
+                        .hold
+                        .as_ref()
+                        .is_some_and(|h| h.reason.starts_with(crate::merger::TIER_WAIT));
+                if !by_merger_tier
+                    && item.hold.as_ref().is_some_and(|h| h.kind == HoldKind::Lit)
+                {
                     item.merge_approved = item.pr_head.clone();
                 }
                 // A retried merge that never landed tries again.

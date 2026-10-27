@@ -174,6 +174,28 @@ pub struct GhComment {
         alias = "created_at"
     )]
     pub created_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Reviews: the commit the review was left on.
+    #[serde(default)]
+    pub commit: Option<GhCommit>,
+}
+
+/// The commit a review was left on.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct GhCommit {
+    #[serde(default)]
+    pub oid: String,
+}
+
+impl GhComment {
+    /// Whether the author has write-side standing on the repo (OWNER,
+    /// MEMBER or COLLABORATOR): a stranger's words must not start a run or
+    /// approve a merge.
+    pub fn trusted(&self) -> bool {
+        let assoc = self.author_association.as_deref().unwrap_or_default();
+        ["OWNER", "MEMBER", "COLLABORATOR"]
+            .iter()
+            .any(|a| assoc.eq_ignore_ascii_case(a))
+    }
 }
 
 /// A pull request and the feedback on it (for follow-up items).

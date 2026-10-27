@@ -7,7 +7,8 @@
 //! Hallmark shipped and that commit carries a hallmark; GitHub says it is
 //! mergeable; CI passed at that head (unless `require_ci = false`); nobody
 //! asked for changes; nothing it depends on is still open; it touches no
-//! `lit` path; and it is fresh: it contains its base, or the commits it
+//! `lit` path; it has the people's approvals its risk tier asks for
+//! (ADR 0063); and it is fresh: it contains its base, or the commits it
 //! lacks touch none of its files.
 //!
 //! **Order**: a PR stacked on another waits for it; a PR whose body says
@@ -73,7 +74,8 @@ pub enum Status {
     Conflicting,
     /// GitHub is still working out whether it conflicts.
     Unknown,
-    /// Touches a `lit` path: a person merges it.
+    /// Waits for a person: it touches a `lit` path, or needs people's
+    /// approvals by risk tier (ADR 0063).
     Lit,
     /// A reviewer asked for changes.
     ChangesRequested,
@@ -316,26 +318,30 @@ pub fn changes_requested(reviews: &[GhComment]) -> Option<String> {
 /// (ADR 0063), so the merger judges it again on every pass.
 pub const TIER_WAIT: &str = "ready to merge, needs ";
 
-/// The people (not bots) whose latest review approves the PR, in login
-/// order (ADR 0063).
-pub fn approvals(reviews: &[GhComment]) -> Vec<String> {
-    let mut latest: BTreeMap<String, &str> = BTreeMap::new();
+/// The people (not bots) with standing on the repo (owner, member or
+/// collaborator) whose latest review approves `head`, in login order
+/// (ADR 0063). An approval is per head: one left on an earlier commit
+/// doesn't count.
+pub fn approvals(reviews: &[GhComment], head: &str) -> Vec<String> {
+    let mut latest: BTreeMap<String, (&str, &GhComment)> = BTreeMap::new();
     for r in reviews {
         let who = r
             .author
             .as_ref()
             .map(|a| a.login.clone())
             .unwrap_or_default();
-        if who.is_empty() || who.ends_with("[bot]") || who == "github-actions" {
+        if who.is_empty() || who.ends_with("[bot]") || who == "github-actions" || !r.trusted() {
             continue;
         }
         if let Some(s @ ("APPROVED" | "CHANGES_REQUESTED" | "DISMISSED")) = r.state.as_deref() {
-            latest.insert(who, s);
+            latest.insert(who, (s, r));
         }
     }
     latest
         .into_iter()
-        .filter(|(_, s)| *s == "APPROVED")
+        .filter(|(_, (s, r))| {
+            *s == "APPROVED" && r.commit.as_ref().is_some_and(|c| c.oid == head)
+        })
         .map(|(who, _)| who)
         .collect()
 }
@@ -784,7 +790,7 @@ impl<'a> Look<'a> {
         let (from_paths, tiered) = self.repo.config.merge.approvals_needed(&files);
         let required = from_paths.max(u32::from(item.needs_person.is_some()));
         if required > 0 {
-            let mut who = approvals(&pr.reviews);
+            let mut who = approvals(&pr.reviews, &head);
             if item.merge_approved.as_deref() == Some(head.as_str()) {
                 who.push("you".into());
             }
@@ -810,21 +816,10 @@ impl<'a> Look<'a> {
                 }
                 return judged(Status::Lit, why.clone(), Verdict::Lit(why));
             }
-            if item.hold.is_some() {
-                // The approvals arrived while it waited: the wait is over.
-                let _ = self.repo.hall.append_item(
-                    item.id,
-                    &Event::new(
-                        ACTOR,
-                        Some(item.id),
-                        Body::Released {
-                            reason: Some(format!("approved by {}", who.join(", "))),
-                            granted_tokens: None,
-                        },
-                    ),
-                );
-            }
         }
+        // A tier wait that no longer applies (approvals arrived, or the
+        // requirement dropped) is lifted by `merge`, not here: judging
+        // writes nothing.
         judged(
             Status::Ready,
             match as_it_is {
@@ -1465,14 +1460,31 @@ fn merge(repo: &Repo, item: &Item, head: &str, holder: &str) -> Result<Progress>
     }
     // The delivery-watch takes no lease: look again, under ours.
     let (_, still) = repo.hall.transact(id, |it, _| {
+        // The judge found the tier wait over: lift it here (not as your
+        // approval, the fold knows the merger's release).
+        let mut events = vec![];
+        let tier_wait = it
+            .hold
+            .as_ref()
+            .is_some_and(|h| h.kind == HoldKind::Lit && h.reason.starts_with(TIER_WAIT));
+        if tier_wait && it.pr_head.as_deref() == Some(head) {
+            events.push(Event::new(
+                ACTOR,
+                Some(id),
+                Body::Released {
+                    reason: Some("the approvals it waited for are in".into()),
+                    granted_tokens: None,
+                },
+            ));
+        }
         let ok = it.state == ItemState::Closed
-            && it.hold.is_none()
+            && (it.hold.is_none() || !events.is_empty())
             && it.merged.is_none()
             && it.delivered.is_none()
             && it.rebase.is_none()
             && it.feedback.is_none()
             && it.pr_head.as_deref() == Some(head);
-        Ok((vec![], ok))
+        Ok((if ok { events } else { vec![] }, ok))
     })?;
     if !still {
         let _ = lease::release(&repo.hall, id, holder);
@@ -1575,6 +1587,46 @@ mod tests {
             state: Some(state.into()),
             ..Default::default()
         }
+    }
+
+    fn approval(who: &str, state: &str, assoc: &str, oid: &str) -> GhComment {
+        GhComment {
+            author_association: Some(assoc.into()),
+            commit: Some(crate::gh::GhCommit { oid: oid.into() }),
+            ..review(who, state)
+        }
+    }
+
+    #[test]
+    fn approvals_are_trusted_people_on_this_head() {
+        let a = |who, s| approval(who, s, "MEMBER", "h2");
+        // The latest state per person; a dismissal ends an approval.
+        assert_eq!(
+            approvals(
+                &[
+                    a("ana", "APPROVED"),
+                    a("bob", "APPROVED"),
+                    a("bob", "DISMISSED"),
+                    a("cy", "APPROVED"),
+                    a("cy", "CHANGES_REQUESTED"),
+                ],
+                "h2"
+            ),
+            ["ana"]
+        );
+        // Bots and empty logins never count.
+        let bots = [a("lint[bot]", "APPROVED"), a("", "APPROVED")];
+        assert!(approvals(&bots, "h2").is_empty());
+        // Strangers don't count, whatever GitHub lets them submit.
+        let eve = approval("eve", "APPROVED", "NONE", "h2");
+        let fay = approval("fay", "APPROVED", "CONTRIBUTOR", "h2");
+        assert!(approvals(&[eve, fay], "h2").is_empty());
+        // An approval of an earlier head doesn't count for this one.
+        assert!(approvals(&[approval("ana", "APPROVED", "OWNER", "h1")], "h2").is_empty());
+        assert_eq!(
+            approvals(&[approval("ana", "APPROVED", "OWNER", "h2")], "h2"),
+            ["ana"]
+        );
     }
 
     #[test]

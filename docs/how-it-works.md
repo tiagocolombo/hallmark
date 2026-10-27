@@ -20,7 +20,7 @@ macOS, `xdg-open` on Linux, `start` on Windows).
 | Assay Office | The checks, then the principal engineer's review; a change on a `security_review` path gets a second, security-only pass whose findings join the verdict; with `verify` set to a model, a verifier then tries to refute the review's blocking findings, and drops the ones it can show are not real | the assayer, the verifier |
 | Repair Shop | A fixer addresses failing checks and findings | the fixer |
 | Stamping Room | The approved commit gets its hallmark, a git note | the assayer |
-| Dispatch Dock | Rebases onto the latest base, then the ship command opens the PR with a What, Why, How, Testing and How to revert description (ADR 0057) (or `update` updates an adopted one), posts the review as a PR comment, and the item closes | the shipper |
+| Dispatch Dock | Rebases onto the latest base, then the ship command opens the PR with a What, Why, How, Testing, How to revert and Risk description (ADR 0057, 0063) (or `update` updates an adopted one), posts the review as a PR comment, and the item closes | the shipper |
 | Delivery Office | Watches each PR until it merges. A conflict or new review comments send it back to development, where a headless dev run rebases it or addresses them and sends it to review; a rebase that leaves the approved change as it was keeps its approval, with no review. With the merger on, it merges each ready PR itself, one at a time, in dependency order, and brings each PR up to date only at its turn. Once the PR merges or closes, the item's worktree is removed; its branch and journal stay. For 30 days after a merge, the base is watched for a revert of the PR (not one merged with GitHub's "Rebase and merge", whose commits can't be matched, ADR 0061): one is recorded on the item, lands in your inbox, counts in `hall stats` and sends the item back to the librarian as a miss | the delivery and delivery-watch workers, the merger, the CI watch, the sweeper, the reverts worker |
 
 ## An item's states
@@ -276,7 +276,9 @@ asked whether the approach is wrong and what it would do instead,
 [ADR 0060](decisions/0060-the-last-round-asks-for-a-diagnosis.md)), "looks done?", a budget hold
 (800k tokens an item by default), checks that failed three times in a row,
 a merge the merger couldn't do (`merge_failed`), a ready PR that touches a
-`[merge] lit` path (`lit`), CI that still fails after the Delivery office's
+`[merge] lit` path or one that waits for people's approvals by risk tier
+(`lit`; `hall retry` counts as one approval, and the merger lifts the wait
+when the rest arrive on GitHub, ADR 0063), CI that still fails after the Delivery office's
 two fixes, CI that never started (one `ci_down` entry), or a base whose own
 CI failed, which stops its merge queue (`base_red`), or a loop paused by
 Claude's session or weekly limit (`paused`; `hall daemon resume` retries at
