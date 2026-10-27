@@ -431,6 +431,30 @@ fn the_verifier_drops_the_blocking_findings_it_refutes() {
             .contains("Hallmark verification")
     );
     assert_eq!(arg_after(v, "--setting-sources"), Some("user"));
+    // Its limits: a dollar, ten minutes, never a hold, read-only tools.
+    assert_eq!(arg_after(v, "--max-budget-usd"), Some("1"));
+    assert_eq!(v["max_budget_usd"], 1.0);
+    assert_eq!(v["timeout_secs"], 600);
+    assert_eq!(v["no_hold"], true);
+    let args = v["args"].as_array().unwrap();
+    let i = args.iter().position(|a| a == "--allowedTools").unwrap();
+    let tools: Vec<&str> = args[i + 1..]
+        .iter()
+        .map(|a| a.as_str().unwrap())
+        .take_while(|a| *a != "--")
+        .collect();
+    assert_eq!(
+        tools,
+        [
+            "Read",
+            "Grep",
+            "Glob",
+            "Bash(git diff:*)",
+            "Bash(git log:*)",
+            "Bash(git show:*)",
+            "StructuredOutput"
+        ]
+    );
     let prompt = v["prompt"].as_str().unwrap();
     assert!(
         prompt.contains("1. [blocker · correctness] `retry.rs:1` Two workers"),
@@ -850,6 +874,71 @@ fn a_rate_limit_on_the_security_pass_pauses_without_a_verdict() {
     assert!(events_of(&env, &id, "verdict").is_empty());
     assert!(events_of(&env, &id, "security_pass").is_empty());
     assert_eq!(state(&env, &id), "review");
+}
+
+#[test]
+fn a_verifier_that_refutes_every_blocker_approves_and_the_verdict_stands_when_it_cant_rule() {
+    // The success path: the only blocker is refuted, so the item is
+    // hallmarked, and the dropped finding is on record.
+    let env = Env::initialized();
+    configure(&env, &[("verify", "\"sonnet\"")]);
+    let (id, _, _) = ready_item(&env, "Retry webhooks", "retry.rs", "fn retry() {}\n");
+    let script = env.script(json!([
+        reviewer(verdict(
+            vec![finding("blocker", "retry.rs", "Two workers")],
+            json!([])
+        )),
+        verifier(json!([{"index": 1, "real": false, "reason": "retry.rs:3 locks the row"}]))
+    ]));
+    tick(&env, &script);
+    tick(&env, &script);
+    assert_eq!(state(&env, &id), "hallmarked");
+    assert_eq!(events_of(&env, &id, "verified")[0]["dropped"][0]["title"], "Two workers");
+
+    // An answer that doesn't fit the schema: the verdict stands.
+    let env = Env::initialized();
+    configure(&env, &[("verify", "\"sonnet\"")]);
+    let (id, _, _) = ready_item(&env, "Retry webhooks", "retry.rs", "fn retry() {}\n");
+    let script = env.script(json!([
+        reviewer(verdict(
+            vec![finding("blocker", "retry.rs", "Two workers")],
+            json!([])
+        )),
+        verifier(json!("not rulings"))
+    ]));
+    tick(&env, &script);
+    tick(&env, &script);
+    assert_eq!(state(&env, &id), "fixing");
+    assert!(events_of(&env, &id, "verified").is_empty());
+    let rep = report(&env, &id, 1);
+    assert!(
+        rep.contains("The verifier did not rule on the 1 blocking finding: its answer didn't fit"),
+        "{rep}"
+    );
+
+    // The per-item cap reached before the verifier runs: it is skipped, the
+    // verdict stands, and the verifier raises no hold.
+    let env = Env::initialized();
+    configure(&env, &[("verify", "\"sonnet\"")]);
+    configure_table(&env, "\n[budget]\nper_item = \"1k\"\n");
+    let (id, _, _) = ready_item(&env, "Retry webhooks", "retry.rs", "fn retry() {}\n");
+    let script = env.script(json!([
+        reviewer(verdict(
+            vec![finding("blocker", "retry.rs", "Two workers")],
+            json!([])
+        )),
+        verifier(json!([{"index": 1, "real": false, "reason": "x"}]))
+    ]));
+    tick(&env, &script);
+    tick(&env, &script);
+    assert_eq!(env.fake_calls().len(), 1, "the verifier never started");
+    assert_eq!(state(&env, &id), "fixing");
+    assert!(events_of(&env, &id, "held").is_empty());
+    let rep = report(&env, &id, 1);
+    assert!(
+        rep.contains("The verifier did not rule on the 1 blocking finding: didn't run"),
+        "{rep}"
+    );
 }
 
 #[test]

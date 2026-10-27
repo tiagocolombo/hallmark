@@ -146,6 +146,7 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
             // anyone acts on them (ADR 0062). The checkout is still here.
             let (mv, verification) =
                 super::verify::verify(repo, ctx.runner, item, &sha, &req.cwd, &review_base, mv)?;
+            // It can take minutes: look again before recording.
             if let Some(p) = moved_on()? {
                 return Ok(p);
             }

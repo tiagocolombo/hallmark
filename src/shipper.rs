@@ -938,6 +938,41 @@ pub fn review_comment(item: &Item, events: &[Event], update: bool) -> String {
                     .map(|r| format!(", reviewed by {r}"))
                     .unwrap_or_default()
             );
+            // Blocking findings a second model refuted in the approving
+            // round: the summary above is the reviewer's, written before.
+            for e in events {
+                if let Body::Verified {
+                    round: r,
+                    model,
+                    checked,
+                    dropped,
+                    ..
+                } = &e.body
+                    && r == round
+                    && !dropped.is_empty()
+                {
+                    let _ = writeln!(
+                        s,
+                        "\nThe verifier ({}) checked {checked} blocking finding{} and dropped \
+                         {}, so the approval followed the verifier, not the summary above:",
+                        model.as_deref().unwrap_or("a second model"),
+                        if *checked == 1 { "" } else { "s" },
+                        dropped.len()
+                    );
+                    for d in dropped {
+                        let _ = writeln!(
+                            s,
+                            "- {} · {} · `{}:{}` · {}: {}",
+                            d.severity.as_str(),
+                            d.lens.as_str(),
+                            d.file,
+                            d.line,
+                            d.title.trim(),
+                            d.reason.trim()
+                        );
+                    }
+                }
+            }
             if let Some(who) = crate::assayer::verdict::override_by(actor) {
                 if who == "you" {
                     let _ = writeln!(
@@ -1266,6 +1301,36 @@ mod tests {
             c.contains("Recorded by agent with `hall verdict`, not the assayer."),
             "{c}"
         );
+    }
+
+    #[test]
+    fn an_approval_the_verifier_produced_names_what_it_dropped() {
+        let events = vec![
+            ev(json!({"event": "verified", "sha": "abc1234", "round": 1,
+                "model": "claude-sonnet-5-5", "checked": 1,
+                "dropped": [{"lens": "correctness", "severity": "blocker",
+                    "file": "retry.rs", "line": 3, "title": "Two workers can retry",
+                    "reason": "retry.rs:3 takes the row lock"}]})),
+            verdict(1, "approve", vec![], json!([])),
+        ];
+        let c = review_comment(&item(None), &events, false);
+        assert!(
+            c.contains(
+                "The verifier (claude-sonnet-5-5) checked 1 blocking finding and dropped 1"
+            ),
+            "{c}"
+        );
+        assert!(
+            c.contains("- blocker · correctness · `retry.rs:3` · Two workers can retry: retry.rs:3 takes the row lock"),
+            "{c}"
+        );
+        // A verification from another round isn't this approval's.
+        let events = vec![
+            events[0].clone(),
+            verdict(2, "approve", vec![], json!([])),
+        ];
+        let c = review_comment(&item(None), &events, false);
+        assert!(!c.contains("The verifier"), "{c}");
     }
 
     /// F1 raised and fixed, shipped, then F2 raised and fixed after `since`.

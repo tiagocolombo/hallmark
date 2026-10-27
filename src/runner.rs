@@ -1185,7 +1185,9 @@ pub fn run_metered(
         .unwrap_or_else(crate::repo::actor);
     let actor = actor.as_str();
     if let Err(stop) = crate::budget::check(repo, item, &req.role) {
-        if let (Some(id), crate::budget::Level::Item) = (item, stop.level) {
+        if let (Some(id), crate::budget::Level::Item) = (item, stop.level)
+            && !req.no_hold
+        {
             record(
                 repo,
                 Some(id),

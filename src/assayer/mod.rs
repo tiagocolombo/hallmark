@@ -67,7 +67,12 @@ pub fn lease_ttl(repo: &Repo) -> Duration {
 
 /// [`lease_ttl`] for a config: outlasts the reviewer and the slowest gate.
 pub fn lease_ttl_for(config: &crate::config::Config) -> Duration {
-    let run = config.budget.timeout_secs(Role::Reviewer).max(0);
+    let mut run = config.budget.timeout_secs(Role::Reviewer).max(0);
+    // The verifier runs after the reviewer, under the same lease.
+    let v = config.verify.trim();
+    if !v.is_empty() && !v.eq_ignore_ascii_case(verify::OFF) {
+        run += verify::TIMEOUT_SECS as i64;
+    }
     let gate = config.longest_gate_secs() as i64;
     Duration::seconds(run.max(gate).max(600) + 600)
 }
