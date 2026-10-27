@@ -877,7 +877,9 @@ fn a_sensitive_path_is_never_skipped() {
     let calls = env.fake_calls();
     let prompt = calls[0]["prompt"].as_str().unwrap();
     assert!(
-        prompt.contains("Sensitive paths in this change (review them most carefully): plugin/verdict.json"),
+        prompt.contains(
+            "Sensitive paths in this change (review them most carefully): plugin/verdict.json"
+        ),
         "{prompt}"
     );
     assert!(prompt.contains("SENSITIVE_JSON"), "{prompt}");
