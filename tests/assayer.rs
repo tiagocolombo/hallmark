@@ -383,7 +383,7 @@ fn a_change_on_a_security_review_path_gets_a_second_security_only_pass() {
     configure(&env, &[("security_review", "[\"auth.rs\"]")]);
     let (id, _, sha) = ready_item(&env, "Login", "auth.rs", "fn login() {}\n");
     let sec = json!({
-        "lens": "security_tenancy", "severity": "blocker", "file": "auth.rs", "line": 1,
+        "lens": "security_tenancy", "severity": "blocker", "file": "auth.rs", "line": 42,
         "title": "The token check can be skipped",
         "scenario": "an empty token passes the check and reaches the session",
         "fix": "refuse an empty token before the lookup"
