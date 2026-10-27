@@ -920,7 +920,15 @@ fn a_verifier_that_refutes_every_blocker_approves_and_the_verdict_stands_when_it
     // verdict stands, and the verifier raises no hold.
     let env = Env::initialized();
     configure(&env, &[("verify", "\"sonnet\"")]);
-    configure_table(&env, "\n[budget]\nper_item = \"1k\"\n");
+    let path = env.repo.join(".hallmark.toml");
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains("\n[budget]\n"), "{text}");
+    std::fs::write(
+        &path,
+        text.replacen("\n[budget]\n", "\n[budget]\nper_item = \"1k\"\n", 1),
+    )
+    .unwrap();
+    git(&env.repo, &["commit", "-q", "-am", "cap the item"]);
     let (id, _, _) = ready_item(&env, "Retry webhooks", "retry.rs", "fn retry() {}\n");
     let script = env.script(json!([
         reviewer(verdict(
