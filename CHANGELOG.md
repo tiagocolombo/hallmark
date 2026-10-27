@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.12](https://github.com/tiagocolombo/hallmark/compare/v0.3.11...v0.3.12) - 2026-10-27
+
+### Added
+
+- Review notes say what failure looks like and which paths to skip; a nit cap in the ledger ([#136](https://github.com/tiagocolombo/hallmark/pull/136))
+
 ## [0.3.11](https://github.com/tiagocolombo/hallmark/compare/v0.3.10...v0.3.11) - 2026-10-27
 
 ### Added
