@@ -239,8 +239,8 @@ only the `security_tenancy` lens, at `max` effort, asking who can reach
 each changed path and what they can do
 ([ADR 0064](decisions/0064-the-security-pass.md)). Its new findings join
 the round's verdict (the pass is told what the reviewer already reported,
-and a finding at the same file and line is not added twice, whatever its
-title), its summary is appended to the review's, and a `security_pass`
+and a finding at the same file and line as a reviewer finding at least as
+severe is not added twice, whatever its title), its summary is appended to the review's, and a `security_pass`
 event records the paths, the model and what it added. Its rulings on
 earlier findings and its learnings are dropped: those are the main
 review's. It shares the review budget. A budget stop or the plan limit

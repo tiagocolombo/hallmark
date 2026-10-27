@@ -1387,6 +1387,14 @@ max_usd = 0.5
     }
 
     #[test]
+    fn a_security_review_glob_that_does_not_parse_is_refused() {
+        let e = Config::parse("security_review = [\"src/{admin/**\"]\n").unwrap_err();
+        assert_eq!(e.code, ErrorCode::Usage);
+        assert!(e.message.contains("security_review"), "{}", e.message);
+        assert!(Config::parse("security_review = [\"src/admin/**\"]\n").is_ok());
+    }
+
+    #[test]
     fn overrides_merge_with_defaults() {
         let c = Config::parse(
             r#"

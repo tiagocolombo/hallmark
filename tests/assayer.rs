@@ -443,6 +443,9 @@ fn a_change_on_a_security_review_path_gets_a_second_security_only_pass() {
             .unwrap()
             .contains("Security pass")
     );
+    // The pass is told what the reviewer already reported.
+    assert!(prompt.contains("already reported these this round"), "{prompt}");
+    assert!(prompt.contains("- `auth.rs:1` Retries forever"), "{prompt}");
 
     // One verdict for the round: the reviewer's finding, then the pass's;
     // the duplicate isn't added twice; the summary carries both.
@@ -586,8 +589,71 @@ fn a_budget_stop_on_the_security_pass_holds_without_a_verdict_and_retry_runs_it(
         .map(|c| c["role"].as_str().unwrap().to_string())
         .collect();
     assert_eq!(roles, ["reviewer", "reviewer", "security"]);
+    // The stopped round's review didn't count, so the person's words still
+    // reach the one that does.
+    let calls = env.fake_calls();
+    for i in [0, 1] {
+        assert!(
+            calls[i]["prompt"]
+                .as_str()
+                .unwrap()
+                .contains("please look at the retry path"),
+            "review {i}"
+        );
+    }
     assert_eq!(events_of(&env, &id, "verdict").len(), 1);
     assert_eq!(events_of(&env, &id, "security_pass").len(), 1);
+}
+
+/// A shell-quoted path for a fake step's command.
+#[cfg(unix)]
+fn sh_quote(p: &Path) -> String {
+    format!("'{}'", p.display().to_string().replace('\'', "'\\''"))
+}
+
+#[cfg(unix)]
+#[test]
+fn the_lease_is_renewed_before_the_security_pass() {
+    let env = Env::initialized();
+    configure(&env, &[("security_review", "[\"auth.rs\"]")]);
+    let (id, _, _) = ready_item(&env, "Login", "auth.rs", "fn login() {}\n");
+    let lease = env
+        .repo
+        .join(".git/hallmark/leases")
+        .join(format!("{id}.json"));
+    let copy = env.root.join("lease-during-pass.json");
+    // The review runs so long that the lease lapses; the pass starts only
+    // if it was renewed first.
+    let mut review = reviewer(verdict(vec![], json!([])));
+    review["run"] = json!([format!(
+        "perl -pi -e 's/\"expires\"\\s*:\\s*\"[^\"]*\"/\"expires\": \"2000-01-01T00:00:00Z\"/' {}",
+        sh_quote(&lease)
+    )]);
+    let mut pass = security(verdict(vec![], json!([])));
+    pass["run"] = json!([format!("cp {} {}", sh_quote(&lease), sh_quote(&copy))]);
+    let script = env.script(json!([review, pass]));
+    tick(&env, &script);
+    tick(&env, &script);
+    let seen: Value = serde_json::from_str(&std::fs::read_to_string(&copy).unwrap()).unwrap();
+    let expires: chrono::DateTime<chrono::Utc> =
+        serde_json::from_value(seen["expires"].clone()).unwrap();
+    assert!(expires > chrono::Utc::now(), "{seen}");
+}
+
+#[cfg(unix)]
+#[test]
+fn an_item_pulled_back_during_the_security_pass_is_discarded() {
+    let env = Env::initialized();
+    configure(&env, &[("security_review", "[\"auth.rs\"]")]);
+    let (id, wt, _) = ready_item(&env, "Login", "auth.rs", "fn login() {}\n");
+    let mut pass = security(verdict(vec![], json!([])));
+    pass["run"] = json!([format!("cd {} && {{hall}} pull-back", sh_quote(&wt))]);
+    let script = env.script(json!([reviewer(verdict(vec![], json!([]))), pass]));
+    tick(&env, &script);
+    let r = tick(&env, &script);
+    assert!(what(&r).contains("discarded: the item moved on"), "{}", r.stdout);
+    assert!(events_of(&env, &id, "verdict").is_empty());
+    assert!(events_of(&env, &id, "security_pass").is_empty());
 }
 
 #[test]

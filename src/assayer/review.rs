@@ -87,14 +87,6 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
                 Ok(mv) => mv,
                 Err(e) => return invalid(repo, item, &e.message),
             };
-            // The reviewer read the person's words; the next run doesn't.
-            crate::words::delivered(
-                repo,
-                item.id,
-                "reviewer",
-                crate::words::pending(&events, "reviewer").as_ref(),
-                &events,
-            )?;
             // Pulled back or dropped while the reviewer ran: discard.
             let moved_on = || -> Result<Option<Progress>> {
                 let now = repo.hall.load_item(item.id)?;
@@ -140,6 +132,16 @@ pub fn run(ctx: &WorkerCtx, item: &Item) -> Result<Progress> {
             if let Some(p) = moved_on()? {
                 return Ok(p);
             }
+            // The reviewer read the person's words; the next run doesn't.
+            // Only now: a round stopped or discarded before its verdict is
+            // recorded is reviewed again with them (ADR 0044).
+            crate::words::delivered(
+                repo,
+                item.id,
+                "reviewer",
+                crate::words::pending(&events, "reviewer").as_ref(),
+                &events,
+            )?;
             let rec = super::record_verdict(
                 repo,
                 item.id,

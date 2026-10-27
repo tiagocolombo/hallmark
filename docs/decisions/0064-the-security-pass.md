@@ -23,8 +23,9 @@ any number of findings per round.
   `prompt::prepare_with` builds it; the setting is read from the base
   like `lenses`.
 - **Its new findings join the verdict** before it is recorded: one the
-  reviewer already raised at the same file and line is not added twice (the
-  pass is told the reviewer's findings), and its summary is appended as "Security pass: …". Its rulings
+  reviewer already raised at the same file and line, at least as severe, is
+  not added twice (the pass is told the reviewer's findings; a more severe
+  one is added), and its summary is appended as "Security pass: …". Its rulings
   on earlier findings and its learnings are dropped: those are the main
   review's. The ledger then numbers and judges one verdict for the round,
   so the fixer, the report, the PR comment and `hall stats` see the

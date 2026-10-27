@@ -9,7 +9,9 @@
 //! pass reuses the reviewer's agent, method and schema with its lenses
 //! narrowed to `security_tenancy`. Only its new findings count: its
 //! rulings on earlier findings and its learnings are the main review's
-//! job. When it can't run, the verdict stands as the reviewer gave it.
+//! job. When it fails, the verdict stands as the reviewer gave it; a budget
+//! stop or the plan limit records no verdict and the round is reviewed
+//! again after the grant or the reset.
 
 use chrono::Utc;
 
@@ -226,10 +228,14 @@ pub fn run(
 
 /// Adds the pass's findings to the main verdict (its rulings and learnings
 /// are dropped), skipping one the reviewer already raised at the same file
-/// and line (whatever its title), and appends its summary. Returns the
+/// and line (whatever its title) at least as severe, and appends its
+/// summary. A more severe finding at the same place is added. Returns the
 /// titles added.
 pub fn merge(mut mv: ModelVerdict, theirs: ModelVerdict) -> (ModelVerdict, Vec<String>) {
-    let same = |a: &ModelFinding, b: &ModelFinding| a.file == b.file && a.line == b.line;
+    // `Severity` orders blocker first, so "at least as severe" is `<=`.
+    let same = |m: &ModelFinding, f: &ModelFinding| {
+        m.file == f.file && m.line == f.line && m.severity <= f.severity
+    };
     let mut added = Vec::new();
     for f in theirs.findings {
         if mv.findings.iter().any(|m| same(m, &f)) {
@@ -314,6 +320,21 @@ mod tests {
             merged.summary,
             "Adds a login path.\n\nSecurity pass: The token check can be skipped."
         );
+        // A more severe finding at the reviewer's place is added.
+        let (m, added) = merge(
+            mv("s", vec![mf(Severity::Nit, Lens::Correctness, 42, "Rename `tok`")]),
+            mv(
+                "t",
+                vec![mf(
+                    Severity::Blocker,
+                    Lens::SecurityTenancy,
+                    42,
+                    "An empty token passes the check",
+                )],
+            ),
+        );
+        assert_eq!(added, ["An empty token passes the check"]);
+        assert_eq!(m.findings.len(), 2);
         // An empty summary adds no paragraph.
         let (m, _) = merge(mv("s", vec![]), mv("  ", vec![]));
         assert_eq!(m.summary, "s");

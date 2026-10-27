@@ -777,6 +777,7 @@ mod tests {
             "review.timeout=5",
             "daily",
             "ship.daily=1M",
+            "security.max_usd=2",
         ] {
             let e = apply_sets("", &[s.to_string()]).unwrap_err();
             assert_eq!(e.code, ErrorCode::Usage, "{s}");
