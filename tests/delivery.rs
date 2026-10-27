@@ -692,7 +692,7 @@ fn a_reverted_pr_is_recorded_put_in_the_inbox_and_distilled_again() {
     assert!(actions.contains(&format!("hall log {id}")), "{actions}");
 
     // A follow-up made after the revert settles the entry.
-    std::thread::sleep(std::time::Duration::from_millis(20));
+    hallmark::daemon::nap(std::time::Duration::from_millis(20));
     let out = env
         .cmd(&env.repo)
         .env("HALL_GH", &gh)
