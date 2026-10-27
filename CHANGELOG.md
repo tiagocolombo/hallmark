@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.8](https://github.com/tiagocolombo/hallmark/compare/v0.3.7...v0.3.8) - 2026-10-27
+
+### Fixed
+
+- A session limit pauses the loop and can be retried at once ([#129](https://github.com/tiagocolombo/hallmark/pull/129))
+
 ## [0.3.7](https://github.com/tiagocolombo/hallmark/compare/v0.3.6...v0.3.7) - 2026-10-27
 
 ### Added
