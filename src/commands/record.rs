@@ -558,13 +558,25 @@ pub fn render_export(repo: &Repo, item: &Item, events: &[Event]) -> String {
         let open_minor: Vec<_> = ledger
             .open()
             .into_iter()
-            .filter(|t| matches!(t.finding.severity, Severity::Minor | Severity::Nit))
+            .filter(|t| {
+                t.finding.pre_existing
+                    || matches!(t.finding.severity, Severity::Minor | Severity::Nit)
+            })
             .collect();
         if !open_minor.is_empty() && item.state != State::Dropped {
-            let ids: Vec<&str> = open_minor.iter().map(|t| t.finding.id.as_str()).collect();
+            let ids: Vec<String> = open_minor
+                .iter()
+                .map(|t| {
+                    if t.finding.pre_existing {
+                        format!("{} (pre-existing)", t.finding.id)
+                    } else {
+                        t.finding.id.clone()
+                    }
+                })
+                .collect();
             let _ = writeln!(
                 s,
-                "\nOpen minors and nits ride along into the PR: {}.",
+                "\nOpen minors, nits and pre-existing findings ride along into the PR: {}.",
                 ids.join(", ")
             );
         }

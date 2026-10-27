@@ -675,6 +675,39 @@ fn rules_come_from_the_base_branch() {
 }
 
 #[test]
+fn round_two_prompt_marks_a_pre_existing_finding_and_only_that_one() {
+    let env = Env::initialized();
+    let (id, wt, _) = ready_item(&env, "Retry webhooks", "retry.rs", "fn retry() {}\n");
+    let mut old = finding("blocker", "retry.rs", "Old race in the lock");
+    old["pre_existing"] = json!(true);
+    let script = env.script(json!([
+        reviewer(verdict(
+            vec![old, finding("major", "retry.rs", "Double delivery")],
+            json!([])
+        )),
+        reviewer(verdict(vec![], json!([]))),
+    ]));
+    tick(&env, &script);
+    tick(&env, &script);
+    assert_eq!(state(&env, &id), "fixing");
+    let fix = commit_file(&wt, "lock.rs", "FIX\n");
+    resubmit(&env, &id, &fix, &["F2"]);
+    tick(&env, &script);
+    tick(&env, &script);
+    let calls = env.fake_calls();
+    let prompt = calls[1]["prompt"].as_str().unwrap();
+    let line = |tag: &str| {
+        prompt
+            .lines()
+            .find(|l| l.starts_with(tag))
+            .unwrap_or_else(|| panic!("{tag} missing: {prompt}"))
+            .to_string()
+    };
+    assert!(line("- **F1**").contains("pre-existing"), "{prompt}");
+    assert!(!line("- **F2**").contains("pre-existing"), "{prompt}");
+}
+
+#[test]
 fn a_pre_existing_blocker_is_recorded_but_never_blocks() {
     let env = Env::initialized();
     let mut old = finding("blocker", "retry.rs", "Old race in the lock");

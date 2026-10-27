@@ -458,6 +458,9 @@ fn lower(h: &mut String, p: &Page) {
             Some(Severity::Blocker | Severity::Major) => {
                 "These were still open when the item stopped. Each one is a candidate for a follow-up item."
             }
+            _ if p.corrections.iter().any(|c| c.pre_existing) => {
+                "Some were there before the change and never blocked it. Each one is a candidate for a follow-up item."
+            }
             _ => {
                 "These were small enough that the item could ship with them open. Each one is a candidate for a follow-up item."
             }
@@ -802,6 +805,24 @@ mod tests {
         assert_eq!(svg.matches("class=\"edge back\"").count(), 1);
         assert!(svg.contains("a→b"));
         assert!(!svg.contains("zz"));
+    }
+
+    #[test]
+    fn an_open_pre_existing_blocker_is_not_called_small() {
+        use crate::gazette::page::Correction;
+        let mut p = Page::default();
+        p.corrections.push(Correction {
+            text: "An old race.".into(),
+            id: "F1".into(),
+            severity: Severity::Blocker,
+            pre_existing: true,
+        });
+        let mut h = String::new();
+        lower(&mut h, &p);
+        assert!(h.contains("there before the change and never blocked it"), "{h}");
+        assert!(!h.contains("small enough"), "{h}");
+        assert!(!h.contains("still open when the item stopped"), "{h}");
+        assert!(h.contains("Pre-existing"), "{h}");
     }
 
     #[test]
