@@ -38,7 +38,7 @@ a decision, add a new record that supersedes the old one. Don't edit the old one
 | [0030](0030-delivery-and-rebase-before-shipping.md) | The Delivery office (conflicts and PR comments), rebasing before shipping, what becomes an item, a clean inbox, auto-ready, a wrapped timeline, and a daemon that doesn't die in its sleep | Accepted; amended by 0039, 0043, 0048, 0049 |
 | [0031](0031-only-escalations-reach-you.md) | Only escalations reach you; the Delivery office fixes red CI; new items start from the latest base | Accepted; amended by 0047, 0048 |
 | [0032](0032-old-processes-and-the-index.md) | An older hall never rewrites a newer one's index; the terminal app restarts on update | Accepted |
-| [0033](0033-configurable-setup.md) | Every setting has a command, and `hall setup --interactive` may ask | Accepted; amends 0002 |
+| [0033](0033-configurable-setup.md) | Every setting has a command, and `hall setup --interactive` may ask | Accepted; amends 0002; amended by 0055 |
 | [0034](0034-delivery-watches-closely.md) | The Delivery office watches PRs closely: its own worker, a base that moved makes its PRs due, `delivered` once | Accepted; amended by 0050 |
 | [0035](0035-index-fold-marks.md) | Each index row carries a fold mark; a row nobody vouches for is re-folded | Accepted; amends 0032 |
 | [0036](0036-test-first-review.md) | Test-first review: an unpinned behaviour blocks approval | Accepted |
@@ -63,3 +63,4 @@ a decision, add a new record that supersedes the old one. Don't edit the old one
 | [0053](0053-the-gazette.md) | The Gazette: a newspaper page per finished item, for people. Code sets the facts, the librarian's run writes the words and a diagram outline, and `hall attach` adds plates | Accepted |
 | [0053](0053-sandbox-every-headless-run.md) | Sandbox every headless run: file tools read only inside the run, never credentials; commands run in Claude Code's sandbox without skipping the allowlist; no web tools; `claude_args` can't loosen it (`[sandbox]`) | Accepted; amends 0012, 0013, 0019 |
 | [0054](0054-child-processes-without-a-console-window.md) | Every child process starts in `process::command`: a `hall` without a console (the daemon on Windows) runs `git`, `gh`, `claude` and the gates without a console window | Accepted; amends 0017 |
+| [0055](0055-the-setup-wizard-asks-first.md) | The setup wizard asks first: `hall init` and the first `hall setup` offer, on a terminal, to go through every setting with its default, or to skip for the defaults; `--defaults` never asks; `hall setup` creates the user config | Accepted; amends 0033 |

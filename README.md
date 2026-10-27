@@ -111,9 +111,10 @@ claude
 
 `hall setup` installs the Claude Code plugin, configures the repository,
 starts the review daemon and runs `hall doctor`. It is safe to run again.
-Use `hall setup --interactive` to choose your settings as you go: gates,
-how work ships, models, budgets, tools and notifications. `hall config`
-changes any of them later.
+The first time, it offers to go through every setting with you (gates, how
+work ships, models, budgets, tools and notifications), each with its default,
+or to skip for now. `hall setup --interactive` asks again, and `hall config`
+changes any setting later.
 
 Then just work. Ask Claude for a change (*"retry failed webhook deliveries"*),
 or be explicit with `/hallmark <request>`. Claude opens an **item** with its
@@ -319,7 +320,8 @@ Agents are the main users of `hall`, so the CLI behaves like an API:
 - Every reply includes `next`: the commands that make sense now.
 - Errors are data, `{"error":{"code","message","next"}}`, with documented exit
   codes.
-- Commands never prompt and are idempotent.
+- Commands never prompt (only the setup wizard asks, on a terminal) and are
+  idempotent.
 - `hall help --json` lists every command, and `hall schema <name>` prints the
   JSON Schema of any output.
 

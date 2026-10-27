@@ -11,8 +11,12 @@ Agents are the main users of `hall`, so every command follows these rules
 ([ADR 0002](decisions/0002-agent-first-cli-contract.md)):
 
 - **Output.** JSON when stdout isn't a TTY; `--json` forces it.
-- **No prompts.** `hall` never prompts. Destructive actions need explicit
-  flags, such as `--reason`.
+- **No prompts.** `hall` never prompts. The one exception is the setup
+  wizard, on a terminal: `hall init` and `hall setup` ask about every
+  setting, or to skip, the first time, and `hall setup --interactive`
+  whenever asked; `--defaults` writes the defaults instead
+  ([ADR 0055](decisions/0055-the-setup-wizard-asks-first.md)). Destructive
+  actions need explicit flags, such as `--reason`.
 - **Idempotent.** Repeating a command returns the current result.
 - **`next`.** Every reply includes `next`: the commands that make sense now.
 - **Errors.** They are data, with a documented exit code.
@@ -39,10 +43,10 @@ Agents are the main users of `hall`, so every command follows these rules
 
 | Command | Does |
 | --- | --- |
-| `hall setup` | One-time setup: the Claude Code plugin and status line, this repo, the daemon at login, a phone topic, then `hall doctor`. Safe to repeat. `--interactive` (`-i`) asks about every setting first, on a terminal. `--dry-run`, `--no-statusline`, `--no-daemon`, `--no-notify`, `--force` |
+| `hall setup` | One-time setup: the Claude Code plugin and status line, this repo, your user config, the daemon at login, a phone topic, then `hall doctor`. Safe to repeat. The first time on a terminal (no user config yet, or a repo without `.hallmark.toml`) it asks about every setting first, or to skip for the defaults; `--interactive` (`-i`) asks again, `--defaults` never asks. `--dry-run`, `--no-statusline`, `--no-daemon`, `--no-notify`, `--force` |
 | `hall config` | Reads and changes settings without editing TOML: `list [prefix]`, `get <key>`, `set <key> <value>…`, `unset <key>`. `--user` for your user config (`tools.*`, notifications). Keeps comments and checks values. |
 | `hall setup claude` | Installs only the Claude Code plugin. `--statusline`, `--dry-run` |
-| `hall init` | Sets up a repo. `--capture gate\|ask\|off`, `--base`, `--no-claude-md` |
+| `hall init` | Sets up a repo. On a terminal, a repo without `.hallmark.toml` is asked about every setting first, or to skip for the defaults. `--defaults`, `--capture gate\|ask\|off`, `--base`, `--no-claude-md` |
 | `hall doctor` | Checks the install. Each failed check names the command that fixes it. |
 | `hall update` | Installs the latest `hall` from main, or says it's already current, naming the installed version and the latest version tagged on main ([ADR 0035](decisions/0035-semver-from-conventional-commits.md), [ADR 0040](decisions/0040-a-version-for-every-merge.md)). `--check`, `--source`, `--branch`, `--no-setup` |
 

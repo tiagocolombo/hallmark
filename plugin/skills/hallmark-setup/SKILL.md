@@ -9,7 +9,10 @@ Every Hallmark setting can be read and changed with `hall config`. You never
 edit `.hallmark.toml` or the user config by hand. `hall config` keeps their
 comments and checks each value before it writes. Don't run
 `hall setup --interactive`: it asks its questions on a terminal, and you
-can't answer them. Ask the person yourself, then set what they choose.
+can't answer them. Ask the person yourself, then set what they choose. `hall
+init` and the first `hall setup` ask the same questions on a terminal; from
+a session they don't (there is no terminal), and `--defaults` says so
+explicitly.
 
 ## Look first
 

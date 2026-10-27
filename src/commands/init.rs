@@ -1,4 +1,7 @@
 //! `hall init`: set up a repository. Safe to repeat; it never overwrites.
+//! On a terminal, a repo without `.hallmark.toml` is asked about every
+//! setting first, or to skip for the defaults (ADR 0055); `--defaults`, or
+//! no terminal, writes the defaults without a question.
 
 use std::fs;
 use std::path::Path;
@@ -10,10 +13,13 @@ use crate::cli::InitArgs;
 use crate::config::{self, CaptureMode, Config};
 use crate::error::Result;
 use crate::index::Index;
-use crate::output::{Render, Response};
+use crate::output::{Mode, Render, Response};
 use crate::paths;
 use crate::repo::{Repo, user_dir};
+use crate::settings::Scope;
 use crate::{detect, git};
+
+use super::wizard;
 
 pub const MARK_START: &str = "<!-- hallmark:start -->";
 pub const MARK_END: &str = "<!-- hallmark:end -->";
@@ -58,6 +64,9 @@ pub struct InitOut {
     pub created: Vec<String>,
     /// Files that already existed and were left alone.
     pub unchanged: Vec<String>,
+    /// What the wizard set in `.hallmark.toml`, as `key = value`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub settings: Vec<String>,
 }
 
 impl Render for InitOut {
@@ -71,6 +80,9 @@ impl Render for InitOut {
             s.push_str(&format!("  gates    {}\n", self.gates.join(" · ")));
         }
         s.push_str(&format!("  journal  {}\n", self.journal));
+        for k in &self.settings {
+            s.push_str(&format!("  set      {k}\n"));
+        }
         for c in &self.created {
             s.push_str(&format!("  wrote    {c}\n"));
         }
@@ -81,11 +93,12 @@ impl Render for InitOut {
     }
 }
 
-pub fn init(cwd: &Path, a: InitArgs) -> Result<Response> {
+pub fn init(cwd: &Path, a: InitArgs, mode: Mode) -> Result<Response> {
     let repo = Repo::discover(cwd)?;
     let root = repo.toplevel.clone();
     let mut created = Vec::new();
     let mut unchanged = Vec::new();
+    let mut settings = Vec::new();
 
     let config_path = root.join(config::FILE_NAME);
     let (base, gates, capture) = if config_path.is_file() {
@@ -99,9 +112,38 @@ pub fn init(cwd: &Path, a: InitArgs) -> Result<Response> {
             .unwrap_or_else(|| git::default_branch(&repo.main_root));
         let gates = detect::gates(&root);
         let capture = a.capture.unwrap_or_default();
+        // The wizard asks before anything is written, so cancelling it
+        // leaves the repo as it was.
+        let plan = if a.defaults || !wizard::can_ask(mode) {
+            None
+        } else {
+            let mut ctx = wizard::context(cwd);
+            for e in ctx.entries.iter_mut().filter(|e| e.scope == Scope::Repo) {
+                match e.key.as_str() {
+                    "base" => e.value = base.clone().into(),
+                    "capture.mode" => e.value = capture.as_str().into(),
+                    _ => {}
+                }
+            }
+            Some(wizard::run(
+                &ctx,
+                wizard::Ask::INIT,
+                std::io::stdin().lock(),
+                std::io::stderr(),
+            )?)
+        };
         fs::write(&config_path, config::render_initial(&base, &gates, capture))?;
         created.push(config::FILE_NAME.to_string());
-        (base, gates, capture)
+        // The answers go through the same code as `hall config set`, so
+        // the file keeps its comments.
+        for c in plan.iter().flat_map(|p| &p.changes) {
+            if c.scope == Scope::Repo {
+                super::config::write(Scope::Repo, &config_path, &c.key, c.value.clone())?;
+                settings.push(c.shown());
+            }
+        }
+        let c = Config::parse(&fs::read_to_string(&config_path)?)?;
+        (c.base.clone(), c.gate_commands(), c.capture.mode)
     };
 
     let review = root.join(".hallmark").join("review.md");
@@ -143,6 +185,7 @@ pub fn init(cwd: &Path, a: InitArgs) -> Result<Response> {
         capture,
         created: created.clone(),
         unchanged,
+        settings,
     };
     let mut next = Vec::new();
     if !created.is_empty() {
