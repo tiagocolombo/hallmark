@@ -185,12 +185,11 @@ pub fn briefing_without(
 ) -> Result<Briefing> {
     let mut learnings = Store::of(repo).accepted();
     if let Some(src) = source {
-        learnings.retain(|l| !l.learning.source.iter().any(|s| {
-            s == src
-                || s
-                    .strip_prefix(src)
-                    .is_some_and(|rest| rest.starts_with('/'))
-        }));
+        learnings.retain(|l| {
+            !l.learning.source.iter().any(|s| {
+                s == src || s.strip_prefix(src).is_some_and(|rest| rest.starts_with('/'))
+            })
+        });
     }
     build(
         repo,
