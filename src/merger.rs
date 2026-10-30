@@ -451,6 +451,8 @@ struct Look<'a> {
 
 /// How long a tip with no check runs yet counts as running: CI is about to
 /// start. After it, the repo has no CI on the base and the tip is green.
+/// With `require_ci = false` there is no wait: a tip with no check runs is
+/// green at once, so a repo without CI never pauses its queue.
 const NEW_TIP_SECS: i64 = 300;
 
 /// How long the merger waits for a tip's running checks before it goes on.
@@ -480,7 +482,10 @@ impl<'a> Look<'a> {
         let sha = git::run(&self.repo.main_root, &["rev-parse", &target.git_ref]).ok()?;
         let checks = match crate::gh::commit_failures(&self.repo.main_root, &pr, &sha) {
             Ok(mut c) => {
-                if c.failed.is_empty() && (c.running || c.total == 0) {
+                // A repo that doesn't ask for CI isn't waited on for CI that
+                // may never start.
+                let no_wait = c.total == 0 && !self.repo.config.merge.require_ci;
+                if c.failed.is_empty() && (c.running || c.total == 0) && !no_wait {
                     let now = Utc::now();
                     let since = match self.pending.get(base) {
                         Some((s, t)) if *s == sha => *t,
@@ -1037,9 +1042,14 @@ impl<'a> Look<'a> {
             None
         };
         let unreadable = self.unread.contains(base);
+        let read = tip.is_some();
         let crate::gh::TipChecks {
-            failed, running, ..
+            failed,
+            running,
+            total,
         } = tip.unwrap_or_default();
+        // A tip with no check runs: CI hasn't started, or there is none.
+        let no_runs = read && total == 0;
         if unreadable {
             for p in &mut out {
                 if p.verdict.is_some() {
@@ -1053,14 +1063,25 @@ impl<'a> Look<'a> {
         if failed.is_empty() && running {
             // One merge's CI finishes before the next merge lands, so a
             // break is seen while it is the only one (rebases go on).
+            let wait = if no_runs {
+                format!(
+                    "no CI on {base} yet; the merger waits up to {} minutes for it to start",
+                    NEW_TIP_SECS / 60
+                )
+            } else {
+                format!("{base}'s CI is still running; the merger waits for it")
+            };
             for p in &mut out {
                 if matches!(p.verdict, Some(Verdict::Merge(_))) {
                     p.verdict = None;
                     p.entry.status = Status::Queued;
-                    p.entry.why = format!(
-                        "{}; {base}'s CI is still running; the merger waits for it",
-                        p.entry.why
-                    );
+                    p.entry.why = format!("{}; {wait}", p.entry.why);
+                }
+            }
+        } else if no_runs && failed.is_empty() {
+            for p in &mut out {
+                if matches!(p.verdict, Some(Verdict::Merge(_))) {
+                    p.entry.why = format!("{}; no CI on {base}", p.entry.why);
                 }
             }
         }

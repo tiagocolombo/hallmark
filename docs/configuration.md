@@ -145,7 +145,7 @@ reopens conflicting PRs itself ([ADR 0050](decisions/0050-the-queue-updates-prs-
 | --- | --- | --- |
 | `merge.mode` | `off` | `auto`: the merger merges, and brings each PR up to date at its turn. `off`: you merge, and the Delivery office rebases a PR as soon as it conflicts. |
 | `merge.command` | `gh pr merge {pr} --squash --match-head-commit {pr_head}` | Merges one PR, run in the main checkout. Placeholders: `{pr}` (the PR's URL) `{pr_head}` (the hallmarked head it must still be at) `{branch}` `{base}` `{id}` `{title}`. |
-| `merge.require_ci` | `true` | Wait for the PR's CI to pass at the shipped head. `false`: merge once the PR is hallmarked, mergeable and up to date, whatever CI says. |
+| `merge.require_ci` | `true` | Wait for the PR's CI to pass at the shipped head. `false`: merge once the PR is hallmarked, mergeable and up to date, whatever CI says, and a base tip with no check runs is green at once instead of waited on for five minutes. |
 | `merge.update` | `files` | When a PR is rebased before it merges. `files`: whenever the base moved on a file it touches, so CI tests exactly what lands, and PRs on shared files go one after another. `conflicts`: only when GitHub says it conflicts; a PR GitHub merges cleanly, with green CI, merges as it is, and the base's own CI catches a bad combination ([ADR 0051](decisions/0051-merge-clean-prs-and-stop-the-line.md)). |
 | `merge.lit` | `[]` | Paths a person merges, as globs relative to the repo root (`.github/`, `release-plz.toml`). A PR that touches one waits in your inbox (`lit`); `hall retry` lets the merger merge that head. |
 | `merge.one_approval` | `[]` | Paths that need one person's approval before the merger merges a PR that touches them ([ADR 0063](decisions/0063-risk-tiers.md)): an approving review on GitHub by an owner, member or collaborator, of the PR's current head (an earlier head's, or a stranger's, doesn't count), or your `hall retry` on the hold, which counts as one. Until then the PR waits in your inbox like a `lit` one, saying how many approvals it has. |
@@ -179,7 +179,8 @@ the entry leaves. A PR that fixes the base can't pass the stopped queue: merge
 it by hand with your own `[merge] command` (the entry shows it). While the
 tip's checks are still running, or haven't started (a tip with no check runs
 counts as running for five minutes, then as green, so a repo with no CI on
-the base still merges), the merger doesn't merge into the base (rebases go
+the base still merges; with `require_ci = false` it is green at once, and
+`hall queue` says "no CI on main"), the merger doesn't merge into the base (rebases go
 on), so each merge's CI finishes before the next lands. A job waiting on a
 person (`waiting`, such as a protected environment's approval) isn't
 running, and checks still running after six hours stop holding the line (the

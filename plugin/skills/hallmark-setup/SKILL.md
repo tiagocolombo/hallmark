@@ -94,8 +94,9 @@ are happy with.
      When the base branch requires an approving review, the PR's author
      can't give it: suggest `--admin` only if they own the repo or may bypass
      the rule.
-   - `merge.require_ci`: `false` merges without waiting for CI. With
-     `--admin` that includes red CI; say so.
+   - `merge.require_ci`: `false` merges without waiting for CI, and a base
+     tip with no check runs is green at once: suggest it for a repo with no
+     CI. With `--admin` that includes red CI; say so.
    - `merge.update` (ADR 0051): `files` (default) rebases a PR whenever the
      base moved on a file it touches, so CI tests exactly what lands, one PR
      after another on shared files. `conflicts` rebases only when GitHub says
