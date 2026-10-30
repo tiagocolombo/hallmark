@@ -68,11 +68,22 @@ Two constraints shape how:
   starts. What changes meanwhile goes in the next one.
 - **Cheap when nothing changed.** Each check is remembered in
   `library/records.json` as a fingerprint of the accepted learnings, the
-  printed pages (path and events) and the base tip. An unchanged fingerprint
-  skips the check with no git reads. A check that started a records item
+  printed pages (path, item and events) and the base tip. An unchanged
+  fingerprint skips the `ls-tree` and blob reads that compare with the base
+  (it still reads the base tip and the store). When it changed, the base is
+  fetched first, so the plan is made against the commit the records item
+  starts from. A check that started a records item
   records its fingerprint too, so a records item you drop doesn't come
   straight back. It returns once something changes: a new learning, a
   reprint, a new base tip.
+- **IDs are per journal, so other clones' files are left alone.** Each page
+  says which item it is by its branch (`hall-item` in its head). A page on
+  the base is replaced only when it names this journal's item; a learning
+  file is replaced or removed only when its title is one this store's
+  learning has had. Another clone's `H-0001` page or `L-0001` learning stays,
+  and this store's own is not committed over it.
+- **A records item is one the librarian created.** A person's item titled
+  `Records: …` is ordinary work: it is distilled and doesn't lift the wait.
 - **Records items are not distilled.** Distilling one would print a page for
   the next records item to carry, for ever. Unlike ADR 0021's knowledge
   items, they are not hidden from your inbox: a records item that escalates

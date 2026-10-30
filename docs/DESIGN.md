@@ -737,7 +737,8 @@ their usage counts, through records items; the store stays the source. There are
 as `proposed`, one notice (`hall inbox --notices`). `hall library review --accept` or
 `--reject` settles them at once; rejecting an update restores what it replaced.
 `hall library import` brings in learnings committed under `.hallmark/knowledge/`
-by earlier versions, and `hall library export` writes the store to one file.
+(by earlier versions, or by `[library] commit = true`, ADR 0066), and
+`hall library export` writes the store to one file.
 
 **Search.** Built-in search uses SQLite FTS5. tobi/qmd is an optional backend,
 with one collection per repo.

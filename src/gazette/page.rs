@@ -47,6 +47,8 @@ pub struct Page {
     pub ledger: Vec<LedgerRow>,
     pub dispatch: Vec<(String, String, String)>,
     pub events: usize,
+    /// The item's branch: which item this page is, in any clone (ADR 0066).
+    pub branch: String,
     pub by_librarian: bool,
 }
 
@@ -138,6 +140,7 @@ pub fn build(repo: &Repo, item: &Item, events: &[Event], prose: Option<&Prose>) 
         stamp: item.hallmark_sha.as_deref().map(|s| short(s).to_string()),
         byline: byline(events, prose.is_some()),
         events: events.len(),
+        branch: item.branch.clone(),
         by_librarian: prose.is_some(),
         ..Page::default()
     };

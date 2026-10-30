@@ -100,7 +100,7 @@ pub enum Distill {
 pub fn eligible(item: &Item, events: &[Event]) -> bool {
     // A records item (ADR 0066) carries pages and learnings: distilling it
     // would print a page for the next one to carry, for ever.
-    if item.title.starts_with(KNOWLEDGE_PREFIX) || super::records::is_records(item) {
+    if item.title.starts_with(KNOWLEDGE_PREFIX) || super::records::is_records_in(item, events) {
         return false;
     }
     match item.state {
@@ -468,7 +468,7 @@ pub fn distill(repo: &Repo, runner: &dyn Runner, id: ItemId) -> Result<Distill> 
         )
         .next(["hall library review", "hall library import"]));
     }
-    if super::records::is_records(&item) {
+    if super::records::is_records(repo, &item) {
         return Err(HallError::new(
             ErrorCode::WrongState,
             format!("{id} is a records item (ADR 0066); it is not distilled"),
@@ -864,7 +864,7 @@ pub fn next_candidate(repo: &Repo) -> Result<Option<Item>> {
         .filter(|i| {
             matches!(i.state, State::Closed | State::Escalated | State::Dropped)
                 && !i.title.starts_with(KNOWLEDGE_PREFIX)
-                && !super::records::is_records(i)
+                && !super::records::is_records(repo, i)
         })
         .collect();
     items.sort_by_key(|i| (i.state_since, i.id));

@@ -122,6 +122,12 @@ pub fn events_meta(n: usize) -> String {
     format!("<meta name=\"hall-events\" content=\"{n}\">")
 }
 
+/// The head line that says which item a page is, by its branch: IDs are per
+/// journal, so a repository shared by several clones tells their pages apart.
+pub fn item_meta(branch: &str) -> String {
+    format!("<meta name=\"hall-item\" content=\"{}\">", esc(branch))
+}
+
 /// The whole page.
 pub fn render(p: &Page) -> String {
     let mut h = String::with_capacity(32 * 1024);
@@ -129,10 +135,11 @@ pub fn render(p: &Page) -> String {
         h,
         "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n\
 <meta name=\"viewport\" content=\"width=device-width, initial-scale=1, viewport-fit=cover\">\n\
-{generator}\n{events}\n\
+{generator}\n{events}\n{item_meta}\n\
 <title>Hallmark Gazette {id}</title>\n<style>\n{CSS}</style>\n</head>\n<body>\n<div class=\"sheet\">\n",
         generator = generator(),
         events = events_meta(p.events),
+        item_meta = item_meta(&p.branch),
         id = esc(&p.id),
     );
     masthead(&mut h, p);

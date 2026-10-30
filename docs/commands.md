@@ -120,7 +120,7 @@ A reason or note you give (`hall retry --reason`, `hall continue --reason` when 
 | `hall daemon resume` | Lifts a pause (Claude's usage or session limit, or the daily budget) before its time: the loop retries now. |
 | `hall budget` | The caps at four levels, with today's spend. `--set key=value`; `--grant [<tokens>]` lets the loop go past the daily cap today without changing it ([ADR 0028](decisions/0028-grant-the-daily-budget.md)) |
 | `hall notify test` | Sends a test notification to every channel. `--channel` |
-| `hall library search\|review\|retire\|distill\|import\|export` | The Library of learnings, kept locally next to the journal, never in the repo. Distilling an item also prints its Gazette (`hall gazette`). |
+| `hall library search\|review\|retire\|distill\|import\|export` | The Library of learnings, kept locally next to the journal; in the repo only with `[library] commit = true` (ADR 0066). Distilling an item also prints its Gazette (`hall gazette`). |
 
 ## For agents and hooks
 

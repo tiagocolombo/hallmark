@@ -42,9 +42,23 @@ use crate::repo::Repo;
 /// Records items are titled `Records: …`.
 pub const PREFIX: &str = "Records:";
 
-/// Whether `item` is a records item (by its title).
-pub fn is_records(item: &Item) -> bool {
+/// Whether `item` is a records item: titled `Records: …` and created by the
+/// librarian, so a person's item with that title is ordinary work.
+pub fn is_records_in(item: &Item, events: &[crate::event::Event]) -> bool {
     item.title.starts_with(PREFIX)
+        && events
+            .first()
+            .is_some_and(|e| e.actor == super::librarian::ACTOR)
+}
+
+/// `is_records_in`, reading the item's journal (only for titles that could
+/// be one).
+pub fn is_records(repo: &Repo, item: &Item) -> bool {
+    item.title.starts_with(PREFIX)
+        && repo
+            .hall
+            .read_item(item.id)
+            .is_ok_and(|events| is_records_in(item, &events))
 }
 
 /// What the repository is missing, compared with its base.
@@ -122,11 +136,22 @@ pub fn committed_text(l: &learning::Learning) -> String {
     l.render()
 }
 
+/// A `<meta name=… content=…>` value in a page's head.
+fn meta_of(head: &str, name: &str) -> Option<String> {
+    let key = format!("<meta name=\"{name}\" content=\"");
+    let at = head.find(&key)?;
+    let rest = &head[at + key.len()..];
+    rest.split('"').next().map(str::to_string)
+}
+
 /// The journal events a page was printed from, from its head.
 fn events_of(head: &str) -> Option<String> {
-    let at = head.find("<meta name=\"hall-events\" content=\"")?;
-    let rest = &head[at + "<meta name=\"hall-events\" content=\"".len()..];
-    rest.split('"').next().map(str::to_string)
+    meta_of(head, "hall-events")
+}
+
+/// The item a page is (its branch, escaped), from its head.
+fn item_of(head: &str) -> Option<String> {
+    meta_of(head, "hall-item")
 }
 
 fn page_head(path: &Path) -> Option<String> {
@@ -147,6 +172,8 @@ struct Printed {
     id: ItemId,
     /// How many journal events it was printed from.
     events: String,
+    /// Which item it is, as the page says (IDs are per journal).
+    item: String,
 }
 
 /// Items whose page belongs in the repository: finished (closed or
@@ -156,13 +183,19 @@ fn pages(repo: &Repo) -> Result<Vec<Printed>> {
     let mut out = Vec::new();
     for i in repo.index()?.items(true)? {
         if !matches!(i.state, State::Closed | State::Dropped)
-            || is_records(&i)
             || super::librarian::is_knowledge(&i)
+            || is_records(repo, &i)
         {
             continue;
         }
         let page = crate::gazette::page_path(repo, i.id);
-        let Some(events) = page_head(&page).as_deref().and_then(events_of) else {
+        let head = page_head(&page);
+        // A page from before pages said which item they are waits for its
+        // reprint.
+        let (Some(events), Some(item)) = (
+            head.as_deref().and_then(events_of),
+            head.as_deref().and_then(item_of),
+        ) else {
             continue;
         };
         out.push(Printed {
@@ -170,6 +203,7 @@ fn pages(repo: &Repo) -> Result<Vec<Printed>> {
             page,
             id: i.id,
             events,
+            item,
         });
     }
     out.sort_by(|a, b| a.path.cmp(&b.path));
@@ -186,6 +220,21 @@ fn fnv(parts: &[&str]) -> String {
         }
     }
     format!("{h:016x}")
+}
+
+/// Whether a file on the base is a version of this store's learning `id`:
+/// its title is one the learning has had. A learning the store has never
+/// had is nobody's here, so it counts as another clone's.
+fn ours(store: &Store, id: &str, text: &str) -> bool {
+    let Ok(on_base) = learning::Learning::parse(text, Some(id)) else {
+        return false;
+    };
+    store
+        .get(id)
+        .map(|l| l.learning.title)
+        .into_iter()
+        .chain(store.history(id).into_iter().map(|v| v.learning.title))
+        .any(|t| t == on_base.title)
 }
 
 /// What the repository is missing at `rev`, given the accepted learnings
@@ -212,19 +261,31 @@ fn plan_at(
         .zip(blobs.iter().map(|b| String::from_utf8_lossy(b).to_string()))
         .collect();
     let wanted: BTreeSet<&str> = learnings.iter().map(|(p, _, _)| p.as_str()).collect();
+    // Learning IDs are per store: another clone's L-0001 is not this one's.
+    // A base file is this store's only when its title is one this store's
+    // learning has had; the others are left alone.
+    let id_of = |path: &str| {
+        let name = path.rsplit('/').next().unwrap_or(path);
+        learning::id_from_file_name(name).map(learning::format_id)
+    };
+    let foreign: BTreeSet<String> = on_base
+        .iter()
+        .filter_map(|(p, text)| {
+            let id = id_of(p)?;
+            (!ours(&store, &id, text)).then_some(id)
+        })
+        .collect();
     for (path, text, id) in learnings {
-        if on_base.get(path) != Some(text) {
+        if on_base.get(path) != Some(text) && !foreign.contains(id) {
             plan.learnings
                 .push((path.clone(), text.clone(), id.clone()));
         }
     }
     for path in on_base.keys() {
-        let name = path.rsplit('/').next().unwrap_or(path);
-        let Some(n) = learning::id_from_file_name(name) else {
+        let Some(id) = id_of(path) else {
             continue;
         };
-        let id = learning::format_id(n);
-        if !wanted.contains(path.as_str()) && store.knows(&id) {
+        if !wanted.contains(path.as_str()) && !foreign.contains(&id) && store.knows(&id) {
             plan.removed.push((path.clone(), id));
         }
     }
@@ -248,6 +309,10 @@ fn plan_at(
     )?;
     for ((p, _), blob) in read.into_iter().zip(blobs) {
         let head = String::from_utf8_lossy(&blob[..blob.len().min(2048)]).to_string();
+        // Another clone's H-0001 is not this one's: leave its page alone.
+        if item_of(&head).as_deref() != Some(p.item.as_str()) {
+            continue;
+        }
         if events_of(&head).as_deref() != Some(p.events.as_str()) {
             plan.pages.push((p.path.clone(), p.page.clone(), p.id));
         }
@@ -272,10 +337,10 @@ fn learnings(repo: &Repo) -> Vec<(String, String, String)> {
 }
 
 /// A records item still on its way: open, or shipped with its PR open.
-fn in_flight(items: &[Item]) -> Option<&Item> {
+fn in_flight<'a>(repo: &Repo, items: &'a [Item]) -> Option<&'a Item> {
     items
         .iter()
-        .filter(|i| is_records(i))
+        .filter(|i| is_records(repo, i))
         .find(|i| match i.state {
             State::Dropped => false,
             State::Closed => i.pr_url.is_some() && i.delivered.is_none(),
@@ -403,9 +468,13 @@ fn commit(repo: &Repo, wt: &Path, plan: &Plan) -> Result<()> {
             std::fs::remove_file(&p)?;
         }
     }
-    let dir = portable::committed_dir(repo);
-    let gazette = gazette_dir(repo);
-    crate::git::run(wt, &["add", "-A", "--", &dir, &gazette])?;
+    // Only the files the plan wrote or removed: a directory the base doesn't
+    // have yet is no pathspec.
+    let mut add = vec!["add", "-A", "--"];
+    add.extend(plan.learnings.iter().map(|l| l.0.as_str()));
+    add.extend(plan.pages.iter().map(|p| p.0.as_str()));
+    add.extend(plan.removed.iter().map(|r| r.0.as_str()));
+    crate::git::run(wt, &add)?;
     let message = format!("docs: Hallmark records\n\n{}", summary(repo, plan));
     crate::git::run(wt, &["commit", "-q", "-m", &message])?;
     Ok(())
@@ -466,30 +535,41 @@ pub fn sync(repo: &Repo) -> Result<Option<String>> {
         return Ok(None);
     }
     let items = repo.index()?.items(true)?;
-    if in_flight(&items).is_some() {
+    if in_flight(repo, &items).is_some() {
         return Ok(None);
     }
     let Some(target) = crate::delivery::resolve_ref(&repo.main_root, &repo.config.base) else {
         return Ok(None);
     };
-    let tip = crate::git::rev(&repo.main_root, &target.git_ref).unwrap_or_default();
     let learnings = learnings(repo);
     let pages = pages(repo)?;
-    let mut parts: Vec<&str> = vec![
-        tip.as_str(),
-        repo.config.library.gazette_dir.as_str(),
-        repo.config.library.dir.as_str(),
-    ];
-    for (p, t, _) in &learnings {
-        parts.push(p);
-        parts.push(t);
-    }
-    for p in &pages {
-        parts.push(&p.path);
-        parts.push(&p.events);
-    }
-    let fingerprint = fnv(&parts);
+    let fingerprint_at = |git_ref: &str| {
+        let tip = crate::git::rev(&repo.main_root, git_ref).unwrap_or_default();
+        let mut parts: Vec<&str> = vec![
+            tip.as_str(),
+            repo.config.library.gazette_dir.as_str(),
+            repo.config.library.dir.as_str(),
+        ];
+        for (p, t, _) in &learnings {
+            parts.push(p);
+            parts.push(t);
+        }
+        for p in &pages {
+            parts.push(&p.path);
+            parts.push(&p.events);
+            parts.push(&p.item);
+        }
+        fnv(&parts)
+    };
     let mut st = load(repo);
+    if st.checked.as_deref() == Some(fingerprint_at(&target.git_ref).as_str()) {
+        return Ok(None);
+    }
+    // Something changed: plan against the base the records item will start
+    // from, which `hall new` fetches, not the last one a worker fetched.
+    let target =
+        crate::delivery::base_ref_capped(&repo.main_root, &repo.config.base).unwrap_or(target);
+    let fingerprint = fingerprint_at(&target.git_ref);
     if st.checked.as_deref() == Some(fingerprint.as_str()) {
         return Ok(None);
     }
@@ -503,7 +583,7 @@ pub fn sync(repo: &Repo) -> Result<Option<String>> {
     // is not a yes.
     let ask = !items
         .iter()
-        .any(|i| is_records(i) && i.state == State::Closed);
+        .any(|i| i.state == State::Closed && is_records(repo, i));
     // Remembered whatever happens: a failure is tried again only once
     // something changes, not on every tick.
     st.checked = Some(fingerprint);

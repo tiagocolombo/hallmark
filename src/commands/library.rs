@@ -588,7 +588,13 @@ fn import(repo: &Repo, source: Option<PathBuf>) -> Result<Response> {
     };
     let result = store.with_lock(|| portable::import(&store, &entries))?;
     let mut next = Vec::new();
-    if from_base && !entries.is_empty() && result.skipped.is_empty() {
+    // With `commit = true` the repository keeps the Library on purpose (ADR
+    // 0066): there is nothing to move out.
+    if from_base
+        && !repo.config.library.commit
+        && !entries.is_empty()
+        && result.skipped.is_empty()
+    {
         next.push("hall new --title \"Move the Library out of the repo\"".into());
         next.push(format!(
             "in that item's worktree: git rm -r -q {} && git commit -m \"Move the Library out of the repo\"",

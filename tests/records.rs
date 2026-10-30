@@ -267,3 +267,133 @@ fn off_by_default_nothing_is_committed() {
     let r = env.hall(&env.repo, &["status", "H-0002"]);
     assert_ne!(r.code, 0, "{}", r.stdout);
 }
+
+/// Like `closed`, for an item with another title.
+fn closed_as(env: &Env, title: &str) -> String {
+    let (id, _, sha) = hallmarked_item(env, title);
+    append(
+        env,
+        &id,
+        "shipper",
+        Body::Shipped {
+            sha,
+            pr_url: Some("https://github.com/acme/app/pull/7".into()),
+        },
+    );
+    id
+}
+
+#[test]
+fn a_page_alone_is_committed_when_the_base_has_no_knowledge_directory() {
+    let env = Env::initialized();
+    config(&env, &["library.commit", "true"]);
+    git(&env.repo, &["commit", "-q", "-am", "Keep the records"]);
+    let id = closed(&env);
+    let script = script(&env, &id);
+    assert!(what(&tick(&env, &script)).contains(&format!("distilled {id}")));
+    // The learning waits for you: only the page is carried, and the base has
+    // neither directory.
+    let step = tick(&env, &script);
+    assert!(what(&step).contains("H-0002 carries the records"), "{step}");
+    let rec = status(&env, "H-0002");
+    assert_eq!(rec["title"], "Records: Gazette for H-0001", "{rec}");
+    let wt = PathBuf::from(rec["worktree"].as_str().unwrap());
+    assert!(wt.join("docs/gazette/H-0001.html").is_file());
+    assert!(!wt.join(".hallmark/knowledge").exists());
+    assert_eq!(
+        git(&wt, &["log", "-1", "--format=%s"]),
+        "docs: Hallmark records"
+    );
+}
+
+#[test]
+fn only_one_records_item_is_on_its_way_while_the_inputs_change() {
+    let env = Env::initialized();
+    config(&env, &["library.commit", "true"]);
+    config(&env, &["library.auto_accept", "rule"]);
+    git(&env.repo, &["commit", "-q", "-am", "Keep the records"]);
+    let id = closed(&env);
+    let script = script(&env, &id);
+    tick(&env, &script);
+    assert!(what(&tick(&env, &script)).contains("H-0002 carries the records"));
+
+    // H-0002 is open; the page is reprinted from more events. Nothing starts.
+    append(
+        &env,
+        &id,
+        "watchman",
+        Body::Delivered {
+            pr_url: "https://github.com/acme/app/pull/7".into(),
+            outcome: "merged".into(),
+        },
+    );
+    assert!(what(&tick(&env, &script)).contains("reprinted the Gazette"));
+    assert_eq!(tick(&env, &script)["progress"], "idle");
+    let r = env.hall(&env.repo, &["status", "H-0003"]);
+    assert_ne!(r.code, 0, "{}", r.stdout);
+
+    // H-0002 ships and its PR is open; a learning is retired meanwhile.
+    let r = env.hall(&env.repo, &["ready", "H-0002"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let wt = PathBuf::from(status(&env, "H-0002")["worktree"].as_str().unwrap());
+    let sha = approve(&env, "H-0002", &wt, 1, vec![], counts(0, 0, 0, 0));
+    append(
+        &env,
+        "H-0002",
+        "shipper",
+        Body::Shipped {
+            sha,
+            pr_url: Some("https://github.com/acme/app/pull/8".into()),
+        },
+    );
+    assert_eq!(state(&env, "H-0002"), "closed");
+    let r = env.hall(
+        &env.repo,
+        &["library", "retire", "L-0001", "--reason", "no longer true"],
+    );
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(tick(&env, &script)["progress"], "idle");
+    let r = env.hall(&env.repo, &["status", "H-0003"]);
+    assert_ne!(r.code, 0, "{}", r.stdout);
+}
+
+#[test]
+fn another_clones_page_and_learning_with_the_same_ids_are_left_alone() {
+    let env = Env::initialized();
+    config(&env, &["library.commit", "true"]);
+    config(&env, &["library.auto_accept", "rule"]);
+    let know = env.repo.join(".hallmark/knowledge");
+    std::fs::create_dir_all(&know).unwrap();
+    std::fs::write(
+        know.join("L-0001-pin-the-lockfile.md"),
+        "---\nid: L-0001\nkind: rule\nstatus: accepted\n---\n# Pin the lockfile\n",
+    )
+    .unwrap();
+    let gaz = env.repo.join("docs/gazette");
+    std::fs::create_dir_all(&gaz).unwrap();
+    std::fs::write(
+        gaz.join("H-0001.html"),
+        "<!doctype html>\n<meta name=\"hall-events\" content=\"9\">\n\
+         <meta name=\"hall-item\" content=\"hm/H-0001-another-clones-item\">\n",
+    )
+    .unwrap();
+    git(&env.repo, &["add", "-A"]);
+    git(&env.repo, &["commit", "-q", "-m", "Another clone's records"]);
+    let id = closed(&env);
+    let script = script(&env, &id);
+    assert!(what(&tick(&env, &script)).contains(&format!("distilled {id}")));
+    // This clone's H-0001 and L-0001 collide with the base's: nothing is
+    // overwritten or removed, so there is nothing to carry.
+    assert_eq!(tick(&env, &script)["progress"], "idle");
+    let r = env.hall(&env.repo, &["status", "H-0002"]);
+    assert_ne!(r.code, 0, "{}", r.stdout);
+}
+
+#[test]
+fn a_persons_records_titled_item_is_still_distilled() {
+    let env = Env::initialized();
+    config(&env, &["library.auto_accept", "rule"]);
+    let id = closed_as(&env, "Records: export patient history");
+    let script = script(&env, &id);
+    assert!(what(&tick(&env, &script)).contains(&format!("distilled {id}")));
+}
