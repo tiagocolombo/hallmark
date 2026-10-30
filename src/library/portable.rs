@@ -191,7 +191,7 @@ pub fn committed_dir(repo: &Repo) -> String {
 /// Every `.md` file under the committed learnings dir at `rev`. An unknown
 /// `rev` is `COMMAND_FAILED`.
 pub fn read_rev(repo: &Repo, rev: &str) -> Result<Vec<Entry>> {
-    let files = ls_tree(&repo.main_root, rev, &committed_dir(repo))?;
+    let files = ls_tree(&repo.main_root, rev, &committed_dir(repo), ".md")?;
     let shas: Vec<String> = files.iter().map(|(_, s)| s.clone()).collect();
     let blobs = cat_blobs(&repo.main_root, &shas)?;
     Ok(files
@@ -229,8 +229,13 @@ fn git(dir: &Path) -> Command {
     c
 }
 
-/// `(path, blob)` for every `.md` file under `dir` at `rev`.
-fn ls_tree(root: &Path, rev: &str, dir: &str) -> Result<Vec<(String, String)>> {
+/// `(path, blob)` for every file ending in `ext` under `dir` at `rev`.
+pub(crate) fn ls_tree(
+    root: &Path,
+    rev: &str,
+    dir: &str,
+    ext: &str,
+) -> Result<Vec<(String, String)>> {
     let out = git(root)
         .args(["ls-tree", "-r", "-z", "--full-tree", rev, "--", dir])
         .output()
@@ -254,7 +259,7 @@ fn ls_tree(root: &Path, rev: &str, dir: &str) -> Result<Vec<(String, String)>> {
         let mut parts = meta.split_whitespace();
         let (_mode, kind, sha) = (parts.next(), parts.next(), parts.next());
         if kind == Some("blob")
-            && path.ends_with(".md")
+            && path.ends_with(ext)
             && let Some(sha) = sha
         {
             files.push((path.to_string(), sha.to_string()));
@@ -264,7 +269,7 @@ fn ls_tree(root: &Path, rev: &str, dir: &str) -> Result<Vec<(String, String)>> {
 }
 
 /// Reads blobs in one `git cat-file --batch`.
-fn cat_blobs(root: &Path, shas: &[String]) -> Result<Vec<Vec<u8>>> {
+pub(crate) fn cat_blobs(root: &Path, shas: &[String]) -> Result<Vec<Vec<u8>>> {
     if shas.is_empty() {
         return Ok(Vec::new());
     }

@@ -463,6 +463,8 @@ search         = "builtin"      # or "qmd"
 briefing_limit = "6k"
 auto_accept    = []
 retire_after   = "90d"
+commit         = false          # true: records items commit learnings and pages (ADR 0066)
+gazette_dir    = "docs/gazette"
 
 [extensions]                    # skill packs by other authors (ADR 0038)
 # mattpocock = ["planner", "developer", "reviewer", "fixer"]
@@ -710,8 +712,10 @@ then resumes the asking agent's session with
 
 **What a learning is.** Learnings are Markdown files in the local store,
 `<git-common-dir>/hallmark/library/learnings/`, next to the journal (ADR 0027).
-They are never committed: every worktree shares them, and no branch can change
-what its review is told. There are four kinds:
+Reviews read only that store: every worktree shares it, and no branch can
+change what its review is told. With `[library] commit = true` (ADR 0066),
+accepted learnings are also committed to `.hallmark/knowledge/`, without
+their usage counts, through records items; the store stays the source. There are four kinds:
 
 - **rule**: comes from a finding that turned out right.
 - **false-positive**: what not to flag, and why.
@@ -751,7 +755,19 @@ Files and links the dev agent attaches with `hall attach` become plates. The
 page is reprinted from code, with no model run, when the item moves on (its
 PR merges, CI reports) or a new hall prints differently. `hall gazette`, the
 terminal app (<kbd>n</kbd>) and the web app's Gazette tab read it. Like the
-Library, it is never committed.
+Library, it stays local unless `[library] commit = true`.
+
+**Records in the repo** (ADR 0066). With `[library] commit = true`, the
+librarian keeps accepted learnings in `[library] dir` and each closed or
+dropped item's page in `<gazette_dir>/<id>.html`. When nothing is left to
+distil or reprint, it compares them with the base and, if the base is
+missing any, starts a records item (`Records: …`) with `hall new`, commits
+the files in its worktree and runs `hall propose-ready`. The item is then
+checked, reviewed, shipped and merged like any other. Until one has shipped,
+each waits for you. Only one is open at a time, records items are never distilled, and a
+fingerprint of the inputs and the base tip in `library/records.json` makes an
+unchanged check free and keeps a dropped records item from coming straight
+back.
 
 ## Parallel parts (Stage 2, ADR 0024)
 

@@ -304,6 +304,11 @@ const REPO_SECTIONS_AFTER: &[(&str, &[(&str, &str)])] = &[
             ("library.briefing_limit", ""),
             ("library.auto_accept", ""),
             ("library.retire_after", ""),
+            (
+                "library.commit",
+                "Keep the Library and the Gazette in the repo too, through reviewed records items",
+            ),
+            ("library.gazette_dir", ""),
         ],
     ),
     (
@@ -1343,7 +1348,7 @@ mod tests {
         ]);
         answers.extend([""; 24]); // the four role tables
         answers.push("y"); // Matt Pocock's skills
-        answers.extend([""; 6]); // the Library
+        answers.extend([""; 8]); // the Library
         answers.extend([""; 7]); // the sandbox
         answers.extend([""; 4]); // claude, gh, qmd, cargo
         answers.extend([

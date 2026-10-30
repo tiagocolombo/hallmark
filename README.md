@@ -360,7 +360,7 @@ default, including models per role, notifications and the Library.
 | --- | --- |
 | The journal | `<git-common-dir>/hallmark/items/<id>/events.jsonl`: append-only, shared by every worktree, never committed (it contains your prompts) |
 | The index | SQLite next to the journal. It's a cache, so `hall reindex` rebuilds it. |
-| The Library | `<git-common-dir>/hallmark/library/`: learnings from closed items, kept locally |
+| The Library | `<git-common-dir>/hallmark/library/`: learnings from closed items, kept locally. With `[library] commit = true`, accepted learnings and Gazette pages are also committed, through reviewed records items |
 | The hallmark | A git note under `refs/notes/hallmark` on the approved commit |
 | Repo skills | `.hallmark/skills/<name>/SKILL.md`, read from the base branch |
 | Extensions | Embedded in `hall`; `[extensions]` in `.hallmark.toml` turns them on per role |

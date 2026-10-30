@@ -125,9 +125,26 @@ search         = "builtin"   # or "qmd"
 briefing_limit = "6k"        # tokens; a low-effort review gets 2k, a medium one 4k
 auto_accept    = []          # kinds that skip your approval: rule, false-positive, map, decision
 retire_after   = "90d"
-# Learnings live in <git-common-dir>/hallmark/library/, never in the repo.
-# `hall library import` brings in ones committed by earlier versions.
+dir            = ".hallmark/knowledge"   # committed learnings: what `hall library import` reads
+commit         = false       # true: keep the Library and the Gazette in the repo too (ADR 0066)
+gazette_dir    = "docs/gazette"          # where `commit = true` puts Gazette pages
+# Learnings live in <git-common-dir>/hallmark/library/; reviews read only that store.
 ```
+
+**Records in the repo** ([ADR 0066](decisions/0066-records-in-the-repo.md)).
+The Library and the Gazette are local by default. With `[library] commit =
+true`, accepted learnings go to `dir` and each closed or dropped item's Gazette
+page to `<gazette_dir>/<id>.html`. Proposed learnings stay local, and usage
+counts are left out so reviews don't change the files. The librarian commits
+them in a records item, an ordinary item titled `Records: …`, which is
+checked, reviewed, shipped and merged like any other work. Nothing is written
+to the base directly. Until a records item has shipped, each waits for
+your `hall ready`, so turning this on by mistake publishes nothing. After
+that, one records item at a time carries whatever the base is missing. A page is copied again
+when it was reprinted from more events (its PR merged), not when only the
+hall that printed it changed. A records item you drop doesn't come back until
+something else changes. Pages can describe security findings in detail and
+inline their images, so think twice in a public repository.
 
 ## Merging
 

@@ -1,6 +1,8 @@
 # 0053. The Gazette: a newspaper page for each finished item, for people
 
-Status: Accepted, 2026-10-23.
+Status: Accepted, 2026-10-23. Superseded in part by
+[ADR 0066](0066-records-in-the-repo.md): with `[library] commit = true`, each
+finished item's page is also committed, through records items.
 
 ## Context
 

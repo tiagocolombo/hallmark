@@ -9,11 +9,14 @@
 //! - `briefing`: what a review is told.
 //! - `librarian`: distilling items and retiring learnings.
 //! - `portable`: `hall library import` and `export`.
+//! - `records`: committing the Library and the Gazette to the repository
+//!   through records items (ADR 0066).
 
 pub mod briefing;
 pub mod learning;
 pub mod librarian;
 pub mod portable;
+pub mod records;
 pub mod search;
 pub mod store;
 
