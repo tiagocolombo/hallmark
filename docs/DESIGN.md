@@ -789,7 +789,7 @@ every 20 seconds it walks each base's open shipped PRs, oldest first, and
 judges each with a script, never a model: the shipped head with its hallmark,
 `MERGEABLE`, CI green at that head (unless `require_ci = false`), no
 standing request for changes, nothing it depends on still open (the PR it is
-stacked on; `Depends on #N`, `Blocked by #N`, `After #N`), no `lit` path, the people's approvals its risk tier asks for
+stacked on; `Depends on #N`, `Blocked by #N`, `After #N`, where an issue is done once closed), no `lit` path, the people's approvals its risk tier asks for
 (`one_approval` and `two_approvals` paths, or the reviewer's `needs_person`;
 `hall retry` counts as one, members' approving reviews of this head the rest;
 ADR 0063), and
