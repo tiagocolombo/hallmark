@@ -18,9 +18,10 @@ fn url(n: u64) -> String {
 }
 
 /// A fake `gh`: `pr view <url>` prints `pr-<n>.json` (or `state-<n>.txt`
-/// with `--jq`), `pr merge` merges unless `merge-fails` exists, `api` (the
-/// base tip's check runs) prints `tip-checks.json` or fails, and every call
-/// is logged.
+/// with `--jq`), or fails when `n` is an issue (`issue-<n>.txt`, which
+/// `issue view` prints), `pr merge` merges unless `merge-fails` exists,
+/// `api` (the base tip's check runs) prints `tip-checks.json` or fails, and
+/// every call is logged.
 fn fake_gh(env: &Env) -> PathBuf {
     use std::os::unix::fs::PermissionsExt;
     let dir = env.root.join("gh-fake");
@@ -30,7 +31,7 @@ fn fake_gh(env: &Env) -> PathBuf {
     std::fs::write(
         &gh,
         format!(
-            "#!/bin/sh\necho \"$*\" >> '{d}/calls.log'\nn=${{3##*/}}\ncase \"$1 $2\" in\n  'pr view') case \"$*\" in *--jq*) cat \"{d}/state-$n.txt\" 2>/dev/null || echo OPEN ;; *) cat \"{d}/pr-$n.json\" ;; esac ;;\n  'pr merge') if [ -f '{d}/merge-fails' ]; then echo 'GraphQL: Base branch was modified' >&2; exit 1; fi; echo MERGED > \"{d}/state-$n.txt\"; echo \"merged $3\" ;;\n  'api '*) cat '{d}/tip-checks.json' 2>/dev/null || exit 1 ;;\n  *) exit 1 ;;\nesac\n"
+            "#!/bin/sh\necho \"$*\" >> '{d}/calls.log'\nn=${{3##*/}}\ncase \"$1 $2\" in\n  'pr view') if [ -f \"{d}/issue-$n.txt\" ]; then echo 'GraphQL: Could not resolve to a PullRequest' >&2; exit 1; fi; case \"$*\" in *--jq*) cat \"{d}/state-$n.txt\" 2>/dev/null || echo OPEN ;; *) cat \"{d}/pr-$n.json\" ;; esac ;;\n  'pr merge') if [ -f '{d}/merge-fails' ]; then echo 'GraphQL: Base branch was modified' >&2; exit 1; fi; echo MERGED > \"{d}/state-$n.txt\"; echo \"merged $3\" ;;\n  'issue view') cat \"{d}/issue-$n.txt\" 2>/dev/null || exit 1 ;;\n  'api '*) cat '{d}/tip-checks.json' 2>/dev/null || exit 1 ;;\n  *) exit 1 ;;\nesac\n"
         ),
     )
     .unwrap();
@@ -868,6 +869,32 @@ fn a_restored_pr_keeps_its_green_ci() {
     assert_eq!(status_of(&queue(&env, &gh), &id)["status"], "ready");
     pass(&env, &gh);
     assert_eq!(events(&env, &id, "pr_merged").len(), 1);
+}
+
+#[test]
+fn a_pr_blocked_by_an_issue_waits_until_the_issue_is_closed() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    let (id, _, sha) = shipped(&env, &gh, 1, "a.rs");
+    pr(&gh, 1, "MERGEABLE", &sha, "Blocked by #10", json!([]));
+    let issue = gh.parent().unwrap().join("issue-10.txt");
+    std::fs::write(&issue, "OPEN").unwrap();
+
+    let q = queue(&env, &gh);
+    assert_eq!(status_of(&q, &id)["status"], "waits_for", "{q}");
+    pass(&env, &gh);
+    assert!(events(&env, &id, "pr_merged").is_empty());
+
+    std::fs::write(&issue, "CLOSED").unwrap();
+    assert_eq!(status_of(&queue(&env, &gh), &id)["status"], "ready");
+    pass(&env, &gh);
+    assert_eq!(events(&env, &id, "pr_merged").len(), 1);
+    assert!(
+        calls(&gh).contains("issue view https://github.com/acme/app/issues/10"),
+        "{}",
+        calls(&gh)
+    );
 }
 
 #[test]

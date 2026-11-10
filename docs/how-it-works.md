@@ -149,7 +149,7 @@ that is ready:
 - nobody asked for changes on it;
 - nothing it depends on is still open: the PR it is stacked on, and any PR
   its description or commits name with `Depends on #N`, `Blocked by #N` or
-  `After #N`;
+  `After #N` (an issue named this way counts once it is closed);
 - it touches no `[merge] lit` path, and it has the approvals from people
   its tier asks for (`[merge] one_approval`, `two_approvals`, or the
   reviewer's `needs_person`; your `hall retry` counts as one,
