@@ -67,7 +67,9 @@ Then do all edits and commits in the returned `worktree`:
   why. If writes are refused, ask the human to approve them or run
   `/add-dir <worktree>`, or to start a session in the worktree.
 
-- From a GitHub issue: `hall new --issue 212`. The PR will close it.
+- From a GitHub issue: `hall new --issue 212`. The PR will close it. If a
+  live item already tracks the issue, you get that item back
+  (`created: false`); `--again` starts a second one on purpose.
 - On an existing branch or worktree: `hall adopt`.
 - To rebase, resolve conflicts in or change an open PR, Hallmark's or not:
   `hall adopt --pr <pr>`, or `hall adopt` in its worktree. A shipped item comes
