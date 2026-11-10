@@ -1164,15 +1164,18 @@ impl Config {
     }
 
     /// The first plain command words of the ship and update commands, used
-    /// by the push gate (`dev submit --pr` → `dev submit`).
+    /// by the push gate (`dev submit --pr` → `dev submit`). A wrapper in
+    /// front (`mise exec -- dev submit`) is left out, as the gate leaves it
+    /// out of the commands it reads.
     pub fn ship_prefixes(&self) -> Vec<Vec<String>> {
         let mut out: Vec<Vec<String>> = Vec::new();
         for seg in [&self.ship, &self.update]
             .into_iter()
             .flat_map(|c| crate::gate::split_segments(c))
         {
-            let words: Vec<String> = crate::gate::words(&seg)
-                .into_iter()
+            let words: Vec<String> = crate::gate::unwrapped(&crate::gate::words(&seg))
+                .iter()
+                .cloned()
                 .take_while(|w| !w.starts_with('-') && !w.contains('{'))
                 .collect();
             // Commenting on or editing a PR puts no commits on GitHub.
@@ -1513,6 +1516,22 @@ timeout = "5m"
             ..Config::default()
         };
         assert_eq!(c.ship_prefixes(), vec![vec!["dev", "submit"]]);
+        // A wrapper that provides the toolchain is not the ship command.
+        let c = Config {
+            ship: "mise exec -- ./pre-ship.sh && mise x -- git push -u origin {branch} \
+                   && devbox run -- gh pr create --base {base}"
+                .into(),
+            update: "nix develop --command dev submit --update".into(),
+            ..Config::default()
+        };
+        assert_eq!(
+            c.ship_prefixes(),
+            vec![
+                vec!["git", "push"],
+                vec!["gh", "pr", "create"],
+                vec!["dev", "submit"]
+            ]
+        );
     }
 
     #[test]
