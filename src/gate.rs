@@ -660,6 +660,20 @@ fn is_assignment(word: &str) -> bool {
     word.contains('=') && !word.starts_with('-') && !word.starts_with('=')
 }
 
+/// `w` without the wrappers before its command: `mise exec -- make test`
+/// is `make test`.
+pub fn unwrapped(w: &[String]) -> &[String] {
+    let mut w = w;
+    let mut dir = PathBuf::new();
+    while let Some(first) = w.first() {
+        let Some(n) = wrapper_len(&program(first), w, &mut dir) else {
+            break;
+        };
+        w = &w[n.min(w.len())..];
+    }
+    w
+}
+
 /// The first trigger in `text`, if any.
 fn trigger(text: &str) -> Option<&'static str> {
     let lower = text.to_ascii_lowercase();
@@ -713,6 +727,33 @@ fn wrapper_len(p: &str, w: &[String], dir: &mut PathBuf) -> Option<usize> {
         }
         // `direnv exec <dir> <cmd>`.
         "direnv" => return (w.get(1).map(String::as_str) == Some("exec")).then_some(3),
+        // `mise exec … -- <cmd>` (or `mise x`), `devbox run … -- <cmd>`.
+        "mise" | "devbox" => {
+            let sub = w.get(1).map(String::as_str);
+            if !matches!(
+                (p, sub),
+                ("mise", Some("exec" | "x")) | ("devbox", Some("run"))
+            ) {
+                return None;
+            }
+            let at = w.iter().position(|x| x == "--")?;
+            if p == "mise" {
+                for (i, a) in w[..at].iter().enumerate() {
+                    // A command string of its own (`-c '<cmd>'`) isn't read.
+                    if a == "-c" || a.starts_with("--command") {
+                        return None;
+                    }
+                    let to = match a.as_str() {
+                        "-C" | "--cd" => w.get(i + 1).map(String::as_str),
+                        _ => a.strip_prefix("--cd="),
+                    };
+                    if let Some(d) = to {
+                        *dir = crate::paths::resolve(dir, Path::new(d));
+                    }
+                }
+            }
+            return Some(at + 1);
+        }
         _ => return None,
     };
     let mut i = 1;
@@ -1491,6 +1532,82 @@ mod tests {
         };
         let s = inspect("git push origin abc123:main", Path::new("/repo"), &ctx);
         assert_eq!(s.ops[0].args, vec!["origin", "abc123:main"]);
+    }
+
+    /// The gates and ship command `hall setup` writes for a mise or devbox
+    /// repo (`detect::WRAPPERS`).
+    #[test]
+    fn sees_through_mise_and_devbox() {
+        let config = |ship: &str| crate::config::Config {
+            ship: ship.into(),
+            ..crate::config::Config::default()
+        };
+        let mise = config("mise exec -- ./pre-ship.sh && git push -u origin {branch}");
+        let devbox = config("devbox run -- dev submit --pr");
+        for c in [&mise, &devbox] {
+            let ship = c.ship_prefixes();
+            let ctx = Context {
+                ship: &ship,
+                allow: &[],
+                alias: &|_: &Path, _: &str| None,
+            };
+            let ops = |cmd: &str| -> Vec<OpKind> {
+                inspect(cmd, Path::new("/repo"), &ctx)
+                    .ops
+                    .into_iter()
+                    .map(|o| o.kind)
+                    .collect()
+            };
+            // A wrapped gate is the gate.
+            for cmd in [
+                "mise exec -- make test",
+                "mise x -- make test",
+                "mise exec node@22 --raw -- make test",
+                "devbox run -- make test",
+                "devbox run --pure -- make test",
+            ] {
+                assert_eq!(ops(cmd), vec![], "{cmd}");
+            }
+            // A wrapped push is still a push.
+            for cmd in [
+                "mise exec -- git push",
+                "mise x node@22 -- git push origin main",
+                "devbox run -- git push",
+                "mise exec -- bash -c 'git push'",
+            ] {
+                assert_eq!(ops(cmd), vec![Push], "{cmd}");
+            }
+        }
+        // The wrapped ship command is gated as the command it runs.
+        let ship = devbox.ship_prefixes();
+        let ctx = Context {
+            ship: &ship,
+            allow: &[],
+            alias: &|_: &Path, _: &str| None,
+        };
+        let s = inspect("devbox run -- dev submit --pr", Path::new("/repo"), &ctx);
+        assert_eq!(s.ops.len(), 1);
+        assert_eq!(s.ops[0].kind, Push);
+        // `mise exec --cd <dir>` runs the command there.
+        let tmp = tempfile::tempdir().unwrap();
+        let base = crate::paths::normalize(tmp.path());
+        let other = base.join("other");
+        let s = scan(
+            &format!("mise exec --cd '{}' -- git push", other.display()),
+            &base.join("repo"),
+            &[],
+        );
+        assert_eq!(s.len(), 1);
+        assert_eq!(s[0].dir, other);
+        // `mise exec -c '<cmd>'` runs a command string: not read as a
+        // wrapper, so the strict guard holds it back.
+        for cmd in [
+            "mise exec -c 'git push'",
+            "mise exec -c 'git push' -- true",
+            "mise exec --command 'git push' -- true",
+        ] {
+            assert_eq!(verdict(cmd), (vec![], true), "{cmd}");
+        }
     }
 
     #[test]
