@@ -814,6 +814,59 @@ fn new_from_a_github_issue() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn new_from_an_issue_already_tracked_returns_its_item() {
+    use std::os::unix::fs::PermissionsExt;
+    let env = Env::initialized();
+    let fake = env.root.join("gh");
+    std::fs::write(
+        &fake,
+        "#!/bin/sh\necho '{\"number\":212,\"title\":\"Dashboard shows stale usage\",\"body\":\"After a plan change.\",\"url\":\"https://github.com/o/r/issues/212\"}'\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let new = |args: &[&str]| -> Value {
+        let out = env
+            .cmd(&env.repo)
+            .env("HALL_GH", &fake)
+            .args(["new", "--issue", "212"])
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stdout)
+        );
+        serde_json::from_slice(&out.stdout).unwrap()
+    };
+    let first = new(&[]);
+    assert_eq!(first["id"], "H-0001");
+    assert_eq!(first["created"], true);
+
+    // Asked again, the issue's live item comes back.
+    let again = new(&[]);
+    assert_eq!(again["id"], "H-0001");
+    assert_eq!(again["created"], false);
+    assert_eq!(again["branch"], first["branch"]);
+
+    // `--again` starts a second item on purpose.
+    let second = new(&["--again"]);
+    assert_eq!(second["id"], "H-0002");
+    assert_eq!(second["created"], true);
+
+    // A dropped item doesn't count; the other live one does.
+    let r = env.hall(&env.repo, &["drop", "H-0001", "--reason", "not needed"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(new(&[])["id"], "H-0002");
+    let r = env.hall(&env.repo, &["drop", "H-0002", "--reason", "not needed"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let third = new(&[]);
+    assert_eq!(third["id"], "H-0003");
+    assert_eq!(third["created"], true);
+}
+
 #[test]
 fn done_with_nothing_to_confirm_goes_straight_to_review() {
     let env = Env::initialized();
