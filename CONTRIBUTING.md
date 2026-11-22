@@ -19,7 +19,7 @@ needs, and the conventions the codebase follows.
 
 You need:
 
-- Rust 1.88 or newer (stable), with `rustfmt` and `clippy`
+- Rust 1.89 or newer (stable), with `rustfmt` and `clippy`
 - a C compiler, for the bundled SQLite
 - `git`
 - optionally [`cargo-insta`](https://insta.rs/docs/cli/) for reviewing snapshots,
