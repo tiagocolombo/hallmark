@@ -95,11 +95,19 @@ expression: v
           "takes_value": true
         },
         {
-          "help": "Start from a GitHub issue (uses gh)",
+          "help": "Start from a GitHub issue (uses gh). An issue a live item already tracks returns that item",
           "name": "issue",
           "required": false,
           "syntax": "--issue <issue>",
           "takes_value": true
+        },
+        {
+          "default": "false",
+          "help": "With --issue: start another item even when a live one tracks the issue",
+          "name": "again",
+          "required": false,
+          "syntax": "--again",
+          "takes_value": false
         },
         {
           "default": "false",

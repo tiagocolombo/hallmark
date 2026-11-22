@@ -173,9 +173,14 @@ pub struct NewArgs {
     /// A short title (defaults to the request or the issue title).
     #[arg(long)]
     pub title: Option<String>,
-    /// Start from a GitHub issue (uses gh).
+    /// Start from a GitHub issue (uses gh). An issue a live item already
+    /// tracks returns that item.
     #[arg(long)]
     pub issue: Option<u64>,
+    /// With --issue: start another item even when a live one tracks the
+    /// issue.
+    #[arg(long, requires = "issue")]
+    pub again: bool,
     /// Open Claude Code in the new worktree (on a terminal).
     #[arg(long)]
     pub open: bool,

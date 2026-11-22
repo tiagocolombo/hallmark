@@ -71,7 +71,7 @@ The extensions, and what each role gets:
 
 | Command | Does |
 | --- | --- |
-| `hall new [<request>]` | Creates an item and its worktree; splits into parallel parts when it can. `--title`, `--issue <n>`, `--no-split`, `--parent <id>`, `--follow-up <pr>`, `--open`, `--branch` |
+| `hall new [<request>]` | Creates an item and its worktree; splits into parallel parts when it can. `--title`, `--issue <n>` (an issue a live item already tracks returns that item, `created: false`; `--again` starts another), `--no-split`, `--parent <id>`, `--follow-up <pr>`, `--open`, `--branch` |
 | `hall adopt [--pr] [--base]` | Turns the current branch and worktree, or an open PR, into an item. A shipped item whose PR is still open is reopened: rebase it, resolve conflicts or change it, and the shipper updates the PR after review ([ADR 0029](decisions/0029-adopt-open-prs.md)). A checkout you made yourself is never removed when the item closes; only worktrees Hallmark made are swept ([ADR 0040](decisions/0040-sweep-finished-worktrees.md)). |
 | `hall merge [<child>]` | Merges a parallel part into its parent's branch and closes it. |
 | `hall ready [<id>]` | Freezes the commit and queues the item for review. While the Delivery office has a rebase pending and the branch isn't on its base yet, it refuses (`WRONG_STATE`) and keeps the request: release a hold so the office rebases it, or rebase yourself and run it again ([ADR 0043](decisions/0043-ready-waits-for-a-pending-rebase.md)). `hall propose-ready` waits the same way. Refused (`GATE_DENIED`) inside the fixer's headless run. |

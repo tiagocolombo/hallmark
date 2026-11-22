@@ -152,6 +152,18 @@ pub fn new(cwd: &Path, a: NewArgs, mode: Mode) -> Result<Response> {
         )
         .next(["hall new --follow-up <pr-url>"]));
     }
+    // An issue a live item already tracks returns that item, as `hall adopt`
+    // does for a branch; `--again` starts another on purpose.
+    if let Some(n) = a.issue
+        && !a.again
+        && let Some(it) = repo
+            .index()?
+            .items(false)?
+            .into_iter()
+            .find(|i| i.issue.as_ref().is_some_and(|x| x.number == n))
+    {
+        return existing_item(&repo, it.id, None);
+    }
     let parent = match &a.parent {
         Some(p) => Some(parent_for_child(&repo, p)?),
         None => None,
