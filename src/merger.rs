@@ -534,8 +534,8 @@ impl<'a> Look<'a> {
         }
     }
 
-    /// The open PRs `item` waits for: the one it is stacked on, and those
-    /// its body or commits name.
+    /// The open PRs `item` waits for: the one it is stacked on, and the PRs
+    /// (or open issues) its body or commits name.
     fn waits_for(&self, item: &Item, url: &str, text: &str) -> Vec<String> {
         let mut out = Vec::new();
         if item.base != self.repo.config.base {
@@ -560,9 +560,13 @@ impl<'a> Look<'a> {
             }
             // Not one of ours that is still open: ask GitHub.
             let dep = Self::url(url, n);
-            match crate::gh::pr_state(&self.repo.main_root, &dep) {
-                Ok(s) if s == "MERGED" => {}
-                _ => out.push(dep),
+            let root = &self.repo.main_root;
+            let done = dependency_done(
+                || crate::gh::pr_state(root, &dep),
+                || crate::gh::issue_state(root, &dep.replacen("/pull/", "/issues/", 1)),
+            );
+            if !done {
+                out.push(dep);
             }
         }
         out.dedup();
@@ -1085,6 +1089,19 @@ impl<'a> Look<'a> {
     }
 }
 
+/// Whether a dependency GitHub is asked about is done: a PR once it
+/// merged, an issue (`Blocked by #N` often names one) once it is closed.
+/// One GitHub can't read as either still waits.
+fn dependency_done(
+    pr_state: impl FnOnce() -> Result<String>,
+    issue_state: impl FnOnce() -> Result<String>,
+) -> bool {
+    match pr_state() {
+        Ok(s) => s == "MERGED",
+        Err(_) => issue_state().is_ok_and(|s| s == "CLOSED"),
+    }
+}
+
 /// Whether a PR in this status is on its way to a merge on its own, so the
 /// PRs behind it that touch its files wait for it. One waiting on a person,
 /// or broken, claims nothing; so does one waiting for it.
@@ -1577,6 +1594,27 @@ mod tests {
             Some(64)
         );
         assert_eq!(number("https://github.com/a/b/issues/64"), None);
+    }
+
+    #[test]
+    fn a_dependency_is_done_once_its_pr_merged_or_its_issue_closed() {
+        let state = |s: &str| -> Result<String> { Ok(s.to_string()) };
+        let not_a_pr = || -> Result<String> {
+            Err(crate::error::HallError::new(
+                crate::error::ErrorCode::GhUnavailable,
+                "Could not resolve to a PullRequest",
+            ))
+        };
+        let unasked = || -> Result<String> { panic!("a PR is not asked about as an issue") };
+        // A PR: done once merged.
+        assert!(dependency_done(|| state("MERGED"), unasked));
+        assert!(!dependency_done(|| state("OPEN"), unasked));
+        assert!(!dependency_done(|| state("CLOSED"), unasked));
+        // An issue: done once closed.
+        assert!(dependency_done(not_a_pr, || state("CLOSED")));
+        assert!(!dependency_done(not_a_pr, || state("OPEN")));
+        // GitHub can't say: it waits.
+        assert!(!dependency_done(not_a_pr, not_a_pr));
     }
 
     fn review(who: &str, state: &str) -> GhComment {

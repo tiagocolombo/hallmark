@@ -330,6 +330,25 @@ pub fn pr_state(dir: &Path, pr: &str) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
+/// An issue's state (`OPEN`, `CLOSED`).
+pub fn issue_state(dir: &Path, issue: &str) -> Result<String> {
+    let out = crate::process::command(gh()?)
+        .current_dir(dir)
+        .args(["issue", "view", issue, "--json", "state", "--jq", ".state"])
+        .output()?;
+    if !out.status.success() {
+        return Err(HallError::new(
+            ErrorCode::GhUnavailable,
+            format!(
+                "gh issue view {issue} failed: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            ),
+        )
+        .next(["gh auth status", "hall doctor"]));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
 /// What the check runs on a commit say.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct TipChecks {

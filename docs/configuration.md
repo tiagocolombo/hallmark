@@ -165,8 +165,9 @@ for, and it is up to date: it contains its
 base, or the commits it lacks touch none of its files (with
 `update = "conflicts"`, GitHub calling it mergeable is enough). A PR waits
 for the PR it is stacked on, and for any PR its description or commits name
-with `Depends on #N`, `Blocked by #N` or `After #N`. Otherwise the oldest PR
-goes first.
+with `Depends on #N`, `Blocked by #N` or `After #N` until it merges. When
+`#N` is an issue, the PR waits until the issue is closed. Otherwise the
+oldest PR goes first.
 
 **The merger stops the line.** In either mode, before it merges into a base
 or rebases a PR onto it, the merger reads the check runs on the base's tip.
