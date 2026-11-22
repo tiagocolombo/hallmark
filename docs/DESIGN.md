@@ -248,10 +248,12 @@ configured ship command.
   and so are git global options such as `git -C dir push`.
 - It sees through wrappers (`env`, `command`, `exec`, `sudo`, `nohup`, `time`,
   `timeout`, `nice`, `ionice`, `caffeinate`, `stdbuf`, `xargs`,
-  `nix develop --command`, `direnv exec`), `sh|bash|zsh -c` with any option
-  cluster holding `c` (`bash -ec`), `eval`, command substitutions, git aliases
-  (`git -c alias.p=push p`, and aliases in git config), and the commands git
-  runs itself (`rebase -x`, `bisect run`, `submodule foreach`).
+  `nix develop --command`, `direnv exec`, `mise exec --`, `devbox run --`),
+  `sh|bash|zsh -c` with any option cluster holding `c` (`bash -ec`), `eval`,
+  command substitutions, git aliases (`git -c alias.p=push p`, and aliases in
+  git config), and the commands git runs itself (`rebase -x`, `bisect run`,
+  `submodule foreach`). A wrapper at the start of `ship` or `update` is not
+  part of the ship command's prefix.
 - `[capture] push_guard = "strict"` (the default) covers what it can't read:
   inside an item's worktree, a command that may push but can't be followed (a
   script mentioning `push` or `release`, an unknown git subcommand, a `gh`
