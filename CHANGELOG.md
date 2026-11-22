@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.19](https://github.com/tiagocolombo/hallmark/compare/v0.3.18...v0.3.19) - 2026-11-22
+
+### Fixed
+
+- a closed issue named by `Blocked by #N` no longer holds a PR back ([#161](https://github.com/tiagocolombo/hallmark/pull/161))
+- `hall new --issue N` returns the live item that already tracks issue N ([#160](https://github.com/tiagocolombo/hallmark/pull/160))
+- read `mise exec --` and `devbox run --` as wrappers in the push guard ([#159](https://github.com/tiagocolombo/hallmark/pull/159))
+
+### Other
+
+- bump the cargo group across 1 directory with 3 updates ([#162](https://github.com/tiagocolombo/hallmark/pull/162))
+
 ## [0.3.18](https://github.com/tiagocolombo/hallmark/compare/v0.3.17...v0.3.18) - 2026-10-27
 
 ### Added
