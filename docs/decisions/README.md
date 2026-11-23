@@ -28,7 +28,7 @@ a decision, add a new record that supersedes the old one. Don't edit the old one
 | [0020](0020-notifications-resume-and-budget-accounting.md) | Notifications, resuming on an answer, and what budgets count | Accepted |
 | [0021](0021-the-library.md) | The Library: learnings as reviewed files, read from the base | Superseded in part by 0027 |
 | [0022](0022-the-terminal-app-is-a-reader.md) | The terminal app is a reader | Accepted |
-| [0023](0023-packaging-and-releases.md) | Packaging and releases | Accepted |
+| [0023](0023-packaging-and-releases.md) | Packaging and releases | Accepted; superseded in part by 0067 |
 | [0024](0024-parallel-parts-and-follow-ups.md) | Parallel parts: the Front Desk splits, the session orchestrates, the parent is reviewed once | Accepted |
 | [0025](0025-watch-ci-after-shipping.md) | Watch CI after shipping; follow-ups carry it and stack on open PRs | Accepted |
 | [0026](0026-parallel-phases.md) | Every phase runs in parallel, with configurable slots | Accepted |
@@ -75,3 +75,4 @@ a decision, add a new record that supersedes the old one. Don't edit the old one
 | [0063](0063-risk-tiers.md) | Risk tiers: `[merge] one_approval` and `two_approvals` paths, and the reviewer's `needs_person`, make the merger wait for that many people's approvals on the PR (your `hall retry` counts as one); the change sets the tier, and it is the PR's `## Risk` | Accepted; amends 0048, 0057 |
 | [0064](0064-the-security-pass.md) | The security pass: a change on a `security_review` path gets a second, security-only review at full effort, whose new findings join the round's verdict; recorded as `security_pass`; the verdict stands when it fails; a budget stop or the plan limit records no verdict | Accepted; amends 0018 |
 | [0065](0065-the-reviewer-eval.md) | The reviewer eval: `hall eval` replays today's reviewer on the items whose merged PR was reverted, as a round-1 review of the commit the first review saw, and scores each case against the files the revert touched, then and now; it spends usage on purpose, under the review budget, never from the daemon | Accepted; amends 0056, 0061 |
+| [0067](0067-aarch64-macos-releases-on-macos-15.md) | aarch64 macOS releases build on macos-15: GitHub retired macos-14, so `[dist.github-custom-runners]` picks the runner for that target | Accepted; supersedes part of 0023 |

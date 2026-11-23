@@ -24,6 +24,10 @@ Status: Accepted, 2026-10-09
 > `allow-dirty`, run `dist generate`, then pin the actions by commit and
 > reapply the permissions edit marked in the file.
 
+> **Note, 2026-11-23:** superseded in part by
+> [ADR 0067](0067-aarch64-macos-releases-on-macos-15.md). `aarch64-apple-darwin`
+> builds on `macos-15`; GitHub retired `macos-14`.
+
 > **Note, 2026-10-12:** amended by
 > [ADR 0035](0035-semver-from-conventional-commits.md). Tags are no longer
 > pushed by hand: release-plz tags `vX.Y.Z` when its release PR merges, and

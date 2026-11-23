@@ -32,3 +32,8 @@ formula = "hall"
 pr-run-mode = "skip"
 # release.yml is maintained by hand; Dependabot bumps its pinned actions.
 allow-dirty = ["ci"]
+
+# GitHub retired the macos-14 arm64 image that dist 0.31 picks for this
+# target, and the release's build job fails at once. See ADR 0067.
+[dist.github-custom-runners]
+aarch64-apple-darwin = "macos-15"
