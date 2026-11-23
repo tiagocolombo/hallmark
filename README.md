@@ -15,7 +15,7 @@ Only commits that earn a **hallmark** leave your machine.
 [![Release](https://img.shields.io/github/v/release/tiagocolombo/hallmark?include_prereleases&sort=semver)](https://github.com/tiagocolombo/hallmark/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-[![Rust 1.88+](https://img.shields.io/badge/rust-1.88%2B-orange.svg?logo=rust)](https://www.rust-lang.org)
+[![Rust 1.89+](https://img.shields.io/badge/rust-1.89%2B-orange.svg?logo=rust)](https://www.rust-lang.org)
 [![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)](#install)
 [![Built for Claude Code](https://img.shields.io/badge/built%20for-Claude%20Code-d97757.svg)](https://claude.com/claude-code)
 [![Security policy](https://img.shields.io/badge/security-policy-brightgreen.svg)](SECURITY.md)
@@ -98,7 +98,7 @@ holds up:
 ## Quick start
 
 ```sh
-# 1. Install (Rust 1.88+; see Install for prebuilt binaries and Nix)
+# 1. Install (Rust 1.89+; see Install for prebuilt binaries and Nix)
 cargo install --git https://github.com/tiagocolombo/hallmark --locked
 
 # 2. In the repository you want reviewed
@@ -190,7 +190,7 @@ is used for issues and pull requests by the default ship command.
 
 | Method | Command |
 | --- | --- |
-| Cargo (Rust 1.88+) | `cargo install --git https://github.com/tiagocolombo/hallmark --locked` |
+| Cargo (Rust 1.89+) | `cargo install --git https://github.com/tiagocolombo/hallmark --locked` |
 | Nix | `nix-build nix` from a clone, or `nix profile install --file nix` |
 | Prebuilt binaries | Installer scripts and archives, once a release is published (see the [installation guide](docs/install.md)) |
 

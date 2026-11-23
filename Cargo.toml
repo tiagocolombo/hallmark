@@ -2,7 +2,7 @@
 name = "hallmark"
 version = "0.3.19"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.89"
 description = "A local, agent-first development loop: agents build, an independent reviewer approves, every step is recorded."
 license = "MIT"
 repository = "https://github.com/tiagocolombo/hallmark"
@@ -27,7 +27,7 @@ globset = "0.4.20"
 notify = "8.2.0"
 notify-rust = "4.17.0"
 ratatui = "0.30.2"
-rusqlite = { version = "0.40.2", features = ["bundled"] }
+rusqlite = { version = "0.41.1", features = ["bundled"] }
 schemars = { version = "1.2.2", features = ["chrono04"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"

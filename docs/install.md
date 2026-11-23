@@ -44,7 +44,7 @@ against its `.sha256`, unpack it and put `hall` on your PATH.
 
 ### From source
 
-With Rust 1.88 or newer, and a C compiler for the bundled SQLite:
+With Rust 1.89 or newer, and a C compiler for the bundled SQLite:
 
 ```sh
 # Straight from git:
