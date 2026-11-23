@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.20](https://github.com/tiagocolombo/hallmark/compare/v0.3.19...v0.3.20) - 2026-11-23
+
+### Fixed
+
+- Fix RUSTSEC-2026-0459 and RUSTSEC-2026-0592: bump libsqlite3-sys and url ([#176](https://github.com/tiagocolombo/hallmark/pull/176))
+
 ## [0.3.19](https://github.com/tiagocolombo/hallmark/compare/v0.3.18...v0.3.19) - 2026-11-22
 
 ### Fixed
