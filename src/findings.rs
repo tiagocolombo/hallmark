@@ -318,6 +318,11 @@ pub struct Tracked {
     /// The commit whose `hall fixed` claims to fix it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub claimed_by: Option<String>,
+    /// True once a review verdict ran after `claimed_by` and left this
+    /// finding open; false while that commit hasn't been reviewed yet (for
+    /// example, when checks failed before the review ran).
+    #[serde(skip)]
+    pub claimed_reviewed: bool,
     /// The fixer's dispute, if any.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dispute: Option<String>,
@@ -366,12 +371,21 @@ impl Ledger {
                         t.note = p.note.clone();
                     }
                 }
+                // Any finding still open after a verdict has now been seen by
+                // the reviewer since its last `claimed_by` commit (findings
+                // left out of `prior` stay open, ADR 0015).
+                for t in &mut self.findings {
+                    if t.status == Status::Open && t.claimed_by.is_some() {
+                        t.claimed_reviewed = true;
+                    }
+                }
                 for f in findings {
                     if self.get_mut(&f.id).is_none() {
                         self.findings.push(Tracked {
                             finding: f.clone(),
                             status: Status::Open,
                             claimed_by: None,
+                            claimed_reviewed: false,
                             dispute: None,
                             settled_round: None,
                             note: None,
@@ -387,6 +401,7 @@ impl Ledger {
                 for id in fixes {
                     if let Some(t) = self.get_mut(id) {
                         t.claimed_by = Some(sha.clone());
+                        t.claimed_reviewed = false;
                     }
                 }
                 for d in disputes {

@@ -260,6 +260,49 @@ pub fn confinement(repo: &Repo) -> Confinement {
     }
 }
 
+/// Formats a path for a Claude Code permission rule (`Read(...)`, `Edit(...)`,
+/// `Write(...)`): an absolute path starting with `/` takes a leading `//`,
+/// since a single `/x` is relative to the project.
+fn rule_path(p: &str) -> String {
+    if p.starts_with('/') {
+        format!("/{p}")
+    } else {
+        p.to_string()
+    }
+}
+
+/// Grants read-only file-tool access (`--add-dir`) to `dir`, while denying
+/// `Edit` and `Write` inside it so `acceptEdits` can't modify files outside
+/// the worktree (ADR 0053).
+pub fn allow_read_dir(req: &mut RunRequest, dir: PathBuf) {
+    if !req.add_dirs.contains(&dir) {
+        req.add_dirs.push(dir.clone());
+    }
+    let p = rule_path(&crate::paths::display(&dir));
+    let rules = [
+        format!("Edit({p})"),
+        format!("Edit({p}/**)"),
+        format!("Write({p})"),
+        format!("Write({p}/**)"),
+    ];
+    if let Some(i) = req.extra_args.iter().position(|a| a == "--settings")
+        && let Some(raw) = req.extra_args.get_mut(i + 1)
+        && let Ok(mut v) = serde_json::from_str::<serde_json::Value>(raw)
+        && let Some(arr) = v
+            .get_mut("permissions")
+            .and_then(|p| p.get_mut("deny"))
+            .and_then(|d| d.as_array_mut())
+    {
+        for r in rules {
+            let rv = serde_json::Value::String(r);
+            if !arr.contains(&rv) {
+                arr.push(rv);
+            }
+        }
+        *raw = v.to_string();
+    }
+}
+
 /// The `--settings` for a run. File tools read only inside the run's
 /// directories and never `deny_read`; commands run in the sandbox unless
 /// `mode = "off"` (or `auto` on native Windows, where Claude Code has none).
@@ -272,12 +315,7 @@ pub fn settings(s: &crate::config::Sandbox, windows: bool) -> serde_json::Value 
         .deny_read
         .iter()
         .flat_map(|p| {
-            // A rule's absolute path starts with `//`; `/x` is the project's.
-            let p = if p.starts_with('/') {
-                format!("/{p}")
-            } else {
-                p.clone()
-            };
+            let p = rule_path(p);
             [format!("Read({p})"), format!("Read({p}/**)")]
         })
         .collect();

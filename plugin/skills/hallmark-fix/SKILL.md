@@ -23,10 +23,10 @@ only the next review settles findings.
    fix). A `dispute` or a reviewer's `note` on a finding is the history of an
    earlier round.
 
-2. **Fix the failing checks first.** Your prompt holds the end of each log (the
-   log file itself is outside your directories, so Read can't open it).
-   Reproduce the failure by running the gate to see all of its output, fix it,
-   and run the gate again.
+2. **Fix the failing checks first.** Your prompt holds the end of each failing
+   gate's section from its check log, and the item's `checks/` directory is
+   readable with Read if you need more of the log. Reproduce the failure by
+   running the gate if you can, fix it, and run the gate again.
 
 3. **Fix the findings, most severe first** (blocker, major, minor, nit). A
    finding marked pre-existing (`pre_existing: true`; the prompt lists them

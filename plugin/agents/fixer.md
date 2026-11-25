@@ -28,8 +28,9 @@ them, commit them, and record what you did. Use the hallmark-fix skill.
 ## What to fix, in order
 
 1. **Failing checks first.** The prompt lists each failing gate with the end
-   of its log. A red build hides everything else, so make the gates pass
-   before anything else.
+   of its section from the check log (and the item's `checks/` directory is
+   readable with Read if you need more). A red build hides everything else, so
+   make the gates pass before anything else.
 2. **Then the open findings, most severe first:** blocker, major, minor, nit.
    Each finding has an ID (`F3`), a lens, a file and line, the scenario that
    breaks, and a suggested fix. Fix the scenario, not just the line. When
