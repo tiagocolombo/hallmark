@@ -1027,6 +1027,17 @@ fn item_context(i: &Item, inbox: usize) -> String {
             "Edit files only inside that worktree, with the Edit and Write tools, and run git \
              there with `git -C <worktree>`. "
         }
+        State::Development if i.has_criteria => {
+            "Edit files only inside that worktree, with the Edit and Write tools, and run git \
+             there with `git -C <worktree>`. When the work looks done, commit and run \
+             `hall propose-ready --summary \"<what was done>\" --why \"<why it's needed>\" \
+             --how \"<the approach>\" --tested \"<how each criterion is met>\"` (the PR's \
+             What, Why and How; `--tested` is required here, because the item has acceptance \
+             criteria; `--revert` when there is more to say than a git revert): with \
+             nothing left to \
+             confirm it goes straight to review; add `--ask` when the human must decide \
+             something. "
+        }
         State::Development => {
             "Edit files only inside that worktree, with the Edit and Write tools, and run git \
              there with `git -C <worktree>`. When the work looks done, commit and run \
@@ -1092,10 +1103,17 @@ fn family_context(i: &Item, children: &[Item]) -> String {
     if open.is_empty() {
         s.push_str(&format!(
             "Every part is merged or dropped: run the gates in {}'s worktree, summarise, \
-             `hall propose-ready {} --summary … --why … --how …`: it goes to review on its own \
+             `hall propose-ready {} --summary … --why … --how …{}`: it goes to review on its own \
              unless something is left \
              to confirm (then `--ask`, and `hall ready {}` when the human says so).",
-            i.id, i.id, i.id
+            i.id,
+            i.id,
+            if i.has_criteria {
+                " --tested \"<how each criterion is met>\""
+            } else {
+                ""
+            },
+            i.id
         ));
     } else {
         s.push_str(&format!(

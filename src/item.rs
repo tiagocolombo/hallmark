@@ -298,6 +298,10 @@ pub struct Item {
     /// The sweeper removed the worktree; cleared when the item reopens.
     #[serde(default, skip_serializing_if = "is_false")]
     pub swept: bool,
+    /// The item carries acceptance criteria (ADR 0068): `propose-ready`
+    /// needs `--tested` for it.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub has_criteria: bool,
 }
 
 fn own_default() -> bool {

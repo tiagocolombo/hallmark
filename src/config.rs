@@ -360,7 +360,7 @@ pub struct Budget {
     /// The Product Manager and the Lead that plan a request (ADR 0068).
     pub intake_model: String,
     /// Their model on the fast path: nothing else is open, so there is no
-    /// board to plan against.
+    /// board to plan against. A `[budget.intake] model` still wins over it.
     pub intake_fast_model: String,
     pub librarian_model: String,
     #[serde(skip_serializing_if = "Option::is_none")]

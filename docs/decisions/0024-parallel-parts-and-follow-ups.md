@@ -1,6 +1,6 @@
 # 0024. Parallel parts: the Front Desk splits, the session orchestrates, the parent is reviewed once
 
-Status: Accepted, 2026-10-09
+Status: Accepted, 2026-10-09. Amended by 0068: a Product Manager and a Lead replace the Front Desk for a single request.
 
 ## Context
 

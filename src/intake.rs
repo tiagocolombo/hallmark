@@ -561,13 +561,18 @@ fn mergeable(card: &Card, raw: &RawPlan, c: &Checks) -> Result<(), String> {
         let item_sec = card.changed.iter().any(|x| set.is_match(&x.path));
         let paths: Vec<String> = raw.paths.iter().filter_map(|p| clean_path(p)).collect();
         // Unknown paths can't be shown to stay on one side.
-        // A directory or a broad glob is security when anything under it
-        // can match a security glob.
-        let req_sec = paths.is_empty()
-            || paths
-                .iter()
-                .any(|p| set.is_match(p) || c.security.iter().any(|g| overlap(g, p)));
-        if item_sec != req_sec {
+        let mixes = if item_sec {
+            // A security item takes only paths the set itself matches: a
+            // directory above a security glob reaches outside it.
+            paths.is_empty() || !paths.iter().all(|p| set.is_match(p))
+        } else {
+            // An ordinary item takes no path that may reach a security glob.
+            paths.is_empty()
+                || paths
+                    .iter()
+                    .any(|p| set.is_match(p) || c.security.iter().any(|g| overlap(g, p)))
+        };
+        if mixes {
             return Err("it would mix a security_review path with paths outside them".into());
         }
     }
@@ -1000,6 +1005,18 @@ mod tests {
             lead("merge", "H-0042", 5, &["src/**"]),
             4,
             &checks(&plain, &sec, false),
+        ));
+        // A security item doesn't take a request that spans its parent
+        // directory either.
+        mixes(decide(
+            lead("merge", "H-0042", 5, &["src/"]),
+            4,
+            &checks(&auth, &sec, false),
+        ));
+        mixes(decide(
+            lead("merge", "H-0042", 5, &["src/**"]),
+            4,
+            &checks(&auth, &sec, false),
         ));
         let same = decide(
             lead("merge", "H-0042", 5, &["./src/auth/y.rs"]),

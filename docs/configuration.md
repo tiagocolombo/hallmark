@@ -354,7 +354,9 @@ author gives them with `hall propose-ready --summary … --why … --how …
 --tested … --revert …`; without `--why` the request is used, without
 `--how` the commit subjects. Testing always ends with the gates that passed
 on the hallmarked commit; How to revert gives the `--revert` steps, then
-always a line to `git revert` the commit the PR lands as on the base.
+always a line to `git revert` the commit the PR lands as on the base. When
+the item has acceptance criteria ([ADR 0068](decisions/0068-planning-like-a-team.md)),
+they are listed as an `Acceptance criteria` checklist under `## Why`.
 
 Each review is a PR comment: `review_comment` posts `{review_file}` once the
 PR is open, and again after every `update` (PR comments addressed, CI fixed,

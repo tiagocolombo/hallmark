@@ -249,10 +249,14 @@ runs do it, on Sonnet, or on Haiku when no other item is open:
 
 Hallmark checks the Lead's decision, not the model: one that breaks a rule
 becomes a new item, with the reason. So does any failure: planning never
-blocks `hall new`. `--no-merge` asks for a new item; `--no-split` skips the
-Front Desk. Everything that reads what an item is for (the review, the fixer,
-the PR description, the librarian) reads its request with the scope added
-to it.
+blocks `hall new`. `--no-merge` asks for a new item, and so do `--issue`,
+`--branch` and `--title`; `--no-split` skips the Front Desk. Everything that
+reads what an item is for (the review and its test audit, the fixer, the PR
+description, the librarian) reads its request with the scope added to it and
+its acceptance criteria. The criteria also reach the developer's session
+context, and `hall propose-ready` refuses an item with criteria until
+`--tested` says how each is met; the PR description lists them as a checklist
+under `## Why`.
 
 ## Parallel parts
 

@@ -403,6 +403,22 @@ fn split_off_in_config_makes_no_call() {
 }
 
 #[test]
+fn a_configured_intake_model_wins_on_the_fast_path() {
+    let env = Env::initialized();
+    let cfg = env.repo.join(".hallmark.toml");
+    let text = std::fs::read_to_string(&cfg).unwrap();
+    std::fs::write(&cfg, format!("{text}\n[budget.intake]\nmodel = \"opus\"\n")).unwrap();
+    let script = env.script(split_plan());
+    let r = env.hall_fake(&env.repo, &script, &["new", REQUEST]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    // Nothing else is open, yet the table's model beats `intake_fast_model`.
+    let calls = env.fake_calls();
+    assert_eq!(calls.len(), 2);
+    assert_eq!(calls[0]["model"], "opus");
+    assert_eq!(calls[1]["model"], "opus");
+}
+
+#[test]
 fn merging_a_child_closes_it_into_the_parent() {
     let env = Env::initialized();
     let r = split(&env);
@@ -636,6 +652,13 @@ fn editing_a_part_binds_the_session_to_the_parent() {
         "{ctx}"
     );
     assert!(ctx.contains("one subagent per open part"), "{ctx}");
+    // And the Product Manager's criteria, with the `--tested` that answers
+    // them (ADR 0068).
+    assert!(ctx.contains("Acceptance criteria"), "{ctx}");
+    assert!(ctx.contains("- a failed API call is retried with backoff"), "{ctx}");
+    assert!(ctx.contains("- the web app shows a status banner"), "{ctx}");
+    assert!(ctx.contains("propose-ready"), "{ctx}");
+    assert!(ctx.contains("--tested"), "{ctx}");
 
     // A session started inside a part works on that part.
     s["cwd"] = json!(p(&wt(&r, 1)));
@@ -645,6 +668,16 @@ fn editing_a_part_binds_the_session_to_the_parent() {
         .as_str()
         .unwrap();
     assert!(ctx.contains("H-0003 is a parallel part of H-0001"), "{ctx}");
+
+    // An item without criteria gets no criteria block.
+    let (_, plain_wt) = env.new_item("Plain");
+    s["cwd"] = json!(p(&plain_wt));
+    s["session_id"] = json!("plain");
+    let h = env.hook("session-start", &s);
+    let ctx = h.json["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap();
+    assert!(!ctx.contains("Acceptance criteria"), "{ctx}");
 }
 
 /// A fake `gh` that answers `pr view` and `api` (Unix only: a shell script).
@@ -1020,6 +1053,61 @@ fn a_title_asks_for_a_new_item_and_is_never_merged() {
     assert_eq!(r.code, 0, "{}", r.stdout);
     assert_eq!(r.json["id"], "H-0002");
     assert_eq!(r.json["created"], true);
+    assert!(events(&env.journal("H-0001"), "scope_added").is_empty());
+}
+
+#[test]
+fn a_merge_into_a_parent_counts_its_open_parts_lines() {
+    let env = Env::initialized();
+    let r = split(&env);
+    // An open part of H-0001 has 395 changed lines; the parent's own branch
+    // has none until the parts merge.
+    let body: String = (0..395).map(|i| format!("fn f{i}() {{}}\n")).collect();
+    commit_file(&wt(&r, 0), "api/big.rs", &body);
+    let script = env.script(json!([
+        story(),
+        lead("merge", "H-0001", 20, &["api/"], "The same retry code.")
+    ]));
+    let r = env.hall_fake(&env.repo, &script, &["new", "Cap webhook retries at 6"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(r.json["created"], true, "{}", r.stdout);
+    assert_eq!(r.json["plan"]["decision"], "new");
+    let reason = r.json["plan"]["reason"].as_str().unwrap();
+    assert!(reason.contains("intake.max_item_lines (400)"), "{reason}");
+    assert!(events(&env.journal("H-0001"), "scope_added").is_empty());
+}
+
+#[cfg(unix)]
+#[test]
+fn an_issue_asks_for_a_new_item_and_is_never_merged() {
+    use std::os::unix::fs::PermissionsExt;
+    let env = Env::initialized();
+    open_item(&env);
+    let fake = env.root.join("gh");
+    std::fs::write(
+        &fake,
+        "#!/bin/sh\necho '{\"number\":212,\"title\":\"Cap webhook retries\",\"body\":\"At 6 attempts.\",\"url\":\"https://github.com/o/r/issues/212\"}'\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let script = env.script(json!([
+        story(),
+        lead("merge", "H-0001", 10, &["hooks.rs"], "Same code.")
+    ]));
+    let out = env
+        .cmd(&env.repo)
+        .env("HALL_GH", &fake)
+        .env("HALL_RUNNER", format!("fake:{}", script.display()))
+        .args(["new", "--issue", "212"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+    assert_eq!(out.status.code(), Some(0), "{stdout}");
+    let j: Value = serde_json::from_str(stdout.trim()).unwrap();
+    // A new item that carries the issue, so its PR closes it.
+    assert_eq!(j["id"], "H-0002", "{stdout}");
+    assert_eq!(j["created"], true);
+    assert_eq!(j["issue"]["number"], 212);
     assert!(events(&env.journal("H-0001"), "scope_added").is_empty());
 }
 

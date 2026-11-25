@@ -81,16 +81,25 @@ pub fn open(repo: &Repo) -> Vec<Card> {
 /// A parent's own branch is empty until its parts merge, but its review
 /// will cover them: count each open part's lines in the parent's card.
 fn add_children_lines(cards: &mut [Card]) {
-    let parts: Vec<(ItemId, u64)> = cards
+    let parts: Vec<(ItemId, u64, Vec<Changed>)> = cards
         .iter()
-        .filter_map(|c| c.parent.map(|p| (p, c.lines)))
+        .filter_map(|c| c.parent.map(|p| (p, c.lines, c.changed.clone())))
         .collect();
     for c in cards.iter_mut() {
-        c.lines += parts
-            .iter()
-            .filter(|(p, _)| *p == c.id)
-            .map(|(_, l)| l)
-            .sum::<u64>();
+        let mine: Vec<&(ItemId, u64, Vec<Changed>)> =
+            parts.iter().filter(|(p, _, _)| *p == c.id).collect();
+        if mine.is_empty() {
+            continue;
+        }
+        // The parts' paths count too: the security-mix check and the
+        // prompt see what the parent's review will cover.
+        for (_, lines, changed) in mine {
+            c.lines += lines;
+            c.changed.extend(changed.iter().cloned());
+        }
+        c.changed
+            .sort_by(|a, b| b.lines.cmp(&a.lines).then(a.path.cmp(&b.path)));
+        c.changed.truncate(MAX_PATHS);
     }
 }
 
@@ -228,7 +237,14 @@ mod tests {
             criteria: Vec::new(),
             summary: None,
             pr_url: None,
-            changed: Vec::new(),
+            changed: if lines == 0 {
+                Vec::new()
+            } else {
+                vec![Changed {
+                    path: format!("part{lines}.rs"),
+                    lines,
+                }]
+            },
             lines,
         };
         let mut cards = vec![
@@ -239,6 +255,10 @@ mod tests {
         add_children_lines(&mut cards);
         assert_eq!(cards[0].lines, 500);
         assert_eq!(cards[1].lines, 300);
+        // The parent shows its parts' paths, largest first.
+        let paths: Vec<&str> = cards[0].changed.iter().map(|c| c.path.as_str()).collect();
+        assert_eq!(paths, ["part300.rs", "part200.rs"]);
+        assert!(render(&cards[..1]).contains("changed: 500 lines in 2 files"));
     }
 
     #[test]

@@ -1016,10 +1016,23 @@ pub fn short(sha: &str) -> &str {
 /// for everything that reads what the item is for: the review, the fixer,
 /// the PR description and the librarian. None when neither exists.
 pub fn request_of(events: &[Event]) -> Option<String> {
+    request_clipped(events, usize::MAX)
+}
+
+/// [`request_of`] with only the original request cut to `max` characters:
+/// the added scope is never cut.
+fn request_clipped(events: &[Event], max: usize) -> Option<String> {
     let mut out = events.iter().find_map(|e| match &e.body {
         Body::Created { request, .. } => request.clone(),
         _ => None,
     });
+    if let Some(r) = &mut out
+        && r.trim().chars().count() > max
+    {
+        let mut c: String = r.trim().chars().take(max).collect();
+        c.push('…');
+        *r = c;
+    }
     for e in events {
         if let Body::ScopeAdded { request, .. } = &e.body {
             let added = format!("Added scope: {}", request.trim());
@@ -1036,7 +1049,13 @@ pub fn request_of(events: &[Event]) -> Option<String> {
 /// everything that reads what the item is for (ADR 0068): the review and
 /// its test audit, the fixer, the librarian, the Gazette.
 pub fn request_with_criteria(events: &[Event]) -> Option<String> {
-    let request = request_of(events);
+    request_with_criteria_clipped(events, usize::MAX)
+}
+
+/// [`request_with_criteria`] with only the original request cut to `max`
+/// characters (a long issue body): the added scope and the criteria stay.
+pub fn request_with_criteria_clipped(events: &[Event], max: usize) -> Option<String> {
+    let request = request_clipped(events, max);
     let criteria = criteria_of(events);
     if criteria.is_empty() {
         return request;
@@ -1140,6 +1159,7 @@ pub fn fold(id: ItemId, events: &[Event]) -> Result<Item> {
         needs_person: None,
         own_worktree: own_worktree.unwrap_or(!*adopted),
         swept: false,
+        has_criteria: criteria_of(events).iter().any(|c| !c.trim().is_empty()),
     };
     let mut ledger = Ledger::default();
     for e in it {

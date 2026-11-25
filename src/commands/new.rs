@@ -1256,8 +1256,8 @@ fn orchestration_next(parent: &Item, children: &[(Item, Part)]) -> Vec<String> {
         n.push(format!("hall merge {} (when its subagent is done)", c.id));
     }
     n.push(format!(
-        "hall propose-ready {} --summary \"<what was done>\" --why \"<why>\" --how \"<how>\" (after every child is merged)",
-        parent.id
+        "{} (after every child is merged)",
+        super::propose_ready_hint(parent)
     ));
     n.push(format!("hall ready {}", parent.id));
     n.push(format!("hall status {}", parent.id));

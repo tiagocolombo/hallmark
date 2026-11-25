@@ -271,8 +271,11 @@ Each step is one item:
 - Planning costs two Sonnet runs when something is in flight or the list is
   long, and two Haiku runs on the fast path, instead of one Haiku run.
 - A merge never discards review work, and it never grows an item past a size
-  the reviewer handles well. A wrong merge is undone by a person: `hall
-  pull-back`, and a new item for the scope.
+  the reviewer handles well. Step 1 has no way to withdraw a merge: nothing
+  removes a `scope_added` event, so `hall pull-back` only returns the item to
+  development with the scope still in it. A merge can't be undone until a
+  `scope_withdrawn` event exists (a later step); `--no-merge` before planning
+  is the way to keep a request apart.
 - Questions reach the person only when neither role can plan without them,
   and each answer is kept as a decision.
 - `backlog` is a new state: the TUI, the web app, `hall status`, stats and
