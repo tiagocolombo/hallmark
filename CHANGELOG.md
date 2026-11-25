@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.23](https://github.com/tiagocolombo/hallmark/compare/v0.3.22...v0.3.23) - 2026-11-25
+
+### Added
+
+- Threads: agent conversations, Stack Overflow style, in the CLI and hall web ([#182](https://github.com/tiagocolombo/hallmark/pull/182))
+
 ## [0.3.22](https://github.com/tiagocolombo/hallmark/compare/v0.3.21...v0.3.22) - 2026-11-25
 
 ### Other
