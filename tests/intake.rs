@@ -986,7 +986,10 @@ fn propose_ready_wants_each_criterion_accounted_for_in_tested() {
     let bare = env.hall(&wt, &["propose-ready", "--ask", "--summary", "done"]);
     assert_ne!(bare.code, 0, "{}", bare.stdout);
     let msg = bare.json["error"]["message"].as_str().unwrap();
-    assert!(msg.contains("a failed API call is retried with backoff"), "{msg}");
+    assert!(
+        msg.contains("a failed API call is retried with backoff"),
+        "{msg}"
+    );
     let ok = env.hall(
         &wt,
         &[

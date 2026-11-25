@@ -1608,12 +1608,16 @@ mod tests {
             ev(json!({"event": "created", "title": "t", "branch": "b",
                 "worktree": "/w", "base": "main", "request": "Retry failed webhooks",
                 "criteria": ["retries with backoff"]})),
-            ev(json!({"event": "scope_added", "request": "Cap retries at 6",
-                "criteria": ["stops after 6 attempts"]})),
+            ev(
+                json!({"event": "scope_added", "request": "Cap retries at 6",
+                "criteria": ["stops after 6 attempts"]}),
+            ),
         ];
         let b = pr_body(&item(None), &events, &[], "main", "Low.", true);
         assert!(
-            b.contains("Acceptance criteria:\n\n- [ ] retries with backoff\n- [ ] stops after 6 attempts\n"),
+            b.contains(
+                "Acceptance criteria:\n\n- [ ] retries with backoff\n- [ ] stops after 6 attempts\n"
+            ),
             "{b}"
         );
     }

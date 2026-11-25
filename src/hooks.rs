@@ -1005,7 +1005,9 @@ fn criteria_context(events: &[crate::event::Event]) -> String {
         s.push_str(&format!("\n- {c}"));
     }
     if let Some(r) = crate::event::request_of(events) {
-        s.push_str(&format!("\n\nThe request, with any scope added to it:\n{r}"));
+        s.push_str(&format!(
+            "\n\nThe request, with any scope added to it:\n{r}"
+        ));
     }
     s
 }
