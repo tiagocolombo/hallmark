@@ -1257,9 +1257,15 @@ test b ... ok
         ));
         l.apply(&test_claim("sha2", &["F2"]));
         let text = open_findings_section(&l, ItemId(9), true);
-        assert!(text.contains("## Open findings (most severe first)"), "{text}");
+        assert!(
+            text.contains("## Open findings (most severe first)"),
+            "{text}"
+        );
         assert!(text.contains("### F1 · major"), "{text}");
-        assert!(text.contains("pending review once checks pass: F2"), "{text}");
+        assert!(
+            text.contains("pending review once checks pass: F2"),
+            "{text}"
+        );
         // The pending finding keeps its scenario and suggested fix.
         assert!(text.contains("### F2 · major"), "{text}");
         assert!(text.contains("scenario of F2"), "{text}");
