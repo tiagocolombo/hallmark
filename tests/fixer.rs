@@ -925,6 +925,8 @@ fn fixer_gets_failing_gate_section_read_only_checks_dir_and_surfaces_failure_det
         "{deny}"
     );
     // 4. Attempt 2 is told why attempt 1 failed.
+    let p1 = calls[0]["prompt"].as_str().unwrap();
+    assert!(!p1.contains("Previous fix attempt failed"), "{p1}");
     let p2 = calls[1]["prompt"].as_str().unwrap();
     assert!(p2.contains("## Previous fix attempt failed"), "{p2}");
     assert!(p2.contains("Sandbox blocked cargo fmt"), "{p2}");

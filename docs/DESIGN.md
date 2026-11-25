@@ -595,6 +595,11 @@ gets `--settings` from `runner::confinement`:
   never its hooks or config. They reach only the repo's `domains` and
   `unix_sockets`, can't skip `--allowedTools`, and can't retry unsandboxed.
 
+The one widening (ADR 0071): a fixer run after failed checks also reads the
+item's `.git/hallmark/items/<id>/checks` directory (`--add-dir`). `Edit` and
+`Write` deny rules keep it read-only, and without a deny list to extend it
+isn't added.
+
 Every run also drops WebFetch, WebSearch and the credentials in `remove_env`.
 The fixer and dev runs have no bare `Edit` or `Write` rule, so `acceptEdits`
 keeps their edits in the worktree. `claude_args` that would loosen any of

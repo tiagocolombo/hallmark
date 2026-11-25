@@ -274,10 +274,10 @@ fn rule_path(p: &str) -> String {
 /// Grants read-only file-tool access (`--add-dir`) to `dir`, while denying
 /// `Edit` and `Write` inside it so `acceptEdits` can't modify files outside
 /// the worktree (ADR 0053).
+///
+/// Fails closed: when the run has no `--settings` deny list to extend, the
+/// directory isn't added.
 pub fn allow_read_dir(req: &mut RunRequest, dir: PathBuf) {
-    if !req.add_dirs.contains(&dir) {
-        req.add_dirs.push(dir.clone());
-    }
     let p = rule_path(&crate::paths::display(&dir));
     let rules = [
         format!("Edit({p})"),
@@ -300,6 +300,9 @@ pub fn allow_read_dir(req: &mut RunRequest, dir: PathBuf) {
             }
         }
         *raw = v.to_string();
+        if !req.add_dirs.contains(&dir) {
+            req.add_dirs.push(dir);
+        }
     }
 }
 
@@ -1420,6 +1423,54 @@ pub fn run_error(role: &str, f: &Failure) -> HallError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn allow_read_dir_denies_writes_with_absolute_rules() {
+        let mut req = RunRequest {
+            extra_args: vec![
+                "--settings".into(),
+                settings(&crate::config::Sandbox::default(), false).to_string(),
+            ],
+            ..Default::default()
+        };
+        let dir = PathBuf::from("/x/items/H-0001/checks");
+        allow_read_dir(&mut req, dir.clone());
+        assert_eq!(req.add_dirs, vec![dir]);
+        let v: serde_json::Value = serde_json::from_str(&req.extra_args[1]).unwrap();
+        let deny: Vec<&str> = v["permissions"]["deny"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|d| d.as_str())
+            .collect();
+        for r in [
+            "Edit(//x/items/H-0001/checks)",
+            "Edit(//x/items/H-0001/checks/**)",
+            "Write(//x/items/H-0001/checks)",
+            "Write(//x/items/H-0001/checks/**)",
+        ] {
+            assert!(deny.contains(&r), "{r} missing from {deny:?}");
+        }
+        // Idempotent.
+        allow_read_dir(&mut req, PathBuf::from("/x/items/H-0001/checks"));
+        assert_eq!(req.add_dirs.len(), 1);
+        let again: serde_json::Value = serde_json::from_str(&req.extra_args[1]).unwrap();
+        assert_eq!(again, v);
+    }
+
+    #[test]
+    fn allow_read_dir_fails_closed_without_a_deny_list() {
+        let mut req = RunRequest::default();
+        allow_read_dir(&mut req, PathBuf::from("/x/checks"));
+        assert!(req.add_dirs.is_empty());
+        let mut bad = RunRequest {
+            extra_args: vec!["--settings".into(), "not json".into()],
+            ..Default::default()
+        };
+        allow_read_dir(&mut bad, PathBuf::from("/x/checks"));
+        assert!(bad.add_dirs.is_empty());
+    }
 
     fn fixture(p: &str) -> String {
         std::fs::read_to_string(format!("{}/tests/fixtures/{p}", env!("CARGO_MANIFEST_DIR")))
