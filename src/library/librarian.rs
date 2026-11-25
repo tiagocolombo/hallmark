@@ -188,11 +188,8 @@ pub fn digest(item: &Item, events: &[Event], changed: &[String]) -> String {
     }
     s.push_str(".\n");
 
-    if let Some(Body::Created {
-        request: Some(r), ..
-    }) = events.first().map(|e| &e.body)
-    {
-        s.push_str(&format!("\n## Request\n\n{}\n", clip_block(r, 1200)));
+    if let Some(r) = crate::event::request_of(events) {
+        s.push_str(&format!("\n## Request\n\n{}\n", clip_block(&r, 1200)));
     }
     if !changed.is_empty() {
         s.push_str("\n## Changed paths\n\n");
@@ -1009,6 +1006,7 @@ mod tests {
                 pr_url: None,
                 pr_head: None,
                 own_worktree: Some(true),
+                criteria: vec![],
             }),
             ev(Body::Ready {
                 sha: "abc".into(),

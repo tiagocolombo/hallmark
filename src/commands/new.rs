@@ -19,7 +19,7 @@ use crate::config::SplitMode;
 use crate::error::{ErrorCode, HallError, Result};
 use crate::event::Body;
 use crate::git;
-use crate::intake::{Part, Plan};
+use crate::intake::{Decision, Part, Plan};
 use crate::item::{Issue, Item, ItemId, State};
 use crate::journal::ev;
 use crate::output::{Mode, Render, Response, clip};
@@ -58,12 +58,39 @@ pub struct NewOut {
 /// What the Front Desk decided.
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct PlanView {
-    /// True when an intake run was made (even one that failed).
+    /// True when the Lead ran (even a run that failed).
     pub ran: bool,
+    /// `new`, `merge` (added to the item returned), `follow_up` (a new item
+    /// that builds on `target`) or `duplicate` (the item returned covers it;
+    /// nothing was created).
+    pub decision: Decision,
+    /// The open item a merge, follow-up or duplicate names.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<ItemId>,
     /// True when the request was split into parallel parts.
     pub parallel: bool,
-    /// Why it was split, or why it is one item.
+    /// Why this decision, or why it is one new item.
     pub reason: String,
+    /// The Product Manager's acceptance criteria for the request.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub criteria: Vec<String>,
+    /// The Product Manager's priority: now, next or later.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub priority: Option<String>,
+}
+
+impl PlanView {
+    fn from(p: &Plan) -> PlanView {
+        PlanView {
+            ran: p.ran,
+            decision: p.decision,
+            target: p.target,
+            parallel: p.parallel,
+            reason: p.reason.clone(),
+            criteria: p.criteria(),
+            priority: p.story.as_ref().map(|s| s.priority.clone()),
+        }
+    }
 }
 
 /// A parallel part: a child item with its own branch and worktree.
@@ -79,10 +106,15 @@ pub struct ChildView {
 
 impl Render for NewOut {
     fn render(&self) -> String {
+        let decision = self.plan.as_ref().map(|p| p.decision);
         let verb = if self.created {
             "Started"
         } else if self.reopened {
             "Reopened"
+        } else if decision == Some(Decision::Merge) {
+            "Added the request to"
+        } else if decision == Some(Decision::Duplicate) {
+            "Already covered by"
         } else {
             "Already tracking"
         };
@@ -97,6 +129,14 @@ impl Render for NewOut {
             && plan.ran
         {
             s.push_str(&format!("\nFront Desk: {}\n", plan.reason));
+        }
+        if let Some(plan) = &self.plan
+            && !plan.criteria.is_empty()
+        {
+            s.push_str("\nAcceptance criteria:\n");
+            for c in &plan.criteria {
+                s.push_str(&format!("  - {c}\n"));
+            }
         }
         if !self.children.is_empty() {
             s.push_str(&format!(
@@ -131,6 +171,8 @@ struct Spec<'a> {
     adopted: bool,
     /// The open PR the item takes over: its URL and head commit.
     pr: Option<(String, String)>,
+    /// The acceptance criteria, from the Product Manager.
+    criteria: Vec<String>,
 }
 
 pub fn new(cwd: &Path, a: NewArgs, mode: Mode) -> Result<Response> {
@@ -252,12 +294,57 @@ pub fn new(cwd: &Path, a: NewArgs, mode: Mode) -> Result<Response> {
                 && parent.is_none()
                 && pr.is_none() =>
         {
-            Some(crate::intake::plan(&repo, r))
+            Some(crate::intake::plan(
+                &repo,
+                r,
+                crate::intake::Opts {
+                    no_merge: a.no_merge,
+                },
+            ))
         }
         _ => None,
     };
-    let raw = intake.as_ref().and_then(|o| o.raw.clone());
+    let raw: Vec<(String, String)> = intake.as_ref().map(|o| o.raw.clone()).unwrap_or_default();
     let mut plan: Option<Plan> = intake.map(|o| o.plan);
+
+    // The Lead folded it into an open item, or found it covered: no new
+    // item (ADR 0068). A merge whose target moved on since falls back to a
+    // new item.
+    if let Some(p) = plan.as_mut()
+        && let Some(target) = p.target
+    {
+        let text = request.clone().unwrap_or_else(|| title.clone());
+        match p.decision {
+            Decision::Duplicate => return covered(&repo, target, p, &raw, &text),
+            Decision::Merge => match add_scope(&repo, target, p, &raw, &text)? {
+                Some(resp) => return Ok(resp),
+                None => {
+                    p.decision = Decision::New;
+                    p.target = None;
+                    p.reason = format!(
+                        "{target} left development while the request was planned; \
+                         planned as one new item"
+                    );
+                }
+            },
+            Decision::New | Decision::FollowUp => {}
+        }
+    }
+    // The Product Manager's title, unless the person or an issue gave one.
+    let title = match plan.as_ref().and_then(|p| p.story.as_ref()) {
+        Some(s) if a.title.is_none() && issue.is_none() && !s.title.is_empty() => s.title.clone(),
+        _ => title,
+    };
+    // A follow-up says what it builds on, for the developer and the review.
+    let request = match plan.as_ref() {
+        Some(Plan {
+            decision: Decision::FollowUp,
+            target: Some(t),
+            ..
+        }) => request.map(|r| follows(&repo, *t, &r)),
+        _ => request,
+    };
+    let criteria = plan.as_ref().map(|p| p.criteria()).unwrap_or_default();
 
     // Everything else starts from the latest base, fetched now (before the
     // lock: a slow network must not block it): never from a main checkout
@@ -275,10 +362,10 @@ pub fn new(cwd: &Path, a: NewArgs, mode: Mode) -> Result<Response> {
             && let Some(why) = split_blocked(&repo, &title, a.branch.as_deref(), &p.parts)
         {
             *p = Plan {
-                ran: p.ran,
                 parallel: false,
                 reason: format!("{why}; kept as one item"),
                 parts: Vec::new(),
+                ..p.clone()
             };
         }
         let item = create(
@@ -301,15 +388,10 @@ pub fn new(cwd: &Path, a: NewArgs, mode: Mode) -> Result<Response> {
                 base: stack.clone(),
                 adopted: false,
                 pr: None,
+                criteria: criteria.clone(),
             },
         )?;
-        if let Some(raw) = &raw {
-            let dir = repo.hall.item_runs(item.id);
-            if std::fs::create_dir_all(&dir).is_ok() {
-                let stamp = chrono::Utc::now().format("%Y%m%dT%H%M%S");
-                let _ = std::fs::write(dir.join(format!("{stamp}-intake.jsonl")), raw);
-            }
-        }
+        save_runs(&repo, item.id, &raw);
         let mut children: Vec<(Item, Part)> = Vec::new();
         // The `planned` event is written only when intake actually ran.
         let Some(p) = plan.as_mut().filter(|p| p.ran) else {
@@ -329,6 +411,7 @@ pub fn new(cwd: &Path, a: NewArgs, mode: Mode) -> Result<Response> {
                     base: None,
                     adopted: false,
                     pr: None,
+                    criteria: Vec::new(),
                 };
                 match create(&repo, spec) {
                     Ok(c) => children.push((c, part.clone())),
@@ -352,6 +435,8 @@ pub fn new(cwd: &Path, a: NewArgs, mode: Mode) -> Result<Response> {
                 parallel: p.parallel,
                 children: children.iter().map(|(c, _)| c.id).collect(),
                 reason: Some(p.reason.clone()),
+                decision: Some(p.decision.as_str().to_string()),
+                target: p.target,
             },
         );
         repo.hall.append_item(item.id, &planned)?;
@@ -370,11 +455,7 @@ pub fn new(cwd: &Path, a: NewArgs, mode: Mode) -> Result<Response> {
         created: true,
         reopened: false,
         open: open.clone(),
-        plan: plan.map(|p| PlanView {
-            ran: p.ran,
-            parallel: p.parallel,
-            reason: p.reason,
-        }),
+        plan: plan.as_ref().map(PlanView::from),
         children: children
             .iter()
             .map(|(c, part)| ChildView {
@@ -508,6 +589,7 @@ pub fn adopt(cwd: &Path, a: AdoptArgs) -> Result<Response> {
                 pr_url: pr.as_ref().map(|p| p.url.clone()),
                 pr_head: pr.as_ref().map(|p| p.head_oid.clone()),
                 own_worktree: Some(false),
+                criteria: Vec::new(),
             },
         );
         repo.hall.append_item(id, &created)?;
@@ -624,6 +706,7 @@ fn adopt_pr(repo: &Repo, pr_ref: &str, a: &AdoptArgs) -> Result<Response> {
                 base: Some(base.clone()),
                 adopted: true,
                 pr: Some((pr.url.clone(), pr.head_oid.clone())),
+                criteria: Vec::new(),
             },
         )
     })?;
@@ -693,6 +776,109 @@ fn reopen(
         ));
     }
     adopted(&item, false, reopened)
+}
+
+/// Keeps each planning run as `runs/<stamp>-<role>.jsonl` on the item that
+/// holds the plan (the runs had no item to stream into, ADR 0041).
+fn save_runs(repo: &Repo, id: ItemId, raw: &[(String, String)]) {
+    if raw.is_empty() {
+        return;
+    }
+    let dir = repo.hall.item_runs(id);
+    if std::fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    let stamp = chrono::Utc::now().format("%Y%m%dT%H%M%S");
+    for (role, text) in raw {
+        let _ = std::fs::write(dir.join(format!("{stamp}-{role}.jsonl")), text);
+    }
+}
+
+/// The reply for an existing item the plan sends the request to.
+fn to_item(item: &Item, plan: &Plan, next: Vec<String>) -> Response {
+    let out = NewOut {
+        item: ItemView::from(item),
+        created: false,
+        reopened: false,
+        open: format!("cd {} && claude", shell_quote(&item.worktree)),
+        plan: Some(PlanView::from(plan)),
+        children: Vec::new(),
+        parent: item.parent,
+        follow_up: item.follow_up.clone(),
+    };
+    Response::new(out, next)
+}
+
+/// The Lead folded the request into `target` (ADR 0068): `scope_added` on
+/// it, under the repo lock, while it is still in development or awaiting
+/// you. None when it has moved on since the plan, so the caller makes a new
+/// item instead.
+fn add_scope(
+    repo: &Repo,
+    target: ItemId,
+    plan: &Plan,
+    raw: &[(String, String)],
+    request: &str,
+) -> Result<Option<Response>> {
+    let item = repo.hall.with_repo_lock(|| {
+        let item = repo.hall.load_item(target)?;
+        if !matches!(item.state, State::Development | State::AwaitingYou) {
+            return Ok(None);
+        }
+        let e = ev(
+            &actor(),
+            Some(target),
+            Body::ScopeAdded {
+                request: request.trim().to_string(),
+                criteria: plan.criteria(),
+                reason: Some(plan.reason.clone()),
+            },
+        );
+        repo.hall.append_item(target, &e)?;
+        repo.hall.refresh_item_json(target).map(Some)
+    })?;
+    let Some(item) = item else { return Ok(None) };
+    save_runs(repo, target, raw);
+    let mut next = vec![format!("cd {}", shell_quote(&item.worktree))];
+    next.extend(next_for(&item));
+    next.push(format!(
+        "hall new {} --no-merge (build it as its own item instead)",
+        shell_quote(request.trim())
+    ));
+    Ok(Some(to_item(&item, plan, next)))
+}
+
+/// The Lead found the request covered by `target`: nothing is created.
+fn covered(
+    repo: &Repo,
+    target: ItemId,
+    plan: &Plan,
+    raw: &[(String, String)],
+    request: &str,
+) -> Result<Response> {
+    let item = repo.hall.load_item(target)?;
+    save_runs(repo, target, raw);
+    let next = vec![
+        format!("hall status {target}"),
+        format!(
+            "hall new {} --no-merge (build it anyway)",
+            shell_quote(request.trim())
+        ),
+    ];
+    Ok(to_item(&item, plan, next))
+}
+
+/// A follow-up's request: what it builds on, then the request.
+fn follows(repo: &Repo, target: ItemId, request: &str) -> String {
+    match repo.hall.load_item(target) {
+        Ok(t) => format!(
+            "Follows {target} (\"{}\", {}): this builds on its change.\n\n{}",
+            t.title,
+            t.state.as_str(),
+            request.trim()
+        ),
+        Err(_) => format!("Follows {target}.\n\n{}", request.trim()),
+    }
 }
 
 /// An open item asked for again. `--base` can't move it: its base is what
@@ -1028,6 +1214,7 @@ fn create(repo: &Repo, spec: Spec) -> Result<Item> {
             pr_url: spec.pr.as_ref().map(|p| p.0.clone()),
             pr_head: spec.pr.map(|p| p.1),
             own_worktree: Some(true),
+            criteria: spec.criteria,
         },
     );
     repo.hall.append_item(id, &created)?;
@@ -1299,6 +1486,67 @@ pub fn run_shell(cmd: &str, dir: &Path) -> Result<String> {
 mod tests {
     use super::*;
     use crate::gh::{GhAuthor, GhComment, GhPr};
+
+    fn reply(decision: Decision, criteria: &[&str]) -> String {
+        let e = crate::event::Event::new(
+            "you",
+            Some(ItemId(42)),
+            Body::Created {
+                title: "Retry webhooks".into(),
+                branch: "hm/H-0042-retry".into(),
+                worktree: "/tmp/w".into(),
+                base: "main".into(),
+                issue: None,
+                request: None,
+                adopted: false,
+                parent: None,
+                follow_up: None,
+                pr_url: None,
+                pr_head: None,
+                own_worktree: Some(true),
+                criteria: vec![],
+            },
+        );
+        let item = crate::event::fold(ItemId(42), &[e]).unwrap();
+        let out = NewOut {
+            item: ItemView::from(&item),
+            created: false,
+            reopened: false,
+            open: String::new(),
+            plan: Some(PlanView {
+                ran: true,
+                decision,
+                target: Some(ItemId(42)),
+                parallel: false,
+                reason: "same code".into(),
+                criteria: criteria.iter().map(|s| s.to_string()).collect(),
+                priority: Some("next".into()),
+            }),
+            children: vec![],
+            parent: None,
+            follow_up: None,
+        };
+        out.render()
+    }
+
+    #[test]
+    fn the_reply_says_where_the_request_went() {
+        let merged = reply(Decision::Merge, &["stops after 6 attempts"]);
+        assert!(
+            merged.starts_with("Added the request to H-0042."),
+            "{merged}"
+        );
+        assert!(
+            merged.contains("Acceptance criteria:\n  - stops after 6 attempts\n"),
+            "{merged}"
+        );
+        assert!(merged.contains("Front Desk: same code"), "{merged}");
+        let dup = reply(Decision::Duplicate, &[]);
+        assert!(dup.starts_with("Already covered by H-0042."), "{dup}");
+        assert!(!dup.contains("Acceptance criteria"), "{dup}");
+        let new = reply(Decision::New, &[]);
+        assert!(new.starts_with("Already tracking H-0042."), "{new}");
+    }
 
     #[test]
     fn titles() {

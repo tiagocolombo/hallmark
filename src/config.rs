@@ -357,7 +357,11 @@ pub struct Budget {
     pub per_item: Option<String>,
     pub review_model: String,
     pub fix_model: String,
+    /// The Product Manager and the Lead that plan a request (ADR 0068).
     pub intake_model: String,
+    /// Their model on the fast path: nothing else is open, so there is no
+    /// board to plan against.
+    pub intake_fast_model: String,
     pub librarian_model: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub review: Option<RoleBudget>,
@@ -422,7 +426,7 @@ impl Role {
         match self {
             Role::Reviewer => 6.0,
             Role::Fixer => 2.0,
-            Role::Intake => 0.10,
+            Role::Intake => 0.50,
             Role::Librarian => 0.20,
         }
     }
@@ -480,13 +484,13 @@ impl Budget {
         self.role(r).and_then(|b| b.effort.clone())
     }
 
-    /// The per-run time limit in seconds (default 20 minutes; intake 2).
+    /// The per-run time limit in seconds (default 20 minutes; intake 3).
     pub fn timeout_secs(&self, r: Role) -> i64 {
         self.role(r)
             .and_then(|b| b.timeout.as_deref())
             .and_then(parse_duration)
             .unwrap_or(match r {
-                Role::Intake => 120,
+                Role::Intake => 180,
                 _ => 1200,
             })
     }
@@ -499,7 +503,8 @@ impl Default for Budget {
             per_item: Some(DEFAULT_PER_ITEM.into()),
             review_model: "opus".into(),
             fix_model: "sonnet".into(),
-            intake_model: "haiku".into(),
+            intake_model: "sonnet".into(),
+            intake_fast_model: "haiku".into(),
             librarian_model: "haiku".into(),
             review: None,
             fix: None,
@@ -763,6 +768,10 @@ pub struct Intake {
     pub split: SplitMode,
     /// At most this many parallel parts.
     pub max_parts: u32,
+    /// The Lead folds a request into an open item only while the item's
+    /// diff plus the request's estimate stays under this many lines
+    /// (ADR 0068).
+    pub max_item_lines: u32,
 }
 
 impl Default for Intake {
@@ -770,6 +779,7 @@ impl Default for Intake {
         Intake {
             split: SplitMode::Auto,
             max_parts: 4,
+            max_item_lines: 400,
         }
     }
 }
@@ -1052,7 +1062,7 @@ pub struct RoleBudget {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
     /// Per run, passed as `--max-budget-usd`. Unset: review 6.00, fix
-    /// 2.00, intake 0.10, librarian 0.20; "none": no per-run cap.
+    /// 2.00, intake 0.50, librarian 0.20; "none": no per-run cap.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_usd: Option<MaxUsd>,
     /// Per room, per day, in tokens.
@@ -1263,7 +1273,7 @@ free = ["docs/", "*.md"]   # questions, docs, designs and plans need no item
 [budget]           # runs, 800k per item and 4M a day are capped by default; "none" for no cap
 review_model = "opus"
 fix_model    = "sonnet"
-intake_model = "haiku"
+intake_model = "sonnet"
 # daily    = "4M"
 # per_item = "800k"
 "#,
@@ -1402,7 +1412,7 @@ split = "off"
         let c = Config::parse("").unwrap();
         assert_eq!(c.budget.max_usd(Role::Reviewer), Some(6.0));
         assert_eq!(c.budget.max_usd(Role::Fixer), Some(2.0));
-        assert_eq!(c.budget.max_usd(Role::Intake), Some(0.10));
+        assert_eq!(c.budget.max_usd(Role::Intake), Some(0.50));
         assert_eq!(c.budget.max_usd(Role::Librarian), Some(0.20));
         // A table without max_usd keeps the default; "none" opts out.
         let c = Config::parse(
@@ -1420,7 +1430,7 @@ max_usd = 0.5
         .unwrap();
         assert_eq!(c.budget.max_usd(Role::Reviewer), None);
         assert_eq!(c.budget.max_usd(Role::Fixer), Some(5.0));
-        assert_eq!(c.budget.max_usd(Role::Intake), Some(0.10));
+        assert_eq!(c.budget.max_usd(Role::Intake), Some(0.50));
         assert_eq!(c.budget.max_usd(Role::Librarian), Some(0.5));
         // "none" round-trips as written.
         let back = toml::to_string(&c.budget).unwrap();

@@ -52,6 +52,7 @@ pub const FILES: &[(&str, &str)] = &[
         "agents/intake.md",
         include_str!("../plugin/agents/intake.md"),
     ),
+    ("agents/pm.md", include_str!("../plugin/agents/pm.md")),
     (
         "agents/librarian.md",
         include_str!("../plugin/agents/librarian.md"),
@@ -67,6 +68,10 @@ pub const FILES: &[(&str, &str)] = &[
     (
         "schemas/plan.json",
         include_str!("../plugin/schemas/plan.json"),
+    ),
+    (
+        "schemas/story.json",
+        include_str!("../plugin/schemas/story.json"),
     ),
     (
         "schemas/learnings.json",

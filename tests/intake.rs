@@ -35,14 +35,37 @@ fn part(title: &str, request: &str, paths: &[&str]) -> Value {
     json!({"title": title, "request": request, "paths": paths})
 }
 
+/// The Product Manager's story for `REQUEST`.
+fn story() -> Value {
+    json!({"role": "pm", "structured": {
+        "title": REQUEST,
+        "criteria": ["a failed API call is retried with backoff", "the web app shows a status banner"],
+        "priority": "next",
+        "duplicate_of": "",
+        "reason": "Normal work."
+    }})
+}
+
+/// The Lead's answer.
+fn lead(decision: &str, target: &str, estimate: u64, paths: &[&str], reason: &str) -> Value {
+    json!({"role": "intake", "structured": {
+        "decision": decision, "target": target, "parallel": false, "parts": [],
+        "paths": paths, "estimate_lines": estimate, "reason": reason
+    }})
+}
+
 fn split_plan() -> Value {
-    json!([{"role": "intake", "structured": {
+    json!([story(), {"role": "intake", "structured": {
+        "decision": "new",
+        "target": "",
         "parallel": true,
         "reason": "The API client and the web app share no files.",
         "parts": [
             part("API client retries", "Retry failed API calls with backoff in api/.", &["api/"]),
             part("Web status banner", "Show a status banner in web/.", &["web/**"]),
-        ]
+        ],
+        "paths": ["api/", "web/"],
+        "estimate_lines": 120
     }}])
 }
 
@@ -118,29 +141,63 @@ fn a_split_request_becomes_a_parent_and_children() {
     assert_eq!(planned[0]["parallel"], true);
     assert_eq!(planned[0]["children"], json!(["H-0002", "H-0003"]));
     assert_eq!(parent[0]["request"], REQUEST);
+    // The parent carries the Product Manager's criteria; the parts don't.
+    assert_eq!(
+        parent[0]["criteria"],
+        json!([
+            "a failed API call is retried with backoff",
+            "the web app shows a status banner"
+        ])
+    );
+    assert_eq!(j["plan"]["criteria"], parent[0]["criteria"]);
+    assert_eq!(j["plan"]["priority"], "next");
+    assert_eq!(j["plan"]["decision"], "new");
+    assert_eq!(planned[0]["decision"], "new");
     let child = env.journal("H-0002");
     assert_eq!(child[0]["event"], "created");
     assert_eq!(child[0]["parent"], "H-0001");
-    // The intake run is kept with the parent, as a stream that ended.
+    assert!(child[0].get("criteria").is_none(), "{}", child[0]);
+    // Both planning runs are kept with the parent, as streams that ended.
     let runs = env.repo.join(".git/hallmark/items/H-0001/runs");
-    assert_eq!(std::fs::read_dir(&runs).unwrap().count(), 1);
+    assert_eq!(std::fs::read_dir(&runs).unwrap().count(), 2);
     let run = hallmark::trace::runs_in(&runs).unwrap();
-    assert_eq!(run.len(), 1);
-    assert_eq!(run[0].role, "intake");
-    assert!(run[0].streamed, "{run:?}");
-    let (_, info) = hallmark::trace::read(&run[0].path).unwrap();
-    assert!(info.ended && info.failure.is_none(), "{info:?}");
-    assert_eq!(info.session_id.as_deref(), Some("fake-session"));
+    let mut roles: Vec<&str> = run.iter().map(|r| r.role.as_str()).collect();
+    roles.sort();
+    assert_eq!(roles, ["intake", "pm"]);
+    for r in &run {
+        assert!(r.streamed, "{run:?}");
+        let (_, info) = hallmark::trace::read(&r.path).unwrap();
+        assert!(info.ended && info.failure.is_none(), "{info:?}");
+        assert_eq!(info.session_id.as_deref(), Some("fake-session"));
+    }
 
-    // One headless run: the intake agent, its schema, read-only tools, no hooks.
+    // Two headless runs, the Product Manager's first. Nothing else was open,
+    // so both take the fast path's model.
     let calls = env.fake_calls();
-    assert_eq!(calls.len(), 1);
-    let c = &calls[0];
+    assert_eq!(calls.len(), 2);
+    let pm = &calls[0];
+    assert_eq!(pm["role"], "pm");
+    assert_eq!(pm["room"], "front");
+    assert_eq!(pm["agent"], "hallmark:pm");
+    assert_eq!(pm["model"], "haiku");
+    assert!(pm["json_schema"].as_str().unwrap().contains("criteria"));
+    assert!(pm["prompt"].as_str().unwrap().contains(REQUEST));
+    assert!(pm["prompt"].as_str().unwrap().contains("No open items."));
+    common::assert_confined(pm);
+    // The Lead: the intake agent, its schema, read-only tools, no hooks.
+    let c = &calls[1];
+    assert!(
+        c["prompt"]
+            .as_str()
+            .unwrap()
+            .contains("criterion: the web app shows a status banner"),
+        "the Lead sees the story"
+    );
     assert_eq!(c["role"], "intake");
     assert_eq!(c["room"], "front");
     assert_eq!(c["agent"], "hallmark:intake");
     assert_eq!(c["model"], "haiku");
-    assert_eq!(c["timeout_secs"], 120);
+    assert_eq!(c["timeout_secs"], 180);
     assert_eq!(
         c["allowed_tools"],
         json!(["Read", "Grep", "Glob", "StructuredOutput"])
@@ -155,12 +212,12 @@ fn a_split_request_becomes_a_parent_and_children() {
             .unwrap()
             .contains(&json!(["HALL_NO_HOOKS", "1"]))
     );
-    // Its usage is booked to the Front Desk, at the repo level.
+    // Both runs' usage is booked to the Front Desk, at the repo level.
     let usage = events(&env.repo_journal(), "usage")
         .into_iter()
         .filter(|e| e["room"] == "front")
         .count();
-    assert_eq!(usage, 1);
+    assert_eq!(usage, 2);
 
     // The daemon never picks up children; status shows all three.
     let st = env.hall(&env.repo, &["status"]);
@@ -248,7 +305,7 @@ fn a_single_part_or_too_many_parts_stay_one_item() {
 #[test]
 fn intake_fails_open() {
     let env = Env::initialized();
-    let script = env.script(json!([{"role": "intake", "fail": "error"}]));
+    let script = env.script(json!([story(), {"role": "intake", "fail": "error"}]));
     let r = env.hall_fake(&env.repo, &script, &["new", REQUEST]);
     assert_eq!(r.code, 0, "{}", r.stdout);
     assert_eq!(r.json["id"], "H-0001");
@@ -257,7 +314,7 @@ fn intake_fails_open() {
         r.json["plan"]["reason"]
             .as_str()
             .unwrap()
-            .starts_with("the Front Desk run failed"),
+            .starts_with("the Lead's run failed"),
         "{}",
         r.stdout
     );
@@ -285,14 +342,14 @@ fn daemon_state(env: &Env) -> Value {
 #[test]
 fn a_rate_limited_front_desk_pauses_the_loop_and_keeps_one_item() {
     let env = Env::initialized();
-    let script = env.script(json!([{"role": "intake", "fail": "rate_limit"}]));
+    let script = env.script(json!([story(), {"role": "intake", "fail": "rate_limit"}]));
     let r = env.hall_fake(&env.repo, &script, &["new", REQUEST]);
     assert_eq!(r.code, 0, "{}", r.stdout);
     assert_eq!(r.json["id"], "H-0001");
     assert_eq!(r.json["plan"]["parallel"], false);
     let reason = r.json["plan"]["reason"].as_str().unwrap();
-    assert!(reason.starts_with("the Front Desk run failed"), "{reason}");
-    assert!(reason.contains("to split it, `hall drop`"), "{reason}");
+    assert!(reason.starts_with("the Lead's run failed"), "{reason}");
+    assert!(reason.contains("to plan it again, `hall drop`"), "{reason}");
     let st = daemon_state(&env);
     let paused = &st["paused"];
     assert!(
@@ -706,7 +763,8 @@ fn an_extension_for_the_planner_reaches_the_front_desk() {
     let r = env.hall_fake(&env.repo, &script, &["new", REQUEST]);
     assert_eq!(r.code, 0, "{}", r.stdout);
     let calls = env.fake_calls();
-    let prompt = calls[0]["prompt"].as_str().unwrap();
+    let lead = calls.iter().find(|c| c["role"] == "intake").unwrap();
+    let prompt = lead["prompt"].as_str().unwrap();
     let at = prompt
         .find("## Extensions\n")
         .unwrap_or_else(|| panic!("{prompt}"));
@@ -717,4 +775,215 @@ fn an_extension_for_the_planner_reaches_the_front_desk() {
         prompt[at..].contains("any edge"),
         "how it fits a plan of parts"
     );
+}
+
+/// H-0001, open in development, with a 3-line change to `hooks.rs`.
+fn open_item(env: &Env) -> PathBuf {
+    let r = env.hall(
+        &env.repo,
+        &["new", "Retry failed webhook deliveries", "--no-split"],
+    );
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let wt = PathBuf::from(r.json["worktree"].as_str().unwrap());
+    commit_file(
+        &wt,
+        "hooks.rs",
+        "fn retry() {}\nfn cap() {}\nfn wait() {}\n",
+    );
+    wt
+}
+
+#[test]
+fn the_lead_folds_a_request_into_an_open_item() {
+    let env = Env::initialized();
+    open_item(&env);
+    let script = env.script(json!([
+        story(),
+        lead("merge", "H-0001", 40, &["hooks.rs"], "The same retry code.")
+    ]));
+    let r = env.hall_fake(&env.repo, &script, &["new", "Cap webhook retries at 6"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    // No new item: the reply is the open one, with the scope added.
+    assert_eq!(r.json["id"], "H-0001");
+    assert_eq!(r.json["created"], false);
+    assert_eq!(r.json["plan"]["decision"], "merge");
+    assert_eq!(r.json["plan"]["target"], "H-0001");
+    assert_eq!(r.json["plan"]["reason"], "The same retry code.");
+    assert!(!env.repo.join(".git/hallmark/items/H-0002").exists());
+    let next: Vec<&str> = r.json["next"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    assert!(next[0].starts_with("cd "), "{next:?}");
+    assert!(
+        next.iter().any(|n| n.contains("--no-merge")),
+        "how to build it alone instead: {next:?}"
+    );
+    let j = env.journal("H-0001");
+    let added = events(&j, "scope_added");
+    assert_eq!(added.len(), 1);
+    assert_eq!(added[0]["request"], "Cap webhook retries at 6");
+    assert_eq!(
+        added[0]["criteria"][0],
+        "a failed API call is retried with backoff"
+    );
+    assert_eq!(added[0]["reason"], "The same retry code.");
+    // State doesn't change.
+    let st = env.hall(&env.repo, &["status", "H-0001"]);
+    assert_eq!(st.json["state"], "development");
+    let log = env.hall(&env.repo, &["log", "H-0001", "--kind", "all"]);
+    assert!(log.stdout.contains("scope_added"), "{}", log.stdout);
+    // The Lead was shown the board: the item, its request and its change,
+    // on the full model.
+    let calls = env.fake_calls();
+    let lead_call = calls.iter().find(|c| c["role"] == "intake").unwrap();
+    let prompt = lead_call["prompt"].as_str().unwrap();
+    assert!(
+        prompt.contains("- H-0001 [development] \"Retry failed webhook deliveries\""),
+        "{prompt}"
+    );
+    assert!(
+        prompt.contains("changed: 3 lines in 1 files: hooks.rs (3)"),
+        "{prompt}"
+    );
+    assert_eq!(lead_call["model"], "sonnet");
+    assert_eq!(calls[0]["model"], "sonnet");
+    // The runs are kept with the item that took the request.
+    let runs = env.repo.join(".git/hallmark/items/H-0001/runs");
+    assert_eq!(std::fs::read_dir(&runs).unwrap().count(), 2);
+}
+
+#[test]
+fn a_merge_past_the_size_limit_is_a_new_item() {
+    let env = Env::initialized();
+    open_item(&env);
+    let script = env.script(json!([
+        story(),
+        lead(
+            "merge",
+            "H-0001",
+            398,
+            &["hooks.rs"],
+            "The same retry code."
+        )
+    ]));
+    let r = env.hall_fake(&env.repo, &script, &["new", "Rewrite webhook retries"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(r.json["id"], "H-0002");
+    assert_eq!(r.json["created"], true);
+    assert_eq!(r.json["plan"]["decision"], "new");
+    let reason = r.json["plan"]["reason"].as_str().unwrap();
+    assert!(reason.contains("intake.max_item_lines (400)"), "{reason}");
+    assert!(events(&env.journal("H-0001"), "scope_added").is_empty());
+}
+
+#[test]
+fn a_follow_up_says_what_it_builds_on() {
+    let env = Env::initialized();
+    open_item(&env);
+    let script = env.script(json!([
+        story(),
+        lead(
+            "follow_up",
+            "H-0001",
+            80,
+            &["web/"],
+            "Needs the retry code first."
+        )
+    ]));
+    let r = env.hall_fake(
+        &env.repo,
+        &script,
+        &["new", "Show retry counts in the web app"],
+    );
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(r.json["id"], "H-0002");
+    assert_eq!(r.json["plan"]["decision"], "follow_up");
+    assert_eq!(r.json["plan"]["target"], "H-0001");
+    let j = env.journal("H-0002");
+    let request = j[0]["request"].as_str().unwrap();
+    assert!(
+        request.starts_with(
+            "Follows H-0001 (\"Retry failed webhook deliveries\", development): this builds on its change."
+        ),
+        "{request}"
+    );
+    assert!(
+        request.ends_with("Show retry counts in the web app"),
+        "{request}"
+    );
+    // The Product Manager's title names the item.
+    assert_eq!(r.json["title"], REQUEST);
+    let planned = events(&j, "planned");
+    assert_eq!(planned[0]["decision"], "follow_up");
+    assert_eq!(planned[0]["target"], "H-0001");
+}
+
+#[test]
+fn a_duplicate_creates_nothing() {
+    let env = Env::initialized();
+    open_item(&env);
+    let script = env.script(json!([
+        story(),
+        lead(
+            "duplicate",
+            "H-0001",
+            0,
+            &[],
+            "H-0001 already retries failed deliveries."
+        )
+    ]));
+    let r = env.hall_fake(&env.repo, &script, &["new", "Retry webhooks that fail"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(r.json["id"], "H-0001");
+    assert_eq!(r.json["created"], false);
+    assert_eq!(r.json["plan"]["decision"], "duplicate");
+    assert!(!env.repo.join(".git/hallmark/items/H-0002").exists());
+    assert!(events(&env.journal("H-0001"), "scope_added").is_empty());
+}
+
+#[test]
+fn no_merge_always_makes_a_new_item() {
+    let env = Env::initialized();
+    open_item(&env);
+    // The Lead is told to answer new, and a merge is refused if it doesn't.
+    let script = env.script(json!([
+        story(),
+        lead("merge", "H-0001", 10, &["hooks.rs"], "Same code.")
+    ]));
+    let r = env.hall_fake(
+        &env.repo,
+        &script,
+        &["new", "Cap webhook retries at 6", "--no-merge"],
+    );
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(r.json["id"], "H-0002");
+    assert_eq!(r.json["plan"]["decision"], "new");
+    assert!(events(&env.journal("H-0001"), "scope_added").is_empty());
+    let calls = env.fake_calls();
+    let prompt = calls.iter().find(|c| c["role"] == "intake").unwrap()["prompt"]
+        .as_str()
+        .unwrap();
+    assert!(prompt.contains("answer decision \"new\""), "{prompt}");
+    assert!(!prompt.contains("<board>"), "{prompt}");
+    // No board: the fast path's model.
+    assert_eq!(calls[0]["model"], "haiku");
+}
+
+#[test]
+fn a_rate_limited_product_manager_stops_the_planning() {
+    let env = Env::initialized();
+    let script = env.script(json!([{"role": "pm", "fail": "rate_limit"}]));
+    let r = env.hall_fake(&env.repo, &script, &["new", REQUEST]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(r.json["id"], "H-0001");
+    let reason = r.json["plan"]["reason"].as_str().unwrap();
+    assert!(
+        reason.starts_with("the Product Manager's run failed"),
+        "{reason}"
+    );
+    // The Lead would hit the same limit: it never ran.
+    assert_eq!(env.fake_calls().len(), 1);
 }

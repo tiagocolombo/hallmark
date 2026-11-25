@@ -81,7 +81,7 @@ are happy with.
      dollars such as `$15`. They default to `4M` and `800k`; `none` turns a
      cap off (unsetting the key brings the default back);
    - `budget.<role>.max_usd`, the cap on one run in dollars (role: review,
-     fix, intake, librarian). Unset, it defaults to 6, 2, 0.10 and 0.20;
+     fix, intake, librarian). Unset, it defaults to 6, 2, 0.50 and 0.20;
      `none` lifts it;
    - `max_check_failures`: failed checks in a row before an item is held
      for them (default 3).

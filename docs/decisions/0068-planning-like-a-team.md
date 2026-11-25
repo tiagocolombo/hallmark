@@ -1,6 +1,7 @@
 # 0068. Planning like a team: a Product Manager and a Lead plan against the board
 
-Status: Proposed, 2026-11-25. Amends 0008 (a new state), 0024 (the Front
+Status: Accepted in part, 2026-11-25: step 1 is built (H-0109); the rest is
+proposed. Amends 0008 (a new state), 0024 (the Front
 Desk), 0036 (the test audit) and 0057 (the PR description).
 
 ## Context
@@ -148,11 +149,14 @@ append-only under `<hallmark dir>/plans/` (`stories`, `planned`, `question`,
 - **`hall plan "<req>" ["<req>" …]`**, or `--file <path>` / stdin with one
   request per paragraph, runs the PM and then the Lead once over the whole
   list. `hall new "<request>"` is `hall plan` with one request.
-- **Models.** `pm_model` and `lead_model` default to `sonnet`. The fast
-  path, one request and no open item in `backlog`, `development` or
-  `awaiting_you`, runs both on `plan_fast_model` (default `haiku`).
-  `[budget.pm]` and `[budget.lead]` replace `[budget.intake]`, which is
-  read as both while it exists.
+- **Models and budget.** The PM and the Lead are two agents and two runs
+  (run roles `pm` and `intake`) that share the Front Desk's budget role:
+  `[budget.intake]`, room `front`, a per-run cap of $0.50 and a three-minute
+  timeout. Both run on `intake_model`, which now defaults to `sonnet`. The
+  fast path, when no item is open at all, runs both on `intake_fast_model`
+  (default `haiku`): with no board there is nothing to weigh. A PM run that
+  hits Claude's limit, or can't start, stops the planning there, since the
+  Lead would stop the same way.
 - **Applying.** A plan that only makes new items (with or without parts)
   applies at once, as `hall new` does today. A plan with a merge, a group, a
   slice, a spike, a follow-up or a duplicate is applied at once in a headless
@@ -237,10 +241,15 @@ tracks one repository at a time.
 Each step is one item:
 
 1. The PM and the Lead, with the board in their input, for a single request:
-   stories with criteria, and `new`, `merge`, `follow_up`, `duplicate`.
-   Criteria in the developer's context, `propose-ready`, the test audit, the
-   PR and the Gazette.
-2. `scope_added`, and its delivery to the building session.
+   stories with criteria, and `new`, `merge`, `follow_up`, `duplicate`, with
+   Hallmark's checks. `scope_added`, and the request read with it by the
+   review, the fixer, the PR description and the librarian. Criteria kept
+   on the item and in the `hall new` reply. Until plans exist (step 3),
+   `hall new` applies the Lead's decision at once, and its `next` offers
+   `--no-merge` to build the request on its own instead.
+2. Criteria downstream: the developer's context, `propose-ready`'s
+   `CRITERIA_OPEN`, the test audit, the PR's checklist and the Gazette. The
+   added scope delivered to the session building the item.
 3. `hall plan` for lists: groups, slices, spikes, estimates, plan journals.
 4. Grooming: plan questions, headless re-planning on answers.
 5. The backlog: the state, priority, the work in progress limit, `hall

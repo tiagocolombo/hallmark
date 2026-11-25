@@ -80,11 +80,26 @@ Then do all edits and commits in the returned `worktree`:
   hallmarked open PR; a PR based elsewhere is adopted with
   `--base <configured base>`, which retargets it.
 - From review feedback on a shipped PR: `hall new --follow-up <pr-url>`.
-- To keep a request as one item, never split: `hall new "<request>" --no-split`.
+- To skip the Front Desk (one item, no criteria, never split):
+  `hall new "<request>" --no-split`.
 
-`hall new` asks the Front Desk whether the request splits into independent
-parts. The reply's `plan` says what it decided and why. If the reply has
-`children`, follow **Parallel parts** below instead.
+`hall new` asks the Front Desk to plan the request. Its Product Manager
+writes the **acceptance criteria** (`plan.criteria`): what done means. Build
+to them, test each one, and say in your summary how each is met. Its Lead
+looks at the open items and decides `plan.decision`, with `plan.reason`:
+
+- `new`: a new item, as usual. If the reply has `children`, follow
+  **Parallel parts** below instead.
+- `merge`: the request was added to an open item's scope, and the reply is
+  that item (`created: false`). If another session is building it, tell the
+  human the request went there and stop. Otherwise work in its worktree:
+  the added scope is part of the item now, and is reviewed with it.
+- `follow_up`: a new item that builds on `plan.target`; its request says so.
+- `duplicate`: `plan.target` already covers it, and nothing was created.
+  Tell the human, with the reason.
+
+If the human wants it built on its own anyway, run the reply's
+`hall new … --no-merge`.
 
 ## Parallel parts
 

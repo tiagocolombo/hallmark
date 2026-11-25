@@ -867,14 +867,15 @@ pub fn pr_body(
     let (why, how, tested, revert) = proposed.unwrap_or_default();
     // A follow-up's request is generated (PR feedback, CI logs): never the
     // Why. It gets a one-line pointer to the PR instead.
-    let request = events.iter().find_map(|e| match &e.body {
+    let follow_up = events.iter().find_map(|e| match &e.body {
         Body::Created {
             follow_up: Some(url),
             ..
         } => Some(format!("Follow-up to {url}.")),
-        Body::Created { request, .. } => request.clone(),
         _ => None,
     });
+    // Otherwise the request, with any scope the Lead added (ADR 0068).
+    let request = follow_up.or_else(|| crate::event::request_of(events));
     let mut s = String::new();
     let what = item
         .summary
@@ -1575,6 +1576,20 @@ mod tests {
         assert!(b.contains(&format!("## Why\n\nFollow-up to {u}.\n")), "{b}");
         assert!(
             !b.contains("Review feedback") && !b.contains("Hallmark review"),
+            "{b}"
+        );
+    }
+
+    #[test]
+    fn the_why_includes_scope_the_lead_added() {
+        let events = vec![
+            ev(json!({"event": "created", "title": "t", "branch": "b",
+                "worktree": "/w", "base": "main", "request": "Retry failed webhooks"})),
+            ev(json!({"event": "scope_added", "request": "Cap retries at 6"})),
+        ];
+        let b = pr_body(&item(None), &events, &[], "main", "Low.", true);
+        assert!(
+            b.contains("## Why\n\nRetry failed webhooks\n\nAdded scope: Cap retries at 6\n"),
             "{b}"
         );
     }

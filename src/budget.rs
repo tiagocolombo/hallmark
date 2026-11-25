@@ -82,7 +82,8 @@ pub fn role_of(role: &str) -> Option<Role> {
         // The reviewer eval replays the reviewer: the same budget.
         "eval" => Some(Role::Reviewer),
         "fixer" | "fix" => Some(Role::Fixer),
-        "intake" => Some(Role::Intake),
+        // The Product Manager and the Lead share the Front Desk's budget.
+        "intake" | "pm" | "lead" => Some(Role::Intake),
         "librarian" => Some(Role::Librarian),
         _ => None,
     }

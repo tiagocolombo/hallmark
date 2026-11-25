@@ -11,7 +11,7 @@ macOS, `xdg-open` on Linux, `start` on Windows).
 
 | Room | What happens there | Who works there |
 | --- | --- | --- |
-| Front Desk | A request becomes an item, with a branch and a worktree | `hall new`, `hall adopt` |
+| Front Desk | A request is planned against the open items: the Product Manager writes what done means, and the Lead makes it a new item (with a branch and a worktree), adds it to an open item, follows one up, or finds it already covered | `hall new`, `hall adopt`; the Product Manager and the Lead |
 | Workshop | You and the dev agent build it; each bench is a worktree | your Claude Code session |
 | Your Office | Questions, "looks done?", escalations: your inbox | you (`hall inbox`) |
 | Post Room | Every handoff passes through and is recorded | the `hall` CLI, the watchman |
@@ -227,11 +227,37 @@ never its author, and the tier is the PR's `## Risk`. You are asked only
 once nothing ahead of it claims its files, so the head you approve is one
 that can merge.
 
+## Planning a request
+
+Before an item exists, the Front Desk plans the request like a team would
+([ADR 0068](decisions/0068-planning-like-a-team.md)). Two short read-only
+runs do it, on Sonnet, or on Haiku when no other item is open:
+
+1. **The Product Manager** writes the story: a title, the acceptance
+   criteria (what done means, as statements a reviewer can check) and a
+   priority. The criteria are kept on the item.
+2. **The Lead** looks at the board, every open item with its request, state
+   and what it changed so far, and decides how to build it:
+   - `new`: a new item, split into parallel parts when it can (below);
+   - `merge`: the request is added to an open item's scope (`scope_added`),
+     so one review and one PR cover both. Only an item still in development
+     or awaiting you can take it, only while its diff plus the request stays
+     under `[intake] max_item_lines`, and never mixing `security_review`
+     paths with others;
+   - `follow_up`: a new item that says which open item it builds on;
+   - `duplicate`: an item already covers it, and nothing is created.
+
+Hallmark checks the Lead's decision, not the model: one that breaks a rule
+becomes a new item, with the reason. So does any failure: planning never
+blocks `hall new`. `--no-merge` asks for a new item; `--no-split` skips the
+Front Desk. Everything that reads what an item is for (the review, the fixer,
+the PR description, the librarian) reads its request with the scope added
+to it.
+
 ## Parallel parts
 
-When a request splits into independent parts, the Front Desk (a small model
-run) makes a parent item and one child item per part, each with its own
-worktree. Your Claude session orchestrates them: one subagent per part, in
+When a request splits into independent parts, the Front Desk makes a parent
+item and one child item per part, each with its own worktree. Your Claude session orchestrates them: one subagent per part, in
 parallel. `hall merge` folds each finished part into the parent's branch, and
 the principal engineer reviews the parent once, as a whole
 ([ADR 0024](decisions/0024-parallel-parts-and-follow-ups.md)).

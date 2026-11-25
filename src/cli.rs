@@ -163,11 +163,18 @@ pub struct InitArgs {
 #[derive(Debug, Args)]
 pub struct NewArgs {
     /// The request, in your words. Becomes the first journal entry. The
-    /// Front Desk splits it into parallel parts when it can.
+    /// Front Desk plans it: the Product Manager writes its acceptance
+    /// criteria, and the Lead builds it as a new item (split into parallel
+    /// parts when it can), folds it into an open item, makes it a follow-up
+    /// to one, or finds it already covered.
     pub request: Option<String>,
-    /// Never split the request into parallel parts.
+    /// Skip the Front Desk: one new item, no criteria, never split.
     #[arg(long)]
     pub no_split: bool,
+    /// Always a new item: never fold the request into an open item, follow
+    /// one up or call it a duplicate (the Product Manager still runs).
+    #[arg(long)]
+    pub no_merge: bool,
     /// Make this item a parallel part of another item (merges into it).
     #[arg(long)]
     pub parent: Option<String>,

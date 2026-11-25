@@ -229,6 +229,7 @@ fn a_worktree_a_live_item_still_uses_is_kept() {
             pr_url: None,
             pr_head: None,
             own_worktree: Some(true),
+            criteria: vec![],
         },
     );
     env.hall(&env.repo, &["reindex"]);

@@ -391,7 +391,7 @@ $ echo $?
 
 | Command | Used by | Does |
 | --- | --- | --- |
-| `hall new … [--no-split] [--parent] [--follow-up <pr>]` | you, your session | The Front Desk may split a request into parallel parts; `--follow-up` starts from PR feedback. |
+| `hall new … [--no-split] [--no-merge] [--parent] [--follow-up <pr>]` | you, your session | The Front Desk plans the request: criteria from the Product Manager, then the Lead's new item (maybe split into parallel parts), merge into an open item, follow-up or duplicate; `--follow-up` starts from PR feedback. |
 | `hall merge [<child>]` | your session | Merges a parallel part into its parent's branch and closes it. |
 | `hall daemon start\|stop\|status\|run [--at-login]` | you | The review loop for every registered repo (ADR 0014, 0017). |
 | `hall next --role assayer\|fixer\|shipper` | agents | Claims work with a lease (exit 7 `CLAIMED`). |
@@ -447,16 +447,18 @@ one_approval  = []              # paths that need one person's approval (ADR 006
 two_approvals = []              # paths that need two
 
 [intake]
-split     = "auto"              # the Front Desk splits requests when it can; or "off"
-max_parts = 4
+split          = "auto"         # the Front Desk plans requests; or "off"
+max_parts      = 4
+max_item_lines = 400            # the most a merge may grow an item to (ADR 0068)
 
 [budget]                        # runs are capped by default too (per-run max_usd)
 daily           = "4M"          # default caps; "none" turns one off
 per_item        = "800k"
 review_model    = "opus"
 fix_model       = "sonnet"
-intake_model    = "haiku"
-librarian_model = "haiku"
+intake_model      = "sonnet"     # the Product Manager and the Lead
+intake_fast_model = "haiku"      # when no other item is open
+librarian_model   = "haiku"
 # [budget.review] max_usd = 3.00, daily = "2M"
 
 [library]
@@ -650,7 +652,7 @@ system prompt.
 
 | Limit | Set by | When it's reached |
 | --- | --- | --- |
-| Per run | `max_usd` → `--max-budget-usd` (default: review $6.00, fix $2.00, intake $0.10, librarian $0.20; `"none"` for no cap), plus a timeout | The run stops. The item is retried once, then goes to you. |
+| Per run | `max_usd` → `--max-budget-usd` (default: review $6.00, fix $2.00, intake $0.50, librarian $0.20; `"none"` for no cap), plus a timeout | The run stops. The item is retried once, then goes to you. |
 | Per item | `per_item` | The item goes to Your Office, marked "budget". |
 | Per room per day | `[budget.review] daily`, … | The room closes for the day. Items wait in order. |
 | Daily total | `daily` | The daemon pauses. Your session isn't blocked. |
@@ -776,13 +778,37 @@ fingerprint of the inputs and the base tip in `library/records.json` makes an
 unchanged check free and keeps a dropped records item from coming straight
 back.
 
+## Planning: the Product Manager and the Lead (ADR 0068)
+
+`hall new "<request>"` makes two read-only runs at the Front Desk, both on the
+`intake` budget (room `front`), on `intake_model`, or on `intake_fast_model`
+when no other item is open:
+
+- **The Product Manager** (`plugin/agents/pm.md`, `schemas/story.json`): a
+  title, acceptance criteria and a priority. The criteria go on `created`.
+  A failed run only means no criteria.
+- **The Lead** (`plugin/agents/intake.md`, `schemas/plan.json`), given the
+  story and the board (`src/board.rs`: each open item's request with added
+  scope, criteria, state and `git diff --numstat` from its merge base):
+  `new`, `merge`, `follow_up` or `duplicate`, with a target, the paths and
+  an estimate.
+
+Hallmark checks the decision (`intake::decide`): a merge needs a target in
+`development` or `awaiting_you`, not a part or a records item, under
+`[intake] max_item_lines` together, and on one side of `security_review`. A
+merge appends `scope_added { request, criteria, reason }` to the target under
+the repo lock; the state doesn't change, and `event::request_of` and
+`criteria_of` fold it into the request everything reads. A follow-up is a new
+item whose request names its target, and `planned { decision, target }`
+records it. A duplicate creates nothing. Anything refused, or any failure,
+makes one new item with the reason.
+
 ## Parallel parts (Stage 2, ADR 0024)
 
-The Front Desk's intake run (Haiku, `plugin/agents/intake.md`,
-`schemas/plan.json`) decides whether a request splits into parts that are truly
-independent: disjoint paths, no ordering, each testable alone. Hallmark checks
-the plan (2 to `max_parts` parts, no overlapping paths) and fails open: any
-doubt makes one item.
+For a `new` decision, the Lead also decides whether the request splits into
+parts that are truly independent: disjoint paths, no ordering, each testable
+alone. Hallmark checks the plan (2 to `max_parts` parts, no overlapping
+paths) and fails open: any doubt makes one item.
 
 - A split makes a **parent** item and one **child** item per part, each with its
   own branch (cut from the parent's) and worktree.

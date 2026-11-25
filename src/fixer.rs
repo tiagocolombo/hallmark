@@ -525,12 +525,10 @@ fn pending_review(ledger: &Ledger) -> Vec<&Tracked> {
         .collect()
 }
 
-/// The request as typed when the item was created.
+/// The request as typed when the item was created, with any scope the Lead
+/// added since (ADR 0068).
 pub fn request(events: &[Event]) -> Option<String> {
-    events.iter().find_map(|e| match &e.body {
-        Body::Created { request, .. } => request.clone(),
-        _ => None,
-    })
+    crate::event::request_of(events)
 }
 
 /// A check log's path: absolute, or relative to the item's journal

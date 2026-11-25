@@ -261,6 +261,10 @@ const REPO_SECTIONS: &[(&str, &[(&str, &str)])] = &[
                 "Split a request into parallel parts when it can (auto), or never (off)",
             ),
             ("intake.max_parts", ""),
+            (
+                "intake.max_item_lines",
+                "Fold a request into an open item only below this many lines",
+            ),
         ],
     ),
     (
@@ -269,6 +273,10 @@ const REPO_SECTIONS: &[(&str, &[(&str, &str)])] = &[
             ("budget.review_model", "Model for reviews"),
             ("budget.fix_model", "Model for fixes"),
             ("budget.intake_model", "Model that plans requests"),
+            (
+                "budget.intake_fast_model",
+                "Model that plans when nothing else is open",
+            ),
             ("budget.librarian_model", "Model that distils learnings"),
             (
                 "budget.daily",
@@ -1336,11 +1344,12 @@ mod tests {
             "",  // push_allow
         ]);
         answers.extend([""; 7]); // merging
-        answers.extend([""; 2]); // the Front Desk
+        answers.extend([""; 3]); // the Front Desk
         answers.extend([
             "",     // review model
             "",     // fix model
             "",     // intake model
+            "",     // intake fast model
             "",     // librarian model
             "lots", // daily: refused
             "2M",   // daily

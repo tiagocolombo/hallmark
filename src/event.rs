@@ -141,6 +141,21 @@ pub enum Body {
         /// item is then taken to live in the user's own checkout.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         own_worktree: Option<bool>,
+        /// The acceptance criteria the Product Manager wrote for the
+        /// request (ADR 0068): what done means.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        criteria: Vec<String>,
+    },
+    /// The Lead folded another request into this item's scope (ADR 0068).
+    /// State doesn't change; everything that reads the item's request reads
+    /// it with this added ([`request_of`], [`criteria_of`]).
+    ScopeAdded {
+        request: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        criteria: Vec<String>,
+        /// The Lead's reason for folding it in.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
     },
     /// A shipped item came back to development through its open PR
     /// (`hall adopt`), to rebase it, resolve conflicts or change it. When it
@@ -415,6 +430,13 @@ pub enum Body {
         children: Vec<ItemId>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
+        /// The Lead's decision (ADR 0068): `new` or `follow_up`. Absent in
+        /// journals from before the Lead, which only made new items.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        decision: Option<String>,
+        /// The open item a follow-up builds on.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        target: Option<ItemId>,
     },
     /// This child item was merged into its parent's branch (it closes).
     Merged {
@@ -613,6 +635,7 @@ impl Body {
             Body::Notified { .. } => "notified",
             Body::Distilled { .. } => "distilled",
             Body::Planned { .. } => "planned",
+            Body::ScopeAdded { .. } => "scope_added",
             Body::Merged { .. } => "merged",
             Body::Reopened { .. } => "reopened",
             Body::ChildMerged { .. } => "child_merged",
@@ -865,7 +888,11 @@ impl Body {
                 None => format!("{} learnings added or updated", learnings.len()),
             },
             Body::Planned {
-                parallel, children, ..
+                parallel,
+                children,
+                decision,
+                target,
+                ..
             } => {
                 if *parallel {
                     let ids: Vec<String> = children.iter().map(|c| c.to_string()).collect();
@@ -874,10 +901,13 @@ impl Body {
                         children.len(),
                         ids.join(", ")
                     )
+                } else if let (Some("follow_up"), Some(t)) = (decision.as_deref(), target) {
+                    format!("planned as a follow-up to {t}")
                 } else {
                     "planned as one item".into()
                 }
             }
+            Body::ScopeAdded { request, .. } => format!("scope added · \"{}\"", c(request, 70)),
             Body::Merged { into, sha } => format!("merged into {into} at {}", short(sha)),
             Body::Reopened { pr_url, base, .. } => {
                 format!("reopened from {pr_url} · base {base}")
@@ -980,6 +1010,45 @@ impl Body {
 
 pub fn short(sha: &str) -> &str {
     &sha[..sha.len().min(7)]
+}
+
+/// The item's request with the scope the Lead added to it since (ADR 0068),
+/// for everything that reads what the item is for: the review, the fixer,
+/// the PR description and the librarian. None when neither exists.
+pub fn request_of(events: &[Event]) -> Option<String> {
+    let mut out = events.iter().find_map(|e| match &e.body {
+        Body::Created { request, .. } => request.clone(),
+        _ => None,
+    });
+    for e in events {
+        if let Body::ScopeAdded { request, .. } = &e.body {
+            let added = format!("Added scope: {}", request.trim());
+            out = Some(match out {
+                Some(r) => format!("{}\n\n{added}", r.trim_end()),
+                None => added,
+            });
+        }
+    }
+    out
+}
+
+/// The item's acceptance criteria: those it was created with, then those
+/// of every scope added to it, in order, without repeats.
+pub fn criteria_of(events: &[Event]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for e in events {
+        let list = match &e.body {
+            Body::Created { criteria, .. } | Body::ScopeAdded { criteria, .. } => criteria,
+            _ => continue,
+        };
+        for c in list {
+            let c = c.trim();
+            if !c.is_empty() && !out.iter().any(|o| o == c) {
+                out.push(c.to_string());
+            }
+        }
+    }
+    out
 }
 
 /// Fold an item's journal into its current state.
@@ -1277,7 +1346,87 @@ mod tests {
             pr_url: None,
             pr_head: None,
             own_worktree: Some(true),
+            criteria: vec![],
         })
+    }
+
+    fn scope(request: &str, criteria: &[&str]) -> Event {
+        ev(Body::ScopeAdded {
+            request: request.into(),
+            criteria: criteria.iter().map(|s| s.to_string()).collect(),
+            reason: Some("same module".into()),
+        })
+    }
+
+    #[test]
+    fn the_request_reads_with_its_added_scope() {
+        let mut c = created();
+        if let Body::Created {
+            request, criteria, ..
+        } = &mut c.body
+        {
+            *request = Some("Retry failed webhooks\n".into());
+            *criteria = vec!["retries a failed delivery".into(), " ".into()];
+        }
+        assert_eq!(
+            request_of(std::slice::from_ref(&c)).as_deref(),
+            Some("Retry failed webhooks\n")
+        );
+        let events = [
+            c.clone(),
+            scope(
+                " Cap retries at 6 ",
+                &["stops after 6 attempts", "retries a failed delivery"],
+            ),
+            scope("Log each retry", &[]),
+        ];
+        assert_eq!(
+            request_of(&events).as_deref(),
+            Some(
+                "Retry failed webhooks\n\nAdded scope: Cap retries at 6\n\nAdded scope: Log each retry"
+            )
+        );
+        // In order, without repeats or blanks.
+        assert_eq!(
+            criteria_of(&events),
+            vec!["retries a failed delivery", "stops after 6 attempts"]
+        );
+        // An item made without a request still reads its added scope.
+        let bare = [created(), scope("Cap retries at 6", &[])];
+        assert_eq!(
+            request_of(&bare).as_deref(),
+            Some("Added scope: Cap retries at 6")
+        );
+        assert_eq!(request_of(&[created()]), None);
+        // It changes no state.
+        let it = fold(ItemId(1), &events).unwrap();
+        assert_eq!(it.state, State::Development);
+    }
+
+    #[test]
+    fn planning_events_say_what_was_decided() {
+        assert_eq!(
+            scope("Cap webhook retries at 6", &[]).body.summary(),
+            "scope added · \"Cap webhook retries at 6\""
+        );
+        let planned = |decision: Option<&str>, target: Option<u32>| {
+            ev(Body::Planned {
+                parallel: false,
+                children: vec![],
+                reason: None,
+                decision: decision.map(String::from),
+                target: target.map(ItemId),
+            })
+            .body
+            .summary()
+        };
+        assert_eq!(
+            planned(Some("follow_up"), Some(7)),
+            "planned as a follow-up to H-0007"
+        );
+        assert_eq!(planned(Some("new"), None), "planned as one item");
+        assert_eq!(planned(None, None), "planned as one item");
+        assert_eq!(scope("x", &[]).body.name(), "scope_added");
     }
 
     #[test]

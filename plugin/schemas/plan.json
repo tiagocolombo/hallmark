@@ -2,13 +2,22 @@
   "title": "Hallmark intake plan",
   "type": "object",
   "properties": {
+    "decision": {
+      "type": "string",
+      "enum": ["new", "merge", "follow_up", "duplicate"],
+      "description": "new: a new item (split into parts or not). merge: add the request to the open item in target. follow_up: a new item that builds on the open item in target. duplicate: the item in target already covers it; nothing is created."
+    },
+    "target": {
+      "type": "string",
+      "description": "The open item's ID (H-0042) for merge, follow_up and duplicate; an empty string for new."
+    },
     "parallel": {
       "type": "boolean",
-      "description": "True only when the request splits into parts that are truly independent: disjoint files, no ordering, each testable alone."
+      "description": "True only for a new item that splits into parts that are truly independent: disjoint files, no ordering, each testable alone."
     },
     "parts": {
       "type": "array",
-      "description": "Always present. When parallel is true: the 2 or more independent parts. When parallel is false: an empty list.",
+      "description": "Always present. When parallel is true: the 2 or more independent parts. Otherwise: an empty list.",
       "items": {
         "type": "object",
         "properties": {
@@ -30,11 +39,20 @@
         "additionalProperties": false
       }
     },
+    "paths": {
+      "type": "array",
+      "description": "Always present. The repository-relative files, directories or globs the request's work will touch, as far as you can tell.",
+      "items": { "type": "string" }
+    },
+    "estimate_lines": {
+      "type": "integer",
+      "description": "Your estimate of the lines the request's work adds and removes, tests included."
+    },
     "reason": {
       "type": "string",
-      "description": "One or two sentences: why the parts are independent, or why the request stays one item."
+      "description": "One or two sentences: why this decision, and for a split why the parts are independent."
     }
   },
-  "required": ["parallel", "parts", "reason"],
+  "required": ["decision", "target", "parallel", "parts", "paths", "estimate_lines", "reason"],
   "additionalProperties": false
 }

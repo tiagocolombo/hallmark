@@ -57,7 +57,13 @@ expression: "scrub(&env, j)"
   ],
   "open": "cd [root]/app-H-0001 && claude",
   "plan": {
+    "criteria": [
+      "a failed API call is retried with backoff",
+      "the web app shows a status banner"
+    ],
+    "decision": "new",
     "parallel": true,
+    "priority": "next",
     "ran": true,
     "reason": "The API client and the web app share no files."
   },

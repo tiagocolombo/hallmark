@@ -1,0 +1,30 @@
+{
+  "title": "Hallmark story",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "A short imperative title for the work, at most 60 characters."
+    },
+    "criteria": {
+      "type": "array",
+      "description": "Always present. The acceptance criteria: 1 to 7 short statements a reviewer can check against the change, each about behaviour someone can observe. Empty only when the request is too unclear to write any.",
+      "items": { "type": "string" }
+    },
+    "priority": {
+      "type": "string",
+      "enum": ["now", "next", "later"],
+      "description": "now: blocks people or breaks something; next: the normal case; later: nice to have."
+    },
+    "duplicate_of": {
+      "type": "string",
+      "description": "The ID of an open item (H-0042) that already covers this request entirely, or an empty string."
+    },
+    "reason": {
+      "type": "string",
+      "description": "One sentence: the priority's reason, and the duplicate's when there is one."
+    }
+  },
+  "required": ["title", "criteria", "priority", "duplicate_of", "reason"],
+  "additionalProperties": false
+}

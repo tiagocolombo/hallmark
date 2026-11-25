@@ -487,6 +487,7 @@ fn resolve_key(key: &str) -> Option<(Option<&'static str>, &'static str, Kind)> 
         "review_model" => return Some((None, "review_model", Kind::Text)),
         "fix_model" => return Some((None, "fix_model", Kind::Text)),
         "intake_model" => return Some((None, "intake_model", Kind::Text)),
+        "intake_fast_model" => return Some((None, "intake_fast_model", Kind::Text)),
         "librarian_model" => return Some((None, "librarian_model", Kind::Text)),
         _ => {}
     }
@@ -509,7 +510,7 @@ fn resolve_key(key: &str) -> Option<(Option<&'static str>, &'static str, Kind)> 
 }
 
 const KEYS: &str = "daily, per_item, <role>.daily, <role>.max_usd, <role>.timeout, <role>.model, \
-                    <role>.effort, review_model, fix_model, intake_model, librarian_model \
+                    <role>.effort, review_model, fix_model, intake_model, intake_fast_model, librarian_model \
                     (roles: review, fix, intake, librarian)";
 
 /// Applies `key=value` settings to `.hallmark.toml` text with toml_edit,

@@ -104,16 +104,18 @@ one_approval  = []          # paths that need one person's approval on the PR (A
 two_approvals = []          # paths that need two
 
 [intake]
-split     = "auto"   # or "off"
-max_parts = 4
+split          = "auto"   # or "off": no Front Desk, one item, no criteria
+max_parts      = 4
+max_item_lines = 400      # the Lead folds a request into an open item only below this (ADR 0068)
 
 [budget]                       # runs are capped by default too (per-run max_usd)
 daily           = "4M"     # the whole loop, per UTC day; "none" for no cap
 per_item        = "800k"   # weighted by price (a cache read counts a tenth), or "$15"; "none" for no cap
 review_model    = "opus"
 fix_model       = "sonnet"
-intake_model    = "haiku"
-librarian_model = "haiku"
+intake_model      = "sonnet"   # the Product Manager and the Lead (ADR 0068)
+intake_fast_model = "haiku"    # both, when no other item is open
+librarian_model   = "haiku"
 # [budget.review] max_usd = 3.0 (or "none"), daily = "2M", effort = "high", timeout = "20m"
 
 [extensions]                # skill packs by other authors: `hall extensions`
@@ -592,7 +594,8 @@ max_usd = 1.50
 ```
 
 Each role has a table with the same keys: `[budget.review]`, `[budget.fix]`,
-`[budget.intake]` (the Front Desk) and `[budget.librarian]`. A table's
+`[budget.intake]` (the Front Desk: the Product Manager and the Lead) and
+`[budget.librarian]`. A table's
 `model` wins over `<role>_model`, and its `fallback` is used when `model` is
 unavailable (a run that fails fast without tokens is retried once with it) or
 overloaded.
@@ -604,7 +607,7 @@ Every run has a per-run cap, `max_usd`, passed to Claude as
 | --- | --- |
 | `[budget.review]` | 6.00 |
 | `[budget.fix]` | 2.00 |
-| `[budget.intake]` | 0.10 |
+| `[budget.intake]` | 0.50 (each of its two runs) |
 | `[budget.librarian]` | 0.20 |
 
 The caps sit above what normal runs cost (a max-effort review of a sensitive
