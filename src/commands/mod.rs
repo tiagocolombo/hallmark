@@ -25,6 +25,7 @@ pub mod review;
 pub mod setup;
 pub mod stats;
 pub mod status;
+pub mod threads;
 pub mod trace;
 pub mod update;
 pub mod watch;

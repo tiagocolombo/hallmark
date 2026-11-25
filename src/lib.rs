@@ -49,6 +49,7 @@ pub mod skills;
 pub mod stamp;
 pub mod state;
 pub mod sweeper;
+pub mod threads;
 pub mod trace;
 pub mod tui;
 pub mod usage;

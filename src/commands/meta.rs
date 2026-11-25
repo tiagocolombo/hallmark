@@ -304,6 +304,7 @@ pub const SCHEMA_NAMES: &[&str] = &[
     "hud",
     "web",
     "web-line",
+    "threads",
     "gazette",
     "attach",
     "watch",
@@ -365,6 +366,7 @@ pub fn schema_value(name: &str) -> Option<serde_json::Value> {
         "extensions" => schema_for!(Out<super::extensions::ExtensionsOut>),
         "hud" => schema_for!(Out<HudOut>),
         "web" => schema_for!(Out<crate::web::WebOut>),
+        "threads" => schema_for!(super::threads::ThreadsReply),
         "gazette" => schema_for!(GazetteReply),
         "attach" => schema_for!(Out<super::gazette::AttachOut>),
         // The line `hall web` prints once it is listening.

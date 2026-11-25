@@ -129,6 +129,17 @@ reads no credentials, and its commands run in Claude Code's sandbox, writing
 only its worktree and reaching only the hosts the repo allows
 ([ADR 0053](decisions/0053-sandbox-every-headless-run.md)).
 
+What the agents said to each other along the way reads as threads, like
+questions on a developer Q&A site. Each finding is a question from the
+reviewer, with the verifier's check, the fixer's fix or dispute, and the
+reviewer's ruling in the next round, ending in an accepted answer or a
+withdrawal. The request with the Front Desk's plan, a finding the verifier
+refuted, and an agent's question to you with your answer are threads too.
+They are folded from the journal, so nothing new is recorded:
+`hall threads` lists them, `hall threads H-0042/F1` shows one whole, and the
+web app has a Threads page and a Threads tab on each item
+([ADR 0070](decisions/0070-threads.md)).
+
 The checks are a script, and a gate that passed on a tree isn't run again
 on the same tree: its result comes from the checks cache, marked `cached`,
 with the original run's log. Gates run in order, so every gate before one

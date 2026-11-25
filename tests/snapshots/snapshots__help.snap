@@ -1,5 +1,6 @@
 ---
 source: tests/snapshots.rs
+assertion_line: 168
 expression: v
 ---
 {
@@ -1627,6 +1628,42 @@ expression: v
       "usage": "hall web [OPTIONS]"
     },
     {
+      "about": "The agents' conversations as Q&A threads: each review finding with the verifier's check, the fixer's answer and the reviewer's ruling; planning; questions to you. A thread ID (`H-0042/F3`) shows one whole",
+      "args": [
+        {
+          "help": "A thread ID (`H-0042/F3`) shows that thread; an item ID lists that item's threads. Omit to list every item's",
+          "name": "target",
+          "required": false,
+          "syntax": "<target>",
+          "takes_value": true
+        },
+        {
+          "help": "Only these kinds (comma-separated): finding, refuted, planning, question",
+          "name": "kind",
+          "required": false,
+          "syntax": "--kind <kind>",
+          "takes_value": true
+        },
+        {
+          "help": "Only these statuses (comma-separated): open, answered, resolved, withdrawn, refuted, closed",
+          "name": "status",
+          "required": false,
+          "syntax": "--status <status>",
+          "takes_value": true
+        },
+        {
+          "help": "List at most N threads (default 50)",
+          "name": "limit",
+          "required": false,
+          "syntax": "--limit <limit>",
+          "takes_value": true
+        }
+      ],
+      "name": "threads",
+      "schema": "hall schema threads",
+      "usage": "hall threads [OPTIONS] [TARGET]"
+    },
+    {
       "about": "An item's Gazette: its story as a newspaper page, for a person. Printed when the item finishes; `--open` opens it in the browser",
       "args": [
         {
@@ -1727,6 +1764,10 @@ expression: v
     },
     {
       "code": "QUESTION_NOT_FOUND",
+      "exit": 3
+    },
+    {
+      "code": "THREAD_NOT_FOUND",
       "exit": 3
     },
     {

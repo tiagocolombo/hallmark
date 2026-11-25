@@ -1,5 +1,6 @@
 ---
 source: tests/snapshots.rs
+assertion_line: 174
 expression: "env.hall(&env.root, &[\"schema\", \"error\"]).json"
 ---
 {
@@ -62,6 +63,11 @@ expression: "env.hall(&env.root, &[\"schema\", \"error\"]).json"
           {
             "const": "QUESTION_NOT_FOUND",
             "description": "No question with that ID.",
+            "type": "string"
+          },
+          {
+            "const": "THREAD_NOT_FOUND",
+            "description": "No thread with that ID (`hall threads`).",
             "type": "string"
           },
           {
