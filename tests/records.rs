@@ -378,7 +378,10 @@ fn another_clones_page_and_learning_with_the_same_ids_are_left_alone() {
     )
     .unwrap();
     git(&env.repo, &["add", "-A"]);
-    git(&env.repo, &["commit", "-q", "-m", "Another clone's records"]);
+    git(
+        &env.repo,
+        &["commit", "-q", "-m", "Another clone's records"],
+    );
     let id = closed(&env);
     let script = script(&env, &id);
     assert!(what(&tick(&env, &script)).contains(&format!("distilled {id}")));

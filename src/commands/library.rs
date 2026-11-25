@@ -590,10 +590,7 @@ fn import(repo: &Repo, source: Option<PathBuf>) -> Result<Response> {
     let mut next = Vec::new();
     // With `commit = true` the repository keeps the Library on purpose (ADR
     // 0066): there is nothing to move out.
-    if from_base
-        && !repo.config.library.commit
-        && !entries.is_empty()
-        && result.skipped.is_empty()
+    if from_base && !repo.config.library.commit && !entries.is_empty() && result.skipped.is_empty()
     {
         next.push("hall new --title \"Move the Library out of the repo\"".into());
         next.push(format!(

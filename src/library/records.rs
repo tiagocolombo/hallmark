@@ -277,7 +277,8 @@ fn plan_at(
         .collect();
     for (path, text, id) in learnings {
         if on_base.get(path) != Some(text) && !foreign.contains(id) {
-            plan.learnings.push((path.clone(), text.clone(), id.clone()));
+            plan.learnings
+                .push((path.clone(), text.clone(), id.clone()));
         }
     }
     for path in on_base.keys() {
