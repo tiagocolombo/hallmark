@@ -215,7 +215,8 @@ pub fn prepare_with(
 
     // --- the prompt ---------------------------------------------------------
     // The request with any scope the Lead added since (ADR 0068).
-    let created = Some(crate::event::request_of(events));
+    // With its acceptance criteria, for the review to check each (the test audit).
+    let created = Some(crate::event::request_with_criteria(events));
     let commits = git::run(
         dir,
         &[

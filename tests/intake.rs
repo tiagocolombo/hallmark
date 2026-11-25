@@ -817,10 +817,8 @@ fn the_lead_folds_a_request_into_an_open_item() {
         .map(|v| v.as_str().unwrap())
         .collect();
     assert!(next[0].starts_with("cd "), "{next:?}");
-    assert!(
-        next.iter().any(|n| n.contains("--no-merge")),
-        "how to build it alone instead: {next:?}"
-    );
+    // The scope is on H-0001 for good: no "build it on its own instead".
+    assert!(!next.iter().any(|n| n.contains("--no-merge")), "{next:?}");
     let j = env.journal("H-0001");
     let added = events(&j, "scope_added");
     assert_eq!(added.len(), 1);
@@ -906,7 +904,7 @@ fn a_follow_up_says_what_it_builds_on() {
     let request = j[0]["request"].as_str().unwrap();
     assert!(
         request.starts_with(
-            "Follows H-0001 (\"Retry failed webhook deliveries\", development): this builds on its change."
+            "Follows H-0001 (\"Retry failed webhook deliveries\", development): this builds on its change, which is not on this branch yet."
         ),
         "{request}"
     );
@@ -968,8 +966,80 @@ fn no_merge_always_makes_a_new_item() {
         .unwrap();
     assert!(prompt.contains("answer decision \"new\""), "{prompt}");
     assert!(!prompt.contains("<board>"), "{prompt}");
-    // No board: the fast path's model.
-    assert_eq!(calls[0]["model"], "haiku");
+    // An item is open, so it is not the fast path, and the Product Manager
+    // is not told that nothing is open.
+    assert_eq!(calls[0]["model"], "sonnet");
+    let pm = calls[0]["prompt"].as_str().unwrap();
+    assert!(!pm.contains("No open items."), "{pm}");
+}
+
+#[test]
+fn propose_ready_wants_each_criterion_accounted_for_in_tested() {
+    let env = Env::initialized();
+    let script = env.script(json!([
+        story(),
+        lead("new", "", 20, &["hooks.rs"], "Nothing is open.")
+    ]));
+    let r = env.hall_fake(&env.repo, &script, &["new", "Retry failed webhooks"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let wt = PathBuf::from(r.json["worktree"].as_str().unwrap());
+    let bare = env.hall(&wt, &["propose-ready", "--ask", "--summary", "done"]);
+    assert_ne!(bare.code, 0, "{}", bare.stdout);
+    let msg = bare.json["error"]["message"].as_str().unwrap();
+    assert!(msg.contains("a failed API call is retried with backoff"), "{msg}");
+    let ok = env.hall(
+        &wt,
+        &[
+            "propose-ready",
+            "--ask",
+            "--summary",
+            "done",
+            "--tested",
+            "each criterion tried by hand",
+        ],
+    );
+    assert_eq!(ok.code, 0, "{}", ok.stdout);
+}
+
+#[test]
+fn a_title_asks_for_a_new_item_and_is_never_merged() {
+    let env = Env::initialized();
+    open_item(&env);
+    let script = env.script(json!([
+        story(),
+        lead("merge", "H-0001", 10, &["hooks.rs"], "Same code.")
+    ]));
+    let r = env.hall_fake(
+        &env.repo,
+        &script,
+        &["new", "Cap webhook retries at 6", "--title", "Cap retries"],
+    );
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(r.json["id"], "H-0002");
+    assert_eq!(r.json["created"], true);
+    assert!(events(&env.journal("H-0001"), "scope_added").is_empty());
+}
+
+#[test]
+fn a_target_that_left_development_during_planning_takes_no_scope() {
+    let env = Env::initialized();
+    // Planning can take minutes: the target is sent to review after the
+    // Lead decided. The scope is checked again under the repo lock.
+    let wt = open_item(&env);
+    let j = env.repo.join(".git/hallmark/items/H-0001/events.jsonl");
+    let before = std::fs::read_to_string(&j).unwrap();
+    let ready = json!({
+        "v": 1, "t": chrono::Utc::now().to_rfc3339(), "actor": "you", "item": "H-0001",
+        "event": "ready", "sha": "abc1234", "round": 1
+    });
+    std::fs::write(&j, format!("{before}{ready}\n")).unwrap();
+    let repo = hallmark::repo::Repo::discover(&wt).unwrap();
+    let plan = hallmark::intake::Plan::single(true, "merge H-0001");
+    let target = "H-0001".parse().unwrap();
+    let added =
+        hallmark::commands::new::add_scope(&repo, target, &plan, &[], "Cap webhook retries at 6");
+    assert!(added.unwrap().is_none(), "the frozen item took the scope");
+    assert!(events(&env.journal("H-0001"), "scope_added").is_empty());
 }
 
 #[test]

@@ -75,8 +75,9 @@ are happy with.
    - `review_comment`, which posts each review as a PR comment, with `{pr}
      {review_file} {branch} {id} {base}`; empty for none.
 6. **Models and budget**:
-   - `budget.review_model`, `budget.fix_model`, `budget.intake_model` and
-     `budget.librarian_model`;
+   - `budget.review_model`, `budget.fix_model`, `budget.intake_model`,
+     `budget.intake_fast_model` (default haiku, used when nothing else is
+     open) and `budget.librarian_model`;
    - `budget.daily` and `budget.per_item`: tokens such as `4M` or `800k`, or
      dollars such as `$15`. They default to `4M` and `800k`; `none` turns a
      cap off (unsetting the key brings the default back);

@@ -156,7 +156,7 @@ pub struct Plan {
 }
 
 impl Plan {
-    fn single(ran: bool, reason: impl Into<String>) -> Plan {
+    pub fn single(ran: bool, reason: impl Into<String>) -> Plan {
         Plan {
             ran,
             decision: Decision::New,
@@ -308,19 +308,25 @@ pub fn plan(repo: &Repo, request: &str, opts: Opts) -> Outcome {
             raw,
         };
     }
-    let board = if opts.no_merge {
-        Vec::new()
-    } else {
-        crate::board::open(repo)
-    };
-    // The fast path: nothing is open, so there is nothing to plan against.
+    let open = crate::board::open(repo);
+    let has_open = !open.is_empty();
+    let board = if opts.no_merge { Vec::new() } else { open };
+    // The fast path: nothing else is open, so there is nothing to plan
+    // against. A `[budget.intake] model` the repo set still wins.
     let b = &repo.config.budget;
-    let model = if board.is_empty() {
-        b.intake_fast_model.clone()
-    } else {
+    let model = if has_open {
         b.model(Role::Intake)
+    } else {
+        b.intake
+            .as_ref()
+            .and_then(|t| t.model.clone())
+            .unwrap_or_else(|| b.intake_fast_model.clone())
     };
-    let board_text = crate::board::render(&board);
+    let board_text = if opts.no_merge && has_open {
+        "The board is not shown: the person asked for a new item.\n".to_string()
+    } else {
+        crate::board::render(&board)
+    };
 
     let story = match run(
         repo,
@@ -555,7 +561,12 @@ fn mergeable(card: &Card, raw: &RawPlan, c: &Checks) -> Result<(), String> {
         let item_sec = card.changed.iter().any(|x| set.is_match(&x.path));
         let paths: Vec<String> = raw.paths.iter().filter_map(|p| clean_path(p)).collect();
         // Unknown paths can't be shown to stay on one side.
-        let req_sec = paths.is_empty() || paths.iter().any(|p| set.is_match(p));
+        // A directory or a broad glob is security when anything under it
+        // can match a security glob.
+        let req_sec = paths.is_empty()
+            || paths
+                .iter()
+                .any(|p| set.is_match(p) || c.security.iter().any(|g| overlap(g, p)));
         if item_sec != req_sec {
             return Err("it would mix a security_review path with paths outside them".into());
         }
@@ -976,6 +987,17 @@ mod tests {
         // Paths it can't name might land anywhere.
         mixes(decide(
             lead("merge", "H-0042", 5, &[]),
+            4,
+            &checks(&plain, &sec, false),
+        ));
+        // A directory or a broad glob over a security glob is security.
+        mixes(decide(
+            lead("merge", "H-0042", 5, &["src/auth/"]),
+            4,
+            &checks(&plain, &sec, false),
+        ));
+        mixes(decide(
+            lead("merge", "H-0042", 5, &["src/**"]),
             4,
             &checks(&plain, &sec, false),
         ));

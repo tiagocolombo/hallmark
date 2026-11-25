@@ -1032,6 +1032,27 @@ pub fn request_of(events: &[Event]) -> Option<String> {
     out
 }
 
+/// [`request_of`] followed by the acceptance criteria ([`criteria_of`]), for
+/// everything that reads what the item is for (ADR 0068): the review and
+/// its test audit, the fixer, the librarian, the Gazette.
+pub fn request_with_criteria(events: &[Event]) -> Option<String> {
+    let request = request_of(events);
+    let criteria = criteria_of(events);
+    if criteria.is_empty() {
+        return request;
+    }
+    let list = criteria
+        .iter()
+        .map(|c| format!("- {c}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let block = format!("Acceptance criteria (each one must be met and tested):\n{list}");
+    Some(match request {
+        Some(r) => format!("{}\n\n{block}", r.trim_end()),
+        None => block,
+    })
+}
+
 /// The item's acceptance criteria: those it was created with, then those
 /// of every scope added to it, in order, without repeats.
 pub fn criteria_of(events: &[Event]) -> Vec<String> {

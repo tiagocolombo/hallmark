@@ -53,7 +53,7 @@ pub fn open(repo: &Repo) -> Vec<Card> {
         return Vec::new();
     };
     let skip = items.len().saturating_sub(MAX_ITEMS);
-    items
+    let mut cards: Vec<Card> = items
         .into_iter()
         .filter(|i| !i.state.is_terminal())
         .skip(skip)
@@ -73,7 +73,25 @@ pub fn open(repo: &Repo) -> Vec<Card> {
                 lines,
             }
         })
-        .collect()
+        .collect();
+    add_children_lines(&mut cards);
+    cards
+}
+
+/// A parent's own branch is empty until its parts merge, but its review
+/// will cover them: count each open part's lines in the parent's card.
+fn add_children_lines(cards: &mut [Card]) {
+    let parts: Vec<(ItemId, u64)> = cards
+        .iter()
+        .filter_map(|c| c.parent.map(|p| (p, c.lines)))
+        .collect();
+    for c in cards.iter_mut() {
+        c.lines += parts
+            .iter()
+            .filter(|(p, _)| *p == c.id)
+            .map(|(_, l)| l)
+            .sum::<u64>();
+    }
 }
 
 /// `git diff --numstat <base>...<branch>`: the files the branch changed
@@ -197,6 +215,30 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn a_parent_counts_its_open_parts_lines() {
+        let mk = |id: &str, parent: Option<&str>, lines: u64| Card {
+            id: id.parse().unwrap(),
+            title: "t".into(),
+            state: State::Development,
+            parent: parent.map(|p| p.parse().unwrap()),
+            request: None,
+            criteria: Vec::new(),
+            summary: None,
+            pr_url: None,
+            changed: Vec::new(),
+            lines,
+        };
+        let mut cards = vec![
+            mk("H-0041", None, 0),
+            mk("H-0042", Some("H-0041"), 300),
+            mk("H-0043", Some("H-0041"), 200),
+        ];
+        add_children_lines(&mut cards);
+        assert_eq!(cards[0].lines, 500);
+        assert_eq!(cards[1].lines, 300);
     }
 
     #[test]

@@ -298,7 +298,12 @@ pub fn new(cwd: &Path, a: NewArgs, mode: Mode) -> Result<Response> {
                 &repo,
                 r,
                 crate::intake::Opts {
-                    no_merge: a.no_merge,
+                    // An issue, a branch or a title asks for a specific new
+                    // item: it is never folded into another.
+                    no_merge: a.no_merge
+                        || issue.is_some()
+                        || a.branch.is_some()
+                        || a.title.is_some(),
                 },
             ))
         }
@@ -813,7 +818,7 @@ fn to_item(item: &Item, plan: &Plan, next: Vec<String>) -> Response {
 /// it, under the repo lock, while it is still in development or awaiting
 /// you. None when it has moved on since the plan, so the caller makes a new
 /// item instead.
-fn add_scope(
+pub fn add_scope(
     repo: &Repo,
     target: ItemId,
     plan: &Plan,
@@ -841,10 +846,8 @@ fn add_scope(
     save_runs(repo, target, raw);
     let mut next = vec![format!("cd {}", shell_quote(&item.worktree))];
     next.extend(next_for(&item));
-    next.push(format!(
-        "hall new {} --no-merge (build it as its own item instead)",
-        shell_quote(request.trim())
-    ));
+    // No "build it as its own item instead": the scope is already on the
+    // target's journal, and nothing withdraws it.
     Ok(Some(to_item(&item, plan, next)))
 }
 
@@ -872,7 +875,8 @@ fn covered(
 fn follows(repo: &Repo, target: ItemId, request: &str) -> String {
     match repo.hall.load_item(target) {
         Ok(t) => format!(
-            "Follows {target} (\"{}\", {}): this builds on its change.\n\n{}",
+            "Follows {target} (\"{}\", {}): this builds on its change, which is not on \
+             this branch yet.\n\n{}",
             t.title,
             t.state.as_str(),
             request.trim()

@@ -724,6 +724,10 @@ mod tests {
         assert_eq!(role_of("reviewer"), Some(Role::Reviewer));
         assert_eq!(role_of("eval"), Some(Role::Reviewer));
         assert_eq!(role_of("fix"), Some(Role::Fixer));
+        // The Product Manager and the Lead share the Front Desk's budget.
+        assert_eq!(role_of("pm"), Some(Role::Intake));
+        assert_eq!(role_of("lead"), Some(Role::Intake));
+        assert_eq!(role_of("intake"), Some(Role::Intake));
         assert_eq!(role_of("resume"), None);
         assert_eq!(table_key(Role::Reviewer), "review");
     }

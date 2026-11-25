@@ -91,15 +91,17 @@ looks at the open items and decides `plan.decision`, with `plan.reason`:
 - `new`: a new item, as usual. If the reply has `children`, follow
   **Parallel parts** below instead.
 - `merge`: the request was added to an open item's scope, and the reply is
-  that item (`created: false`). If another session is building it, tell the
-  human the request went there and stop. Otherwise work in its worktree:
-  the added scope is part of the item now, and is reviewed with it.
+  that item (`created: false`). Hallmark can't tell whether another session
+  is building it: ask the human before working in its worktree, and if one
+  is, tell the human the request went there and stop. The added scope is
+  part of the item now, and is reviewed with it.
 - `follow_up`: a new item that builds on `plan.target`; its request says so.
 - `duplicate`: `plan.target` already covers it, and nothing was created.
   Tell the human, with the reason.
 
-If the human wants it built on its own anyway, run the reply's
-`hall new … --no-merge`.
+If the human wants a request built on its own, run
+`hall new … --no-merge` before it is planned: a merge can't be taken back.
+`--issue`, `--branch` and `--title` always ask for a new item.
 
 ## Parallel parts
 

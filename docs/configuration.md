@@ -114,7 +114,7 @@ per_item        = "800k"   # weighted by price (a cache read counts a tenth), or
 review_model    = "opus"
 fix_model       = "sonnet"
 intake_model      = "sonnet"   # the Product Manager and the Lead (ADR 0068)
-intake_fast_model = "haiku"    # both, when no other item is open
+intake_fast_model = "haiku"    # both, when no other item is open; a [budget.intake] model wins over it
 librarian_model   = "haiku"
 # [budget.review] max_usd = 3.0 (or "none"), daily = "2M", effort = "high", timeout = "20m"
 

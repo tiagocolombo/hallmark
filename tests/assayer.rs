@@ -2986,3 +2986,38 @@ fn a_cache_that_cant_be_written_fails_no_check() {
     assert!(live.contains("checks cache not written"), "{live}");
     assert_eq!(events_of(&env, &id, "checks").len(), 1);
 }
+
+/// Appends a `scope_added` event the Lead would have written (ADR 0068).
+fn add_scope(env: &Env, id: &str, request: &str, criteria: &[&str]) {
+    let line = json!({
+        "v": 1, "t": chrono::Utc::now().to_rfc3339(), "actor": "you", "item": id,
+        "event": "scope_added", "request": request, "criteria": criteria
+    });
+    let p = env
+        .repo
+        .join(".git/hallmark/items")
+        .join(id)
+        .join("events.jsonl");
+    let mut text = std::fs::read_to_string(&p).unwrap();
+    text.push_str(&format!("{line}\n"));
+    std::fs::write(&p, text).unwrap();
+}
+
+#[test]
+fn the_review_reads_the_added_scope_and_every_criterion() {
+    let env = Env::initialized();
+    let script = env.script(json!([reviewer(verdict(vec![], json!([])))]));
+    let (id, wt) = env.new_item("Retry webhooks");
+    add_scope(&env, &id, "Cap retries at 6", &["stops after 6 attempts"]);
+    commit_file(&wt, "retry.rs", "fn retry() {}\n");
+    assert_eq!(env.hall(&wt, &["ready"]).code, 0);
+    tick(&env, &script);
+    tick(&env, &script);
+    let calls = env.fake_calls();
+    let prompt = calls[0]["prompt"].as_str().unwrap();
+    assert!(prompt.contains("Added scope: Cap retries at 6"), "{prompt}");
+    assert!(
+        prompt.contains("Acceptance criteria") && prompt.contains("- stops after 6 attempts"),
+        "{prompt}"
+    );
+}

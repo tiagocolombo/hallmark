@@ -37,7 +37,7 @@ them can.
 Two planning roles replace the Front Desk. Both only plan: read-only tools
 (`Read`, `Grep`, `Glob`, `StructuredOutput`), `HALL_NO_HOOKS=1`, cwd the main
 checkout, through the runner (ADR 0013), booked to room `front` as roles `pm`
-and `lead`. The person stays the stakeholder: they decide priority when they
+and `intake` (the Lead). The person stays the stakeholder: they decide priority when they
 want to, answer the questions the roles can't, and can override any plan.
 
 ### The Product Manager: what and why
@@ -80,7 +80,7 @@ It returns one decision per group of stories:
 | --- | --- |
 | `new` | One new item, optionally split into parallel parts (ADR 0024, unchanged) |
 | `merge` | Add the stories to an open item's scope |
-| `follow_up` | A new item stacked on an open item's branch or PR |
+| `follow_up` | A new item that builds on an open item. Step 1 does not stack it: it starts from a fresh base, and its request says the target's change isn't on its branch yet (only `--follow-up <pr>` stacks) |
 | `slices` | One large story built as ordered items, each one small enough to review and shippable on its own |
 | `spike` | An investigation item first: it writes a design note under `docs/` and changes no code; the stories wait for it |
 | `duplicate` | Covered already: cite the item or commit; nothing is created |
@@ -101,7 +101,7 @@ checks the plan, not the model**. A `merge` stands only when:
   `follow_up` instead, and no review work is thrown away;
 - the target is not a parallel part, and not a `Records: …` or `Library: …`
   item;
-- the target's diff plus the estimate stays under `[plan] max_item_lines`
+- the target's diff plus the estimate stays under `[intake] max_item_lines`
   (default 400; a backlog target has no diff yet);
 - it doesn't mix a `security_review` path with paths outside them.
 
@@ -245,11 +245,16 @@ Each step is one item:
    Hallmark's checks. `scope_added`, and the request read with it by the
    review, the fixer, the PR description and the librarian. Criteria kept
    on the item and in the `hall new` reply. Until plans exist (step 3),
-   `hall new` applies the Lead's decision at once, and its `next` offers
-   `--no-merge` to build the request on its own instead.
-2. Criteria downstream: the developer's context, `propose-ready`'s
-   `CRITERIA_OPEN`, the test audit, the PR's checklist and the Gazette. The
-   added scope delivered to the session building the item.
+   `hall new` applies the Lead's decision at once; a merge is not taken
+   back, so `--no-merge` (and `--issue`, `--branch`, `--title`) is how a
+   request is built on its own.
+   The criteria also reach, in step 1, the developer's SessionStart context,
+   the review prompt (the test audit checks each one), the fixer, the PR's
+   checklist, the librarian and the Gazette; `hall propose-ready` refuses an
+   item with criteria until `--tested` accounts for them (a `USAGE` error
+   for now, a `CRITERIA_OPEN` code later).
+2. Later: delivering added scope to a session already building the item (a
+   hook that notices `scope_added`), and a `scope_withdrawn` event.
 3. `hall plan` for lists: groups, slices, spikes, estimates, plan journals.
 4. Grooming: plan questions, headless re-planning on answers.
 5. The backlog: the state, priority, the work in progress limit, `hall

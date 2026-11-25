@@ -188,7 +188,7 @@ pub fn digest(item: &Item, events: &[Event], changed: &[String]) -> String {
     }
     s.push_str(".\n");
 
-    if let Some(r) = crate::event::request_of(events) {
+    if let Some(r) = crate::event::request_with_criteria(events) {
         s.push_str(&format!("\n## Request\n\n{}\n", clip_block(&r, 1200)));
     }
     if !changed.is_empty() {
@@ -1143,6 +1143,24 @@ mod tests {
         let d = digest(&item, &events, &[]);
         assert!(d.contains("Allowed another round"), "{d}");
         assert!(!d.contains("the patch changed in the rebase"), "{d}");
+    }
+
+    #[test]
+    fn the_digest_reads_the_added_scope_and_criteria() {
+        let mut events = journal();
+        events.push(Event::new(
+            "you",
+            Some(ItemId(42)),
+            Body::ScopeAdded {
+                request: "Cap retries at 6".into(),
+                criteria: vec!["stops after 6 attempts".into()],
+                reason: None,
+            },
+        ));
+        let item = crate::event::fold(ItemId(42), &events).unwrap();
+        let d = digest(&item, &events, &[]);
+        assert!(d.contains("Added scope: Cap retries at 6"), "{d}");
+        assert!(d.contains("- stops after 6 attempts"), "{d}");
     }
 
     #[test]

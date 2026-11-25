@@ -387,6 +387,9 @@ impl Ctx {
             Some(i) => {
                 let mut t = item_context(i, inbox);
                 t.push_str(&family_context(i, &self.children(i.id)));
+                t.push_str(&criteria_context(
+                    &self.repo.hall.read_item(i.id).unwrap_or_default(),
+                ));
                 t
             }
             None => repo_context(&self.repo, &self.items, inbox),
@@ -985,6 +988,26 @@ fn last_json(out: &str) -> Option<Value> {
             None
         }
     })
+}
+
+/// The item's request with the scope added to it, and its acceptance
+/// criteria (ADR 0068): what done means, for the session building it.
+fn criteria_context(events: &[crate::event::Event]) -> String {
+    let criteria = crate::event::criteria_of(events);
+    if criteria.is_empty() {
+        return String::new();
+    }
+    let mut s = String::from(
+        "\n\nAcceptance criteria: build to each one, test each one, and say in \
+         `hall propose-ready --tested` how each is met:",
+    );
+    for c in criteria {
+        s.push_str(&format!("\n- {c}"));
+    }
+    if let Some(r) = crate::event::request_of(events) {
+        s.push_str(&format!("\n\nThe request, with any scope added to it:\n{r}"));
+    }
+    s
 }
 
 fn item_context(i: &Item, inbox: usize) -> String {
