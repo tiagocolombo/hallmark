@@ -407,7 +407,8 @@ fn a_configured_intake_model_wins_on_the_fast_path() {
     let env = Env::initialized();
     let cfg = env.repo.join(".hallmark.toml");
     let text = std::fs::read_to_string(&cfg).unwrap();
-    std::fs::write(&cfg, format!("{text}\n[budget.intake]\nmodel = \"opus\"\n")).unwrap();
+    let extra = "\n[budget.intake]\nmodel = \"opus\"\n";
+    std::fs::write(&cfg, format!("{text}{extra}")).unwrap();
     let script = env.script(split_plan());
     let r = env.hall_fake(&env.repo, &script, &["new", REQUEST]);
     assert_eq!(r.code, 0, "{}", r.stdout);
@@ -654,11 +655,15 @@ fn editing_a_part_binds_the_session_to_the_parent() {
     assert!(ctx.contains("one subagent per open part"), "{ctx}");
     // And the Product Manager's criteria, with the `--tested` that answers
     // them (ADR 0068).
-    assert!(ctx.contains("Acceptance criteria"), "{ctx}");
-    assert!(ctx.contains("- a failed API call is retried with backoff"), "{ctx}");
-    assert!(ctx.contains("- the web app shows a status banner"), "{ctx}");
-    assert!(ctx.contains("propose-ready"), "{ctx}");
-    assert!(ctx.contains("--tested"), "{ctx}");
+    for want in [
+        "Acceptance criteria",
+        "- a failed API call is retried with backoff",
+        "- the web app shows a status banner",
+        "propose-ready",
+        "--tested",
+    ] {
+        assert!(ctx.contains(want), "{want} missing: {ctx}");
+    }
 
     // A session started inside a part works on that part.
     s["cwd"] = json!(p(&wt(&r, 1)));

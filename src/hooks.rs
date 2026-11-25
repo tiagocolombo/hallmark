@@ -1101,19 +1101,17 @@ fn family_context(i: &Item, children: &[Item]) -> String {
         list.join("; ")
     );
     if open.is_empty() {
+        let tested = if i.has_criteria {
+            " --tested \"<how each criterion is met>\""
+        } else {
+            ""
+        };
         s.push_str(&format!(
             "Every part is merged or dropped: run the gates in {}'s worktree, summarise, \
              `hall propose-ready {} --summary … --why … --how …{}`: it goes to review on its own \
              unless something is left \
              to confirm (then `--ask`, and `hall ready {}` when the human says so).",
-            i.id,
-            i.id,
-            if i.has_criteria {
-                " --tested \"<how each criterion is met>\""
-            } else {
-                ""
-            },
-            i.id
+            i.id, i.id, tested, i.id
         ));
     } else {
         s.push_str(&format!(
