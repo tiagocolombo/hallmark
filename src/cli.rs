@@ -131,6 +131,10 @@ pub enum Cmd {
     /// The web app: every repo's items, your office, the merge queue and
     /// the settings, in a browser on this machine. Runs until stopped.
     Web(WebArgs),
+    /// The agents' conversations as Q&A threads: each review finding with
+    /// the verifier's check, the fixer's answer and the reviewer's ruling;
+    /// planning; questions to you. A thread ID (`H-0042/F3`) shows one whole.
+    Threads(ThreadsArgs),
     /// An item's Gazette: its story as a newspaper page, for a person.
     /// Printed when the item finishes; `--open` opens it in the browser.
     Gazette(GazetteArgs),
@@ -745,6 +749,23 @@ pub struct WebArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct ThreadsArgs {
+    /// A thread ID (`H-0042/F3`) shows that thread; an item ID lists that
+    /// item's threads. Omit to list every item's.
+    pub target: Option<String>,
+    /// Only these kinds (comma-separated): finding, refuted, planning, question.
+    #[arg(long, value_delimiter = ',')]
+    pub kind: Vec<String>,
+    /// Only these statuses (comma-separated): open, answered, resolved,
+    /// withdrawn, refuted, closed.
+    #[arg(long, value_delimiter = ',')]
+    pub status: Vec<String>,
+    /// List at most N threads (default 50).
+    #[arg(long)]
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Args)]
 pub struct GazetteArgs {
     /// An item ID; omit inside an item's worktree.
     pub id: Option<String>,
@@ -953,6 +974,7 @@ pub fn run_in_app(args: &[String], cwd: &std::path::Path) -> Result<Response> {
             | Cmd::Findings(_)
             | Cmd::History(_)
             | Cmd::Stats(_)
+            | Cmd::Threads(_)
             | Cmd::Queue
             | Cmd::Export(_)
             | Cmd::Usage(_),
@@ -1019,6 +1041,7 @@ pub fn allowed_on_web(args: &[String]) -> Result<()> {
             | Cmd::Merge(_)
             | Cmd::History(_)
             | Cmd::Stats(_)
+            | Cmd::Threads(_)
             | Cmd::Queue
             | Cmd::Export(_)
             | Cmd::Budget(_)
@@ -1093,6 +1116,7 @@ fn dispatch(cmd: Option<Cmd>, cwd: &std::path::Path, mode: Mode) -> Result<Respo
         Some(Cmd::Extensions(a)) => extensions::extensions(cwd, a),
         Some(Cmd::Hud(a)) => hud::hud(cwd, a),
         Some(Cmd::Web(a)) => crate::web::web(cwd, a, mode),
+        Some(Cmd::Threads(a)) => threads::threads(cwd, a),
         Some(Cmd::Gazette(a)) => gazette::gazette(cwd, a),
         Some(Cmd::Attach(a)) => gazette::attach(cwd, a),
     }
@@ -1127,6 +1151,17 @@ mod web_tests {
         let dir = std::env::temp_dir();
         let e = super::run_in_app(&["stats".to_string()], &dir);
         if let Err(e) = e {
+            assert_ne!(e.code, crate::error::ErrorCode::Usage, "{}", e.message);
+        }
+    }
+
+    #[test]
+    fn the_web_and_the_app_read_threads() {
+        assert!(ok(&["threads"]));
+        assert!(ok(&["threads", "H-0001/F1"]));
+        assert!(ok(&["threads", "--status", "open"]));
+        let dir = std::env::temp_dir();
+        if let Err(e) = super::run_in_app(&["threads".to_string()], &dir) {
             assert_ne!(e.code, crate::error::ErrorCode::Usage, "{}", e.message);
         }
     }

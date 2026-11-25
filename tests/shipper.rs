@@ -716,6 +716,112 @@ fn stats_leave_a_dispute_no_review_ruled_on_out_of_rejected() {
 }
 
 #[test]
+fn threads_follow_a_finding_from_the_question_to_the_ruling() {
+    let env = Env::initialized();
+    let (id, wt, _) = fixing_item(&env, "Retry webhooks");
+    commit_file(&wt, "retry.rs", "fn retry() { lock(); }\n");
+    let r = env.hall(
+        &wt,
+        &[
+            "fixed",
+            "F2",
+            "--dispute",
+            "F1",
+            "--reason",
+            "not reachable",
+        ],
+    );
+    assert_eq!(r.code, 0, "{}", r.stdout);
+
+    // Before the next review: F1 and F2 are answered, F3 is still open.
+    let r = env.hall(&env.repo, &["threads", &id]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(r.json["item"], id.as_str());
+    assert_eq!(r.json["tally"]["answered"], 2);
+    assert_eq!(r.json["tally"]["open"], 1);
+    let ids: Vec<&str> = r.json["threads"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["id"].as_str().unwrap())
+        .collect();
+    for f in ["F1", "F2", "F3"] {
+        assert!(ids.contains(&format!("{id}/{f}").as_str()), "{ids:?}");
+    }
+    assert!(
+        r.json["threads"][0].get("posts").is_none(),
+        "the list has no posts"
+    );
+
+    let sha = git(&wt, &["rev-parse", "HEAD"]);
+    append(&env, &id, "assayer", checks(&sha, 2, true, vec![]));
+    append(
+        &env,
+        &id,
+        "assayer",
+        verdict(
+            &sha,
+            2,
+            vec![],
+            vec![
+                ("F1", PriorStatus::Withdrawn),
+                ("F2", PriorStatus::Fixed),
+                ("F3", PriorStatus::Open),
+            ],
+            counts(0, 0, 0, 1),
+        ),
+    );
+
+    // The dispute was upheld: its answer is accepted and the ruling says so.
+    let r = env.hall(&env.repo, &["threads", &format!("{id}/F1")]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(r.json["status"], "withdrawn");
+    assert_eq!(r.json["kind"], "finding");
+    let posts = r.json["posts"].as_array().unwrap();
+    let shape: Vec<(&str, &str)> = posts
+        .iter()
+        .map(|p| (p["kind"].as_str().unwrap(), p["author"].as_str().unwrap()))
+        .collect();
+    assert_eq!(shape[0].0, "question");
+    assert!(shape[0].1.starts_with("reviewer"), "{shape:?}");
+    assert_eq!(shape[1], ("answer", "you"));
+    assert_eq!(posts[1]["body"], "Disputed: not reachable");
+    assert_eq!(posts[1]["accepted"], true);
+    assert_eq!(shape.last().unwrap().0, "ruling");
+    assert_eq!(posts.last().unwrap()["body"], "Dispute upheld: withdrawn.");
+
+    // The fix was accepted.
+    let r = env.hall(&env.repo, &["threads", &format!("{id}/F2")]);
+    assert_eq!(r.json["status"], "resolved");
+    assert_eq!(r.json["posts"][1]["accepted"], true);
+
+    // Filters, across items.
+    let r = env.hall(&env.repo, &["threads", "--status", "open,answered"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(r.json["total"], 1);
+    assert_eq!(r.json["threads"][0]["id"], format!("{id}/F3"));
+    let r = env.hall(&env.repo, &["threads", "--kind", "question"]);
+    assert_eq!(r.json["total"], 0);
+
+    // The item ends with F3 open: the thread is closed, not live.
+    assert_eq!(
+        env.hall(&env.repo, &["drop", &id, "--reason", "rethink"])
+            .code,
+        0
+    );
+    let r = env.hall(&env.repo, &["threads", &format!("{id}/F3")]);
+    assert_eq!(r.json["status"], "closed");
+
+    // Errors.
+    let r = env.hall(&env.repo, &["threads", &format!("{id}/F9")]);
+    assert_eq!(r.code, 3);
+    assert_eq!(r.json["error"]["code"], "THREAD_NOT_FOUND");
+    let r = env.hall(&env.repo, &["threads", "--status", "maybe"]);
+    assert_eq!(r.code, 2);
+    assert_eq!(r.json["error"]["code"], "USAGE");
+}
+
+#[test]
 fn findings_from_both_rounds_are_tracked_for_history() {
     // A blocker raised in round 2 counts as a reason too.
     let env = Env::initialized();

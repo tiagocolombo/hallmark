@@ -21,6 +21,8 @@ pub enum ErrorCode {
     NoItem,
     /// No question with that ID.
     QuestionNotFound,
+    /// No thread with that ID (`hall threads`).
+    ThreadNotFound,
     /// The action is not allowed in the item's current state.
     WrongState,
     /// The item is in the review loop at a different commit.
@@ -54,13 +56,14 @@ pub enum ErrorCode {
 }
 
 impl ErrorCode {
-    pub const ALL: [ErrorCode; 21] = [
+    pub const ALL: [ErrorCode; 22] = [
         ErrorCode::Usage,
         ErrorCode::NotARepo,
         ErrorCode::NotInitialized,
         ErrorCode::ItemNotFound,
         ErrorCode::NoItem,
         ErrorCode::QuestionNotFound,
+        ErrorCode::ThreadNotFound,
         ErrorCode::WrongState,
         ErrorCode::ItemInReview,
         ErrorCode::DirtyWorktree,
@@ -90,7 +93,8 @@ impl ErrorCode {
             | ErrorCode::NotInitialized
             | ErrorCode::ItemNotFound
             | ErrorCode::NoItem
-            | ErrorCode::QuestionNotFound => 3,
+            | ErrorCode::QuestionNotFound
+            | ErrorCode::ThreadNotFound => 3,
             ErrorCode::WrongState
             | ErrorCode::ItemInReview
             | ErrorCode::DirtyWorktree

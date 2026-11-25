@@ -33,6 +33,7 @@ const S = {
   q: '',
   hist: { rejected: false, lens: '', since: '30d' },
   libq: '',
+  th: { status: '', kind: '' },
   usage: { by: 'room', since: '14d' },
   cfg: { group: '', user: false },
   logKind: 'all',
@@ -44,10 +45,10 @@ const S = {
 const WEB = new Set(['status', 'log', 'inbox', 'ready', 'pull-back', 'drop', 'retry', 'continue',
   'answer', 'usage', 'reindex', 'config', 'findings', 'merge', 'history', 'stats', 'queue',
   'export', 'budget', 'notify', 'library', 'extensions', 'hud', 'doctor', 'new', 'adopt',
-  'trace', 'daemon', 'update', 'gazette']);
+  'trace', 'daemon', 'update', 'gazette', 'threads']);
 // Readers: offered as links to the view that shows them, not as buttons.
 const READERS = new Set(['status', 'log', 'findings', 'trace', 'history', 'stats', 'queue',
-  'usage', 'hud', 'inbox', 'watch']);
+  'usage', 'hud', 'inbox', 'watch', 'threads']);
 
 // ---------------------------------------------------------------- plumbing
 
@@ -444,9 +445,9 @@ async function item(id, tab = 'journal', arg) {
   const extra = [];
   if (!terminal) extra.push({ command: `hall drop ${id} --reason "<why>"`, does: 'drop it' });
   extra.push({ command: `hall export ${id}`, does: 'export its record' });
-  const tabs = ['journal', 'findings', 'diff', 'runs', 'usage', 'gazette'].map((t) =>
+  const tabs = ['journal', 'threads', 'findings', 'diff', 'runs', 'usage', 'gazette'].map((t) =>
     `<a href="#/item/${esc(id)}/${t}" class="${t === tab ? 'on' : ''}">${cap(t)}</a>`).join('');
-  const body = await ({ journal, findings, diff, runs, itemUsage, gazette: itemGazette }[tab === 'usage' ? 'itemUsage' : tab] || journal)(id, arg, i);
+  const body = await ({ journal, threads: threadList, findings, diff, runs, itemUsage, gazette: itemGazette }[tab === 'usage' ? 'itemUsage' : tab] || journal)(id, arg, i);
   return `<div class="small muted"><a href="#/floor">The floor</a> / <span class="mono">${esc(id)}</span></div>
   <header class="head"><div style="display:flex;flex-direction:column;gap:8px">
     <div class="row"><span class="mono muted">${esc(id)}</span>${pill(i.state)}<span class="small muted">${esc(i.room)} · since ${esc(ago(i.state_since))}</span></div>
@@ -908,7 +909,78 @@ async function submitNew(form) {
 
 // --------------------------------------------------------------- the shell
 
-const VIEWS = { floor, item, office, queue, records, gazette, library, usage, settings, new: newItem };
+// ------------------------------------------------------------------ threads
+
+// The agents' conversations as Q&A threads (`hall threads`, ADR 0070): a
+// list like a developer Q&A site's, and each thread from its question to
+// where it ended.
+const TSTATUS = { open: 'stop', answered: 'you', resolved: 'ok', withdrawn: 'info', refuted: 'info', closed: '' };
+const TKINDS = ['', 'finding', 'refuted', 'planning', 'question'];
+const TSTATUSES = ['', 'open,answered', 'open', 'answered', 'resolved', 'withdrawn', 'refuted', 'closed'];
+const threadHref = (id) => `#/threads/${encodeURIComponent(id)}`;
+
+// `#/threads`, `#/threads/<item>` or `#/threads/<thread id>`.
+async function threads(id) {
+  if (id && id.includes('/')) return thread(id);
+  return head(id ? `Threads on ${id}` : 'Agents asking, answering and ruling', 'Threads') + await threadList(id);
+}
+
+async function threadList(item) {
+  const args = ['threads'];
+  if (item) args.push(item);
+  if (S.th.status) args.push('--status', S.th.status);
+  if (S.th.kind) args.push('--kind', S.th.kind);
+  args.push('--limit', '200');
+  const r = await hall(args);
+  if (errorOf(r)) return failure(r, command(args));
+  const t = r.reply.tally || {};
+  const rows = r.reply.threads || [];
+  const sel = (bind, list, now) => `<select data-bind="${bind}">${list.map((v) =>
+    `<option value="${esc(v)}" ${v === now ? 'selected' : ''}>${esc(v ? v.replace(',', ' or ') : 'all')}</option>`).join('')}</select>`;
+  return `<div class="row"><label class="row small muted">Status ${sel('th.status', TSTATUSES, S.th.status)}</label>
+    <label class="row small muted">Kind ${sel('th.kind', TKINDS, S.th.kind)}</label>
+    <span class="small muted">${esc(r.reply.total)} thread${r.reply.total === 1 ? '' : 's'} · ${['open', 'answered', 'resolved', 'withdrawn', 'refuted', 'closed'].map((k) => `${t[k] || 0} ${k}`).join(' · ')}</span></div>
+  <div class="threads">${rows.map((x) => `<div class="trow">
+    <div class="tcount ${esc(x.status)}"><b>${esc(x.replies)}</b><span>repl${x.replies === 1 ? 'y' : 'ies'}</span></div>
+    <div class="grow" style="min-width:0">
+      <a class="ttitle" href="${threadHref(x.id)}">${esc(x.title)}</a>
+      <div class="row small" style="gap:4px 6px;margin-top:4px"><span class="pill ${TSTATUS[x.status] || ''}">${esc(x.status)}</span>
+        <span class="pill">${esc(x.kind)}</span>${(x.tags || []).filter((g) => g !== x.kind).map((g) => `<span class="tag mono">${esc(g)}</span>`).join('')}</div>
+      <div class="small muted" style="margin-top:4px"><span class="mono">${esc(x.id)}</span> · asked by <span style="color:${roleColor(x.asked_by)}">${esc(x.asked_by)}</span> ${esc(ago(x.asked_at))} ago
+        · active ${esc(ago(x.last_at))} ago${item ? '' : ` · <a href="#/item/${esc(x.item)}/threads">${esc(x.item)}</a> ${esc(x.item_title)}`}</div>
+    </div></div>`).join('') || '<div class="empty">No threads match. They start when an item is planned, reviewed, or asks you something.</div>'}</div>
+  ${rows.length < (r.reply.total || 0) ? `<div class="small muted">Showing the first ${rows.length}.</div>` : ''}`;
+}
+
+const POST = { question: 'asked', answer: 'answered', comment: 'commented', ruling: 'ruled' };
+
+async function thread(id) {
+  const r = await hall(['threads', id]);
+  if (errorOf(r)) return head('Thread', id) + failure(r, `hall threads ${id}`);
+  const t = r.reply;
+  const [q, ...rest] = t.posts || [];
+  const post = (p) => `<article class="post ${esc(p.kind)}${p.accepted ? ' accepted' : ''}">
+    <div class="row small muted"><b style="color:${roleColor(p.author)}">${esc(p.author)}</b><span>${esc(POST[p.kind] || p.kind)}</span>
+      ${p.round ? `<span>round ${esc(p.round)}</span>` : ''}${p.sha ? `<span class="mono">${esc(short(p.sha))}</span>` : ''}
+      <span>${esc(day(p.t))} ${esc(clock(p.t))}</span><span class="grow"></span>${p.accepted ? '<span class="pill ok">✓ accepted</span>' : ''}</div>
+    <div class="pbody">${esc(p.body)}</div></article>`;
+  const comments = rest.filter((p) => p.kind === 'comment');
+  const replies = rest.filter((p) => p.kind !== 'comment');
+  return `<div class="small muted"><a href="#/threads">Threads</a> / <a href="#/item/${esc(t.item)}/threads">${esc(t.item)}</a> / <span class="mono">${esc(t.id)}</span></div>
+  <header class="head"><div style="display:flex;flex-direction:column;gap:8px">
+    <div class="row"><span class="pill ${TSTATUS[t.status] || ''}">${esc(t.status)}</span><span class="pill">${esc(t.kind)}</span>
+      ${(t.tags || []).filter((g) => g !== t.kind).map((g) => `<span class="tag mono">${esc(g)}</span>`).join('')}</div>
+    <h1 style="font-size:20px">${esc(t.title)}</h1>
+    <div class="small muted">On <a href="#/item/${esc(t.item)}">${esc(t.item)}</a> ${esc(t.item_title)} · ${pill(t.item_state)}</div>
+  </div></header>
+  ${q ? post(q) : ''}
+  ${comments.length ? `<div class="comments">${comments.map(post).join('')}</div>` : ''}
+  <h2>${replies.length} repl${replies.length === 1 ? 'y' : 'ies'}</h2>
+  ${replies.map(post).join('') || '<div class="empty">No answer yet.</div>'}
+  <div class="row">${actions(r.reply.next || [])}</div>`;
+}
+
+const VIEWS = { floor, item, office, queue, records, threads, gazette, library, usage, settings, new: newItem };
 // The views that read again on every refresh; the others wait for you.
 const LIVE = new Set(['floor', 'item', 'office', 'queue', 'usage']);
 
@@ -948,6 +1020,7 @@ const SUB = {
   office: ['Your office.', 'Only what needs a person: questions, “looks done?”, escalations and holds.'],
   queue: ['Merge queue.', 'What the merger will do, in order. Read from GitHub; this page never merges on its own.'],
   records: ['Records.', 'Closed and dropped items, and why things were rejected.'],
+  threads: ['Threads.', 'What the agents asked each other, answered and ruled, from the journal. Nothing here is new; it is the journal, read as conversations.'],
   gazette: ['Gazette.', 'A newspaper page for each finished item, written up by the librarian for people.'],
   library: ['Library.', 'Learnings from past reviews, kept on this machine, never committed.'],
   usage: ['Usage & budget.', 'Cost is an estimate at list price from token counts, not a bill.'],
