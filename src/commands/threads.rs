@@ -214,9 +214,9 @@ pub fn threads(cwd: &Path, a: ThreadsArgs) -> Result<Response> {
     let statuses = parse_all(&a.status, "--status", &ThreadStatus::ALL, |s| s.as_str())?;
 
     // A thread ID shows that thread.
-    if let Some((item, _)) = a.target.as_deref().and_then(|t| t.split_once('/')) {
-        let target = a.target.clone().unwrap_or_default();
+    if let Some((item, key)) = a.target.as_deref().and_then(|t| t.split_once('/')) {
         let item = repo.resolve(Some(item))?;
+        let target = format!("{}/{key}", item.id);
         let events = repo.hall.read_item(item.id)?;
         let found = threads::of_item(item.id, &item.title, item.state, &events)
             .into_iter()

@@ -508,7 +508,7 @@ pub fn of_item(id: ItemId, item_title: &str, state: State, events: &[Event]) -> 
         t.replies = t
             .posts
             .iter()
-            .filter(|p| p.kind != PostKind::Question)
+            .filter(|p| matches!(p.kind, PostKind::Answer | PostKind::Ruling))
             .count();
         t.last_at = t.posts.iter().map(|p| p.t).max().unwrap_or(t.asked_at);
     }
@@ -650,7 +650,7 @@ mod tests {
         );
         assert!(t.posts[2].accepted, "the fix is the accepted answer");
         assert_eq!(t.posts[3].body, "Fixed at bbb2222.");
-        assert_eq!(t.replies, 3);
+        assert_eq!(t.replies, 2, "the answer and the ruling, not the comment");
     }
 
     #[test]
@@ -801,7 +801,7 @@ mod tests {
         events.push(ev("hall", Body::AnswerDelivered { qid: "q1".into() }));
         let t = threads(&events);
         assert_eq!(t[1].status, ThreadStatus::Resolved);
-        assert_eq!(t[1].replies, 2);
+        assert_eq!(t[1].replies, 1);
         assert_eq!(t[1].posts[2].body, "Sent to the session that asked.");
     }
 
@@ -815,6 +815,200 @@ mod tests {
         assert_eq!(t[0].status, ThreadStatus::Closed);
         let t = of_item("H-0001".parse().unwrap(), "x", State::Review, &events);
         assert_eq!(t[0].status, ThreadStatus::Open);
+    }
+
+    #[test]
+    fn only_a_checked_blocking_finding_of_that_round_stands_verified() {
+        let mut pre = finding("F3", 1, Severity::Major);
+        pre.pre_existing = true;
+        let events = vec![
+            ev(
+                "assayer",
+                Body::Verified {
+                    sha: "aaa".into(),
+                    round: 1,
+                    model: Some("sonnet".into()),
+                    checked: 3,
+                    dropped: vec![],
+                },
+            ),
+            ev(
+                "assayer",
+                verdict(
+                    1,
+                    "aaa",
+                    vec![
+                        finding("F1", 1, Severity::Major),
+                        finding("F2", 1, Severity::Minor),
+                        pre,
+                    ],
+                    vec![],
+                ),
+            ),
+            ev(
+                "assayer",
+                verdict(
+                    2,
+                    "bbb",
+                    vec![finding("F4", 2, Severity::Major)],
+                    vec![ruling("F1", PriorStatus::Open)],
+                ),
+            ),
+        ];
+        let t = threads(&events);
+        let commented = |id: &str| {
+            t.iter()
+                .find(|x| x.id == format!("H-0001/{id}"))
+                .unwrap()
+                .posts
+                .iter()
+                .any(|p| p.kind == PostKind::Comment)
+        };
+        assert!(commented("F1"));
+        assert!(!commented("F2"), "a minor is not verified");
+        assert!(!commented("F3"), "a pre-existing finding is not verified");
+        assert!(!commented("F4"), "round 2 was never checked");
+    }
+
+    #[test]
+    fn a_dispute_the_reviewer_overruled_is_not_the_accepted_answer() {
+        let events = vec![
+            ev(
+                "assayer",
+                verdict(1, "aaa", vec![finding("F1", 1, Severity::Minor)], vec![]),
+            ),
+            ev(
+                "fixer",
+                Body::FixSubmitted {
+                    sha: "bbb".into(),
+                    fixes: vec![],
+                    disputes: vec![Dispute {
+                        id: "F1".into(),
+                        reason: "fine as is".into(),
+                    }],
+                },
+            ),
+            ev(
+                "assayer",
+                verdict(2, "bbb", vec![], vec![ruling("F1", PriorStatus::Fixed)]),
+            ),
+        ];
+        let t = &threads(&events)[0];
+        assert_eq!(t.status, ThreadStatus::Resolved);
+        assert!(!t.posts[1].accepted);
+    }
+
+    #[test]
+    fn a_defaulted_answer_is_credited_to_hallmark() {
+        let events = vec![
+            ev(
+                "agent",
+                Body::Question {
+                    qid: "q1".into(),
+                    text: "Six or ten?".into(),
+                    options: vec![],
+                    default: Some("6".into()),
+                    wait: None,
+                    deadline: None,
+                },
+            ),
+            ev(
+                "hall",
+                Body::Answer {
+                    qid: "q1".into(),
+                    answer: "6".into(),
+                    defaulted: true,
+                },
+            ),
+        ];
+        let a = &threads(&events)[0].posts[1];
+        assert_eq!(a.author, "Hallmark");
+        assert_eq!(a.body, "Nobody answered in time; the default was used: 6");
+    }
+
+    #[test]
+    fn a_split_plan_lists_its_parts() {
+        let events = vec![
+            ev(
+                "you",
+                Body::Created {
+                    title: "Big".into(),
+                    branch: "b".into(),
+                    worktree: "w".into(),
+                    base: "main".into(),
+                    issue: None,
+                    request: Some("Do two things".into()),
+                    adopted: false,
+                    parent: None,
+                    follow_up: None,
+                    pr_url: None,
+                    pr_head: None,
+                    own_worktree: None,
+                },
+            ),
+            ev(
+                "you",
+                Body::Planned {
+                    parallel: true,
+                    children: vec!["H-0002".parse().unwrap(), "H-0003".parse().unwrap()],
+                    reason: None,
+                },
+            ),
+        ];
+        assert_eq!(
+            threads(&events)[0].posts[1].body,
+            "Split into 2 parallel parts: H-0002, H-0003."
+        );
+    }
+
+    #[test]
+    fn the_most_recent_settled_thread_sorts_first() {
+        let events = vec![
+            ev(
+                "agent",
+                Body::Question {
+                    qid: "q1".into(),
+                    text: "old".into(),
+                    options: vec![],
+                    default: None,
+                    wait: None,
+                    deadline: None,
+                },
+            ),
+            ev(
+                "you",
+                Body::Answer {
+                    qid: "q1".into(),
+                    answer: "a".into(),
+                    defaulted: false,
+                },
+            ),
+            ev(
+                "agent",
+                Body::Question {
+                    qid: "q2".into(),
+                    text: "new".into(),
+                    options: vec![],
+                    default: None,
+                    wait: None,
+                    deadline: None,
+                },
+            ),
+            ev(
+                "you",
+                Body::Answer {
+                    qid: "q2".into(),
+                    answer: "b".into(),
+                    defaulted: false,
+                },
+            ),
+        ];
+        let mut t = threads(&events);
+        let base = t[0].last_at;
+        t[0].last_at = base - chrono::Duration::hours(2);
+        t[1].last_at = base;
+        sort(&mut t);
+        assert_eq!(t[0].id, "H-0001/q-q2");
     }
 
     #[test]
