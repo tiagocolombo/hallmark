@@ -734,7 +734,7 @@ async function library() {
     S.libq ? hall(['library', 'search', S.libq, '--proposed', '--limit', '30']) : Promise.resolve(null)]);
   const proposed = (rev && rev.reply && rev.reply.proposed) || [];
   const results = (hits && hits.reply && hits.reply.results) || [];
-  return head('Kept locally, never committed', 'Library', `<div class="row">
+  return head('Kept locally; committed only with library.commit', 'Library', `<div class="row">
     <button type="button" class="btn" data-run="hall library import">Import</button>
     <button type="button" class="btn" data-run="hall library export --out &lt;file&gt;">Export</button></div>`) + `
   <form data-form="libsearch" class="row"><input type="search" name="q" value="${esc(S.libq)}" placeholder="Search learnings" class="grow" aria-label="Search learnings">
@@ -1022,7 +1022,7 @@ const SUB = {
   records: ['Records.', 'Closed and dropped items, and why things were rejected.'],
   threads: ['Threads.', 'What the agents asked each other, answered and ruled, from the journal. Nothing here is new; it is the journal, read as conversations.'],
   gazette: ['Gazette.', 'A newspaper page for each finished item, written up by the librarian for people.'],
-  library: ['Library.', 'Learnings from past reviews, kept on this machine, never committed.'],
+  library: ['Library.', 'Learnings from past reviews, kept on this machine; committed to the repo only with library.commit.'],
   usage: ['Usage & budget.', 'Cost is an estimate at list price from token counts, not a bill.'],
   settings: ['Settings.', 'Each change runs hall config; comments and layout in the file are kept.'],
   new: ['New item.', 'The Front Desk makes the item, its branch and its worktree.'],

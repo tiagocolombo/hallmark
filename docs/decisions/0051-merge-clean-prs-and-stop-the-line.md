@@ -76,7 +76,9 @@ have to be green first). It is merged by hand with `gh pr merge <pr> --squash
 - In either mode a merge waits for the base tip's checks to finish: with
   `files` as well, PRs on separate files, which used to merge a look or two
   apart, now merge a full base CI run apart. A new tip with no check runs
-  counts as running for five minutes, a run waiting on a person doesn't count,
+  counts as running for five minutes (superseded in part, 2026-10-30: with
+  `merge.require_ci = false` a tip with no check runs is green at once, and
+  the queue says "no CI on main"; H-0106), a run waiting on a person doesn't count,
   and checks running past six hours stop holding the line.
 - A bad combination isn't prevented; it is caught. It lands on the base, the
   base's CI fails, and the queue stops. The next merge waits for that CI, so

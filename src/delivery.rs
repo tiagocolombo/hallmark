@@ -93,8 +93,9 @@ pub fn base_ref_capped(wt: &Path, base: &str) -> Option<Target> {
     resolve_ref(wt, base)
 }
 
-/// `origin/<base>` when it exists locally, else the local branch.
-fn resolve_ref(wt: &Path, base: &str) -> Option<Target> {
+/// `origin/<base>` when it exists locally, else the local branch. No fetch:
+/// the ref is as fresh as the last worker that fetched it.
+pub fn resolve_ref(wt: &Path, base: &str) -> Option<Target> {
     if git::ok(wt, &["remote", "get-url", "origin"]) {
         let remote = format!("refs/remotes/origin/{base}");
         if git::rev(wt, &remote).is_some() {

@@ -1165,6 +1165,25 @@ fn import_reads_committed_learnings_from_the_base() {
 }
 
 #[test]
+fn import_says_to_move_the_library_out_unless_the_repo_keeps_it() {
+    let hint = |env: &Env| {
+        let r = env.hall(&env.repo, &["library", "import"]);
+        assert_eq!(r.code, 0, "{}", r.stdout);
+        r.json["next"].to_string()
+    };
+    let env = Env::initialized();
+    commit_learnings(&env.repo, &seed_files());
+    assert!(hint(&env).contains("Move the Library out of the repo"));
+
+    // With `commit = true` the committed Library is on purpose (ADR 0066).
+    let env = Env::initialized();
+    let r = env.hall(&env.repo, &["config", "set", "library.commit", "true"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    commit_learnings(&env.repo, &seed_files());
+    assert!(!hint(&env).contains("Move the Library out of the repo"));
+}
+
+#[test]
 fn export_then_import_round_trips() {
     let env = Env::initialized();
     seed(&env);

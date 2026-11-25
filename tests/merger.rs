@@ -1868,10 +1868,77 @@ fn a_tip_with_no_check_runs_yet_is_waited_for_then_counts_as_green() {
     setup(&env);
     let (first, _, _) = shipped(&env, &gh, 1, "a.rs");
     tip_checks(&gh, json!([]));
+    // The queue says no CI has started, not that CI is running.
+    let q = queue(&env, &gh);
+    let why = status_of(&q, &first)["why"].as_str().unwrap().to_string();
+    assert!(why.contains("no CI on main yet"), "{why}");
+    assert!(!why.contains("still running"), "{why}");
     pass(&env, &gh);
     assert!(events(&env, &first, "pr_merged").is_empty());
     // Still nothing long after: the repo has no CI on the base.
     age_pending(&env, 3600);
+    let q = queue(&env, &gh);
+    let e = status_of(&q, &first);
+    assert_eq!(e["status"], "ready", "{q}");
+    assert!(
+        e["why"].as_str().unwrap().ends_with("; no CI on main"),
+        "{q}"
+    );
+    pass(&env, &gh);
+    assert_eq!(events(&env, &first, "pr_merged").len(), 1);
+}
+
+#[test]
+fn without_require_ci_a_tip_with_no_check_runs_is_green_at_once() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    set_config(&env, "merge.require_ci", "false");
+    let (first, _, _) = shipped(&env, &gh, 1, "a.rs");
+    tip_checks(&gh, json!([]));
+    let q = queue(&env, &gh);
+    let e = status_of(&q, &first);
+    assert_eq!(e["status"], "ready", "{q}");
+    let why = e["why"].as_str().unwrap();
+    assert!(why.ends_with("; no CI on main"), "{why}");
+    assert!(!why.contains("still running"), "{why}");
+    // No five-minute pause: the first pass merges, and nothing is pending.
+    pass(&env, &gh);
+    assert_eq!(events(&env, &first, "pr_merged").len(), 1);
+    let state: Value = serde_json::from_str(
+        &std::fs::read_to_string(env.repo.join(".git/hallmark/merger.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(
+        state["pending"].as_object().is_none_or(|p| p.is_empty()),
+        "{state}"
+    );
+}
+
+#[test]
+fn without_require_ci_a_red_or_running_tip_still_holds_the_line() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    set_config(&env, "merge.require_ci", "false");
+    let (first, _, _) = shipped(&env, &gh, 1, "a.rs");
+    tip_checks(&gh, json!([{"name": "test", "conclusion": null}]));
+    let q = queue(&env, &gh);
+    let e = status_of(&q, &first);
+    assert_eq!(e["status"], "queued", "{q}");
+    assert!(
+        e["why"].as_str().unwrap().contains("CI is still running"),
+        "{q}"
+    );
+    pass(&env, &gh);
+    assert!(events(&env, &first, "pr_merged").is_empty());
+
+    tip_checks(&gh, json!([{"name": "test", "conclusion": "failure"}]));
+    pass(&env, &gh);
+    assert!(events(&env, &first, "pr_merged").is_empty());
+    assert!(inbox_has(&env, "base_red"));
+
+    tip_checks(&gh, json!([{"name": "test", "conclusion": "success"}]));
     pass(&env, &gh);
     assert_eq!(events(&env, &first, "pr_merged").len(), 1);
 }

@@ -98,7 +98,9 @@ pub enum Distill {
 
 /// Is `item` something the librarian distils?
 pub fn eligible(item: &Item, events: &[Event]) -> bool {
-    if item.title.starts_with(KNOWLEDGE_PREFIX) {
+    // A records item (ADR 0066) carries pages and learnings: distilling it
+    // would print a page for the next one to carry, for ever.
+    if item.title.starts_with(KNOWLEDGE_PREFIX) || super::records::is_records_in(item, events) {
         return false;
     }
     match item.state {
@@ -465,6 +467,13 @@ pub fn distill(repo: &Repo, runner: &dyn Runner, id: ItemId) -> Result<Distill> 
             format!("{id} is a knowledge item from an earlier Hallmark; it is not distilled"),
         )
         .next(["hall library review", "hall library import"]));
+    }
+    if super::records::is_records(repo, &item) {
+        return Err(HallError::new(
+            ErrorCode::WrongState,
+            format!("{id} is a records item (ADR 0066); it is not distilled"),
+        )
+        .next([format!("hall status {id}")]));
     }
     if !eligible(&item, &events) {
         return Err(HallError::new(
@@ -855,6 +864,7 @@ pub fn next_candidate(repo: &Repo) -> Result<Option<Item>> {
         .filter(|i| {
             matches!(i.state, State::Closed | State::Escalated | State::Dropped)
                 && !i.title.starts_with(KNOWLEDGE_PREFIX)
+                && !super::records::is_records(repo, i)
         })
         .collect();
     items.sort_by_key(|i| (i.state_since, i.id));
@@ -904,6 +914,15 @@ pub fn tick(ctx: &WorkerCtx) -> Result<Progress> {
             "reprinted the Gazette for {}",
             ids.join(", ")
         )));
+    }
+    // The records the repository is missing, when it keeps them (ADR 0066).
+    match super::records::sync(repo) {
+        Ok(Some(what)) => return Ok(Progress::worked(what)),
+        Ok(None) => {}
+        Err(e) => repo.hall.live(&format!(
+            "library: the records could not be committed: {}",
+            e.message
+        )),
     }
     let now = Utc::now();
     let path = tick_state_path(repo);

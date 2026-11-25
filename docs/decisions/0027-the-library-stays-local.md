@@ -2,7 +2,10 @@
 
 Status: Accepted, 2026-10-10. Supersedes the parts of
 [ADR 0021](0021-the-library.md) about where learnings live, knowledge items,
-reading from the base branch, review and retirement.
+reading from the base branch, review and retirement. Superseded in part by
+[ADR 0066](0066-records-in-the-repo.md): with `[library] commit = true`,
+accepted learnings are also committed to `[library] dir`, through records
+items; reviews still read only the store.
 
 ## Context
 

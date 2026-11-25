@@ -94,8 +94,9 @@ are happy with.
      When the base branch requires an approving review, the PR's author
      can't give it: suggest `--admin` only if they own the repo or may bypass
      the rule.
-   - `merge.require_ci`: `false` merges without waiting for CI. With
-     `--admin` that includes red CI; say so.
+   - `merge.require_ci`: `false` merges without waiting for CI, and a base
+     tip with no check runs is green at once: suggest it for a repo with no
+     CI. With `--admin` that includes red CI; say so.
    - `merge.update` (ADR 0051): `files` (default) rebases a PR whenever the
      base moved on a file it touches, so CI tests exactly what lands, one PR
      after another on shared files. `conflicts` rebases only when GitHub says
@@ -126,9 +127,16 @@ are happy with.
    `claude_args` can't hold flags that loosen a run (`--settings`,
    `--permission-mode`, `--dangerously-skip-permissions`, …): the file is
    refused.
-9. **Tools**, user scope: `tools.claude` and `tools.gh` when they aren't on
+9. **The Library** (`[library]`): `library.auto_accept` lists the kinds of
+   learning that skip their approval. `library.commit = true` (ADR 0066)
+   also keeps accepted learnings (in `library.dir`) and Gazette pages (in
+   `library.gazette_dir`) in the repo, through reviewed `Records: …` items;
+   each waits for them until one has shipped. Off by default. In a public
+   repo, say that pages can describe security findings, and ask before
+   turning it on.
+10. **Tools**, user scope: `tools.claude` and `tools.gh` when they aren't on
    the PATH the daemon gets. Use absolute paths.
-10. **Notifications**, user scope: `notify.desktop`, `notify.phone`
+11. **Notifications**, user scope: `notify.desktop`, `notify.phone`
    (`ntfy://ntfy.sh/<random topic>` or `telegram://<token>@<chat>`),
    `notify.slack` and `notify.quiet_hours` (`22:00-07:30`). Running
    `hall notify test` creates a private ntfy topic if they have none.

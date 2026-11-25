@@ -1,5 +1,6 @@
 //! The Library's store (ADR 0027): learnings live next to the journal, in
-//! `<git-common-dir>/hallmark/library/`, never in the repository.
+//! `<git-common-dir>/hallmark/library/`; the repository holds a copy only with
+//! `[library] commit = true` (ADR 0066).
 //!
 //! - `learnings/L-0017-<slug>.md`: the current version of each learning,
 //!   whatever its status. One file per ID.

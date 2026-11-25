@@ -16,7 +16,7 @@ macOS, `xdg-open` on Linux, `start` on Windows).
 | Your Office | Questions, "looks done?", escalations: your inbox | you (`hall inbox`) |
 | Post Room | Every handoff passes through and is recorded | the `hall` CLI, the watchman |
 | Records | The journal: every prompt, commit, check, verdict and decision | `hall log` |
-| Library | What closed items taught, briefed to each review, and the Gazette, a newspaper page about each finished item for people; kept locally, never committed | the librarian |
+| Library | What closed items taught, briefed to each review, and the Gazette, a newspaper page about each finished item for people; kept locally, and with `[library] commit = true` also committed through records items (ADR 0066) | the librarian |
 | Assay Office | The checks, then the principal engineer's review; a change on a `security_review` path gets a second, security-only pass whose findings join the verdict; with `verify` set to a model, a verifier then tries to refute the review's blocking findings, and drops the ones it can show are not real | the assayer, the verifier |
 | Repair Shop | A fixer addresses failing checks and findings | the fixer |
 | Stamping Room | The approved commit gets its hallmark, a git note | the assayer |
@@ -118,7 +118,11 @@ From the replay in the design page:
    is ready ([ADR 0048](decisions/0048-the-merger.md)). The Delivery office
    records it, and the sweeper removes H-0042's worktree. The branch stays
    ([ADR 0040](decisions/0040-sweep-finished-worktrees.md)). The Gazette is
-   reprinted to say it merged, with no model run.
+   reprinted to say it merged, with no model run. With `[library] commit =
+   true`, the librarian then starts a records item, `Records: Gazette for
+   H-0042; 1 learning`, which carries the page and the accepted learnings to
+   the base through review like any other item
+   ([ADR 0066](decisions/0066-records-in-the-repo.md)).
 
 Steps 5–9 are the daemon's work. Each model run in them (the review, a fix)
 is a headless `claude -p` run, and it streams into the item's `runs/`

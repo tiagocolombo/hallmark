@@ -905,10 +905,17 @@ pub struct Library {
     pub auto_accept: Vec<String>,
     /// Unused learnings are retired after this long.
     pub retire_after: String,
-    /// Where learnings were committed before they moved to the local
-    /// store (ADR 0027), relative to the repo root: what
-    /// `hall library import` reads from the base branch.
+    /// Where committed learnings live, relative to the repo root: what
+    /// `hall library import` reads from the base branch, and where
+    /// `commit = true` writes the accepted ones (ADR 0066).
     pub dir: String,
+    /// Keep the Library and the Gazette in the repository too (ADR 0066):
+    /// accepted learnings go to `dir` and each finished item's Gazette page
+    /// to `gazette_dir`, through a records item that is reviewed, shipped
+    /// and merged like any other work.
+    pub commit: bool,
+    /// Where `commit = true` puts Gazette pages, relative to the repo root.
+    pub gazette_dir: String,
 }
 
 impl Default for Library {
@@ -920,6 +927,8 @@ impl Default for Library {
             auto_accept: Vec::new(),
             retire_after: "90d".into(),
             dir: ".hallmark/knowledge".into(),
+            commit: false,
+            gazette_dir: "docs/gazette".into(),
         }
     }
 }
