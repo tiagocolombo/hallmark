@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.25](https://github.com/tiagocolombo/hallmark/compare/v0.3.24...v0.3.25) - 2026-11-26
+
+### Fixed
+
+- Fixer recovery on check failures ([#186](https://github.com/tiagocolombo/hallmark/pull/186))
+
 ## [0.3.24](https://github.com/tiagocolombo/hallmark/compare/v0.3.23...v0.3.24) - 2026-11-25
 
 ### Added
