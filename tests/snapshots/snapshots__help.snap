@@ -1613,7 +1613,7 @@ expression: v
       "usage": "hall hud [OPTIONS]"
     },
     {
-      "about": "The web app: every repo's items, your office, the merge queue and the settings, in a browser on this machine. Runs until stopped",
+      "about": "The web app: every repo's items, your office, the merge queue and the settings, in a browser on this machine. Runs until stopped, or in the background with -d; -l lists the running ones, --kill stops them",
       "args": [
         {
           "help": "The port on 127.0.0.1 (default 4747, or a free one when that's taken)",
@@ -1629,11 +1629,93 @@ expression: v
           "required": false,
           "syntax": "--no-open",
           "takes_value": false
+        },
+        {
+          "default": "false",
+          "help": "Run in the background, detached from this terminal: print the address and the pid, and return",
+          "name": "detach",
+          "required": false,
+          "syntax": "--detach",
+          "takes_value": false
+        },
+        {
+          "default": "false",
+          "help": "List the running `hall web` servers (`hall ps --kind web`)",
+          "name": "list",
+          "required": false,
+          "syntax": "--list",
+          "takes_value": false
+        },
+        {
+          "help": "Stop the running `hall web` with this pid, or every one without a pid",
+          "name": "kill",
+          "required": false,
+          "syntax": "--kill <kill>",
+          "takes_value": true
         }
       ],
       "name": "web",
       "schema": "hall schema web",
       "usage": "hall web [OPTIONS]"
+    },
+    {
+      "about": "The hall processes that keep running: the web app, the daemon, `watch`, `trace --follow`, the terminal app. `hall -l` is the same",
+      "args": [
+        {
+          "help": "Only this kind",
+          "name": "kind",
+          "required": false,
+          "syntax": "--kind <kind>",
+          "takes_value": true,
+          "values": [
+            "web",
+            "daemon",
+            "watch",
+            "trace",
+            "app"
+          ]
+        }
+      ],
+      "name": "ps",
+      "schema": "hall schema ps",
+      "usage": "hall ps [OPTIONS]"
+    },
+    {
+      "about": "Stop hall processes that `hall ps` lists: by pid, by --kind, or --all",
+      "args": [
+        {
+          "help": "The pids to stop, from `hall ps`. Only hall processes it lists are stopped",
+          "name": "pids",
+          "required": false,
+          "syntax": "<pids>",
+          "takes_value": true
+        },
+        {
+          "default": "false",
+          "help": "Stop every one (of --kind, when given)",
+          "name": "all",
+          "required": false,
+          "syntax": "--all",
+          "takes_value": false
+        },
+        {
+          "help": "Only this kind; alone, every one of it",
+          "name": "kind",
+          "required": false,
+          "syntax": "--kind <kind>",
+          "takes_value": true,
+          "values": [
+            "web",
+            "daemon",
+            "watch",
+            "trace",
+            "app"
+          ]
+        }
+      ],
+      "name": "kill",
+      "schema": "hall schema kill",
+      "usage": "hall kill [OPTIONS] [PIDS]..."
     },
     {
       "about": "The agents' conversations as Q&A threads: each review finding with the verifier's check, the fixer's answer and the reviewer's ruling; planning; questions to you. A thread ID (`H-0042/F3`) shows one whole",

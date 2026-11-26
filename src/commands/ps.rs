@@ -73,7 +73,11 @@ impl Render for KillOut {
         for st in &self.stopped {
             s.push_str(&format!(
                 "{} {} (pid {}){}\n",
-                if st.stopped { "Stopped" } else { "Couldn't stop" },
+                if st.stopped {
+                    "Stopped"
+                } else {
+                    "Couldn't stop"
+                },
                 st.kind.as_str(),
                 st.pid,
                 st.note
@@ -139,14 +143,18 @@ pub fn kill(a: KillArgs) -> Result<Response> {
         let pids: Vec<String> = missing.iter().map(u32::to_string).collect();
         Some(format!(
             "no running hall{} with pid {}: `hall ps` lists them",
-            a.kind.map(|k| format!(" {}", k.as_str())).unwrap_or_default(),
+            a.kind
+                .map(|k| format!(" {}", k.as_str()))
+                .unwrap_or_default(),
             pids.join(", ")
         ))
     } else if stopped.is_empty() {
         Some(format!(
             "no {} running",
-            a.kind
-                .map_or("hall processes".to_string(), |k| format!("hall {}", k.as_str()))
+            a.kind.map_or("hall processes".to_string(), |k| format!(
+                "hall {}",
+                k.as_str()
+            ))
         ))
     } else {
         None

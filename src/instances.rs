@@ -34,9 +34,7 @@ use crate::repo::user_dir;
 const KILL_WAIT: Duration = Duration::from_secs(5);
 
 /// What a running hall is.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, ValueEnum,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, ValueEnum)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
     /// `hall web`.

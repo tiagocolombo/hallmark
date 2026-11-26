@@ -156,7 +156,12 @@ fn web_kill_without_a_pid_stops_every_web() {
 
     let r = env.hall(&env.repo, &["web", "--kill"]);
     assert_eq!(r.code, 0, "{}", r.stdout);
-    assert_eq!(r.json["stopped"].as_array().unwrap().len(), 2, "{}", r.stdout);
+    assert_eq!(
+        r.json["stopped"].as_array().unwrap().len(),
+        2,
+        "{}",
+        r.stdout
+    );
     assert!(
         r.json["stopped"]
             .as_array()

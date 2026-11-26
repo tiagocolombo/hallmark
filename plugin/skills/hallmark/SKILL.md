@@ -247,7 +247,10 @@ being brought up to date (`updating`).
 
 When the human wants to look around themselves, in a browser, tell them to
 run `hall web` in a terminal: it opens the web app on their machine and runs
-until they stop it, so don't start it for them in a session.
+until they stop it, so don't start it for them in a session. `hall web -d`
+runs it in the background instead, `hall web -l` lists the running ones and
+`hall web --kill` stops them. `hall ps` lists every hall that keeps running,
+and `hall kill <pid>` stops one: only when the human asks.
 
 ## When something waits for the human
 

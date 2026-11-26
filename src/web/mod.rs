@@ -309,10 +309,7 @@ fn detached(cwd: &Path, a: &WebArgs) -> Result<Response> {
     };
     Ok(Response::new(
         out,
-        vec![
-            "hall web -l".into(),
-            format!("hall web --kill {pid}"),
-        ],
+        vec!["hall web -l".into(), format!("hall web --kill {pid}")],
     ))
 }
 
