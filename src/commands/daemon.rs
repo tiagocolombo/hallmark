@@ -350,6 +350,15 @@ fn run_loop(only: &[String], repo: Option<&str>) -> Result<Response> {
         only: only.to_vec(),
         repo,
         poll: run::poll_interval(),
+    })
+    .inspect_err(|e| {
+        // A login service's output goes nowhere, and `hall daemon start`'s
+        // log may have been rotated away: write the reason down (ADR 0073).
+        // A second `daemon run` that finds the lock taken never ran: its
+        // refusal is not the running daemon's stop.
+        if e.code != crate::error::ErrorCode::Claimed {
+            run::log(&format!("daemon stopped on an error: {}", e.message));
+        }
     })?;
     let mut out = DaemonOut::new("run", false);
     out.state = Some(without_repos(st));

@@ -50,3 +50,7 @@ tempfile = "3.27.0"
 [profile.dist]
 inherits = "release"
 lto = "thin"
+
+[target.'cfg(unix)'.dependencies]
+# The daemon raises its open-file limit (ADR 0073).
+libc = "0.2"

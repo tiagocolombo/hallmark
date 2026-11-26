@@ -97,6 +97,19 @@ pub fn load() -> Option<DaemonState> {
     serde_json::from_str(&std::fs::read_to_string(path()).ok()?).ok()
 }
 
+/// Like [`load`], for a writer: a missing file is `None`, but one that
+/// exists and can't be read (out of file handles, say) is an error, so
+/// [`update`] never saves a fresh default over it. A default has
+/// `wanted = false`, which stops the loop as `hall daemon stop` would
+/// (ADR 0073). A file that reads but doesn't parse starts over.
+pub fn load_strict() -> Result<Option<DaemonState>> {
+    match std::fs::read_to_string(path()) {
+        Ok(text) => Ok(serde_json::from_str(&text).ok()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
 pub fn save(s: &DaemonState) -> Result<()> {
     std::fs::create_dir_all(dir())?;
     let p = path();
@@ -117,7 +130,7 @@ pub fn update<R>(f: impl FnOnce(&mut DaemonState) -> R) -> Result<R> {
         .open(dir().join("state.lock"))?;
     FileExt::lock(&lock)?;
     let r = (|| {
-        let mut s = load().unwrap_or_default();
+        let mut s = load_strict()?.unwrap_or_default();
         let before = s.clone();
         let r = f(&mut s);
         if s != before {
