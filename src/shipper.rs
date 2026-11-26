@@ -799,8 +799,8 @@ pub fn risk_line(
             parts.push(format!("The reviewer asked for a person's approval: {r}"));
         } else {
             parts.push(format!(
-                "The reviewer asked for a person: {r} Noted, not held \
-                 (`[merge] needs_person = \"note\"`)."
+                "Noted, not held (`[merge] needs_person = \"note\"`); the reviewer asked for a \
+                 person: {r}"
             ));
         }
     }
@@ -1674,8 +1674,8 @@ mod tests {
         };
         assert_eq!(
             risk_line(&note, &f(&["src/a.rs"]), Some(" it changes the updater ")),
-            "The reviewer asked for a person: it changes the updater Noted, not held \
-             (`[merge] needs_person = \"note\"`)."
+            "Noted, not held (`[merge] needs_person = \"note\"`); the reviewer asked for a \
+             person: it changes the updater"
         );
         m.one_approval.clear();
         assert!(risk_line(&m, &f(&["billing/charge.rs"]), Some("")).starts_with("Low:"));

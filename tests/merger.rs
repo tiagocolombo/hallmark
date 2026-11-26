@@ -679,8 +679,72 @@ fn the_reviewer_can_ask_for_a_person_on_any_change() {
         "",
         approved_by(&["ana", "lint[bot]"], &sha),
     );
-    queue(&env, &gh);
+    let q = queue(&env, &gh);
     assert!(events(&env, &id, "released").is_empty());
+    // Under `hold` the request was waited for, not merely noted.
+    let why = status_of(&q, &id)["why"].as_str().unwrap().to_string();
+    assert!(!why.contains("noted"), "{why}");
+    pass(&env, &gh);
+    assert_eq!(events(&env, &id, "pr_merged").len(), 1);
+}
+
+#[test]
+fn needs_person_note_still_holds_a_tiered_path() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    set_config(&env, "merge.needs_person", "\"note\"");
+    set_config(&env, "merge.one_approval", "[\"charge.rs\"]");
+    let (id, wt) = env.new_item("Change charge.rs");
+    commit_file(&wt, "charge.rs", "// charge\n");
+    assert_eq!(env.hall(&wt, &["ready"]).code, 0);
+    let sha = git(&wt, &["rev-parse", "HEAD"]);
+    append(&env, &id, "assayer", checks(&sha, 1, true, vec![]));
+    let repo = hallmark::repo::Repo::discover(&env.repo).unwrap();
+    let mv = hallmark::findings::ModelVerdict {
+        summary: "Fine, but a person should look.".into(),
+        findings: vec![],
+        prior: vec![],
+        learnings: vec![],
+        needs_person: Some("it changes billing".into()),
+    };
+    hallmark::assayer::record_verdict(
+        &repo,
+        id.parse().unwrap(),
+        &sha,
+        &mv,
+        "assayer",
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    let branch = git(&wt, &["rev-parse", "--abbrev-ref", "HEAD"]);
+    git(&wt, &["push", "-q", "origin", &branch]);
+    append(
+        &env,
+        &id,
+        "shipper",
+        Body::Shipped {
+            sha: sha.clone(),
+            pr_url: Some(url(1)),
+        },
+    );
+    green(&env, &id, 1);
+    pr(&gh, 1, "MERGEABLE", &sha, "", json!([]));
+
+    pass(&env, &gh);
+    assert!(events(&env, &id, "pr_merged").is_empty());
+    let held = events(&env, &id, "held");
+    assert_eq!(held[0]["kind"], "lit");
+    assert!(
+        held[0]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("needs 1 approval from people (has 0)"),
+        "{held:?}"
+    );
+    pr(&gh, 1, "MERGEABLE", &sha, "", approved_by(&["ana"], &sha));
     pass(&env, &gh);
     assert_eq!(events(&env, &id, "pr_merged").len(), 1);
 }
