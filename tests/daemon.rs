@@ -719,7 +719,11 @@ fn a_running_daemon_survives_an_unreadable_state_file() {
     let log = std::fs::read_to_string(env.home.join("daemon").join("daemon.log")).unwrap();
     assert!(log.contains("could not read the daemon state"), "{log}");
     // Said once when it starts, not every pass, and again when it clears.
-    assert_eq!(log.matches("could not read the daemon state").count(), 1, "{log}");
+    assert_eq!(
+        log.matches("could not read the daemon state").count(),
+        1,
+        "{log}"
+    );
     assert!(log.contains("readable again"), "{log}");
 }
 
