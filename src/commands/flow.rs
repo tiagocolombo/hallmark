@@ -537,6 +537,29 @@ pub fn propose_ready(cwd: &Path, a: ProposeReadyArgs) -> Result<Response> {
     if let Some(e) = rebase_pending(&item) {
         return Err(e);
     }
+    // The Product Manager's acceptance criteria (ADR 0068): each one must be
+    // accounted for in `--tested` before the item is proposed.
+    if item.state == State::Development {
+        let criteria = crate::event::criteria_of(&repo.hall.read_item(item.id)?);
+        if !criteria.is_empty() && a.tested.as_deref().is_none_or(|t| t.trim().is_empty()) {
+            return Err(HallError::new(
+                ErrorCode::Usage,
+                format!(
+                    "{} has acceptance criteria and --tested says nothing about them: {}",
+                    item.id,
+                    criteria
+                        .iter()
+                        .map(|c| format!("\"{c}\""))
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                ),
+            )
+            .next([format!(
+                "hall propose-ready {} --summary … --tested \"<how each criterion is met>\"",
+                item.id
+            )]));
+        }
+    }
     // Nothing left to confirm: straight to review (`auto_ready`).
     let wait_for = if a.ask {
         Some("you asked for the human's call".to_string())

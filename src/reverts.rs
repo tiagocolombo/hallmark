@@ -356,6 +356,7 @@ mod tests {
             escalation: None,
             own_worktree: true,
             swept: false,
+            has_criteria: false,
             hold: None,
             stuck_since: None,
             reviewed_sha: None,

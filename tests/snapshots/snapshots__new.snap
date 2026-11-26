@@ -17,6 +17,7 @@ expression: "scrub(&env, &r.json)"
   ],
   "open": "cd [root]/app-H-0001 && claude",
   "plan": {
+    "decision": "new",
     "parallel": false,
     "ran": false,
     "reason": "the Front Desk did not run: claude was not found"

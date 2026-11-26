@@ -867,14 +867,16 @@ pub fn pr_body(
     let (why, how, tested, revert) = proposed.unwrap_or_default();
     // A follow-up's request is generated (PR feedback, CI logs): never the
     // Why. It gets a one-line pointer to the PR instead.
-    let request = events.iter().find_map(|e| match &e.body {
+    let follow_up = events.iter().find_map(|e| match &e.body {
         Body::Created {
             follow_up: Some(url),
             ..
         } => Some(format!("Follow-up to {url}.")),
-        Body::Created { request, .. } => request.clone(),
         _ => None,
     });
+    // Otherwise the request, with any scope the Lead added (ADR 0068).
+    let request = follow_up.or_else(|| crate::event::request_of(events));
+    let criteria = crate::event::criteria_of(events);
     let mut s = String::new();
     let what = item
         .summary
@@ -889,6 +891,13 @@ pub fn pr_body(
         .or_else(|| item.issue.as_ref().map(|i| format!("Issue #{}.", i.number)))
         .unwrap_or_else(|| item.title.clone());
     let _ = writeln!(s, "## Why\n\n{}\n", why.trim());
+    if !criteria.is_empty() {
+        let _ = writeln!(s, "Acceptance criteria:\n");
+        for c in &criteria {
+            let _ = writeln!(s, "- [ ] {c}");
+        }
+        s.push('\n');
+    }
 
     let _ = writeln!(s, "## How\n");
     match how.filter(|h| !h.trim().is_empty()) {
@@ -1575,6 +1584,40 @@ mod tests {
         assert!(b.contains(&format!("## Why\n\nFollow-up to {u}.\n")), "{b}");
         assert!(
             !b.contains("Review feedback") && !b.contains("Hallmark review"),
+            "{b}"
+        );
+    }
+
+    #[test]
+    fn the_why_includes_scope_the_lead_added() {
+        let events = vec![
+            ev(json!({"event": "created", "title": "t", "branch": "b",
+                "worktree": "/w", "base": "main", "request": "Retry failed webhooks"})),
+            ev(json!({"event": "scope_added", "request": "Cap retries at 6"})),
+        ];
+        let b = pr_body(&item(None), &events, &[], "main", "Low.", true);
+        assert!(
+            b.contains("## Why\n\nRetry failed webhooks\n\nAdded scope: Cap retries at 6\n"),
+            "{b}"
+        );
+    }
+
+    #[test]
+    fn the_pr_lists_the_acceptance_criteria() {
+        let events = vec![
+            ev(json!({"event": "created", "title": "t", "branch": "b",
+                "worktree": "/w", "base": "main", "request": "Retry failed webhooks",
+                "criteria": ["retries with backoff"]})),
+            ev(
+                json!({"event": "scope_added", "request": "Cap retries at 6",
+                "criteria": ["stops after 6 attempts"]}),
+            ),
+        ];
+        let b = pr_body(&item(None), &events, &[], "main", "Low.", true);
+        assert!(
+            b.contains(
+                "Acceptance criteria:\n\n- [ ] retries with backoff\n- [ ] stops after 6 attempts\n"
+            ),
             "{b}"
         );
     }

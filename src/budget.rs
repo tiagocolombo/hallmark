@@ -82,7 +82,8 @@ pub fn role_of(role: &str) -> Option<Role> {
         // The reviewer eval replays the reviewer: the same budget.
         "eval" => Some(Role::Reviewer),
         "fixer" | "fix" => Some(Role::Fixer),
-        "intake" => Some(Role::Intake),
+        // The Product Manager and the Lead share the Front Desk's budget.
+        "intake" | "pm" | "lead" => Some(Role::Intake),
         "librarian" => Some(Role::Librarian),
         _ => None,
     }
@@ -723,6 +724,10 @@ mod tests {
         assert_eq!(role_of("reviewer"), Some(Role::Reviewer));
         assert_eq!(role_of("eval"), Some(Role::Reviewer));
         assert_eq!(role_of("fix"), Some(Role::Fixer));
+        // The Product Manager and the Lead share the Front Desk's budget.
+        assert_eq!(role_of("pm"), Some(Role::Intake));
+        assert_eq!(role_of("lead"), Some(Role::Intake));
+        assert_eq!(role_of("intake"), Some(Role::Intake));
         assert_eq!(role_of("resume"), None);
         assert_eq!(table_key(Role::Reviewer), "review");
     }

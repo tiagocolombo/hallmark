@@ -80,11 +80,30 @@ Then do all edits and commits in the returned `worktree`:
   hallmarked open PR; a PR based elsewhere is adopted with
   `--base <configured base>`, which retargets it.
 - From review feedback on a shipped PR: `hall new --follow-up <pr-url>`.
-- To keep a request as one item, never split: `hall new "<request>" --no-split`.
+- To skip the Front Desk (one item, no criteria, never split):
+  `hall new "<request>" --no-split`.
 
-`hall new` asks the Front Desk whether the request splits into independent
-parts. The reply's `plan` says what it decided and why. If the reply has
-`children`, follow **Parallel parts** below instead.
+`hall new` asks the Front Desk to plan the request. Its Product Manager
+writes the **acceptance criteria** (`plan.criteria`): what done means. Build
+to them, test each one, and say in `--tested` how each is met:
+`hall propose-ready` is refused (USAGE, exit 2) for an item with criteria
+until `--tested` says something. Its Lead
+looks at the open items and decides `plan.decision`, with `plan.reason`:
+
+- `new`: a new item, as usual. If the reply has `children`, follow
+  **Parallel parts** below instead.
+- `merge`: the request was added to an open item's scope, and the reply is
+  that item (`created: false`). Hallmark can't tell whether another session
+  is building it: ask the human before working in its worktree, and if one
+  is, tell the human the request went there and stop. The added scope is
+  part of the item now, and is reviewed with it.
+- `follow_up`: a new item that builds on `plan.target`; its request says so.
+- `duplicate`: `plan.target` already covers it, and nothing was created.
+  Tell the human, with the reason.
+
+If the human wants a request built on its own, run
+`hall new … --no-merge` before it is planned: a merge can't be taken back.
+`--issue`, `--branch` and `--title` always ask for a new item.
 
 ## Parallel parts
 
@@ -116,8 +135,9 @@ every part is in.
 3. **When every part is merged or dropped**, run the gates in the parent's
    worktree on the merged whole, add tests where the parts meet, and fix
    anything that broke there (commit in the parent's worktree). Summarise,
-   run `hall propose-ready <parent> --summary "..." --why "..." --how "..."`
-   for the whole change. With nothing left to
+   run `hall propose-ready <parent> --summary "..." --why "..." --how "..."
+   --tested "<how each criterion is met>"` for the whole change (the parent
+   carries the criteria, so `--tested` is required). With nothing left to
    confirm it goes to review on its own; with `--ask` it waits, and when the
    human says ready, `hall ready <parent>`.
 
@@ -182,7 +202,9 @@ diff should know. Leave out the review and the tests' details. Without
 
 `--tested` is what you ran or tried beyond the gates (a manual run, a
 scenario, a soak); the gates that passed are always listed after it, so
-leave it out when the gates are the whole story. `--revert` is what undoing
+leave it out when the gates are the whole story, unless the item has
+acceptance criteria: then `--tested` is required and says how each one is
+met. `--revert` is what undoing
 the change takes beyond a `git revert`: a flag to turn off, a migration to
 roll back, a cache to clear. Say whether each step comes before or after the
 `git revert`, which the description always adds. Leave it out when a revert

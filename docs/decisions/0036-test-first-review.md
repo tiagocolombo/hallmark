@@ -1,6 +1,6 @@
 # 0036. Test-first review: an unpinned behaviour blocks approval
 
-Status: Accepted, 2026-10-12
+Status: Accepted, 2026-10-12. Amended by 0068: the test audit also checks the item's acceptance criteria.
 
 ## Context
 

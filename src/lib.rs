@@ -6,6 +6,7 @@
 //! documented exit codes.
 
 pub mod assayer;
+pub mod board;
 pub mod budget;
 pub mod ci;
 pub mod cli;

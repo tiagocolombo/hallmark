@@ -7,7 +7,7 @@ use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
 use crate::error::Result;
-use crate::event::{Body, Event, short};
+use crate::event::{Event, short};
 use crate::findings::{Ledger, Lens};
 use crate::git;
 use crate::item::Item;
@@ -214,10 +214,9 @@ pub fn prepare_with(
     .unwrap_or_default();
 
     // --- the prompt ---------------------------------------------------------
-    let created = events.iter().find_map(|e| match &e.body {
-        Body::Created { request, .. } => Some(request.clone()),
-        _ => None,
-    });
+    // The request with any scope the Lead added since (ADR 0068).
+    // With its acceptance criteria, for the review to check each (the test audit).
+    let created = Some(crate::event::request_with_criteria(events));
     let commits = git::run(
         dir,
         &[

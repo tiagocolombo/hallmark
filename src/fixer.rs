@@ -525,12 +525,10 @@ fn pending_review(ledger: &Ledger) -> Vec<&Tracked> {
         .collect()
 }
 
-/// The request as typed when the item was created.
+/// The request as typed when the item was created, with any scope the Lead
+/// added since (ADR 0068).
 pub fn request(events: &[Event]) -> Option<String> {
-    events.iter().find_map(|e| match &e.body {
-        Body::Created { request, .. } => request.clone(),
-        _ => None,
-    })
+    crate::event::request_with_criteria(events)
 }
 
 /// A check log's path: absolute, or relative to the item's journal
@@ -957,6 +955,24 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(r.disputed[0].id, "F2");
+    }
+
+    #[test]
+    fn the_fixer_reads_the_added_scope_and_criteria() {
+        use crate::event::{Body, Event};
+        let id = crate::item::ItemId(1);
+        let events = [Event::new(
+            "you",
+            Some(id),
+            Body::ScopeAdded {
+                request: "Cap retries at 6".into(),
+                criteria: vec!["stops after 6 attempts".into()],
+                reason: None,
+            },
+        )];
+        let r = request(&events).unwrap();
+        assert!(r.contains("Added scope: Cap retries at 6"), "{r}");
+        assert!(r.contains("- stops after 6 attempts"), "{r}");
     }
 
     #[test]

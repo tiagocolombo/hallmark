@@ -104,16 +104,18 @@ one_approval  = []          # paths that need one person's approval on the PR (A
 two_approvals = []          # paths that need two
 
 [intake]
-split     = "auto"   # or "off"
-max_parts = 4
+split          = "auto"   # or "off": no Front Desk, one item, no criteria
+max_parts      = 4
+max_item_lines = 400      # the Lead folds a request into an open item only below this (ADR 0068)
 
 [budget]                       # runs are capped by default too (per-run max_usd)
 daily           = "4M"     # the whole loop, per UTC day; "none" for no cap
 per_item        = "800k"   # weighted by price (a cache read counts a tenth), or "$15"; "none" for no cap
 review_model    = "opus"
 fix_model       = "sonnet"
-intake_model    = "haiku"
-librarian_model = "haiku"
+intake_model      = "sonnet"   # the Product Manager and the Lead (ADR 0068)
+intake_fast_model = "haiku"    # both, when no other item is open; a [budget.intake] model wins over it
+librarian_model   = "haiku"
 # [budget.review] max_usd = 3.0 (or "none"), daily = "2M", effort = "high", timeout = "20m"
 
 [extensions]                # skill packs by other authors: `hall extensions`
@@ -352,7 +354,9 @@ author gives them with `hall propose-ready --summary … --why … --how …
 --tested … --revert …`; without `--why` the request is used, without
 `--how` the commit subjects. Testing always ends with the gates that passed
 on the hallmarked commit; How to revert gives the `--revert` steps, then
-always a line to `git revert` the commit the PR lands as on the base.
+always a line to `git revert` the commit the PR lands as on the base. When
+the item has acceptance criteria ([ADR 0068](decisions/0068-planning-like-a-team.md)),
+they are listed as an `Acceptance criteria` checklist under `## Why`.
 
 Each review is a PR comment: `review_comment` posts `{review_file}` once the
 PR is open, and again after every `update` (PR comments addressed, CI fixed,
@@ -592,7 +596,8 @@ max_usd = 1.50
 ```
 
 Each role has a table with the same keys: `[budget.review]`, `[budget.fix]`,
-`[budget.intake]` (the Front Desk) and `[budget.librarian]`. A table's
+`[budget.intake]` (the Front Desk: the Product Manager and the Lead) and
+`[budget.librarian]`. A table's
 `model` wins over `<role>_model`, and its `fallback` is used when `model` is
 unavailable (a run that fails fast without tokens is retried once with it) or
 overloaded.
@@ -604,7 +609,7 @@ Every run has a per-run cap, `max_usd`, passed to Claude as
 | --- | --- |
 | `[budget.review]` | 6.00 |
 | `[budget.fix]` | 2.00 |
-| `[budget.intake]` | 0.10 |
+| `[budget.intake]` | 0.50 (each of its two runs) |
 | `[budget.librarian]` | 0.20 |
 
 The caps sit above what normal runs cost (a max-effort review of a sensitive

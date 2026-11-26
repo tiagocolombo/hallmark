@@ -196,6 +196,7 @@ mod tests {
                 pr_url: None,
                 pr_head: None,
                 own_worktree: Some(own),
+                criteria: vec![],
             },
         );
         let mut i = crate::event::fold(ItemId(1), &[e]).unwrap();

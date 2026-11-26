@@ -139,6 +139,7 @@ impl Repo {
                 follow_up: None,
                 pr_url: None,
                 pr_head: None,
+                criteria: vec![],
             },
         );
         wt
@@ -784,6 +785,8 @@ fn seed(root: &Path) {
             parallel: true,
             children: vec![ItemId(8)],
             reason: Some("The docs don't depend on the limiter.".into()),
+            decision: Some("new".into()),
+            target: None,
         },
     );
     r.usage(

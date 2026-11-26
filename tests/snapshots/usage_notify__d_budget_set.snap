@@ -78,10 +78,10 @@ expression: v
     },
     {
       "key": "intake",
-      "max_usd": 0.1,
-      "model": "haiku",
+      "max_usd": 0.5,
+      "model": "sonnet",
       "role": "intake",
-      "timeout_secs": 120
+      "timeout_secs": 180
     },
     {
       "key": "librarian",

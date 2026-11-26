@@ -235,6 +235,7 @@ fn building() -> Env {
             pr_url: None,
             pr_head: None,
             own_worktree: Some(true),
+            criteria: vec![],
         },
     );
     add(

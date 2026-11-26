@@ -188,11 +188,8 @@ pub fn digest(item: &Item, events: &[Event], changed: &[String]) -> String {
     }
     s.push_str(".\n");
 
-    if let Some(Body::Created {
-        request: Some(r), ..
-    }) = events.first().map(|e| &e.body)
-    {
-        s.push_str(&format!("\n## Request\n\n{}\n", clip_block(r, 1200)));
+    if let Some(r) = crate::event::request_with_criteria_clipped(events, 1200) {
+        s.push_str(&format!("\n## Request\n\n{}\n", r.trim()));
     }
     if !changed.is_empty() {
         s.push_str("\n## Changed paths\n\n");
@@ -386,17 +383,6 @@ pub fn digest(item: &Item, events: &[Event], changed: &[String]) -> String {
         s.push('\n');
     }
     s
-}
-
-fn clip_block(s: &str, max: usize) -> String {
-    let t = s.trim();
-    if t.chars().count() <= max {
-        t.to_string()
-    } else {
-        let mut c: String = t.chars().take(max).collect();
-        c.push('…');
-        c
-    }
 }
 
 /// The existing learnings, one line each, for the prompt.
@@ -1009,6 +995,7 @@ mod tests {
                 pr_url: None,
                 pr_head: None,
                 own_worktree: Some(true),
+                criteria: vec![],
             }),
             ev(Body::Ready {
                 sha: "abc".into(),
@@ -1145,6 +1132,46 @@ mod tests {
         let d = digest(&item, &events, &[]);
         assert!(d.contains("Allowed another round"), "{d}");
         assert!(!d.contains("the patch changed in the rebase"), "{d}");
+    }
+
+    #[test]
+    fn the_digest_reads_the_added_scope_and_criteria() {
+        let mut events = journal();
+        events.push(Event::new(
+            "you",
+            Some(ItemId(42)),
+            Body::ScopeAdded {
+                request: "Cap retries at 6".into(),
+                criteria: vec!["stops after 6 attempts".into()],
+                reason: None,
+            },
+        ));
+        let item = crate::event::fold(ItemId(42), &events).unwrap();
+        let d = digest(&item, &events, &[]);
+        assert!(d.contains("Added scope: Cap retries at 6"), "{d}");
+        assert!(d.contains("- stops after 6 attempts"), "{d}");
+    }
+
+    #[test]
+    fn a_long_request_is_clipped_but_not_its_scope_or_criteria() {
+        let mut events = journal();
+        if let Body::Created { request, .. } = &mut events[0].body {
+            *request = Some("x".repeat(1500));
+        }
+        events.push(Event::new(
+            "you",
+            Some(ItemId(42)),
+            Body::ScopeAdded {
+                request: "Cap retries at 6".into(),
+                criteria: vec!["stops after 6 attempts".into()],
+                reason: None,
+            },
+        ));
+        let item = crate::event::fold(ItemId(42), &events).unwrap();
+        let d = digest(&item, &events, &[]);
+        assert!(!d.contains(&"x".repeat(1300)), "the request is clipped");
+        assert!(d.contains("Added scope: Cap retries at 6"), "{d}");
+        assert!(d.contains("- stops after 6 attempts"), "{d}");
     }
 
     #[test]

@@ -157,6 +157,20 @@ impl Render for ItemView {
     }
 }
 
+/// The `propose-ready` command for an item, as a hint. An item with
+/// acceptance criteria needs `--tested` (ADR 0068), so the hint has it.
+pub fn propose_ready_hint(item: &Item) -> String {
+    let tested = if item.has_criteria {
+        " --tested \"<how each criterion is met>\""
+    } else {
+        ""
+    };
+    format!(
+        "hall propose-ready {} --summary \"<what was done>\" --why \"<why>\" --how \"<how>\"{tested}",
+        item.id
+    )
+}
+
 /// The commands that make sense for an item in its current state.
 pub fn next_for(item: &Item) -> Vec<String> {
     let id = item.id;
@@ -165,9 +179,7 @@ pub fn next_for(item: &Item) -> Vec<String> {
     let mut n: Vec<String> = match item.state {
         _ if child.is_some() => child.unwrap_or_default(),
         State::Development => vec![
-            format!(
-                "hall propose-ready {id} --summary \"<what was done>\" --why \"<why>\" --how \"<how>\""
-            ),
+            propose_ready_hint(item),
             format!("hall ready {id}"),
             format!("hall drop {id} --reason \"<why>\""),
         ],
