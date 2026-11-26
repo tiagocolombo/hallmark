@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.26](https://github.com/tiagocolombo/hallmark/compare/v0.3.25...v0.3.26) - 2026-11-26
+
+### Added
+
+- Planning: a PM and a Lead plan a request against the board ([#188](https://github.com/tiagocolombo/hallmark/pull/188))
+
 ## [0.3.25](https://github.com/tiagocolombo/hallmark/compare/v0.3.24...v0.3.25) - 2026-11-26
 
 ### Fixed
