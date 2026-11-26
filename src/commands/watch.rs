@@ -113,6 +113,7 @@ pub fn watch(cwd: &Path, a: WatchArgs, mode: Mode) -> Result<Response> {
         .ok()
         .and_then(|s| crate::daemon::run::parse_poll(&s))
         .unwrap_or(Duration::from_secs(2));
+    let _running = crate::instances::register(crate::instances::Kind::Watch, cwd);
     let started = Instant::now();
     let mut last = String::new();
     let mut changes = 0;

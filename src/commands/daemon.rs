@@ -458,7 +458,9 @@ fn launch_and_wait() -> Result<()> {
     }
 }
 
-fn stop(at_login: bool) -> Result<Response> {
+/// Asks the loop to stop and waits for it: (was wanted, was running, still
+/// running). `hall kill` stops the daemon this way too.
+fn ask_to_stop() -> Result<(bool, bool, bool)> {
     let was_wanted = state::update(|s| std::mem::replace(&mut s.wanted, false))?;
     let was_running = state::instance_running();
     let deadline = Instant::now() + STOP_WAIT;
@@ -467,6 +469,16 @@ fn stop(at_login: bool) -> Result<Response> {
         crate::daemon::nap(Duration::from_millis(100));
         running = state::instance_running();
     }
+    Ok((was_wanted, was_running, running))
+}
+
+/// `hall daemon stop` without the reply: true while it is still running.
+pub(crate) fn stop_loop() -> Result<bool> {
+    ask_to_stop().map(|(_, _, running)| running)
+}
+
+fn stop(at_login: bool) -> Result<Response> {
+    let (was_wanted, was_running, running) = ask_to_stop()?;
     let mut out = DaemonOut::new("stop", running);
     let mut changed = was_wanted || was_running;
     if at_login {

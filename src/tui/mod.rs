@@ -45,6 +45,7 @@ const TRACE_POLL: Duration = Duration::from_millis(500);
 
 /// Opens the app on the repo at `cwd` (or the first registered one).
 pub fn run(cwd: &Path) -> Result<Response> {
+    let _running = crate::instances::register(crate::instances::Kind::App, cwd);
     let mut app = App::load(cwd, &user_dir().join("repos.json"));
     app.daemon = crate::daemon::state::load();
     let (tx, rx) = channel::<PathBuf>();

@@ -771,3 +771,35 @@ fn an_unreadable_state_file_is_not_reset() {
     assert_eq!(st["wanted"], true, "{st}");
     assert_eq!(st["pid"], 4242, "{st}");
 }
+
+// Unix only, like the test above: a real background daemon.
+#[cfg(unix)]
+#[test]
+fn ps_lists_the_daemon_and_kill_stops_it_like_daemon_stop() {
+    let env = Env::initialized();
+    let script = env.script(json!([]));
+    let _guard = StopOnDrop(&env);
+    let r = bg(&env, &script, &["daemon", "start"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let pid = r.json["state"]["pid"].clone();
+
+    let ps = bg(&env, &script, &["ps", "--kind", "daemon"]);
+    assert_eq!(ps.code, 0, "{}", ps.stdout);
+    let list = ps.json["instances"].as_array().unwrap();
+    assert_eq!(list.len(), 1, "{}", ps.stdout);
+    assert_eq!(list[0]["pid"], pid);
+    assert_eq!(list[0]["kind"], "daemon");
+    assert_eq!(list[0]["args"], json!(["daemon", "run"]));
+
+    let k = bg(&env, &script, &["kill", "--kind", "daemon"]);
+    assert_eq!(k.code, 0, "{}", k.stdout);
+    assert_eq!(k.json["stopped"][0]["pid"], pid);
+    assert_eq!(k.json["stopped"][0]["stopped"], true, "{}", k.stdout);
+    let st = bg(&env, &script, &["daemon", "status"]);
+    assert_eq!(st.json["running"], false, "{}", st.stdout);
+    assert_eq!(st.json["state"]["wanted"], false, "stopped on purpose");
+    let inbox = env.hall(&env.repo, &["inbox"]);
+    assert!(!inbox.stdout.contains("daemon_stopped"), "{}", inbox.stdout);
+    let ps = bg(&env, &script, &["ps"]);
+    assert_eq!(ps.json["instances"], json!([]), "{}", ps.stdout);
+}

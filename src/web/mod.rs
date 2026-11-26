@@ -22,7 +22,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use schemars::JsonSchema;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tiny_http::{Header, Method, Request, Server};
 
@@ -82,14 +82,14 @@ const ASSETS: &[(&str, &str, &str)] = &[
 ];
 
 /// A repo the app shows: the registry's, plus the one `hall web` started in.
-#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct WebRepo {
     pub name: String,
     pub path: String,
 }
 
 /// The line `hall web` prints once it is listening.
-#[derive(Debug, Serialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct WebStart {
     /// The address to open, with the token in its fragment.
     pub url: String,
@@ -123,6 +123,15 @@ struct Ctx {
 }
 
 pub fn web(cwd: &Path, a: WebArgs, mode: Mode) -> Result<Response> {
+    if a.list {
+        return crate::commands::ps::ps_web();
+    }
+    if let Some(pid) = a.kill {
+        return crate::commands::ps::kill_web(pid);
+    }
+    if a.detach {
+        return detached(cwd, &a);
+    }
     let inherited = std::env::var(TOKEN_ENV).ok().filter(|t| !t.is_empty());
     // Keep the credential out of every child: only a restart passes it on.
     // SAFETY: set at start, before this process starts a thread.
@@ -138,6 +147,13 @@ pub fn web(cwd: &Path, a: WebArgs, mode: Mode) -> Result<Response> {
         .map(|s| s.port())
         .unwrap_or(DEFAULT_PORT);
     let url = format!("http://127.0.0.1:{port}/#token={token}");
+    let mut registration = crate::instances::register(crate::instances::Kind::Web, cwd);
+    if let Some(r) = registration.as_mut() {
+        r.update(|i| {
+            i.port = Some(port);
+            i.url = Some(url.clone());
+        });
+    }
     let ctx = Arc::new(Ctx {
         token,
         port,
@@ -177,8 +193,10 @@ pub fn web(cwd: &Path, a: WebArgs, mode: Mode) -> Result<Response> {
     if !ctx.restart.load(Ordering::SeqCst) {
         return Err(HallError::internal("the web server stopped").next(["hall web"]));
     }
-    // Free the port before the new server asks for it.
+    // Free the port before the new server asks for it. The new server
+    // registers itself; elsewhere than Unix this one only waits for it.
     drop(server);
+    drop(registration);
     restart(&ctx, mode)?;
     Ok(Response::new(
         WebOut {
@@ -187,6 +205,114 @@ pub fn web(cwd: &Path, a: WebArgs, mode: Mode) -> Result<Response> {
             stopped: "restarted".into(),
         },
         vec![format!("hall web --port {port}")],
+    ))
+}
+
+/// How long `hall web -d` waits for the server it started to listen.
+const DETACH_WAIT: Duration = Duration::from_secs(15);
+
+/// The reply of `hall web -d`: the server runs on in the background.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct WebDetached {
+    /// The address to open, with the token in its fragment.
+    pub url: String,
+    pub port: u16,
+    /// The server's pid, for `hall web --kill <pid>`.
+    pub pid: u32,
+    /// Where its output goes.
+    pub log: String,
+}
+
+impl Render for WebDetached {
+    fn render(&self) -> String {
+        format!(
+            "Hallmark is open at {}\nRunning in the background (pid {}); only this machine can reach it.",
+            self.url, self.pid
+        )
+    }
+}
+
+/// `hall web -d`: starts `hall web` in the background, detached from this
+/// terminal, waits for the line it prints once it listens, opens the
+/// browser and returns. Its output goes to a log only you can read, in the
+/// run directory, removed once the server is gone.
+fn detached(cwd: &Path, a: &WebArgs) -> Result<Response> {
+    let dir = crate::instances::ensure_dir()?;
+    let log = dir.join(format!(
+        "web-{}-{}.log",
+        std::process::id(),
+        chrono::Utc::now().timestamp_millis()
+    ));
+    crate::instances::write_private(&log, b"")?;
+    let out = std::fs::OpenOptions::new().append(true).open(&log)?;
+    let err = out.try_clone()?;
+    let mut cmd = crate::process::command(std::env::current_exe()?);
+    cmd.args(["web", "--no-open", "--json"]);
+    if let Some(p) = a.port {
+        cmd.args(["--port", &p.to_string()]);
+    }
+    cmd.current_dir(cwd)
+        .env(crate::instances::LOG_ENV, &log)
+        .env_remove(TOKEN_ENV)
+        .stdin(Stdio::null())
+        .stdout(out)
+        .stderr(err);
+    crate::daemon::spawn::detach(&mut cmd);
+    let mut child = cmd.spawn().map_err(|e| {
+        HallError::new(
+            ErrorCode::CommandFailed,
+            format!("could not start hall web: {e}"),
+        )
+        .next(["hall web"])
+    })?;
+    let pid = child.id();
+    let deadline = Instant::now() + DETACH_WAIT;
+    let start = loop {
+        let text = std::fs::read_to_string(&log).unwrap_or_default();
+        if let Some(s) = text
+            .lines()
+            .find_map(|l| serde_json::from_str::<WebStart>(l).ok())
+        {
+            break s;
+        }
+        let exited = child.try_wait().ok().flatten();
+        if exited.is_some() || Instant::now() >= deadline {
+            if exited.is_none() {
+                let _ = child.kill();
+            }
+            let _ = child.wait();
+            let tail = text.trim();
+            let _ = std::fs::remove_file(&log);
+            let err = text
+                .lines()
+                .find_map(|l| serde_json::from_str::<Value>(l).ok())
+                .and_then(|v| v["error"]["message"].as_str().map(str::to_string))
+                .unwrap_or_else(|| tail.to_string());
+            return Err(HallError::new(
+                ErrorCode::CommandFailed,
+                format!("hall web didn't start: {err}"),
+            )
+            .next(["hall web", "hall web -l"]));
+        }
+        crate::daemon::nap(Duration::from_millis(50));
+    };
+    if !a.no_open
+        && let Some(page) = launch_page(&start.url)
+    {
+        let _ = crate::tui::open(&page);
+    }
+    let out = WebDetached {
+        url: start.url,
+        port: start.port,
+        pid,
+        log: paths::display(&log),
+    };
+    Ok(Response::new(
+        out,
+        vec![
+            "hall web -l".into(),
+            format!("hall web --kill {pid}"),
+        ],
     ))
 }
 

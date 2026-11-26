@@ -37,6 +37,7 @@ pub mod merger;
 pub mod notify;
 pub mod now;
 pub mod output;
+pub mod instances;
 pub mod paths;
 pub mod plugin;
 pub mod process;
