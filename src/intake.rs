@@ -739,7 +739,8 @@ fn clean_path(p: &str) -> Option<String> {
 /// glob ending in `/**`: everything under it matches the glob.
 fn under_security_dir(globs: &[String], p: &str) -> bool {
     globs.iter().any(|g| {
-        let Some(dir) = g.trim_start_matches("./").strip_suffix("/**") else {
+        let g = g.trim_start_matches("./");
+        let Some(dir) = g.strip_suffix("/**").or_else(|| g.strip_suffix('/')) else {
             return false;
         };
         let dir = dir.trim_end_matches('/');
@@ -1041,6 +1042,15 @@ mod tests {
             lead("merge", "H-0042", 5, &["src/auth/"]),
             4,
             &checks(&auth, &sec, false),
+        );
+        assert_eq!(dir.decision, Decision::Merge, "{dir:?}");
+        // A glob written as a directory (`auth/`) is the same.
+        let sec_dir = vec!["auth/".to_string()];
+        let auth_dir = [card("H-0042", State::Development, 10, &["auth/token.rs"])];
+        let dir = decide(
+            lead("merge", "H-0042", 5, &["auth/"]),
+            4,
+            &checks(&auth_dir, &sec_dir, false),
         );
         assert_eq!(dir.decision, Decision::Merge, "{dir:?}");
         // A pathless request into a security item is refused.

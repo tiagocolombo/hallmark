@@ -642,7 +642,8 @@ write), turns, duration and list-price cost.
 | --- | --- |
 | Review | Opus |
 | Fix | Sonnet |
-| Intake and librarian | Haiku |
+| Intake (the Product Manager and the Lead) | Sonnet; Haiku when no other item is open |
+| Librarian | Haiku |
 
 **Fewer, larger runs.** Even a trivial headless run loads about 30k tokens of
 context. An agent run loads about 4k, because its prompt replaces the default

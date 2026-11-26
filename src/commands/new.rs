@@ -830,6 +830,17 @@ pub fn add_scope(
         if !matches!(item.state, State::Development | State::AwaitingYou) {
             return Ok(None);
         }
+        if item.state == State::AwaitingYou {
+            // The frozen commit lacks the added scope: back to development.
+            let back = ev(
+                &actor(),
+                Some(target),
+                Body::PulledBack {
+                    reason: Some("scope added by a merged request".into()),
+                },
+            );
+            repo.hall.append_item(target, &back)?;
+        }
         let e = ev(
             &actor(),
             Some(target),
@@ -843,6 +854,7 @@ pub fn add_scope(
         repo.hall.refresh_item_json(target).map(Some)
     })?;
     let Some(item) = item else { return Ok(None) };
+    repo.hall.unqueue(target)?;
     save_runs(repo, target, raw);
     let mut next = vec![format!("cd {}", shell_quote(&item.worktree))];
     next.extend(next_for(&item));

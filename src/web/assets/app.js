@@ -866,7 +866,8 @@ function newItem() {
     ${field('title', 'Title (optional)', m === 'issue' ? "the issue's title" : 'the request')}
     ${m !== 'adopt' ? `<details><summary style="cursor:pointer;min-height:32px">More options</summary>
       <div class="cols" style="margin-top:10px">${field('branch', 'Branch', 'from the branch setting')}${field('parent', 'A part of (an item ID)', 'H-0042')}</div>
-      <label class="check"><input type="checkbox" name="no_split">Keep it one item: never split</label></details>` : ''}
+      <label class="check"><input type="checkbox" name="no_split">Keep it one item: never split</label>
+      <label class="check"><input type="checkbox" name="no_merge">Always a new item: never merge into or skip for an open one</label></details>` : ''}
     <div class="row"><button class="btn primary">${m === 'adopt' ? 'Adopt it' : 'Create it'}</button><a class="btn" href="#/floor">Cancel</a></div>
     <div id="new-result"></div></form>
   <aside class="narrow card"><h2>What happens</h2><p class="muted" style="margin:0">hall makes the item, its branch and its worktree.
@@ -889,6 +890,7 @@ async function submitNew(form) {
     if (v('branch')) args.push('--branch', v('branch'));
     if (v('parent')) args.push('--parent', v('parent'));
     if (f.get('no_split')) args.push('--no-split');
+    if (f.get('no_merge')) args.push('--no-merge');
   }
   if (v('title')) args.push('--title', v('title'));
   const out = $('#new-result');
@@ -899,6 +901,27 @@ async function submitNew(form) {
   if (errorOf(r)) { out.innerHTML = failure(r, command(args)); return; }
   const x = r.reply;
   const kids = x.children || [];
+  const dec = x.plan && x.plan.decision;
+  if (x.created === false || dec === 'duplicate' || dec === 'merge') {
+    const dup = dec !== 'merge';
+    out.innerHTML = `<div class="card" style="border-color:var(--info)"><b>${dup ? 'Already covered by' : 'Added to'} ${esc(x.id)} · ${esc(x.title)}</b>
+      <div class="small">${dup ? 'Nothing was created.' : 'The request is now part of that item.'}</div>
+      ${x.plan && x.plan.reason ? `<div class="small muted">${esc(x.plan.reason)}</div>` : ''}
+      <div class="row"><a class="btn primary" href="#/item/${esc(x.id)}">Open ${esc(x.id)}</a>
+      ${dup && S.newMode === 'request' ? '<button class="btn" id="build-anyway">Build it anyway</button>' : ''}</div></div>`;
+    const b = $('#build-anyway');
+    if (b) b.onclick = async () => {
+      const a2 = [...args, '--no-merge'];
+      out.innerHTML = '<div class="row muted"><span class="spin"></span> Building it as its own item…</div>';
+      const r2 = await hall(a2);
+      if (errorOf(r2)) { out.innerHTML = failure(r2, command(a2)); return; }
+      out.innerHTML = `<div class="card" style="border-color:var(--ok)"><b>${esc(r2.reply.id)} · ${esc(r2.reply.title)}</b>
+        <div class="row"><a class="btn primary" href="#/item/${esc(r2.reply.id)}">Open ${esc(r2.reply.id)}</a></div></div>`;
+      sidebar();
+    };
+    sidebar();
+    return;
+  }
   out.innerHTML = `<div class="card" style="border-color:var(--ok)"><b>${esc(x.id)} · ${esc(x.title)}</b>
     ${x.plan && x.plan.reason ? `<div class="small muted">${esc(x.plan.reason)}</div>` : ''}
     ${kids.length ? `<div>${kids.length} parallel parts: ${kids.map((k) => `<a href="#/item/${esc(k.id)}">${esc(k.id)}</a> ${esc(k.title)}`).join(' · ')}</div>` : ''}

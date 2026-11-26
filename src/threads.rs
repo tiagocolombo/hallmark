@@ -206,7 +206,8 @@ pub fn of_item(id: ItemId, item_title: &str, state: State, events: &[Event]) -> 
                 parallel,
                 children,
                 reason,
-                ..
+                decision,
+                target,
             } => {
                 let Some((asked, text)) = request.take() else {
                     continue;
@@ -229,6 +230,8 @@ pub fn of_item(id: ItemId, item_title: &str, state: State, events: &[Event]) -> 
                         children.len(),
                         ids.join(", ")
                     )
+                } else if let (Some("follow_up"), Some(t)) = (decision.as_deref(), target) {
+                    format!("A follow-up to {t}.")
                 } else {
                     "One item.".to_string()
                 };
