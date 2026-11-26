@@ -129,16 +129,22 @@ impl Ctl {
 
     fn check(&mut self) {
         self.last_check = Instant::now();
-        match state::load() {
-            Some(s) => {
+        match state::load_strict() {
+            Ok(Some(s)) => {
                 self.misses = 0;
                 if !s.wanted || s.pid != self.pid {
                     self.stop = true;
                 }
             }
-            // The state file is gone (or unreadable three times running):
+            // The file exists but can't be read (out of file handles):
+            // that says nothing about whether we should stop (ADR 0073).
+            Err(e) => log(&format!(
+                "could not read the daemon state, carrying on: {}",
+                e.message
+            )),
+            // The state file is gone (or doesn't parse) three times running:
             // nobody can stop us any more, so stop now.
-            None => {
+            Ok(None) => {
                 self.misses += 1;
                 if self.misses >= 3 {
                     self.stop = true;

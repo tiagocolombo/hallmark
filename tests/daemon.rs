@@ -674,6 +674,50 @@ fn an_expired_pause_is_not_in_the_inbox() {
     );
 }
 
+/// A running daemon rides out a state file it can't read for several
+/// seconds: same process, same instance lock, a fresh heartbeat after, and
+/// the log says why rounds were skipped (ADR 0073).
+#[cfg(unix)]
+#[test]
+fn a_running_daemon_survives_an_unreadable_state_file() {
+    use std::os::unix::fs::PermissionsExt;
+    let env = Env::initialized();
+    let script = env.script(json!([]));
+    let _guard = StopOnDrop(&env);
+    let r = bg(&env, &script, &["daemon", "start"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let pid = r.json["state"]["pid"].as_u64().unwrap();
+    let p = state_path(&env);
+    std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o000)).unwrap();
+    if std::fs::read_to_string(&p).is_ok() {
+        // Running as root: permissions don't stop a read.
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600)).unwrap();
+        return;
+    }
+    hallmark::daemon::nap(Duration::from_secs(3));
+    std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let restored = Utc::now();
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let st = loop {
+        let st = read_state(&env);
+        let beat = st["heartbeat"]
+            .as_str()
+            .and_then(|h| h.parse::<DateTime<Utc>>().ok());
+        if beat.is_some_and(|b| b > restored) || Instant::now() > deadline {
+            break st;
+        }
+        hallmark::daemon::nap(Duration::from_millis(100));
+    };
+    assert_eq!(st["wanted"], true, "{st}");
+    assert_eq!(st["pid"], pid, "{st}");
+    let beat: DateTime<Utc> = st["heartbeat"].as_str().unwrap().parse().unwrap();
+    assert!(beat > restored, "no heartbeat after the outage: {st}");
+    let s = bg(&env, &script, &["daemon", "status"]);
+    assert_eq!(s.json["running"], true, "{}", s.stdout);
+    let log = std::fs::read_to_string(env.home.join("daemon").join("daemon.log")).unwrap();
+    assert!(log.contains("could not read the daemon state"), "{log}");
+}
+
 /// A state file that exists but can't be read (out of file handles, in the
 /// field) is an error for a writer: it is never replaced by a default,
 /// whose `wanted = false` would stop the loop (ADR 0073).

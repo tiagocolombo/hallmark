@@ -44,9 +44,11 @@ What happened:
 
 - A burst now has 40 times the room before it hits the limit, and running
   into it costs a skipped round instead of the daemon.
-- A state file that stays unreadable means the loop keeps running with
-  nothing to stop it, as it does when the file is missing. `hall daemon
-  stop` reports the error, and fixing the file's permissions brings both
-  back.
+- The loop's own check of the state file tells the two cases apart. A file
+  that is unreadable is logged and skipped, however long it lasts, so the
+  loop keeps running with nothing to stop it until the file can be read
+  again. A file that is missing (or doesn't parse) still stops the loop
+  after three misses in a row, as before. `hall daemon stop` reports the
+  error, and fixing the file's permissions brings both back.
 - Windows has no per-process limit like this to raise. The other changes
   apply there too.
