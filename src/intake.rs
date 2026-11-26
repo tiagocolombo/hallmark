@@ -564,7 +564,10 @@ fn mergeable(card: &Card, raw: &RawPlan, c: &Checks) -> Result<(), String> {
         let mixes = if item_sec {
             // A security item takes only paths the set itself matches: a
             // directory above a security glob reaches outside it.
-            paths.is_empty() || !paths.iter().all(|p| set.is_match(p))
+            paths.is_empty()
+                || !paths
+                    .iter()
+                    .all(|p| set.is_match(p) || under_security_dir(c.security, p))
         } else {
             // An ordinary item takes no path that may reach a security glob.
             paths.is_empty()
@@ -730,6 +733,21 @@ fn clean_path(p: &str) -> Option<String> {
         return None;
     }
     Some(if s == "." { String::new() } else { s })
+}
+
+/// Whether `p` is a literal path at or below the directory of a security
+/// glob ending in `/**`: everything under it matches the glob.
+fn under_security_dir(globs: &[String], p: &str) -> bool {
+    globs.iter().any(|g| {
+        let Some(dir) = g.trim_start_matches("./").strip_suffix("/**") else {
+            return false;
+        };
+        let dir = dir.trim_end_matches('/');
+        !dir.is_empty()
+            && !has_glob(dir)
+            && !has_glob(p)
+            && (p == dir || p.starts_with(&format!("{dir}/")))
+    })
 }
 
 fn is_glob(component: &str) -> bool {
@@ -1015,6 +1033,19 @@ mod tests {
         ));
         mixes(decide(
             lead("merge", "H-0042", 5, &["src/**"]),
+            4,
+            &checks(&auth, &sec, false),
+        ));
+        // The security directory itself is inside its own glob.
+        let dir = decide(
+            lead("merge", "H-0042", 5, &["src/auth/"]),
+            4,
+            &checks(&auth, &sec, false),
+        );
+        assert_eq!(dir.decision, Decision::Merge, "{dir:?}");
+        // A pathless request into a security item is refused.
+        mixes(decide(
+            lead("merge", "H-0042", 5, &[]),
             4,
             &checks(&auth, &sec, false),
         ));

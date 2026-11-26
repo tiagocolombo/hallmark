@@ -206,6 +206,7 @@ pub fn of_item(id: ItemId, item_title: &str, state: State, events: &[Event]) -> 
                 parallel,
                 children,
                 reason,
+                ..
             } => {
                 let Some((asked, text)) = request.take() else {
                     continue;
@@ -756,6 +757,7 @@ mod tests {
                 pr_url: None,
                 pr_head: None,
                 own_worktree: None,
+                criteria: vec![],
             },
         );
         let events = vec![
@@ -766,6 +768,8 @@ mod tests {
                     parallel: false,
                     children: vec![],
                     reason: Some("One change in one module.".into()),
+                    decision: None,
+                    target: None,
                 },
             ),
             ev(
@@ -944,6 +948,7 @@ mod tests {
                     pr_url: None,
                     pr_head: None,
                     own_worktree: None,
+                    criteria: vec![],
                 },
             ),
             ev(
@@ -952,6 +957,8 @@ mod tests {
                     parallel: true,
                     children: vec!["H-0002".parse().unwrap(), "H-0003".parse().unwrap()],
                     reason: None,
+                    decision: None,
+                    target: None,
                 },
             ),
         ];

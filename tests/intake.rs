@@ -661,6 +661,7 @@ fn editing_a_part_binds_the_session_to_the_parent() {
         "- the web app shows a status banner",
         "propose-ready",
         "--tested",
+        "`--tested` is required here",
     ] {
         assert!(ctx.contains(want), "{want} missing: {ctx}");
     }
@@ -1021,6 +1022,12 @@ fn propose_ready_wants_each_criterion_accounted_for_in_tested() {
     let r = env.hall_fake(&env.repo, &script, &["new", "Retry failed webhooks"]);
     assert_eq!(r.code, 0, "{}", r.stdout);
     let wt = PathBuf::from(r.json["worktree"].as_str().unwrap());
+    // The reply to `hall new` already asks for `--tested`.
+    let next = r.json["next"].to_string();
+    assert!(
+        next.contains("propose-ready") && next.contains("--tested"),
+        "{next}"
+    );
     let bare = env.hall(&wt, &["propose-ready", "--ask", "--summary", "done"]);
     assert_ne!(bare.code, 0, "{}", bare.stdout);
     let msg = bare.json["error"]["message"].as_str().unwrap();
@@ -1040,6 +1047,42 @@ fn propose_ready_wants_each_criterion_accounted_for_in_tested() {
         ],
     );
     assert_eq!(ok.code, 0, "{}", ok.stdout);
+}
+
+#[test]
+fn the_last_merge_into_a_parent_asks_for_tested() {
+    let env = Env::initialized();
+    let r = split(&env);
+    commit_file(&wt(&r, 0), "api/retry.rs", "fn retry() {}\n");
+    commit_file(&wt(&r, 1), "web/banner.ts", "export {}\n");
+    let first = env.hall(&env.repo, &["merge", "H-0002"]);
+    assert_eq!(first.code, 0, "{}", first.stdout);
+    let last = env.hall(&env.repo, &["merge", "H-0003"]);
+    assert_eq!(last.code, 0, "{}", last.stdout);
+    let next = last.json["next"].to_string();
+    assert!(
+        next.contains("propose-ready") && next.contains("--tested"),
+        "{next}"
+    );
+}
+
+#[test]
+fn a_branch_asks_for_a_new_item_and_is_never_merged() {
+    let env = Env::initialized();
+    open_item(&env);
+    let script = env.script(json!([
+        story(),
+        lead("merge", "H-0001", 10, &["hooks.rs"], "Same code.")
+    ]));
+    let r = env.hall_fake(
+        &env.repo,
+        &script,
+        &["new", "Cap webhook retries at 6", "--branch", "feat/cap"],
+    );
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(r.json["created"], true, "{}", r.stdout);
+    assert_eq!(r.json["branch"], "feat/cap");
+    assert!(events(&env.journal("H-0001"), "scope_added").is_empty());
 }
 
 #[test]
