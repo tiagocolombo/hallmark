@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.28](https://github.com/tiagocolombo/hallmark/compare/v0.3.27...v0.3.28) - 2026-11-26
+
+### Fixed
+
+- Daemon: survive an open-file burst instead of stopping silently ([#193](https://github.com/tiagocolombo/hallmark/pull/193))
+
 ## [0.3.27](https://github.com/tiagocolombo/hallmark/compare/v0.3.26...v0.3.27) - 2026-11-26
 
 ### Added
