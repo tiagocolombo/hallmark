@@ -260,6 +260,52 @@ pub fn confinement(repo: &Repo) -> Confinement {
     }
 }
 
+/// Formats a path for a Claude Code permission rule (`Read(...)`, `Edit(...)`,
+/// `Write(...)`): an absolute path starting with `/` takes a leading `//`,
+/// since a single `/x` is relative to the project.
+fn rule_path(p: &str) -> String {
+    if p.starts_with('/') {
+        format!("/{p}")
+    } else {
+        p.to_string()
+    }
+}
+
+/// Grants read-only file-tool access (`--add-dir`) to `dir`, while denying
+/// `Edit` and `Write` inside it so `acceptEdits` can't modify files outside
+/// the worktree (ADR 0053).
+///
+/// Fails closed: when the run has no `--settings` deny list to extend, the
+/// directory isn't added.
+pub fn allow_read_dir(req: &mut RunRequest, dir: PathBuf) {
+    let p = rule_path(&crate::paths::display(&dir));
+    let rules = [
+        format!("Edit({p})"),
+        format!("Edit({p}/**)"),
+        format!("Write({p})"),
+        format!("Write({p}/**)"),
+    ];
+    if let Some(i) = req.extra_args.iter().position(|a| a == "--settings")
+        && let Some(raw) = req.extra_args.get_mut(i + 1)
+        && let Ok(mut v) = serde_json::from_str::<serde_json::Value>(raw)
+        && let Some(arr) = v
+            .get_mut("permissions")
+            .and_then(|p| p.get_mut("deny"))
+            .and_then(|d| d.as_array_mut())
+    {
+        for r in rules {
+            let rv = serde_json::Value::String(r);
+            if !arr.contains(&rv) {
+                arr.push(rv);
+            }
+        }
+        *raw = v.to_string();
+        if !req.add_dirs.contains(&dir) {
+            req.add_dirs.push(dir);
+        }
+    }
+}
+
 /// The `--settings` for a run. File tools read only inside the run's
 /// directories and never `deny_read`; commands run in the sandbox unless
 /// `mode = "off"` (or `auto` on native Windows, where Claude Code has none).
@@ -272,12 +318,7 @@ pub fn settings(s: &crate::config::Sandbox, windows: bool) -> serde_json::Value 
         .deny_read
         .iter()
         .flat_map(|p| {
-            // A rule's absolute path starts with `//`; `/x` is the project's.
-            let p = if p.starts_with('/') {
-                format!("/{p}")
-            } else {
-                p.clone()
-            };
+            let p = rule_path(p);
             [format!("Read({p})"), format!("Read({p}/**)")]
         })
         .collect();
@@ -1382,6 +1423,54 @@ pub fn run_error(role: &str, f: &Failure) -> HallError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn allow_read_dir_denies_writes_with_absolute_rules() {
+        let mut req = RunRequest {
+            extra_args: vec![
+                "--settings".into(),
+                settings(&crate::config::Sandbox::default(), false).to_string(),
+            ],
+            ..Default::default()
+        };
+        let dir = PathBuf::from("/x/items/H-0001/checks");
+        allow_read_dir(&mut req, dir.clone());
+        assert_eq!(req.add_dirs, vec![dir]);
+        let v: serde_json::Value = serde_json::from_str(&req.extra_args[1]).unwrap();
+        let deny: Vec<&str> = v["permissions"]["deny"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|d| d.as_str())
+            .collect();
+        for r in [
+            "Edit(//x/items/H-0001/checks)",
+            "Edit(//x/items/H-0001/checks/**)",
+            "Write(//x/items/H-0001/checks)",
+            "Write(//x/items/H-0001/checks/**)",
+        ] {
+            assert!(deny.contains(&r), "{r} missing from {deny:?}");
+        }
+        // Idempotent.
+        allow_read_dir(&mut req, PathBuf::from("/x/items/H-0001/checks"));
+        assert_eq!(req.add_dirs.len(), 1);
+        let again: serde_json::Value = serde_json::from_str(&req.extra_args[1]).unwrap();
+        assert_eq!(again, v);
+    }
+
+    #[test]
+    fn allow_read_dir_fails_closed_without_a_deny_list() {
+        let mut req = RunRequest::default();
+        allow_read_dir(&mut req, PathBuf::from("/x/checks"));
+        assert!(req.add_dirs.is_empty());
+        let mut bad = RunRequest {
+            extra_args: vec!["--settings".into(), "not json".into()],
+            ..Default::default()
+        };
+        allow_read_dir(&mut bad, PathBuf::from("/x/checks"));
+        assert!(bad.add_dirs.is_empty());
+    }
 
     fn fixture(p: &str) -> String {
         std::fs::read_to_string(format!("{}/tests/fixtures/{p}", env!("CARGO_MANIFEST_DIR")))

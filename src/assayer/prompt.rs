@@ -759,6 +759,7 @@ mod tests {
             },
             status: Status::Open,
             claimed_by: None,
+            claimed_reviewed: false,
             dispute: None,
             settled_round: None,
             note: None,

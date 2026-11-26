@@ -793,3 +793,147 @@ fn max_check_failures_zero_never_holds() {
     }
     assert!(events(&env, &id, "held").is_empty());
 }
+
+#[test]
+fn fixer_gets_failing_gate_section_read_only_checks_dir_and_surfaces_failure_details() {
+    let env = Env::initialized();
+    let (id, wt, sha) = fixing_item(&env, "Retry webhooks");
+    // Round 1 fixer commits and claims F1, F2, F3 fixed, then round 2 checks
+    // fail ONLY on gate 1 (`cargo fmt --check`) while gate 2 (`cargo test`)
+    // passes with hundreds of lines of output at the end of the combined log.
+    std::fs::write(wt.join("retry.rs"), "fn retry() { lock(); deliver(); }\n").unwrap();
+    git(&wt, &["add", "-A"]);
+    git(&wt, &["commit", "-q", "-m", "fix F1 F2 F3"]);
+    let sha2 = hallmark::git::head(&wt).unwrap();
+    assert_ne!(sha, sha2);
+    append(
+        &env,
+        &id,
+        "fixer",
+        hallmark::event::Body::FixSubmitted {
+            sha: sha2.clone(),
+            fixes: vec!["F1".into(), "F2".into(), "F3".into()],
+            disputes: vec![],
+        },
+    );
+    let checks_dir = env.repo.join(format!(".git/hallmark/items/{id}/checks"));
+    std::fs::create_dir_all(&checks_dir).unwrap();
+    let mut combined = format!(
+        "# {id} round 2: checks at {sha2}\n\n\
+         $ cargo fmt --check\n\
+         Diff in retry.rs:1:\n\
+         -fn retry() {{ lock(); deliver(); }}\n\
+         +fn retry() {{\n+    lock();\n+    deliver();\n+}}\n\n\
+         [exit 1 after 0.2s]\n\n\
+         $ cargo test\n"
+    );
+    for i in 1..=250 {
+        combined.push_str(&format!("test passing_{i} ... ok\n"));
+    }
+    combined.push_str("\n[exit 0 after 10.0s]\n");
+    std::fs::write(checks_dir.join("r2.log"), combined).unwrap();
+    append(
+        &env,
+        &id,
+        "assayer",
+        hallmark::event::Body::Checks {
+            sha: sha2,
+            round: 2,
+            passed: false,
+            runs: vec![
+                hallmark::event::CheckRun {
+                    command: "cargo fmt --check".into(),
+                    exit_code: 1,
+                    duration_ms: 200,
+                    log: Some("checks/r2.log".into()),
+                    cached: false,
+                },
+                hallmark::event::CheckRun {
+                    command: "cargo test".into(),
+                    exit_code: 0,
+                    duration_ms: 10_000,
+                    log: Some("checks/r2.log".into()),
+                    cached: false,
+                },
+            ],
+        },
+    );
+
+    // Attempt 1 fails without committing (e.g. sandbox blocked a command) and
+    // returns a summary explaining why. Attempt 2 sees the prior failure and
+    // also fails -> held reason preserves both the failing gate and summary.
+    let script = env.script(json!([
+        {
+            "role": "fixer",
+            "structured": {
+                "summary": "Sandbox blocked cargo fmt in this run.",
+                "fixed": [],
+                "disputed": []
+            }
+        },
+        {
+            "role": "fixer",
+            "structured": {
+                "summary": "Still blocked by sandbox.",
+                "fixed": [],
+                "disputed": []
+            }
+        }
+    ]));
+    let step1 = fixer_pass(&env, &script);
+    assert_eq!(step1["progress"], "worked", "{step1}");
+    let step2 = fixer_pass(&env, &script);
+    assert!(step2["what"].as_str().unwrap().contains("held"), "{step2}");
+
+    let calls = env.fake_calls();
+    assert_eq!(calls.len(), 2);
+
+    // 1. Prompt contains the failing gate's diff, NOT the 250 passing tests at
+    //    the tail of the combined log.
+    let p1 = calls[0]["prompt"].as_str().unwrap();
+    assert!(p1.contains("Diff in retry.rs:1:"), "{p1}");
+    assert!(!p1.contains("test passing_250"), "{p1}");
+    // 2. Already-claimed findings aren't falsely shown as rejected by review.
+    assert!(p1.contains("None left to fix right now"), "{p1}");
+    assert!(!p1.contains("the reviewer still sees it open"), "{p1}");
+    // 3. The item's checks/ directory is granted via --add-dir, with Edit and
+    //    Write denied inside it so acceptEdits stays confined to the worktree.
+    common::assert_confined(&calls[0]);
+    let args: Vec<&str> = calls[0]["args"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a.as_str().unwrap())
+        .collect();
+    let add_idx = args
+        .iter()
+        .position(|a| *a == "--add-dir")
+        .unwrap_or_else(|| panic!("expected --add-dir in {args:?}"));
+    assert!(
+        args[add_idx + 1].ends_with("checks"),
+        "expected item checks dir: {}",
+        args[add_idx + 1]
+    );
+    let s = common::run_settings(&calls[0]);
+    let deny = s["permissions"]["deny"].to_string();
+    assert!(
+        deny.contains("Edit(") && deny.contains("checks/**"),
+        "{deny}"
+    );
+    assert!(
+        deny.contains("Write(") && deny.contains("checks/**"),
+        "{deny}"
+    );
+    // 4. Attempt 2 is told why attempt 1 failed.
+    let p1 = calls[0]["prompt"].as_str().unwrap();
+    assert!(!p1.contains("Previous fix attempt failed"), "{p1}");
+    let p2 = calls[1]["prompt"].as_str().unwrap();
+    assert!(p2.contains("## Previous fix attempt failed"), "{p2}");
+    assert!(p2.contains("Sandbox blocked cargo fmt"), "{p2}");
+    // 5. The hold reason keeps the failing check command and the fixer summary.
+    let held = events(&env, &id, "held");
+    assert_eq!(held.len(), 1);
+    let reason = held[0]["reason"].as_str().unwrap();
+    assert!(reason.contains("cargo fmt --check"), "{reason}");
+    assert!(reason.contains("Still blocked by sandbox."), "{reason}");
+}

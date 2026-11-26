@@ -146,6 +146,12 @@ fn run_claude(
     req.permission_mode = Some("acceptEdits".into());
     req.allowed_tools = tools(&repo.config.run_commands());
     req.env.extend(path_with_hall());
+    if !failing_checks(events).is_empty() {
+        let checks_dir = repo.hall.item_checks(id);
+        if checks_dir.is_dir() {
+            runner::allow_read_dir(&mut req, checks_dir);
+        }
+    }
     match runner::run_metered(repo, ctx.runner, Some(id), &req)? {
         Metered::Blocked(stop) => Ok(stop.progress()),
         Metered::Failed {
@@ -274,19 +280,23 @@ pub fn settle(repo: &Repo, id: ItemId, wt: &Path, report: Option<FixReport>) -> 
         )));
     }
     let dirty = git::dirty_files(wt)?;
+    let report = report.unwrap_or_default();
+    let summary = report.summary.trim().to_string();
     if !dirty.is_empty() {
         return failed(
             repo,
             id,
-            format!(
-                "the fixer left uncommitted changes ({}); they are kept for you",
-                dirty.join(", ")
+            with_summary(
+                format!(
+                    "the fixer left uncommitted changes ({}); they are kept for you",
+                    dirty.join(", ")
+                ),
+                &summary,
             ),
         );
     }
     let head = git::head(wt)?;
     let moved = item.frozen_sha.as_deref() != Some(head.as_str());
-    let report = report.unwrap_or_default();
     // Claims about findings that aren't open are dropped rather than
     // failing the whole submission; the review settles the rest.
     let events = repo.hall.read_item(id)?;
@@ -305,12 +315,9 @@ pub fn settle(repo: &Repo, id: ItemId, wt: &Path, report: Option<FixReport>) -> 
         })
         .filter(|d| open.contains(&d.id) && !fixed.contains(&d.id) && !d.reason.trim().is_empty())
         .collect();
+    let failing = failing_checks(&events);
     if !moved && disputed.is_empty() {
-        return failed(
-            repo,
-            id,
-            "the fixer committed nothing and disputed nothing".into(),
-        );
+        return failed(repo, id, nothing_reason(&failing, &summary));
     }
     let fixed = if moved { fixed } else { Vec::new() };
     match crate::commands::fix::submit(repo, id, fixed, disputed, ACTOR) {
@@ -325,8 +332,41 @@ pub fn settle(repo: &Repo, id: ItemId, wt: &Path, report: Option<FixReport>) -> 
             }
             Ok(Progress::worked(what))
         }
-        Err(e) => failed(repo, id, format!("could not submit the fix: {}", e.message)),
+        Err(e) => failed(
+            repo,
+            id,
+            with_summary(format!("could not submit the fix: {}", e.message), &summary),
+        ),
     }
+}
+
+/// Reason recorded when a fixer run neither moved HEAD nor disputed anything:
+/// names any failing gates and keeps the fixer's own summary so `hall status`
+/// and `hall inbox` explain what blocked it.
+fn nothing_reason(failing: &[CheckRun], summary: &str) -> String {
+    let mut base = String::from("the fixer committed nothing and disputed nothing");
+    if !failing.is_empty() {
+        let cmds: Vec<String> = failing
+            .iter()
+            .map(|c| format!("`{}` (exit {})", c.command, c.exit_code))
+            .collect();
+        let label = if failing.len() == 1 {
+            "failing check"
+        } else {
+            "failing checks"
+        };
+        base.push_str(&format!(" ({label}: {})", cmds.join(", ")));
+    }
+    with_summary(base, summary)
+}
+
+fn with_summary(mut reason: String, summary: &str) -> String {
+    let s = summary.trim();
+    if !s.is_empty() {
+        reason.push_str(" — ");
+        reason.push_str(&crate::output::clip(s, 240));
+    }
+    reason
 }
 
 /// Records a failed fixer attempt the way `run_metered` does: the first
@@ -410,9 +450,9 @@ pub fn tools(gates: &[String]) -> Vec<String> {
     t
 }
 
-/// The gates that failed in the last checks run, while that run is still
-/// the latest word on the item (the same rule as `hall findings`).
-pub fn failing_checks(events: &[Event]) -> Vec<CheckRun> {
+/// All gate runs from the last checks event when that run failed and is still
+/// the latest word on the item.
+fn last_failed_runs(events: &[Event]) -> Vec<CheckRun> {
     events
         .iter()
         .rev()
@@ -429,9 +469,34 @@ pub fn failing_checks(events: &[Event]) -> Vec<CheckRun> {
         })
         .flatten()
         .unwrap_or_default()
+}
+
+/// The gates that failed in the last checks run, while that run is still
+/// the latest word on the item (the same rule as `hall findings`).
+pub fn failing_checks(events: &[Event]) -> Vec<CheckRun> {
+    last_failed_runs(events)
         .into_iter()
         .filter(|r| r.exit_code != 0)
         .collect()
+}
+
+/// The latest fixer `run_failed` event since the last state transition or
+/// release, so a retry attempt knows why the prior attempt failed.
+fn last_fixer_failure(events: &[Event]) -> Option<(u32, &str)> {
+    let mut last = None;
+    for e in events {
+        match &e.body {
+            Body::RunFailed {
+                role,
+                reason,
+                attempt,
+            } if role == ACTOR => last = Some((*attempt, reason.as_str())),
+            Body::Released { .. } => last = None,
+            b if b.action().is_some() => last = None,
+            _ => {}
+        }
+    }
+    last
 }
 
 /// Open findings, most severe first, then in the order raised; the
@@ -440,6 +505,24 @@ pub fn sorted_open(ledger: &Ledger) -> Vec<&Tracked> {
     let mut open = ledger.open();
     open.sort_by_key(|t| (t.finding.pre_existing, t.finding.severity));
     open
+}
+
+/// Open findings that still need fixing: never claimed yet, or still open
+/// after a review saw the claiming commit.
+fn active_open(ledger: &Ledger) -> Vec<&Tracked> {
+    sorted_open(ledger)
+        .into_iter()
+        .filter(|t| t.claimed_by.is_none() || t.claimed_reviewed)
+        .collect()
+}
+
+/// Open findings already claimed fixed by a commit that hasn't been reviewed
+/// yet (for instance, because checks failed before review).
+fn pending_review(ledger: &Ledger) -> Vec<&Tracked> {
+    sorted_open(ledger)
+        .into_iter()
+        .filter(|t| t.claimed_by.is_some() && !t.claimed_reviewed)
+        .collect()
 }
 
 /// The request as typed when the item was created.
@@ -465,9 +548,8 @@ pub fn log_path(repo: &Repo, id: ItemId, log: &str) -> PathBuf {
     }
 }
 
-/// The last `lines` lines of a file, at most `max` bytes.
-pub fn tail(path: &Path, lines: usize, max: usize) -> Option<String> {
-    let text = std::fs::read_to_string(path).ok()?;
+/// The last `lines` lines of `text`, at most `max` bytes.
+fn tail_str(text: &str, lines: usize, max: usize) -> String {
     let all: Vec<&str> = text.lines().collect();
     let mut t = all[all.len().saturating_sub(lines)..].join("\n");
     if t.len() > max {
@@ -477,7 +559,68 @@ pub fn tail(path: &Path, lines: usize, max: usize) -> Option<String> {
         }
         t = format!("…{}", &t[cut..]);
     }
-    Some(t)
+    t
+}
+
+/// The last `lines` lines of a file, at most `max` bytes.
+pub fn tail(path: &Path, lines: usize, max: usize) -> Option<String> {
+    let text = std::fs::read_to_string(path).ok()?;
+    Some(tail_str(&text, lines, max))
+}
+
+/// Extracts `command`'s own section from a combined `checks/r<round>.log`,
+/// where `assayer::checks` writes each gate starting with `$ <command>`.
+/// Returns `None` when the log has no `$ <command>` header (such as a
+/// standalone single-gate log).
+pub fn gate_section<'a>(text: &'a str, command: &str, all_commands: &[&str]) -> Option<&'a str> {
+    let header = format!("$ {command}");
+    let mut offset = 0usize;
+    let mut spans: Vec<(usize, usize, &str)> = Vec::new();
+    for raw in text.split_inclusive('\n') {
+        let line = raw.trim_end_matches(['\r', '\n']);
+        let end = offset + raw.len();
+        spans.push((offset, end, line));
+        offset = end;
+    }
+    let start_idx = spans.iter().rposition(|(_, _, l)| *l == header)?;
+    let mut end_byte = text.len();
+    for i in (start_idx + 1)..spans.len() {
+        let line = spans[i].2;
+        let prev = spans[i - 1].2;
+        let after_break = i == start_idx + 1
+            || prev.is_empty()
+            || prev.starts_with("[exit ")
+            || prev.starts_with("[cached: ")
+            || prev.starts_with("[timed out ");
+        if !after_break {
+            continue;
+        }
+        let is_next_gate = if !all_commands.is_empty() {
+            line.strip_prefix("$ ")
+                .is_some_and(|cmd| all_commands.contains(&cmd))
+        } else {
+            line.starts_with("$ ")
+        };
+        if is_next_gate {
+            end_byte = spans[i].0;
+            break;
+        }
+    }
+    Some(text[spans[start_idx].0..end_byte].trim_end())
+}
+
+/// The tail of `command`'s own section in `path`, falling back to the tail of
+/// the whole file when `path` doesn't use `$ <command>` sections.
+pub fn gate_tail(
+    path: &Path,
+    command: &str,
+    all_commands: &[&str],
+    lines: usize,
+    max: usize,
+) -> Option<String> {
+    let text = std::fs::read_to_string(path).ok()?;
+    let slice = gate_section(&text, command, all_commands).unwrap_or(&text);
+    Some(tail_str(slice, lines, max))
 }
 
 /// The fixer's prompt: everything it needs, since the agent replaces the
@@ -506,7 +649,16 @@ pub fn prompt(repo: &Repo, item: &Item, events: &[Event], ledger: &Ledger) -> St
     if let Some(w) = crate::words::pending(events, "fixer") {
         s.push_str(&format!("\n{}", w.section));
     }
-    let failing = failing_checks(events);
+    if let Some((attempt, reason)) = last_fixer_failure(events) {
+        s.push_str(&format!(
+            "\n## Previous fix attempt failed\n\n\
+             Attempt {attempt} failed: {reason}\n\
+             Don't repeat that failure: address the root cause, commit your changes, and resubmit.\n"
+        ));
+    }
+    let runs = last_failed_runs(events);
+    let all_cmds: Vec<&str> = runs.iter().map(|r| r.command.as_str()).collect();
+    let failing: Vec<&CheckRun> = runs.iter().filter(|r| r.exit_code != 0).collect();
     if !failing.is_empty() {
         s.push_str("\n## Failing checks (fix these first)\n");
         for c in &failing {
@@ -515,7 +667,7 @@ pub fn prompt(repo: &Repo, item: &Item, events: &[Event], ledger: &Ledger) -> St
                 Some(log) => {
                     let path = log_path(repo, id, log);
                     s.push_str(&format!(" · log: {}\n", crate::paths::display(&path)));
-                    if let Some(t) = tail(&path, 200, 20000) {
+                    if let Some(t) = gate_tail(&path, &c.command, &all_cmds, 200, 20000) {
                         s.push_str(&format!("\n```text\n{t}\n```\n"));
                     }
                 }
@@ -523,56 +675,94 @@ pub fn prompt(repo: &Repo, item: &Item, events: &[Event], ledger: &Ledger) -> St
             }
         }
     }
-    s.push_str(&open_findings_section(ledger));
+    s.push_str(&open_findings_section(ledger, id, !failing.is_empty()));
     prompt_end(repo, item, ledger, !failing.is_empty(), s)
 }
 
 /// The prompt's open findings, most severe first, pre-existing ones marked.
-fn open_findings_section(ledger: &Ledger) -> String {
+/// Findings already claimed fixed by an unreviewed commit (e.g. checks failed
+/// before the next review) are noted as pending review rather than shown as
+/// rejected by the reviewer.
+fn open_findings_section(ledger: &Ledger, id: ItemId, gate_failed: bool) -> String {
     let mut s = String::new();
-    let open = sorted_open(ledger);
-    if open.is_empty() {
+    let active = active_open(ledger);
+    let pending = pending_review(ledger);
+    if active.is_empty() && pending.is_empty() {
         s.push_str("\n## Open findings\n\nNone.\n");
     } else {
-        s.push_str("\n## Open findings (most severe first)\n");
-        for t in open {
-            let f = &t.finding;
-            s.push_str(&format!(
-                "\n### {} · {}{} · {} · {}:{}\n\n{}\n\n- Scenario: {}\n- Suggested fix: {}\n",
-                f.id,
-                f.severity.as_str(),
-                if f.pre_existing {
-                    " (pre-existing)"
-                } else {
-                    ""
-                },
-                f.lens.as_str(),
-                f.file,
-                f.line,
-                f.title.trim(),
-                f.scenario.trim(),
-                f.fix.trim()
-            ));
-            if f.pre_existing {
-                s.push_str(
-                    "- Pre-existing: this change didn't introduce it, and it never blocks \
-                     approval. Fix it only when that is cheap and safe; otherwise leave it, \
-                     and say so in your summary.\n",
-                );
-            }
-            if let Some(d) = &t.dispute {
-                s.push_str(&format!("- You disputed it before: \"{}\"\n", d.trim()));
-            }
-            if let Some(n) = &t.note {
-                s.push_str(&format!("- The reviewer's note: \"{}\"\n", n.trim()));
-            }
-            if let Some(c) = &t.claimed_by {
+        if active.is_empty() {
+            s.push_str(
+                "\n## Open findings\n\nNone left to fix right now. The findings below are \
+                 already claimed fixed and wait for checks to pass before the reviewer \
+                 checks them.\n",
+            );
+            if gate_failed {
                 s.push_str(&format!(
-                    "- Claimed fixed by {} before; the reviewer still sees it open.\n",
-                    short(c)
+                    "Focus on fixing the failing checks above, commit, and resubmit \
+                     (`hall fixed --item {id}`).\n"
                 ));
             }
+        } else {
+            s.push_str("\n## Open findings (most severe first)\n");
+            for t in &active {
+                s.push_str(&finding_block(t));
+            }
         }
+        if !pending.is_empty() {
+            let ids: Vec<&str> = pending.iter().map(|t| t.finding.id.as_str()).collect();
+            s.push_str(&format!(
+                "\n## Claimed fixed, pending review once checks pass: {}\n\n\
+                 Change these only when a failing check comes from their fix; don't undo \
+                 their fix or their tests to turn a check green.\n",
+                ids.join(", ")
+            ));
+            for t in &pending {
+                s.push_str(&finding_block(t));
+            }
+        }
+    }
+    s
+}
+
+/// One finding as the prompt shows it.
+fn finding_block(t: &Tracked) -> String {
+    let f = &t.finding;
+    let mut s = format!(
+        "\n### {} · {}{} · {} · {}:{}\n\n{}\n\n- Scenario: {}\n- Suggested fix: {}\n",
+        f.id,
+        f.severity.as_str(),
+        if f.pre_existing {
+            " (pre-existing)"
+        } else {
+            ""
+        },
+        f.lens.as_str(),
+        f.file,
+        f.line,
+        f.title.trim(),
+        f.scenario.trim(),
+        f.fix.trim()
+    );
+    if f.pre_existing {
+        s.push_str(
+            "- Pre-existing: this change didn't introduce it, and it never blocks \
+             approval. Fix it only when that is cheap and safe; otherwise leave it, \
+             and say so in your summary.\n",
+        );
+    }
+    if let Some(d) = &t.dispute {
+        s.push_str(&format!("- You disputed it before: \"{}\"\n", d.trim()));
+    }
+    if let Some(n) = &t.note {
+        s.push_str(&format!("- The reviewer's note: \"{}\"\n", n.trim()));
+    }
+    if let Some(c) = &t.claimed_by
+        && t.claimed_reviewed
+    {
+        s.push_str(&format!(
+            "- Claimed fixed by {} before; the reviewer still sees it open.\n",
+            short(c)
+        ));
     }
     s
 }
@@ -599,7 +789,7 @@ fn prompt_end(
     // only when this round calls for it: a red gate, an open finding's lens.
     let round = crate::extensions::Context {
         gate_failed,
-        lenses: ledger.open().iter().map(|t| t.finding.lens).collect(),
+        lenses: active_open(ledger).iter().map(|t| t.finding.lens).collect(),
     };
     if let Some(x) = crate::extensions::prompt_for(
         &repo.config.extensions,
@@ -623,7 +813,8 @@ fn prompt_end(
         ));
     }
     s.push_str(&format!(
-        "3. Record the fix: `hall fixed <ids you fixed> --item {id}`. Dispute a finding only with \
+        "3. Record the fix: `hall fixed <ids you fixed> --item {id}` (or `hall fixed --item {id}` \
+         if you only fixed failing checks). Dispute a finding only with \
          a concrete reason: `hall fixed --dispute <id> --reason \"…\" --item {id}`.\n\
          4. Return the fix report: summary, fixed, disputed.\n\n\
          Never push, never open a PR, never run `hall ready`: you can't approve, only the next \
@@ -802,6 +993,7 @@ mod tests {
             },
             status: Status::Open,
             claimed_by: None,
+            claimed_reviewed: false,
             dispute: None,
             settled_round: None,
             note: None,
@@ -838,6 +1030,7 @@ mod tests {
             },
             status: Status::Open,
             claimed_by: None,
+            claimed_reviewed: false,
             dispute: None,
             settled_round: None,
             note: None,
@@ -853,11 +1046,265 @@ mod tests {
             .map(|t| t.finding.id.as_str())
             .collect();
         assert_eq!(ids, ["F2", "F1"]);
-        let text = open_findings_section(&l);
+        let text = open_findings_section(&l, ItemId(1), false);
         assert!(text.contains("### F1 · blocker (pre-existing)"), "{text}");
         assert!(!text.contains("### F2 · minor (pre-existing)"), "{text}");
         assert!(text.contains("Fix it only when that is cheap and safe"));
         assert_eq!(text.matches("Pre-existing: this change").count(), 1);
+    }
+
+    #[test]
+    fn gate_section_extracts_earlier_failing_gate_from_combined_log() {
+        let log = "\
+# H-0109 round 2: checks at 084fea1
+# in /tmp/assay
+
+$ cargo fmt --check
+Diff in src/hooks.rs:10:
+-foo();
++bar();
+
+[exit 1 after 0.4s]
+
+$ cargo clippy --all-targets -- -D warnings
+Finished `dev` profile
+
+[exit 0 after 2.1s]
+
+$ cargo test --all-targets
+test a ... ok
+test b ... ok
+
+[exit 0 after 12.0s]
+";
+        let cmds = [
+            "cargo fmt --check",
+            "cargo clippy --all-targets -- -D warnings",
+            "cargo test --all-targets",
+        ];
+        let sec = gate_section(log, "cargo fmt --check", &cmds).unwrap();
+        assert!(sec.contains("Diff in src/hooks.rs:10:"), "{sec}");
+        assert!(sec.contains("[exit 1 after 0.4s]"), "{sec}");
+        assert!(!sec.contains("cargo clippy"), "{sec}");
+        assert!(!sec.contains("test a ... ok"), "{sec}");
+
+        // A standalone log without `$ <cmd>` headers falls back to the tail.
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("r1.log");
+        std::fs::write(&p, "line 1\nline 2\nFAILED\n").unwrap();
+        let t = gate_tail(&p, "cargo test", &["cargo test"], 2, 1000).unwrap();
+        assert_eq!(t, "line 2\nFAILED");
+    }
+
+    #[test]
+    fn unreviewed_claimed_findings_are_not_shown_as_reviewer_rejections() {
+        let mut l = Ledger::default();
+        l.apply(&Body::Verdict {
+            sha: "aaaa111".into(),
+            round: 1,
+            verdict: crate::event::VerdictKind::Changes,
+            escalated: false,
+            findings: vec![Finding {
+                id: "F1".into(),
+                round: 1,
+                lens: Lens::Correctness,
+                severity: Severity::Major,
+                file: "src/a.rs".into(),
+                line: 10,
+                title: "missing lock".into(),
+                scenario: "race".into(),
+                fix: "lock it".into(),
+                pre_existing: false,
+            }],
+            prior: vec![],
+            counts: Counts::default(),
+            summary: None,
+            report: None,
+            reviewer: None,
+            learnings: vec![],
+            base: None,
+            since: None,
+            needs_person: None,
+        });
+        l.apply(&Body::FixSubmitted {
+            sha: "bbbb222".into(),
+            fixes: vec!["F1".into()],
+            disputes: vec![],
+        });
+        // Before any round-2 verdict (e.g. checks failed on bbbb222):
+        let before = open_findings_section(&l, ItemId(9), true);
+        assert!(before.contains("None left to fix right now"), "{before}");
+        assert!(before.contains("F1"), "{before}");
+        assert!(
+            !before.contains("the reviewer still sees it open"),
+            "{before}"
+        );
+        assert!(before.contains("hall fixed --item H-0009"), "{before}");
+
+        // Once a round-2 verdict runs and leaves F1 open:
+        l.apply(&Body::Verdict {
+            sha: "bbbb222".into(),
+            round: 2,
+            verdict: crate::event::VerdictKind::Changes,
+            escalated: false,
+            findings: vec![],
+            prior: vec![crate::findings::PriorRuling {
+                id: "F1".into(),
+                status: crate::findings::PriorStatus::Open,
+                note: Some("still racy".into()),
+            }],
+            counts: Counts::default(),
+            summary: None,
+            report: None,
+            reviewer: None,
+            learnings: vec![],
+            base: None,
+            since: None,
+            needs_person: None,
+        });
+        let after = open_findings_section(&l, ItemId(9), false);
+        assert!(after.contains("### F1 · major"), "{after}");
+        assert!(
+            after.contains("Claimed fixed by bbbb222 before; the reviewer still sees it open."),
+            "{after}"
+        );
+    }
+
+    fn test_finding(id: &str, title: &str) -> Finding {
+        Finding {
+            id: id.into(),
+            round: 1,
+            lens: Lens::Correctness,
+            severity: Severity::Major,
+            file: "src/a.rs".into(),
+            line: 10,
+            title: title.into(),
+            scenario: format!("scenario of {id}"),
+            fix: format!("fix of {id}"),
+            pre_existing: false,
+        }
+    }
+
+    fn test_verdict(round: u32, findings: Vec<Finding>, open: &[&str]) -> Body {
+        Body::Verdict {
+            sha: format!("sha{round}"),
+            round,
+            verdict: crate::event::VerdictKind::Changes,
+            escalated: false,
+            findings,
+            prior: open
+                .iter()
+                .map(|id| crate::findings::PriorRuling {
+                    id: (*id).into(),
+                    status: crate::findings::PriorStatus::Open,
+                    note: None,
+                })
+                .collect(),
+            counts: Counts::default(),
+            summary: None,
+            report: None,
+            reviewer: None,
+            learnings: vec![],
+            base: None,
+            since: None,
+            needs_person: None,
+        }
+    }
+
+    fn test_claim(sha: &str, ids: &[&str]) -> Body {
+        Body::FixSubmitted {
+            sha: sha.into(),
+            fixes: ids.iter().map(|s| (*s).into()).collect(),
+            disputes: vec![],
+        }
+    }
+
+    #[test]
+    fn reclaiming_after_a_review_makes_the_finding_pending_again() {
+        let mut l = Ledger::default();
+        l.apply(&test_verdict(1, vec![test_finding("F1", "t1")], &[]));
+        l.apply(&test_claim("sha2", &["F1"]));
+        l.apply(&test_verdict(2, vec![], &["F1"]));
+        assert!(l.get("F1").unwrap().claimed_reviewed);
+        l.apply(&test_claim("sha3", &["F1"]));
+        let t = l.get("F1").unwrap();
+        assert_eq!(t.claimed_by.as_deref(), Some("sha3"));
+        assert!(!t.claimed_reviewed);
+        let text = open_findings_section(&l, ItemId(9), true);
+        assert!(text.contains("None left to fix right now"), "{text}");
+        assert!(!text.contains("reviewer still sees it open"), "{text}");
+    }
+
+    #[test]
+    fn a_claimed_finding_left_out_of_prior_is_active() {
+        let mut l = Ledger::default();
+        l.apply(&test_verdict(1, vec![test_finding("F1", "t1")], &[]));
+        l.apply(&test_claim("sha2", &["F1"]));
+        l.apply(&test_verdict(2, vec![], &[]));
+        assert!(l.get("F1").unwrap().claimed_reviewed);
+        let text = open_findings_section(&l, ItemId(9), false);
+        assert!(text.contains("### F1 · major"), "{text}");
+        assert!(text.contains("the reviewer still sees it open"), "{text}");
+    }
+
+    #[test]
+    fn mixed_active_and_pending_findings_are_both_in_full() {
+        let mut l = Ledger::default();
+        l.apply(&test_verdict(
+            1,
+            vec![test_finding("F1", "t1"), test_finding("F2", "t2")],
+            &[],
+        ));
+        l.apply(&test_claim("sha2", &["F2"]));
+        let text = open_findings_section(&l, ItemId(9), true);
+        assert!(
+            text.contains("## Open findings (most severe first)"),
+            "{text}"
+        );
+        assert!(text.contains("### F1 · major"), "{text}");
+        assert!(
+            text.contains("pending review once checks pass: F2"),
+            "{text}"
+        );
+        // The pending finding keeps its scenario and suggested fix.
+        assert!(text.contains("### F2 · major"), "{text}");
+        assert!(text.contains("scenario of F2"), "{text}");
+        assert!(text.contains("fix of F2"), "{text}");
+        assert!(!text.contains("reviewer still sees it open"), "{text}");
+    }
+
+    #[test]
+    fn a_fixer_failure_is_forgotten_once_the_item_moves_on() {
+        let ev = |body| Event::new("hall", Some(ItemId(9)), body);
+        let failed = |attempt, reason: &str| {
+            ev(Body::RunFailed {
+                role: ACTOR.into(),
+                reason: reason.into(),
+                attempt,
+            })
+        };
+        let mut events = vec![failed(1, "Sandbox blocked cargo fmt")];
+        assert_eq!(
+            last_fixer_failure(&events),
+            Some((1, "Sandbox blocked cargo fmt"))
+        );
+        // A release (e.g. after `hall retry` lifts the hold) clears it.
+        events.push(ev(Body::Released {
+            reason: None,
+            granted_tokens: None,
+        }));
+        assert_eq!(last_fixer_failure(&events), None);
+        // A later failure shows again; a failed review of the next fix clears it.
+        events.push(failed(1, "second"));
+        assert_eq!(last_fixer_failure(&events), Some((1, "second")));
+        events.push(ev(test_verdict(3, vec![], &[])));
+        assert_eq!(last_fixer_failure(&events), None);
+        // So does a checks result.
+        events.push(failed(1, "third"));
+        events.push(ev(Body::Retried {
+            reason: "again".into(),
+        }));
+        assert_eq!(last_fixer_failure(&events), None);
     }
 
     #[test]
