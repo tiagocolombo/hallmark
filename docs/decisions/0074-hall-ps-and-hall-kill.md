@@ -1,4 +1,4 @@
-# 0072. `hall ps` and `hall kill`: the halls that keep running
+# 0074. `hall ps` and `hall kill`: the halls that keep running
 
 Status: Accepted, 2026-11-26.
 

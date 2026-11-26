@@ -1,4 +1,4 @@
-//! Running hall processes: `hall ps` and `hall kill` (ADR 0072).
+//! Running hall processes: `hall ps` and `hall kill` (ADR 0074).
 //!
 //! Each hall that keeps running (the web app, `watch`, `trace --follow`,
 //! the terminal app) registers itself under `<user dir>/run/` for as long as
@@ -179,7 +179,10 @@ pub fn register(kind: Kind, cwd: &Path) -> Option<Registration> {
         args: std::env::args().skip(1).collect(),
         port: None,
         url: None,
-        log: std::env::var(LOG_ENV).ok().filter(|l| !l.is_empty()),
+        log: std::env::var(LOG_ENV)
+            .ok()
+            .filter(|l| !l.is_empty())
+            .map(|l| crate::paths::display(Path::new(&l))),
     };
     let mut r = Registration {
         dir,
@@ -309,11 +312,16 @@ pub struct Stopped {
 pub fn stop(i: &Instance) -> Stopped {
     if i.kind == Kind::Daemon {
         let r = crate::commands::daemon::stop_loop();
+        let running = r.as_ref().is_ok_and(|running| *running);
         return Stopped {
             pid: i.pid,
             kind: i.kind,
             stopped: r.is_ok_and(|running| !running),
-            note: Some("asked to stop, as `hall daemon stop` does".into()),
+            note: Some(if running {
+                "still finishing its current pass; it exits right after".into()
+            } else {
+                "asked to stop, as `hall daemon stop` does".into()
+            }),
         };
     }
     let dir = dir();

@@ -1,5 +1,5 @@
 //! `hall ps` and `hall kill`: the halls that keep running, and stopping
-//! them (ADR 0072). `hall -l` is `hall ps`; `hall web -l` and `hall web
+//! them (ADR 0074). `hall -l` is `hall ps`; `hall web -l` and `hall web
 //! --kill` are the same, for the web app only.
 
 use schemars::JsonSchema;
@@ -160,11 +160,19 @@ pub fn kill(a: KillArgs) -> Result<Response> {
         None
     };
     let left = stopped.iter().any(|s| !s.stopped);
-    let next = if left {
-        vec!["hall ps".into()]
+    let mut next: Vec<String> = vec!["hall ps".into()];
+    if left {
+        if stopped.iter().any(|s| !s.stopped && s.kind == Kind::Daemon) {
+            next.push("hall daemon status".into());
+        }
     } else {
-        vec!["hall ps".into(), "hall web -d".into()]
-    };
+        if stopped.iter().any(|s| s.kind == Kind::Daemon) {
+            next.push("hall daemon start".into());
+        }
+        if stopped.iter().any(|s| s.kind == Kind::Web) {
+            next.push("hall web -d".into());
+        }
+    }
     Ok(Response::new(
         KillOut {
             stopped,

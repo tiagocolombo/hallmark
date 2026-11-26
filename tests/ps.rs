@@ -1,4 +1,4 @@
-//! `hall ps`, `hall kill`, `hall -l` and `hall web -d|-l|--kill` (ADR 0072):
+//! `hall ps`, `hall kill`, `hall -l` and `hall web -d|-l|--kill` (ADR 0074):
 //! the halls that keep running register themselves, are listed, and stop.
 
 mod common;
@@ -319,4 +319,49 @@ fn a_running_watch_is_listed_while_it_runs() {
     assert_eq!(r.json["stopped"][0]["stopped"], true, "{}", r.stdout);
     let _ = child.wait();
     assert!(pids(&env.hall(&env.repo, &["ps"]).json).is_empty());
+}
+
+#[test]
+fn a_running_trace_follow_is_listed_and_stopped() {
+    let env = Env::initialized();
+    let (id, _) = env.new_item("Followed");
+    common::make_spike_dir(&env);
+    // A stream with no end line, held by a lease: the run is going.
+    let runs = env.repo.join(".git/hallmark/items").join(&id).join("runs");
+    std::fs::create_dir_all(&runs).unwrap();
+    let text = common::fixture("claude/stream.jsonl");
+    let cut = text.find("{\"type\":\"user\"").unwrap();
+    std::fs::write(runs.join("20261012T215146-fixer.jsonl"), &text[..cut]).unwrap();
+    let leases = env.repo.join(".git/hallmark/leases");
+    std::fs::create_dir_all(&leases).unwrap();
+    let lease = json!({
+        "item": id, "role": "fixer", "holder": "daemon:1",
+        "acquired": "2026-10-12T21:00:00Z", "expires": "2099-01-01T00:00:00Z",
+    });
+    std::fs::write(leases.join(format!("{id}.json")), lease.to_string()).unwrap();
+
+    let mut child = env
+        .std_cmd(&env.repo)
+        .args(["trace", &id, "--follow", "--timeout", "20s"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let pid = child.id() as u64;
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let listed = loop {
+        let r = env.hall(&env.repo, &["ps", "--kind", "trace"]);
+        if pids(&r.json) == vec![pid] || Instant::now() > deadline {
+            break r;
+        }
+        hallmark::daemon::nap(Duration::from_millis(50));
+    };
+    assert_eq!(pids(&listed.json), vec![pid], "{}", listed.stdout);
+    assert_eq!(listed.json["instances"][0]["kind"], "trace");
+    let r = env.hall(&env.repo, &["kill", &pid.to_string()]);
+    assert_eq!(r.json["stopped"][0]["stopped"], true, "{}", r.stdout);
+    let _ = child.wait();
+    assert!(pids(&env.hall(&env.repo, &["ps"]).json).is_empty());
+    assert!(files_for(&run_dir(&env), pid).is_empty());
 }
