@@ -281,3 +281,37 @@ fn web_d_reports_a_server_that_does_not_start() {
         .collect();
     assert!(left.is_empty(), "{left:?}");
 }
+
+#[test]
+fn a_running_watch_is_listed_while_it_runs() {
+    let env = Env::initialized();
+    // An item in review keeps `watch` running: it is in motion.
+    let (id, wt) = env.new_item("Watched");
+    common::commit_file(&wt, "a.txt", "a");
+    let r = env.hall(&wt, &["ready"]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let mut child = env
+        .std_cmd(&env.repo)
+        .args(["watch", &id, "--timeout", "1m"])
+        .env("HALL_WATCH_INTERVAL", "100ms")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let pid = child.id() as u64;
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let listed = loop {
+        let r = env.hall(&env.repo, &["ps", "--kind", "watch"]);
+        if pids(&r.json) == vec![pid] || Instant::now() > deadline {
+            break r;
+        }
+        hallmark::daemon::nap(Duration::from_millis(50));
+    };
+    assert_eq!(pids(&listed.json), vec![pid], "{}", listed.stdout);
+    assert_eq!(listed.json["instances"][0]["kind"], "watch");
+    let r = env.hall(&env.repo, &["kill", &pid.to_string()]);
+    assert_eq!(r.json["stopped"][0]["stopped"], true, "{}", r.stdout);
+    let _ = child.wait();
+    assert!(pids(&env.hall(&env.repo, &["ps"]).json).is_empty());
+}
