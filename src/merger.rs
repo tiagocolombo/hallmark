@@ -793,9 +793,17 @@ impl<'a> Look<'a> {
         }
         // Risk tiers (ADR 0063): the paths it touches, or the reviewer, can
         // ask for people's approvals. Your `hall retry` on the hold counts
-        // as one; approving reviews on GitHub by people count too.
+        // as one; approving reviews on GitHub by people count too. With
+        // `needs_person = "note"` the reviewer's request is noted, not held
+        // (ADR 0072).
         let (from_paths, tiered) = self.repo.config.merge.approvals_needed(&files);
-        let required = from_paths.max(u32::from(item.needs_person.is_some()));
+        let asked = item
+            .needs_person
+            .as_deref()
+            .map(str::trim)
+            .filter(|r| !r.is_empty());
+        let holds = asked.is_some() && self.repo.config.merge.reviewer_holds();
+        let required = from_paths.max(u32::from(holds));
         if required > 0 {
             let mut who = approvals(&pr.reviews, &head);
             if item.merge_approved.as_deref() == Some(head.as_str()) {
@@ -815,8 +823,8 @@ impl<'a> Look<'a> {
                 if !tiered.is_empty() {
                     why.push_str(&format!(": touches {}", tiered.join(", ")));
                 }
-                if let Some(r) = &item.needs_person {
-                    why.push_str(&format!("; the reviewer asked for a person: {}", r.trim()));
+                if let Some(r) = asked.filter(|_| holds) {
+                    why.push_str(&format!("; the reviewer asked for a person: {r}"));
                 }
                 if item.hold.is_some() {
                     return none(Status::Lit, format!("held (lit): {why}"));
@@ -827,17 +835,19 @@ impl<'a> Look<'a> {
         // A tier wait that no longer applies (approvals arrived, or the
         // requirement dropped) is lifted by `merge`, not here: judging
         // writes nothing.
-        judged(
-            Status::Ready,
-            match as_it_is {
-                Some(why) => format!("ready: hallmarked at {}; {why}", short(&head)),
-                None => format!(
-                    "ready: hallmarked at {}, mergeable, up to date",
-                    short(&head)
-                ),
-            },
-            Verdict::Merge(head),
-        )
+        let mut why = match as_it_is {
+            Some(why) => format!("ready: hallmarked at {}; {why}", short(&head)),
+            None => format!(
+                "ready: hallmarked at {}, mergeable, up to date",
+                short(&head)
+            ),
+        };
+        if let Some(r) = asked.filter(|_| !holds) {
+            why.push_str(&format!(
+                "; the reviewer asked for a person, noted and not held: {r}"
+            ));
+        }
+        judged(Status::Ready, why, Verdict::Merge(head))
     }
 
     /// The files `item` changes since it left its base: its shipped head, or

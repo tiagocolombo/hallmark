@@ -102,6 +102,7 @@ update     = "files"        # or "conflicts": rebase only when GitHub says it co
 lit        = []             # paths a person merges, as globs
 one_approval  = []          # paths that need one person's approval on the PR (ADR 0063)
 two_approvals = []          # paths that need two
+needs_person  = "hold"      # or "note": the reviewer's request for a person is written on the PR, not waited for (ADR 0072)
 
 [intake]
 split          = "auto"   # or "off": no Front Desk, one item, no criteria
@@ -169,11 +170,13 @@ reopens conflicting PRs itself ([ADR 0050](decisions/0050-the-queue-updates-prs-
 | `merge.lit` | `[]` | Paths a person merges, as globs relative to the repo root (`.github/`, `release-plz.toml`). A PR that touches one waits in your inbox (`lit`); `hall retry` lets the merger merge that head. |
 | `merge.one_approval` | `[]` | Paths that need one person's approval before the merger merges a PR that touches them ([ADR 0063](decisions/0063-risk-tiers.md)): an approving review on GitHub by an owner, member or collaborator, of the PR's current head (an earlier head's, or a stranger's, doesn't count), or your `hall retry` on the hold, which counts as one. Until then the PR waits in your inbox like a `lit` one, saying how many approvals it has. |
 | `merge.two_approvals` | `[]` | Paths that need two people's approvals (`src/billing/**`, an installer). Your `hall retry` counts as one. |
+| `merge.needs_person` | `hold` | What the reviewer's request for a person (`needs_person`) does when the merger is on ([ADR 0072](decisions/0072-the-reviewers-request-can-be-a-note.md)). `hold`: it counts as one approval needed, and the PR waits like a `one_approval` one. `note`: the PR merges like any other, and the request is written in its `## Risk` and in `hall queue`. `lit` and the approval paths hold either way. |
 
 The change sets its tier, not its author. Besides the paths, the reviewer
 can ask for a person on any change (`needs_person` in its verdict, with a
 reason: billing, auth, a release workflow, data that can't be got back, a
-pattern others will copy); that counts as one approval needed. The tier
+pattern others will copy); that counts as one approval needed, unless
+`merge.needs_person = "note"`, which only writes it down. The tier
 and the reason are the PR description's `## Risk`.
 
 A PR is ready when its head is the commit Hallmark shipped and carries a

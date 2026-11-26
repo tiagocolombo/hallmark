@@ -593,6 +593,26 @@ impl MergeUpdate {
     }
 }
 
+/// What the reviewer's `needs_person` does to an automatic merge (ADR 0072).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum NeedsPerson {
+    /// The PR waits for one person's approval (ADR 0063).
+    #[default]
+    Hold,
+    /// The request is written on the PR, and the PR merges like any other.
+    Note,
+}
+
+impl NeedsPerson {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            NeedsPerson::Hold => "hold",
+            NeedsPerson::Note => "note",
+        }
+    }
+}
+
 /// `[sandbox]`: what a headless `claude -p` run may reach (ADR 0053). Its
 /// commands run in Claude Code's sandbox; its file tools stay in the
 /// directories it runs in.
@@ -720,6 +740,11 @@ pub struct Merge {
     pub one_approval: Vec<String>,
     /// Paths that need two people's approvals. Globs.
     pub two_approvals: Vec<String>,
+    /// What the reviewer's `needs_person` does under `mode = "auto"` (ADR
+    /// 0072): `hold` (the PR waits for one person's approval) or `note`
+    /// (the request goes in the PR's Risk and the merger's note, and the
+    /// PR merges like any other).
+    pub needs_person: NeedsPerson,
 }
 
 impl Default for Merge {
@@ -732,11 +757,17 @@ impl Default for Merge {
             lit: Vec::new(),
             one_approval: Vec::new(),
             two_approvals: Vec::new(),
+            needs_person: NeedsPerson::Hold,
         }
     }
 }
 
 impl Merge {
+    /// Whether the reviewer's `needs_person` holds the merge for a person.
+    pub fn reviewer_holds(&self) -> bool {
+        self.needs_person == NeedsPerson::Hold
+    }
+
     /// How many people must approve a PR that touches `files` (ADR 0063):
     /// the highest tier any file falls under, and the paths that set it.
     /// `lit` paths aren't tiers: they always wait for you.

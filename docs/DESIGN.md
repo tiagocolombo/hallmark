@@ -48,8 +48,9 @@ build, any escalation, and merging. Merging goes dark only when you turn on
 the merger (`[merge] mode = "auto"`, ADR 0048), and `[merge] lit` keeps chosen
 paths, such as CI workflows or release settings, lit. Risk tiers (ADR 0063)
 sit between: a PR that touches `[merge] one_approval` or `two_approvals`
-paths, or that the reviewer marked `needs_person`, merges only once that
-many people have approved it, and the tier is the PR's `## Risk`.
+paths, or that the reviewer marked `needs_person` (unless `[merge]
+needs_person = "note"`, ADR 0072), merges only once that many people have
+approved it, and the tier is the PR's `## Risk`.
 
 The product is one Rust binary, `hall` (crate `hallmark`), for macOS, Linux and
 Windows:
@@ -445,6 +446,7 @@ require_ci = true
 lit        = []                 # paths a person merges
 one_approval  = []              # paths that need one person's approval (ADR 0063)
 two_approvals = []              # paths that need two
+needs_person  = "hold"          # or "note": the reviewer's request is noted, not held (ADR 0072)
 
 [intake]
 split          = "auto"         # the Front Desk plans requests; or "off"
@@ -842,7 +844,8 @@ judges each with a script, never a model: the shipped head with its hallmark,
 `MERGEABLE`, CI green at that head (unless `require_ci = false`), no
 standing request for changes, nothing it depends on still open (the PR it is
 stacked on; `Depends on #N`, `Blocked by #N`, `After #N`, where an issue is done once closed), no `lit` path, the people's approvals its risk tier asks for
-(`one_approval` and `two_approvals` paths, or the reviewer's `needs_person`;
+(`one_approval` and `two_approvals` paths, or the reviewer's `needs_person`
+unless `needs_person = "note"`, ADR 0072;
 `hall retry` counts as one, members' approving reviews of this head the rest;
 ADR 0063), and
 fresh (the base is in it, or the base's new commits touch none of its files;

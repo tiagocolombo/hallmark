@@ -52,6 +52,9 @@ command    = "gh pr merge {pr} --squash --admin --match-head-commit {pr_head}"
 require_ci = true
 update     = "conflicts"
 lit        = [".github/", "release-plz.toml", "rig.toml", "flake.nix", "flake.lock"]
+# The reviewer's request for a person is written on the PR, not waited for
+# (ADR 0072): the lit paths above are where a person merges.
+needs_person = "note"
 
 [intake]
 split     = "auto"

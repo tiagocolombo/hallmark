@@ -686,6 +686,71 @@ fn the_reviewer_can_ask_for_a_person_on_any_change() {
 }
 
 #[test]
+fn needs_person_note_merges_with_the_request_written_down() {
+    let env = Env::initialized();
+    let gh = fake_gh(&env);
+    setup(&env);
+    let (id, wt) = env.new_item("Change updater.rs");
+    commit_file(&wt, "updater.rs", "// updater\n");
+    assert_eq!(env.hall(&wt, &["ready"]).code, 0);
+    let sha = git(&wt, &["rev-parse", "HEAD"]);
+    append(&env, &id, "assayer", checks(&sha, 1, true, vec![]));
+    let repo = hallmark::repo::Repo::discover(&env.repo).unwrap();
+    let mv = hallmark::findings::ModelVerdict {
+        summary: "Fine, but a person should look.".into(),
+        findings: vec![],
+        prior: vec![],
+        learnings: vec![],
+        needs_person: Some("it changes what the auto-updater downloads".into()),
+    };
+    hallmark::assayer::record_verdict(
+        &repo,
+        id.parse().unwrap(),
+        &sha,
+        &mv,
+        "assayer",
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    let branch = git(&wt, &["rev-parse", "--abbrev-ref", "HEAD"]);
+    git(&wt, &["push", "-q", "origin", &branch]);
+    append(
+        &env,
+        &id,
+        "shipper",
+        Body::Shipped {
+            sha: sha.clone(),
+            pr_url: Some(url(1)),
+        },
+    );
+    green(&env, &id, 1);
+    pr(&gh, 1, "MERGEABLE", &sha, "", json!([]));
+
+    // Held under the default, as ADR 0063 has it.
+    pass(&env, &gh);
+    assert!(events(&env, &id, "pr_merged").is_empty());
+    assert_eq!(events(&env, &id, "held").len(), 1);
+
+    // With `note` (ADR 0072) the wait no longer applies: the queue says
+    // what the reviewer asked, and the next pass lifts the wait and merges.
+    set_config(&env, "merge.needs_person", "\"note\"");
+    let q = queue(&env, &gh);
+    let row = status_of(&q, &id);
+    assert_eq!(row["status"], "ready", "{q}");
+    assert!(
+        row["why"]
+            .as_str()
+            .unwrap()
+            .contains("noted and not held: it changes what the auto-updater downloads"),
+        "{row}"
+    );
+    pass(&env, &gh);
+    assert_eq!(events(&env, &id, "pr_merged").len(), 1);
+}
+
+#[test]
 fn a_failed_merge_is_held_for_you_and_retry_tries_again() {
     let env = Env::initialized();
     let gh = fake_gh(&env);

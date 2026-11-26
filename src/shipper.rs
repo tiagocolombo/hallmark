@@ -795,7 +795,14 @@ pub fn risk_line(
         ));
     }
     if let Some(r) = needs_person.map(str::trim).filter(|r| !r.is_empty()) {
-        parts.push(format!("The reviewer asked for a person's approval: {r}"));
+        if merge.reviewer_holds() {
+            parts.push(format!("The reviewer asked for a person's approval: {r}"));
+        } else {
+            parts.push(format!(
+                "The reviewer asked for a person: {r} Noted, not held \
+                 (`[merge] needs_person = \"note\"`)."
+            ));
+        }
     }
     if parts.is_empty() {
         "Low: touches no path that needs a person, and the reviewer asked for none; it merges \
@@ -1658,6 +1665,17 @@ mod tests {
         assert_eq!(
             risk_line(&m, &f(&["src/a.rs"]), Some(" it changes the updater ")),
             "The reviewer asked for a person's approval: it changes the updater"
+        );
+        // With `needs_person = "note"` (ADR 0072) the request is written
+        // down, not promised as a wait.
+        let note = crate::config::Merge {
+            needs_person: crate::config::NeedsPerson::Note,
+            ..m.clone()
+        };
+        assert_eq!(
+            risk_line(&note, &f(&["src/a.rs"]), Some(" it changes the updater ")),
+            "The reviewer asked for a person: it changes the updater Noted, not held \
+             (`[merge] needs_person = \"note\"`)."
         );
         m.one_approval.clear();
         assert!(risk_line(&m, &f(&["billing/charge.rs"]), Some("")).starts_with("Low:"));
