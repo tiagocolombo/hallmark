@@ -67,6 +67,36 @@ pub(crate) fn detach(cmd: &mut Command) {
     const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW);
+    keep_std_handles_to_ourselves();
+}
+
+/// Windows starts a child with every inheritable handle of ours, not just the
+/// ones given as its stdio. Our own stdin, stdout and stderr (a pipe, when a
+/// caller captures our output) would stay open in the detached process, and
+/// the caller would wait for them until it exits. The child gets its stdio
+/// from the `Command`, which duplicates what it needs, so ours can stop being
+/// inheritable.
+#[cfg(windows)]
+fn keep_std_handles_to_ourselves() {
+    use core::ffi::c_void;
+    const STD_HANDLES: [u32; 3] = [-10i32 as u32, -11i32 as u32, -12i32 as u32];
+    const HANDLE_FLAG_INHERIT: u32 = 1;
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetStdHandle(which: u32) -> *mut c_void;
+        fn SetHandleInformation(handle: *mut c_void, mask: u32, flags: u32) -> i32;
+    }
+    for which in STD_HANDLES {
+        // SAFETY: both calls only read or flag a handle of this process; a
+        // null or invalid handle makes SetHandleInformation fail, which is
+        // ignored.
+        unsafe {
+            let h = GetStdHandle(which);
+            if !h.is_null() && h as isize != -1 {
+                SetHandleInformation(h, HANDLE_FLAG_INHERIT, 0);
+            }
+        }
+    }
 }
 
 #[cfg(not(any(unix, windows)))]
