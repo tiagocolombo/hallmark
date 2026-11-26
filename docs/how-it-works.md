@@ -329,7 +329,8 @@ when the rest arrive on GitHub, ADR 0063), CI that still fails after the Deliver
 two fixes, CI that never started (one `ci_down` entry), or a base whose own
 CI failed, which stops its merge queue (`base_red`), or a loop paused by
 Claude's session or weekly limit (`paused`; `hall daemon resume` retries at
-once), or a merged PR that was reverted on its base (`reverted`: the loop
+once), or a daemon that stopped without being told to (`daemon_stopped`;
+the reason is the last line of its `daemon.log`, [ADR 0073](decisions/0073-the-daemon-survives-a-file-handle-burst.md)), or a merged PR that was reverted on its base (`reverted`: the loop
 missed something, and the entry asks which layer should have caught it;
 dismiss it or start the follow-up,
 [ADR 0061](decisions/0061-a-revert-is-a-signal.md)). Hallmark tells you in Claude Code (a hook and

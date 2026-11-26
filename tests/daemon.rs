@@ -673,3 +673,26 @@ fn an_expired_pause_is_not_in_the_inbox() {
         r.stdout
     );
 }
+
+/// A state file that exists but can't be read (out of file handles, in the
+/// field) is an error for a writer: it is never replaced by a default,
+/// whose `wanted = false` would stop the loop (ADR 0073).
+#[cfg(unix)]
+#[test]
+fn an_unreadable_state_file_is_not_reset() {
+    use std::os::unix::fs::PermissionsExt;
+    let env = Env::initialized();
+    write_state(&env, json!({"wanted": true, "pid": 4242, "passes": 7}));
+    let p = state_path(&env);
+    std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o000)).unwrap();
+    if std::fs::read_to_string(&p).is_ok() {
+        // Running as root: permissions don't stop a read.
+        return;
+    }
+    let r = env.hall(&env.repo, &["daemon", "stop"]);
+    std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600)).unwrap();
+    assert_ne!(r.code, 0, "{}", r.stdout);
+    let st = read_state(&env);
+    assert_eq!(st["wanted"], true, "{st}");
+    assert_eq!(st["pid"], 4242, "{st}");
+}

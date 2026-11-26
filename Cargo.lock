@@ -1114,6 +1114,7 @@ dependencies = [
  "getrandom 0.4.3",
  "globset",
  "insta",
+ "libc",
  "notify",
  "notify-rust",
  "predicates",

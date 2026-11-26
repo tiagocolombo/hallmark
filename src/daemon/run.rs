@@ -150,6 +150,7 @@ impl Ctl {
 
 /// Runs passes until `hall daemon stop`. Returns the final state.
 pub fn run_loop(opts: &Options) -> Result<DaemonState> {
+    let raised = raise_open_files();
     let lock = acquire()?;
     let pid = std::process::id();
     let started = Utc::now();
@@ -166,6 +167,9 @@ pub fn run_loop(opts: &Options) -> Result<DaemonState> {
         "daemon started (pid {pid}, a pass every {}ms)",
         opts.poll.as_millis()
     ));
+    if let Some((from, to)) = raised {
+        log(&format!("raised the open-file limit from {from} to {to}"));
+    }
     let mut ctl = Ctl {
         pid,
         last_beat: Instant::now(),
@@ -222,12 +226,28 @@ pub fn run_loop(opts: &Options) -> Result<DaemonState> {
         // Start the jobs whose turn it is.
         if !ctl.stop {
             let now = Utc::now();
-            let paused = state::update(|s| -> Result<_> {
+            // A state file that can't be read or written for a moment (out of
+            // file handles) skips this round instead of ending the loop
+            // (ADR 0073).
+            let paused = match state::update(|s| -> Result<_> {
                 if let Some(p) = super::pause::settle(s, now)? {
                     log(&format!("pause over ({})", p.reason));
                 }
                 Ok(s.pause_at(now).cloned())
-            })??;
+            })
+            .and_then(|r| r)
+            {
+                Ok(p) => p,
+                Err(e) => {
+                    log(&format!(
+                        "could not read the daemon state, trying again: {}",
+                        e.message
+                    ));
+                    ctl.tick(None);
+                    crate::daemon::nap(Duration::from_millis(200));
+                    continue;
+                }
+            };
             for (t, par) in &targets {
                 let repo_key = crate::paths::display(&t.path);
                 for (worker, _) in super::worker_order() {
@@ -319,7 +339,7 @@ pub fn run_loop(opts: &Options) -> Result<DaemonState> {
                 .iter()
                 .filter_map(|(t, _)| halls.get(&crate::paths::display(&t.path)).cloned())
                 .collect();
-            let new_pause = state::update(|s| -> Result<_> {
+            let new_pause = match state::update(|s| -> Result<_> {
                 let p = record_pause(s, std::slice::from_ref(&o), &journals, now)?;
                 let sum = o.summary();
                 // Keep the latest news per repo: an idle job doesn't hide
@@ -331,7 +351,18 @@ pub fn run_loop(opts: &Options) -> Result<DaemonState> {
                 s.passes += 1;
                 s.heartbeat = Some(now);
                 Ok(p)
-            })??;
+            })
+            .and_then(|r| r)
+            {
+                Ok(p) => p,
+                Err(e) => {
+                    log(&format!(
+                        "could not record {key} in the daemon state: {}",
+                        e.message
+                    ));
+                    None
+                }
+            };
             if let Some(p) = new_pause {
                 log(&format!(
                     "paused until {}: {}",
@@ -376,6 +407,42 @@ pub fn run_loop(opts: &Options) -> Result<DaemonState> {
     Ok(st)
 }
 
+/// Raises the soft open-file limit to the hard one, at most 10240. A login
+/// service starts with few (256 under launchd), and the loop's first
+/// round, or the one after a pause, opens a few hundred files at once
+/// (ADR 0073). The old and new limits, when it changed.
+#[allow(clippy::unnecessary_cast)] // rlim_t is not u64 on every Unix
+#[cfg(unix)]
+pub fn raise_open_files() -> Option<(u64, u64)> {
+    const WANT: libc::rlim_t = 10240;
+    let mut r = libc::rlimit {
+        rlim_cur: 0,
+        rlim_max: 0,
+    };
+    // SAFETY: getrlimit and setrlimit only read and write the struct we pass.
+    unsafe {
+        if libc::getrlimit(libc::RLIMIT_NOFILE, &mut r) != 0 {
+            return None;
+        }
+        let target = WANT.min(r.rlim_max);
+        if r.rlim_cur >= target {
+            return None;
+        }
+        let before = r.rlim_cur;
+        r.rlim_cur = target;
+        if libc::setrlimit(libc::RLIMIT_NOFILE, &r) != 0 {
+            return None;
+        }
+        Some((before as u64, target as u64))
+    }
+}
+
+/// Windows has no such per-process limit to raise.
+#[cfg(not(unix))]
+pub fn raise_open_files() -> Option<(u64, u64)> {
+    None
+}
+
 /// What a pass did, one line per worker that did something.
 fn progress_lines(o: &Outcome) -> Vec<String> {
     if let Some(s) = &o.skip {
@@ -390,6 +457,30 @@ fn progress_lines(o: &Outcome) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A login service's 256 open files are raised, up to the hard limit.
+    #[allow(clippy::unnecessary_cast)]
+    #[cfg(unix)]
+    #[test]
+    fn the_open_file_limit_is_raised() {
+        let mut r = libc::rlimit {
+            rlim_cur: 0,
+            rlim_max: 0,
+        };
+        // SAFETY: plain reads and writes of the struct we pass.
+        unsafe {
+            assert_eq!(libc::getrlimit(libc::RLIMIT_NOFILE, &mut r), 0);
+            if r.rlim_max <= 256 {
+                return;
+            }
+            r.rlim_cur = 256;
+            assert_eq!(libc::setrlimit(libc::RLIMIT_NOFILE, &r), 0);
+        }
+        let want = r.rlim_max.min(10240) as u64;
+        assert_eq!(raise_open_files(), Some((256, want)));
+        // Already there: nothing to change.
+        assert_eq!(raise_open_files(), None);
+    }
 
     #[test]
     fn poll_intervals() {
