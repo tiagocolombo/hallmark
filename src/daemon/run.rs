@@ -108,9 +108,19 @@ struct Ctl {
     current: Option<String>,
     stop: bool,
     misses: u32,
+    /// The state file is unreadable and that has been logged: say so once,
+    /// not every pass, so the reason isn't rotated out of daemon.log.
+    unreadable: bool,
 }
 
 impl Ctl {
+    fn note_unreadable(&mut self, what: &str, msg: &str) {
+        if !self.unreadable {
+            self.unreadable = true;
+            log(&format!("could not read the daemon state, {what}: {msg}"));
+        }
+    }
+
     fn tick(&mut self, current: Option<String>) {
         if current != self.current || self.last_beat.elapsed() >= BEAT {
             let now = Utc::now();
@@ -138,10 +148,7 @@ impl Ctl {
             }
             // The file exists but can't be read (out of file handles):
             // that says nothing about whether we should stop (ADR 0073).
-            Err(e) => log(&format!(
-                "could not read the daemon state, carrying on: {}",
-                e.message
-            )),
+            Err(e) => self.note_unreadable("carrying on", &e.message),
             // The state file is gone (or doesn't parse) three times running:
             // nobody can stop us any more, so stop now.
             Ok(None) => {
@@ -183,6 +190,7 @@ pub fn run_loop(opts: &Options) -> Result<DaemonState> {
         current: None,
         stop: false,
         misses: 0,
+        unreadable: false,
     };
     let mut announced = Vec::<String>::new();
     // Each repo runs on its own schedule: its next pass starts one poll
@@ -243,12 +251,14 @@ pub fn run_loop(opts: &Options) -> Result<DaemonState> {
             })
             .and_then(|r| r)
             {
-                Ok(p) => p,
+                Ok(p) => {
+                    if std::mem::take(&mut ctl.unreadable) {
+                        log("the daemon state is readable again");
+                    }
+                    p
+                }
                 Err(e) => {
-                    log(&format!(
-                        "could not read the daemon state, trying again: {}",
-                        e.message
-                    ));
+                    ctl.note_unreadable("trying again", &e.message);
                     ctl.tick(None);
                     crate::daemon::nap(Duration::from_millis(200));
                     continue;

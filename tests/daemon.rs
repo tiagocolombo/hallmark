@@ -438,6 +438,8 @@ fn start_status_stop_in_the_background() {
     let log = std::fs::read_to_string(env.home.join("daemon").join("daemon.log")).unwrap();
     assert!(log.contains("daemon started"), "{log}");
     assert!(log.contains("daemon stopped"), "{log}");
+    // The refused second `daemon run` never ran: it is not a stop.
+    assert!(!log.contains("stopped on an error"), "{log}");
 }
 
 /// Replaces the `gates = []` line `hall init` wrote.
@@ -716,6 +718,31 @@ fn a_running_daemon_survives_an_unreadable_state_file() {
     assert_eq!(s.json["running"], true, "{}", s.stdout);
     let log = std::fs::read_to_string(env.home.join("daemon").join("daemon.log")).unwrap();
     assert!(log.contains("could not read the daemon state"), "{log}");
+    // Said once when it starts, not every pass, and again when it clears.
+    assert_eq!(log.matches("could not read the daemon state").count(), 1, "{log}");
+    assert!(log.contains("readable again"), "{log}");
+}
+
+/// A `daemon run` whose first state update fails ends on an error, and the
+/// reason is in daemon.log: a login service's output goes nowhere (ADR 0073).
+#[cfg(unix)]
+#[test]
+fn a_loop_that_ends_on_an_error_logs_why() {
+    use std::os::unix::fs::PermissionsExt;
+    let env = Env::initialized();
+    let script = env.script(json!([]));
+    write_state(&env, json!({"wanted": false}));
+    let p = state_path(&env);
+    std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o000)).unwrap();
+    if std::fs::read_to_string(&p).is_ok() {
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600)).unwrap();
+        return;
+    }
+    let r = bg(&env, &script, &["daemon", "run"]);
+    std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600)).unwrap();
+    assert_ne!(r.code, 0, "{}", r.stdout);
+    let log = std::fs::read_to_string(env.home.join("daemon").join("daemon.log")).unwrap();
+    assert!(log.contains("daemon stopped on an error"), "{log}");
 }
 
 /// A state file that exists but can't be read (out of file handles, in the
