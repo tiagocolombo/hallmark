@@ -251,6 +251,10 @@ const REPO_SECTIONS: &[(&str, &[(&str, &str)])] = &[
                 "Paths that need one person's approval on the PR",
             ),
             ("merge.two_approvals", "Paths that need two"),
+            (
+                "merge.needs_person",
+                "hold: the reviewer's request for a person waits for one; note: it is only written on the PR",
+            ),
         ],
     ),
     (
@@ -1343,7 +1347,7 @@ mod tests {
             "",  // push_guard
             "",  // push_allow
         ]);
-        answers.extend([""; 7]); // merging
+        answers.extend([""; 8]); // merging
         answers.extend([""; 3]); // the Front Desk
         answers.extend([
             "",     // review model

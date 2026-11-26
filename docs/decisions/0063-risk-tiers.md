@@ -1,6 +1,7 @@
 # 0063. Risk tiers: the change decides how many people approve the merge
 
-Status: Accepted, 2026-10-27. Amends 0048 and 0057.
+Status: Accepted, 2026-10-27. Amends 0048 and 0057. The reviewer's
+`needs_person` holding the merge in every repo is superseded by 0072.
 
 ## Context
 

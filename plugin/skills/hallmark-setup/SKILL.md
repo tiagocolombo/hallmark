@@ -111,6 +111,9 @@ are happy with.
    - `merge.one_approval` and `merge.two_approvals`: paths that need that
      many people's approvals (`hall retry` counts as one, members' approving
      reviews on GitHub the rest) before the merger merges the PR.
+   - `merge.needs_person`: `hold` (default) makes the reviewer's request
+     for a person wait for one approval; `note` only writes it on the PR,
+     for people who want the merger to merge without them.
 8. **The sandbox** (`[sandbox]`, ADR 0053): every headless run is confined.
    Its file tools read only inside the run's directories and never
    `deny_read`. Its commands run in Claude Code's sandbox, with no network

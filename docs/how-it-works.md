@@ -167,8 +167,9 @@ that is ready:
   `After #N` (an issue named this way counts once it is closed);
 - it touches no `[merge] lit` path, and it has the approvals from people
   its tier asks for (`[merge] one_approval`, `two_approvals`, or the
-  reviewer's `needs_person`; your `hall retry` counts as one,
-  [ADR 0063](decisions/0063-risk-tiers.md));
+  reviewer's `needs_person` unless `[merge] needs_person = "note"`; your
+  `hall retry` counts as one, [ADR 0063](decisions/0063-risk-tiers.md),
+  [ADR 0072](decisions/0072-the-reviewers-request-can-be-a-note.md));
 - it is up to date: it contains its base, or the commits it lacks touch none
   of its files. A release commit that only bumps the version doesn't send
   every PR back. With `[merge] update = "conflicts"`, GitHub calling it
@@ -222,7 +223,8 @@ Paths where a wrong merge is expensive stay with you: a PR that touches a
 `[merge] lit` path waits in your inbox, and `hall retry` lets the merger
 merge it. Paths under `one_approval` or `two_approvals` need that many
 people to approve the PR on GitHub (your `hall retry` counts as one), and
-the reviewer can ask for a person on any change; the change sets the tier,
+the reviewer can ask for a person on any change (with `[merge] needs_person
+= "note"` that request is written on the PR, not waited for); the change sets the tier,
 never its author, and the tier is the PR's `## Risk`. You are asked only
 once nothing ahead of it claims its files, so the head you approve is one
 that can merge.

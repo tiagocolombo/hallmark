@@ -66,6 +66,7 @@ expression: keys
   "repo merge.command string",
   "repo merge.lit list",
   "repo merge.mode choice",
+  "repo merge.needs_person choice",
   "repo merge.one_approval list",
   "repo merge.require_ci bool",
   "repo merge.two_approvals list",
