@@ -571,6 +571,8 @@ fn the_delivery_office_watches_a_pr_until_it_merges() {
         .and_then(|items| items.iter().find(|i| i["id"] == id.as_str()))
         .unwrap_or_else(|| panic!("{} missing from {}", id, all.stdout));
     assert!(row["delivered_at"].is_string(), "{row}");
+    // Merged: the Delivery office no longer watches it.
+    assert!(row.get("watched").is_none(), "{row}");
 }
 
 /// A commit on the remote's `main` with its own subject and body.

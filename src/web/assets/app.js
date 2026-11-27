@@ -391,7 +391,7 @@ const PHASES = [
     ['Fixing', 'Repair shop · the fixer', 'var(--fixer)', (i) => i.state === 'fixing' || i.state === 'escalated']]],
   ['Ship', 'stamp, PR, merge', 'var(--ship)', [
     ['Hallmarked', 'Stamping room · approved', 'var(--ship)', (i) => i.state === 'hallmarked'],
-    ['Shipped', 'Dispatch & delivery · PR open', 'var(--ship)', (i) => i.state === 'closed' && !i.delivered],
+    ['Shipped', 'Dispatch & delivery · PR open', 'var(--ship)', (i) => i.state === 'closed' && i.watched],
     ['Merged today', 'Records tomorrow', 'var(--clerk)', (i) => i.delivered === 'merged' && mergedToday(i)]]],
 ];
 function mergedToday(i) {
