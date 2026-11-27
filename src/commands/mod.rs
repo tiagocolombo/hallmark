@@ -76,6 +76,12 @@ pub struct ItemView {
     /// How the shipped PR ended: merged or closed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub delivered: Option<String>,
+    /// When `delivered` was recorded: the merge or the close.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delivered_at: Option<DateTime<Utc>>,
+    /// A shipped PR the Delivery office still watches (open, top-level item).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub watched: bool,
     /// The reviewer's diagnosis from the verdict that escalated the item
     /// (ADR 0060).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -113,6 +119,8 @@ impl From<&Item> for ItemView {
             feedback: i.feedback.clone(),
             ci_fix: i.ci_fix.clone(),
             delivered: i.delivered.clone(),
+            delivered_at: i.delivered_at,
+            watched: crate::delivery::is_watched(i),
             escalation: i.escalation.clone(),
             reverted: i.reverted.clone(),
             needs_person: i.needs_person.clone(),

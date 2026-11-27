@@ -383,3 +383,22 @@ fn its_start_line_and_reply_have_schemas() {
         assert_eq!(r.code, 0, "{name}: {}", r.stdout);
     }
 }
+
+/// The page has no JS harness: pin the Kanban board's stage mapping and its
+/// remembered switch in the shipped script.
+#[test]
+fn the_kanban_board_maps_states_to_stages() {
+    let js = include_str!("../src/web/assets/app.js");
+    for needle in [
+        "i.state === 'development' || i.state === 'awaiting_you'",
+        "i.state === 'fixing' || i.state === 'escalated'",
+        "i.state === 'closed' && i.watched",
+        "i.delivered === 'merged' && mergedToday(i)",
+        "save('hall-floorView'",
+        "load('hall-floorView')",
+    ] {
+        assert!(js.contains(needle), "app.js lost `{needle}`");
+    }
+    // Only the Delivery office's watched PRs count as shipped and open.
+    assert!(!js.contains("i.state === 'closed' && !i.delivered"));
+}

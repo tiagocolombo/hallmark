@@ -190,6 +190,33 @@ a.kpi:hover { background: var(--panel-2); color: var(--ink); }
 .band.dev { background: var(--info-soft); color: var(--info); }
 .band.ok { color: var(--ok); }
 .band span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+
+/* the Kanban view: a column per stage under its phase, scrolling sideways */
+.kanban { overflow-x: auto; padding-bottom: 6px; }
+.kb-grid { display: grid; grid-template-columns: repeat(var(--n), minmax(236px, 1fr)); gap: 8px; min-width: calc(var(--n) * 244px); align-items: start; }
+.kb-phase { display: flex; align-items: baseline; gap: 8px; padding: 2px 4px 5px; border-bottom: 2px solid var(--c); }
+.kb-phase b { font-size: 12px; letter-spacing: .04em; text-transform: uppercase; color: var(--ink); }
+.kb-phase span { font-size: 11px; color: var(--muted); }
+.kb-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 8px; background: var(--raise); border: 1px solid var(--line); border-radius: 8px; }
+.kb-col header { display: flex; flex-direction: column; gap: 2px; padding: 2px 2px 4px; }
+.kb-h { display: flex; align-items: center; gap: 7px; }
+.kb-h h2 { font-size: 13px; }
+.kb-h span { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.kb-owner { font-size: 11px; color: var(--muted); }
+.kb-empty { padding: 10px 4px; text-align: center; font-size: 11px; color: var(--dim); }
+.kcard { display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 7px; overflow: hidden; text-decoration: none; color: var(--ink); min-width: 0; }
+.kcard:hover { border-color: var(--field); color: var(--ink); }
+.kcard.stop { border-color: var(--stop); }
+.kcard.you { border-color: color-mix(in srgb, var(--warn) 60%, transparent); }
+.kcard .band { min-height: 0; padding: 6px 10px; font-size: 11.5px; border-top: 1px solid var(--line-2); }
+.kc-body { display: flex; flex-direction: column; gap: 5px; padding: 9px 10px; min-width: 0; }
+.kc-top { display: flex; align-items: center; gap: 6px; }
+.kc-top .id { font: 600 11px var(--mono); color: var(--muted); }
+.kc-top .grow { flex: 1; }
+.kc-tag { border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; font-size: 11px; color: var(--ink-2); white-space: nowrap; }
+.kc-title { font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+.kc-line { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 10px; font-size: 11px; color: var(--muted); }
+.kc-line .squares i { width: 9px; height: 9px; }
 .legend { position: sticky; bottom: 0; margin-top: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 8px 2px; background: var(--bg); border-top: 1px solid var(--line); font-size: 11px; color: var(--muted); }
 .legend span { display: inline-flex; align-items: center; gap: 5px; }
 
