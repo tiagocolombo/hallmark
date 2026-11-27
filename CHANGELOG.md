@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.29](https://github.com/tiagocolombo/hallmark/compare/v0.3.28...v0.3.29) - 2026-11-27
+
+### Added
+
+- Kanban view on the hall web floor ([#195](https://github.com/tiagocolombo/hallmark/pull/195))
+
 ## [0.3.28](https://github.com/tiagocolombo/hallmark/compare/v0.3.27...v0.3.28) - 2026-11-26
 
 ### Fixed
