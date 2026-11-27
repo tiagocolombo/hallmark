@@ -546,6 +546,14 @@ fn the_delivery_office_watches_a_pr_until_it_merges() {
         "idle"
     );
     assert!(events(&env, &id, "delivered").is_empty());
+    // While the PR is open the board's "Shipped with PR open" column reads
+    // `watched` from `status --all`.
+    let open = env.hall(&env.repo, &["status", "--all"]);
+    let open_row = open.json["items"]
+        .as_array()
+        .and_then(|items| items.iter().find(|i| i["id"] == id.as_str()))
+        .unwrap_or_else(|| panic!("{} missing from {}", id, open.stdout));
+    assert_eq!(open_row["watched"], true, "{open_row}");
 
     // Read at most every two minutes: forget the last read.
     forget(&env);
