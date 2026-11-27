@@ -406,7 +406,9 @@ $ echo $?
 | `hall export [<id>]` | you, shipper | The whole record as Markdown, with what each model run did, step by step. |
 | `hall budget [--set k=v] [--grant [<tokens>]]` | you | The caps and today's spend. `--grant` lets the loop go past the daily cap for today (default: another `daily`) and lifts the budget pause; the cap is unchanged. |
 | `hall notify test` | you | A test notification on every channel. |
-| `hall web [--port] [--no-open]` | you | The web app on 127.0.0.1, behind a token: every call runs a hall command a person may run from a page (ADR 0052). |
+| `hall web [--port] [--no-open] [-d] [-l] [--kill [<pid>]]` | you | The web app on 127.0.0.1, behind a token: every call runs a hall command a person may run from a page (ADR 0052). `-d` runs it detached; `-l` lists and `--kill` stops the running ones (ADR 0074). |
+| `hall ps [--kind]`, `hall -l` | you, agents | The halls that keep running, from their locked run files in the user dir and the daemon's lock (ADR 0074). |
+| `hall kill <pid>… \| --kind \| --all` | you | Stops halls that `hall ps` lists; the daemon the way `hall daemon stop` does. |
 | `hall statusline` | Claude Code | One line for the status line. |
 | `hall library search\|review\|retire\|distill\|import\|export` | you, agents | The Library. |
 

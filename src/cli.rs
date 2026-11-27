@@ -27,6 +27,10 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub json: bool,
 
+    /// List the hall processes that keep running (`hall ps`).
+    #[arg(short = 'l', long = "list")]
+    pub list: bool,
+
     #[command(subcommand)]
     pub cmd: Option<Cmd>,
 }
@@ -129,8 +133,14 @@ pub enum Cmd {
     /// Everything the Claude Code heads-up display shows, in one call.
     Hud(HudArgs),
     /// The web app: every repo's items, your office, the merge queue and
-    /// the settings, in a browser on this machine. Runs until stopped.
+    /// the settings, in a browser on this machine. Runs until stopped, or
+    /// in the background with -d; -l lists the running ones, --kill stops them.
     Web(WebArgs),
+    /// The hall processes that keep running: the web app, the daemon,
+    /// `watch`, `trace --follow`, the terminal app. `hall -l` is the same.
+    Ps(PsArgs),
+    /// Stop hall processes that `hall ps` lists: by pid, by --kind, or --all.
+    Kill(KillArgs),
     /// The agents' conversations as Q&A threads: each review finding with
     /// the verifier's check, the fixer's answer and the reviewer's ruling;
     /// planning; questions to you. A thread ID (`H-0042/F3`) shows one whole.
@@ -753,6 +763,36 @@ pub struct WebArgs {
     /// Don't open the browser; only print the address.
     #[arg(long)]
     pub no_open: bool,
+    /// Run in the background, detached from this terminal: print the
+    /// address and the pid, and return.
+    #[arg(short = 'd', long)]
+    pub detach: bool,
+    /// List the running `hall web` servers (`hall ps --kind web`).
+    #[arg(short = 'l', long, conflicts_with_all = ["detach", "port", "no_open", "kill"])]
+    pub list: bool,
+    /// Stop the running `hall web` with this pid, or every one without a pid.
+    #[arg(long, value_name = "PID", num_args = 0..=1, conflicts_with_all = ["detach", "port", "no_open"])]
+    pub kill: Option<Option<u32>>,
+}
+
+#[derive(Debug, Default, Args)]
+pub struct PsArgs {
+    /// Only this kind.
+    #[arg(long, value_enum)]
+    pub kind: Option<crate::instances::Kind>,
+}
+
+#[derive(Debug, Args)]
+pub struct KillArgs {
+    /// The pids to stop, from `hall ps`. Only hall processes it lists are
+    /// stopped.
+    pub pids: Vec<u32>,
+    /// Stop every one (of --kind, when given).
+    #[arg(long, conflicts_with = "pids")]
+    pub all: bool,
+    /// Only this kind; alone, every one of it.
+    #[arg(long, value_enum)]
+    pub kind: Option<crate::instances::Kind>,
 }
 
 #[derive(Debug, Args)]
@@ -947,7 +987,17 @@ pub fn run() -> i32 {
         }
     };
     let is_hook = matches!(cli.cmd, Some(Cmd::Hook(_) | Cmd::Statusline));
-    match dispatch(cli.cmd, &cwd, mode) {
+    let cmd = match (cli.list, cli.cmd) {
+        (false, cmd) => cmd,
+        (true, None) => Some(Cmd::Ps(PsArgs::default())),
+        (true, Some(_)) => {
+            let err = HallError::usage("-l lists the running halls on its own: `hall -l`")
+                .next(["hall -l", "hall ps"]);
+            output::print_error(mode, &err);
+            return 2;
+        }
+    };
+    match dispatch(cmd, &cwd, mode) {
         Ok(resp) => {
             resp.print(mode);
             resp.exit
@@ -1123,6 +1173,8 @@ fn dispatch(cmd: Option<Cmd>, cwd: &std::path::Path, mode: Mode) -> Result<Respo
         Some(Cmd::Extensions(a)) => extensions::extensions(cwd, a),
         Some(Cmd::Hud(a)) => hud::hud(cwd, a),
         Some(Cmd::Web(a)) => crate::web::web(cwd, a, mode),
+        Some(Cmd::Ps(a)) => ps::ps(a),
+        Some(Cmd::Kill(a)) => ps::kill(a),
         Some(Cmd::Threads(a)) => threads::threads(cwd, a),
         Some(Cmd::Gazette(a)) => gazette::gazette(cwd, a),
         Some(Cmd::Attach(a)) => gazette::attach(cwd, a),

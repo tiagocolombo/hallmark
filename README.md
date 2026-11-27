@@ -216,6 +216,8 @@ From the terminal:
 ```sh
 hall                         # the terminal app: inbox, board, journal, findings, history, usage
 hall web                     # the same and the settings, in a browser on this machine
+hall web -d                  # the same, in the background; hall web -l lists, --kill stops
+hall ps                      # the halls that keep running (hall -l); hall kill <pid> stops one
 
 hall new "Retry failed webhook deliveries" --open   # item, branch, worktree; opens Claude there
 hall new --issue 212         # start from a GitHub issue

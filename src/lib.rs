@@ -28,6 +28,7 @@ pub mod gh;
 pub mod git;
 pub mod hooks;
 pub mod index;
+pub mod instances;
 pub mod intake;
 pub mod item;
 pub mod journal;

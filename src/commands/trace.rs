@@ -280,6 +280,9 @@ pub fn trace(cwd: &Path, a: TraceArgs, mode: Mode) -> Result<Response> {
         .ok()
         .and_then(|s| crate::daemon::run::parse_poll(&s))
         .unwrap_or(Duration::from_secs(1));
+    let _running = a
+        .follow
+        .then(|| crate::instances::register(crate::instances::Kind::Trace, cwd));
     let started = Instant::now();
     let mut tail = Tail::default();
     let mut printed = 0;

@@ -258,6 +258,16 @@ enum StatusReply {
 #[derive(Serialize, JsonSchema)]
 #[serde(untagged)]
 #[allow(dead_code)]
+enum WebReply {
+    Stopped(Out<crate::web::WebOut>),
+    Detached(Out<crate::web::WebDetached>),
+    List(Out<super::ps::PsOut>),
+    Kill(Out<super::ps::KillOut>),
+}
+
+#[derive(Serialize, JsonSchema)]
+#[serde(untagged)]
+#[allow(dead_code)]
 enum GazetteReply {
     Page(Out<super::gazette::GazetteOut>),
     List(Out<super::gazette::GazetteList>),
@@ -304,6 +314,8 @@ pub const SCHEMA_NAMES: &[&str] = &[
     "hud",
     "web",
     "web-line",
+    "ps",
+    "kill",
     "threads",
     "gazette",
     "attach",
@@ -365,7 +377,10 @@ pub fn schema_value(name: &str) -> Option<serde_json::Value> {
         "library" => schema_for!(Out<LibraryOut>),
         "extensions" => schema_for!(Out<super::extensions::ExtensionsOut>),
         "hud" => schema_for!(Out<HudOut>),
-        "web" => schema_for!(Out<crate::web::WebOut>),
+        // Runs until stopped, or -d's reply; -l and --kill are ps's and kill's.
+        "web" => schema_for!(WebReply),
+        "ps" => schema_for!(Out<super::ps::PsOut>),
+        "kill" => schema_for!(Out<super::ps::KillOut>),
         "threads" => schema_for!(super::threads::ThreadsReply),
         "gazette" => schema_for!(GazetteReply),
         "attach" => schema_for!(Out<super::gazette::AttachOut>),
