@@ -564,6 +564,13 @@ fn the_delivery_office_watches_a_pr_until_it_merges() {
     );
     let status = env.hall(&env.repo, &["status", &id]);
     assert_eq!(status.json["delivered"], "merged", "{}", status.stdout);
+    // The web board's "Merged today" column reads when, from `status --all`.
+    let all = env.hall(&env.repo, &["status", "--all"]);
+    let row = all.json["items"]
+        .as_array()
+        .and_then(|items| items.iter().find(|i| i["id"] == id.as_str()))
+        .unwrap_or_else(|| panic!("{} missing from {}", id, all.stdout));
+    assert!(row["delivered_at"].is_string(), "{row}");
 }
 
 /// A commit on the remote's `main` with its own subject and body.

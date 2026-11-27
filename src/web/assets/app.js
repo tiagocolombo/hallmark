@@ -28,6 +28,7 @@ const S = {
   noFeed: false,
   feedShown: 30,
   floorFilter: 'all',
+  floorView: 'cards',
   groupBy: 'room',
   sortBy: 'status',
   q: '',
@@ -302,8 +303,12 @@ async function floor() {
   await refreshShell();
   const d = S.data;
   if (d.error) return failure(d.error, 'hall status');
-  const [days, costs] = await Promise.all([
-    hall(['usage', '--by', 'day', '--since', '14d']), hall(['usage', '--by', 'item'])]);
+  const kanban = S.floorView === 'kanban';
+  const [days, costs, every] = await Promise.all([
+    hall(['usage', '--by', 'day', '--since', '14d']), hall(['usage', '--by', 'item']),
+    kanban ? hall(['status', '--all']) : null]);
+  // Shipped items are closed, so only `--all` lists them (the Ship columns).
+  S.ended = kanban ? ((every && every.reply && every.reply.items) || []).filter((i) => i.state === 'closed') : [];
   const rows = ((days.reply && days.reply.rows) || []).slice().sort((a, b) => String(a.key).localeCompare(String(b.key)));
   S.costs = new Map(((costs.reply && costs.reply.rows) || []).map((r) => [r.key, r.cost_usd]));
   const items = d.items;
@@ -334,10 +339,13 @@ const FILTERS = [['all', 'All'], ['loop', 'In the loop'], ['you', 'Waiting for y
 function floorBody() {
   const seg = (key, vals) => `<div class="seg" role="group">${vals.map(([v, l]) =>
     `<button type="button" class="${S[key] === v ? 'on' : ''}" data-set="${key}" data-val="${v}" data-local>${l}</button>`).join('')}</div>`;
-  return `<div class="filters">
-      <span>Group by</span>${seg('groupBy', [['room', 'Room'], ['state', 'State'], ['none', 'None']])}
+  // Switching the view reads again: the board also needs the shipped items.
+  const view = `<span>View</span><div class="seg" role="group" aria-label="View">${[['cards', 'Cards'], ['kanban', 'Kanban']].map(([v, l]) =>
+    `<button type="button" class="${S.floorView === v ? 'on' : ''}" data-set="floorView" data-val="${v}">${l}</button>`).join('')}</div>`;
+  return `<div class="filters">${view}
+      ${S.floorView === 'kanban' ? '' : `<span>Group by</span>${seg('groupBy', [['room', 'Room'], ['state', 'State'], ['none', 'None']])}
       <span>Sort by</span><select data-bind="sortBy" data-local aria-label="Sort by">${[['status', 'Status'], ['newest', 'Newest'], ['oldest', 'Oldest'], ['round', 'Round'], ['cost', 'Cost']].map(([v, l]) =>
-        `<option value="${v}" ${S.sortBy === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        `<option value="${v}" ${S.sortBy === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`}
     </div>
     <div class="filters">${seg('floorFilter', FILTERS)}
       <input type="search" id="q" value="${esc(S.q)}" placeholder="Filter by ID, title or branch" aria-label="Filter items">
@@ -370,8 +378,84 @@ function shownItems() {
     .sort(sorts[S.sortBy] || sorts.status);
 }
 
+// The Kanban view: one column per stage, under its phase (ADR 0068, "The
+// board in hall web"). A state that needs you stays in its stage's column
+// and says so on the card's band. The Plan phase (intake, grooming, backlog)
+// joins in front when it exists.
+const PHASES = [
+  ['Build', 'a session', 'var(--dev)', [
+    ['Development', 'Workshop · you and the dev agent', 'var(--dev)', (i) => i.state === 'development' || i.state === 'awaiting_you']]],
+  ['Assay', 'checks, review, fixes', 'var(--principal)', [
+    ['Checks', 'Assay office · the gates', 'var(--principal)', (i) => i.state === 'checks'],
+    ['Review', 'Assay office · principal engineer', 'var(--principal)', (i) => i.state === 'review'],
+    ['Fixing', 'Repair shop · the fixer', 'var(--fixer)', (i) => i.state === 'fixing' || i.state === 'escalated']]],
+  ['Ship', 'stamp, PR, merge', 'var(--ship)', [
+    ['Hallmarked', 'Stamping room · approved', 'var(--ship)', (i) => i.state === 'hallmarked'],
+    ['Shipped', 'Dispatch & delivery · PR open', 'var(--ship)', (i) => i.state === 'closed' && !i.delivered],
+    ['Merged today', 'Records tomorrow', 'var(--clerk)', (i) => i.delivered === 'merged' && mergedToday(i)]]],
+];
+function mergedToday(i) {
+  const at = i.delivered_at ? new Date(i.delivered_at) : null;
+  return !!at && at.toDateString() === new Date().toDateString();
+}
+
+function kanbanHtml(open) {
+  const q = S.q.toLowerCase();
+  // Closed items only pass the All and Shipped filters.
+  const ended = ['all', 'shipped'].includes(S.floorFilter) ? (S.ended || [])
+    .filter((i) => !q || [i.id, i.title, i.branch].some((s) => String(s || '').toLowerCase().includes(q))) : [];
+  const all = [...open, ...ended];
+  const cols = PHASES.flatMap(([, , , list]) => list);
+  const heads = PHASES.map(([name, note, c, list]) =>
+    `<div class="kb-phase" style="--c:${c};grid-column:span ${list.length}"><b>${esc(name)}</b><span>${esc(note)}</span></div>`).join('');
+  const body = cols.map(([name, owner, c, keep]) => {
+    const list = all.filter(keep);
+    return `<section class="kb-col" aria-label="${esc(name)}">
+      <header><div class="kb-h"><i class="sq" style="--c:${c}"></i><h2>${esc(name)}</h2><span>${list.length}</span></div>
+        <div class="kb-owner">${esc(owner)}</div></header>
+      ${list.map(kcard).join('') || '<div class="kb-empty">Nothing here</div>'}
+    </section>`;
+  }).join('');
+  return `<div class="kanban"><div class="kb-grid" style="--n:${cols.length}">${heads}${body}</div></div>`;
+}
+
+// A smaller floor card for a column: the same data, no drag, a link to the item.
+function kcard(i) {
+  const loop = S.data.loop.get(i.id);
+  const [tone, glyph, words] = band(i);
+  const open = (loop && loop.open) || {};
+  const squares = SEVERITY.flatMap(([k, c]) => Array.from({ length: open[k] || 0 }, () => `<i style="--c:${c}" title="${k}"></i>`));
+  const rejects = i.rejects || 0;
+  const cost = S.costs.get(i.id);
+  const pr = i.pr_url ? `PR #${i.pr_url.split('/').pop()}` : '';
+  const cardTone = tone === 'stop' ? ' stop' : tone === 'you' ? ' you' : '';
+  const meta = [
+    rejects ? `${rejects} reject${rejects === 1 ? '' : 's'}` : '',
+    `${ago(i.state_since).replace(' ago', '')} in state`,
+    cost != null ? usd(cost) : '',
+  ].filter(Boolean);
+  return `<a class="kcard${cardTone}" href="#/item/${esc(i.id)}" draggable="false">
+    <div class="kc-body">
+      <div class="kc-top"><span class="id">${esc(i.id)}</span><span class="grow"></span>
+        ${pr ? `<span class="kc-tag">${esc(pr)}</span>` : ''}${i.round ? `<span class="kc-tag">round ${esc(i.round)}</span>` : ''}
+        <span class="meter${rejects >= 3 ? ' stop' : ''}" title="${rejects} rejection${rejects === 1 ? '' : 's'}; the 3rd escalates">${[0, 1, 2].map((k) => `<i class="${k < rejects ? 'on' : ''}"></i>`).join('')}</span></div>
+      <div class="kc-title">${esc(i.title)}</div>
+      ${squares.length ? `<div class="kc-line"><span class="squares">${squares.join('')}</span><span>${SEVERITY.filter(([k]) => open[k]).map(([k]) => `${open[k]} ${k}`).join(' · ')} open</span></div>` : ''}
+      <div class="kc-line">${meta.map((m) => `<span>${esc(m)}</span>`).join('')}</div>
+    </div>
+    <div class="band ${tone}"><span>${glyph}</span><span>${esc(words)}</span></div>
+  </a>`;
+}
+
 function cardsHtml() {
   const items = shownItems();
+  if (S.floorView === 'kanban') {
+    const n = `${items.length} open shown`;
+    const shown = document.getElementById('shown');
+    if (shown) shown.textContent = n;
+    else setTimeout(() => { const s = document.getElementById('shown'); if (s) s.textContent = n; });
+    return kanbanHtml(items);
+  }
   const shown = document.getElementById('shown');
   const total = `${items.length} shown · ${S.data.items.length} open`;
   if (shown) shown.textContent = total;
@@ -1258,6 +1342,7 @@ document.addEventListener('click', async (ev) => {
   const setBtn = t.closest('[data-set]');
   if (setBtn) {
     setPath(setBtn.dataset.set, setBtn.dataset.val);
+    if (setBtn.dataset.set === 'floorView') save('hall-floorView', S.floorView);
     if ('local' in setBtn.dataset) redrawFloor(); else draw();
     return;
   }
@@ -1372,6 +1457,7 @@ setInterval(checkUpdate, 60 * 60 * 1000);
   $('#refresh').value = String(S.refresh);
   S.noRail = !!load('hall-noRail');
   S.noFeed = !!load('hall-noFeed');
+  S.floorView = load('hall-floorView') === 'kanban' ? 'kanban' : 'cards';
   applyColumns();
   readToken();
   if (!S.token) return locked();
