@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.30](https://github.com/tiagocolombo/hallmark/compare/v0.3.29...v0.3.30) - 2026-11-27
+
+### Added
+
+- hall ps, hall kill, hall web -d/-l/--kill ([#191](https://github.com/tiagocolombo/hallmark/pull/191))
+
 ## [0.3.29](https://github.com/tiagocolombo/hallmark/compare/v0.3.28...v0.3.29) - 2026-11-27
 
 ### Added
